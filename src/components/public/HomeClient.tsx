@@ -1,9 +1,9 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { ArrowRight, MapPin, MessageCircle, Navigation, ShoppingCart } from "lucide-react";
-import { stores } from "@/data/stores";
+import type { Store } from "@/types";
 import { BrandLogo } from "@/components/public/BrandLogo";
 
-export function HomeClient() {
+export function HomeClient({ stores }: { stores: Store[] }) {
   return (
     <main className="vp-container py-8">
       <section className="relative overflow-hidden rounded-[40px] bg-[#2E3A79] p-6 text-white shadow-2xl shadow-[#2E3A79]/20 sm:p-10">
@@ -13,7 +13,7 @@ export function HomeClient() {
           <BrandLogo />
           <h1 className="mt-8 max-w-3xl text-4xl font-black tracking-tight sm:text-6xl">Vende más. Cobra mejor. Conecta tu delivery.</h1>
           <p className="mt-4 max-w-2xl text-base font-semibold leading-relaxed text-white/76">
-            Catálogos inteligentes para comercios: productos, carrito, checkout, ubicación GPS, cálculo de delivery y pedido detallado directo a WhatsApp.
+            Catálogos inteligentes para comercios: productos, carrito, checkout, ubicación GPS, cálculo de delivery y pedido directo a WhatsApp.
           </p>
           <div className="mt-6 grid gap-3 sm:grid-cols-3">
             <div className="rounded-3xl bg-white/10 p-4 backdrop-blur"><ShoppingCart className="text-[#FFB547]" /><p className="mt-2 font-black">Compra fácil</p></div>
