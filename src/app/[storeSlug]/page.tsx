@@ -1,17 +1,16 @@
 ﻿import { notFound } from "next/navigation";
 import { CatalogClient } from "@/components/public/CatalogClient";
 import { StoreHeader } from "@/components/public/StoreHeader";
-import { getPublicStoreBySlug, getPublicStoreSlugs } from "@/lib/supabase/catalog";
+import { getPublicStoreBySlug } from "@/lib/supabase/catalog";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-export async function generateStaticParams() {
-  const slugs = await getPublicStoreSlugs();
-
-  return slugs.map((storeSlug) => ({ storeSlug }));
-}
-
-export default async function StorePage({ params }: { params: Promise<{ storeSlug: string }> }) {
+export default async function StorePage({
+  params,
+}: {
+  params: Promise<{ storeSlug: string }>;
+}) {
   const { storeSlug } = await params;
   const store = await getPublicStoreBySlug(storeSlug);
 

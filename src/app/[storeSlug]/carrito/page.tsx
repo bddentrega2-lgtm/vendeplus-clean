@@ -1,16 +1,15 @@
 ﻿import { notFound } from "next/navigation";
 import { CartPageClient } from "@/components/public/CartPageClient";
-import { getPublicStoreBySlug, getPublicStoreSlugs } from "@/lib/supabase/catalog";
+import { getPublicStoreBySlug } from "@/lib/supabase/catalog";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-export async function generateStaticParams() {
-  const slugs = await getPublicStoreSlugs();
-
-  return slugs.map((storeSlug) => ({ storeSlug }));
-}
-
-export default async function CartPage({ params }: { params: Promise<{ storeSlug: string }> }) {
+export default async function CartPage({
+  params,
+}: {
+  params: Promise<{ storeSlug: string }>;
+}) {
   const { storeSlug } = await params;
   const store = await getPublicStoreBySlug(storeSlug);
 
