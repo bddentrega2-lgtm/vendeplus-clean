@@ -1,0 +1,184 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+:root {
+  --vp-blue: #2e3a79;
+  --vp-blue-dark: #151b4f;
+  --vp-mango: #ffb547;
+  --vp-cream: #fff8f0;
+  --vp-sand: #e8d9c9;
+  --vp-graphite: #25262b;
+  --vp-muted: #746f69;
+  --vp-green: #6fa64f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(255, 181, 71, 0.18), transparent 26rem),
+    radial-gradient(circle at top right, rgba(46, 58, 121, 0.12), transparent 24rem),
+    var(--vp-cream);
+  color: var(--vp-graphite);
+  font-family: var(--font-nunito), Arial, Helvetica, sans-serif;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+img {
+  display: block;
+}
+
+.vp-container {
+  width: min(100%, 1080px);
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+.vp-phone-shell {
+  width: min(100%, 480px);
+  margin: 0 auto;
+}
+
+.vp-glass {
+  border: 1px solid rgba(37, 38, 43, 0.08);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 20px 60px rgba(46, 58, 121, 0.12);
+  backdrop-filter: blur(18px);
+}
+
+.vp-card {
+  border: 1px solid rgba(37, 38, 43, 0.08);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 40px rgba(46, 58, 121, 0.09);
+  border-radius: 28px;
+}
+
+.vp-button-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--vp-blue), var(--vp-blue-dark));
+  color: white;
+  font-weight: 900;
+  padding: 14px 18px;
+  transition: transform 0.16s ease, opacity 0.16s ease, box-shadow 0.16s ease;
+  box-shadow: 0 14px 28px rgba(46, 58, 121, 0.22);
+}
+
+.vp-button-primary:hover {
+  transform: translateY(-1px);
+  opacity: 0.96;
+}
+
+.vp-button-mango {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ffb547, #ff9f1c);
+  color: var(--vp-graphite);
+  font-weight: 950;
+  padding: 14px 18px;
+  box-shadow: 0 14px 28px rgba(255, 181, 71, 0.28);
+}
+
+.vp-button-soft {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(37, 38, 43, 0.1);
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--vp-graphite);
+  font-weight: 900;
+  padding: 13px 16px;
+}
+
+.vp-input {
+  width: 100%;
+  border-radius: 18px;
+  border: 1px solid rgba(37, 38, 43, 0.14);
+  background: white;
+  padding: 14px 15px;
+  color: var(--vp-graphite);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.vp-input:focus {
+  border-color: var(--vp-blue);
+  box-shadow: 0 0 0 4px rgba(46, 58, 121, 0.12);
+}
+
+.vp-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--vp-graphite);
+}
+
+.vp-safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.vp-scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.vp-scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+.vendeplus-store-marker,
+.vendeplus-destination-marker {
+  background: transparent;
+  border: 0;
+}
+
+.vendeplus-store-marker div,
+.vendeplus-destination-marker div {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 999px;
+  border: 3px solid white;
+  box-shadow: 0 12px 28px rgba(37, 38, 43, 0.24);
+  font-size: 20px;
+}
+
+.vendeplus-store-marker div {
+  background: var(--vp-blue);
+}
+
+.vendeplus-destination-marker div {
+  background: var(--vp-mango);
+}
+
+.leaflet-container {
+  font-family: var(--font-nunito), Arial, Helvetica, sans-serif;
+}
