@@ -158,9 +158,24 @@ export function CheckoutForm({ store }: { store: Store }) {
     window.setTimeout(() => setCopied(false), 1800);
   }
 
-  function sendOrder() {
+  async function sendOrder() {
+    if (isSubmitting) return;
+
     const order = buildOrder();
     if (!order) return;
+
+    setIsSubmitting(true);
+    setError("");
+
+    try {
+      const saveResult = await saveOrderToSupabase(order, store);
+
+      if (!saveResult.ok) {
+        console.warn("No se pudo guardar el pedido en Supabase:", saveResult.error);
+      }
+    } catch (error) {
+      console.warn("Error inesperado guardando el pedido:", error);
+    }
 
     localStorage.setItem(getOrderKey(store.slug), JSON.stringify(order));
     clearCart(store.slug);
@@ -301,7 +316,19 @@ export function CheckoutForm({ store }: { store: Store }) {
                 {copied ? <p className="mt-4 flex items-center gap-2 rounded-2xl bg-green-50 p-3 text-sm font-bold text-green-700"><CheckCircle2 size={18} /> Pedido copiado</p> : null}
 
                 <div className="mt-4 grid gap-3">
-                  <button type="button" onClick={sendOrder} className="vp-button-mango w-full"><MessageCircle size={18} /> Enviar por WhatsApp</button>
+                  <button
+              type="button"
+              onClick={sendOrder}
+              disabled={isSubmitting}
+              className="vp-button-mango w-full disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {isSubmitting ? (
+                <Loader2 size={18} className="animate-spin" />
+              ) : (
+                <MessageCircle size={18} />
+              )}
+              {isSubmitting ? "Guardando pedido..." : "Enviar por WhatsApp"}
+            </button>
                   <button type="button" onClick={copyOrder} className="vp-button-soft w-full"><Copy size={18} /> Copiar pedido</button>
                 </div>
               </div>
@@ -312,4 +339,6 @@ export function CheckoutForm({ store }: { store: Store }) {
     </main>
   );
 }
+
+
 
