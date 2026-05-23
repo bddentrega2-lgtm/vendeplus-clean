@@ -21,7 +21,7 @@ export function buildOrderMessage(params: {
   mapsUrl: string | null;
   routeUrl: string | null;
 }) {
-  const { orderId, store, items, form, quote, totals, mapsUrl, routeUrl } = params;
+  const { orderId, store, items, form, quote, totals, mapsUrl } = params;
 
   const itemsText = items
     .map((item, index) => {
@@ -35,27 +35,27 @@ export function buildOrderMessage(params: {
     .join("\n");
 
   const orderDetails = cleanText(form.orderDetails)
-    ? `\n📝 Detalle: ${cleanText(form.orderDetails)}`
+    ? `\n📝 ${cleanText(form.orderDetails)}`
     : "";
 
-  const generalNotes = cleanText(form.notes)
-    ? `\n🗒️ Nota: ${cleanText(form.notes)}`
+  const reference = cleanText(form.deliveryReference)
+    ? `\n📌 ${cleanText(form.deliveryReference)}`
+    : "";
+
+  const notes = cleanText(form.notes)
+    ? `\n🗒️ ${cleanText(form.notes)}`
     : "";
 
   const deliveryBlock =
     form.deliveryType === "pickup"
-      ? `\n🛍️ Pickup / Retiro\n📍 ${store.name}\n${store.address}`
-      : `\n🚚 Delivery: ${formatUsd(totals.deliveryUsd)}\n📍 ${mapsUrl || "Ubicación no indicada"}${
-          routeUrl ? `\n🧭 Ruta: ${routeUrl}` : ""
-        }\n📏 ${quote.distanceKm !== null ? `${quote.distanceKm.toFixed(2)} km` : "Distancia pendiente"}${
-          cleanText(form.deliveryReference) ? `\n📌 ${cleanText(form.deliveryReference)}` : ""
-        }`;
+      ? `🛍️ Pickup / Retiro`
+      : `🚚 Delivery: ${formatUsd(totals.deliveryUsd)} | ${
+          quote.distanceKm !== null ? `${quote.distanceKm.toFixed(2)} km` : "distancia pendiente"
+        }\n📍 ${mapsUrl || "Ubicación pendiente"}${reference}`;
 
-  return `🟠 PEDIDO ${orderId}
-🏪 ${store.name}
+  return `🟠 ${orderId} | ${store.name}
 
-👤 ${form.customerName}
-📞 ${form.customerPhone}
+👤 ${form.customerName} | ${form.customerPhone}
 
 📦 Pedido:
 ${itemsText}${orderDetails}
@@ -63,5 +63,5 @@ ${itemsText}${orderDetails}
 ${deliveryBlock}
 
 💳 ${form.paymentMethod}
-💰 Total: ${formatUsd(totals.totalUsd)} / ${formatBs(totals.totalBs)}${generalNotes}`;
+💰 Total: ${formatUsd(totals.totalUsd)} / ${formatBs(totals.totalBs)}${notes}`;
 }
