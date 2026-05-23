@@ -9,6 +9,7 @@ import { clearCart, getCart, getCartSubtotal } from "@/lib/cart";
 import { formatBs, formatUsd, usdToBs } from "@/lib/currency";
 import { buildDeliveryQuote, buildMapsUrl, buildRouteUrl, calculateRouteDistanceKm } from "@/lib/delivery";
 import { buildOrderMessage, buildWhatsAppUrl } from "@/lib/whatsapp";
+import { saveOrderToSupabase } from "@/lib/supabase/orders";
 import { LocationPicker } from "@/components/public/LocationPicker";
 
 const initialForm: CheckoutFormData = {
@@ -41,6 +42,7 @@ export function CheckoutForm({ store }: { store: Store }) {
   const [isCalculating, setIsCalculating] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     setItems(getCart(store.slug));
@@ -339,6 +341,8 @@ export function CheckoutForm({ store }: { store: Store }) {
     </main>
   );
 }
+
+
 
 
 
