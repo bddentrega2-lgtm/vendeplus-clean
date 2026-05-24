@@ -42,6 +42,11 @@ type ProductRow = {
   categories?: { name?: string } | null;
 };
 
+function getSavedToken() {
+  if (typeof window === "undefined") return "";
+  return sessionStorage.getItem("vendeplus_panel_token") || "";
+}
+
 function getSavedPin() {
   if (typeof window === "undefined") return "";
   return sessionStorage.getItem("vendeplus_panel_pin") || "";
@@ -52,7 +57,9 @@ async function apiRequest(pin: string, options?: RequestInit) {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      "x-panel-pin": pin,
+      ...(getSavedToken()
+        ? { Authorization: `Bearer ${getSavedToken()}` }
+        : { "x-panel-pin": pin }),
     },
   });
 
@@ -380,8 +387,9 @@ export function ProductManager() {
 
   useEffect(() => {
     const savedPin = getSavedPin();
+    const savedToken = getSavedToken();
 
-    if (savedPin) {
+    if (savedPin || savedToken) {
       setPin(savedPin);
       loadData(savedPin);
     }
@@ -575,3 +583,4 @@ export function ProductManager() {
     </div>
   );
 }
+

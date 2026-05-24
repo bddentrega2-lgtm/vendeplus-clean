@@ -69,6 +69,11 @@ type StatsData = {
   recentOrders: any[];
 };
 
+function getSavedToken() {
+  if (typeof window === "undefined") return "";
+  return sessionStorage.getItem("vendeplus_panel_token") || "";
+}
+
 function getSavedPin() {
   if (typeof window === "undefined") return "";
   return sessionStorage.getItem("vendeplus_panel_pin") || "";
@@ -77,7 +82,9 @@ function getSavedPin() {
 async function apiRequest(pin: string) {
   const response = await fetch("/api/panel/stats", {
     headers: {
-      "x-panel-pin": pin,
+      ...(getSavedToken()
+        ? { Authorization: `Bearer ${getSavedToken()}` }
+        : { "x-panel-pin": pin }),
     },
   });
 
@@ -209,8 +216,9 @@ export function StatsManager() {
 
   useEffect(() => {
     const savedPin = getSavedPin();
+    const savedToken = getSavedToken();
 
-    if (savedPin) {
+    if (savedPin || savedToken) {
       setPin(savedPin);
       loadStats(savedPin);
     }
@@ -486,3 +494,4 @@ export function StatsManager() {
     </div>
   );
 }
+
