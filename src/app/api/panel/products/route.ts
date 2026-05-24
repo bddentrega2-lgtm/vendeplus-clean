@@ -1,11 +1,10 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getPanelAuthContext } from "@/lib/panel/auth";
 
-function isAuthorized(request: NextRequest) {
-  const expectedPin = process.env.PANEL_ACCESS_PIN;
-  const receivedPin = request.headers.get("x-panel-pin");
-
-  return Boolean(expectedPin && receivedPin && receivedPin === expectedPin);
+async function isAuthorized(request: NextRequest) {
+  const auth = await getPanelAuthContext(request);
+  return auth.isAuthorized;
 }
 
 function unauthorized() {
@@ -30,7 +29,7 @@ function normalizeProductPayload(body: any) {
 }
 
 export async function GET(request: NextRequest) {
-  if (!isAuthorized(request)) return unauthorized();
+  if (!(await isAuthorized(request))) return unauthorized();
 
   try {
     const supabase = createSupabaseAdminClient();
@@ -85,7 +84,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!isAuthorized(request)) return unauthorized();
+  if (!(await isAuthorized(request))) return unauthorized();
 
   try {
     const body = await request.json();
@@ -132,7 +131,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  if (!isAuthorized(request)) return unauthorized();
+  if (!(await isAuthorized(request))) return unauthorized();
 
   try {
     const body = await request.json();
@@ -172,3 +171,4 @@ export async function PATCH(request: NextRequest) {
     );
   }
 }
+
