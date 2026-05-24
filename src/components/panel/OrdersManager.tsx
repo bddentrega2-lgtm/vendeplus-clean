@@ -365,6 +365,7 @@ export function OrdersManager() {
   const [search, setSearch] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<OrderRow | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   async function loadOrders(currentPin: string, status = selectedStatus) {
@@ -403,6 +404,31 @@ export function OrdersManager() {
         .some((value) => String(value).toLowerCase().includes(needle));
     });
   }, [orders, search]);
+
+  async function updateOrderStatusQuick(orderId: string, nextStatus: string) {
+    setSavingStatusId(orderId);
+    setError("");
+
+    try {
+      await apiRequest(pin, "/api/panel/orders", {
+        method: "PATCH",
+        body: JSON.stringify({
+          id: orderId,
+          status: nextStatus,
+        }),
+      });
+
+      setOrders((currentOrders) =>
+        currentOrders.map((order) =>
+          order.id === orderId ? { ...order, status: nextStatus } : order
+        )
+      );
+    } catch (error: any) {
+      setError(error.message || "No se pudo actualizar el estado.");
+    } finally {
+      setSavingStatusId(null);
+    }
+  }
 
   useEffect(() => {
     const savedPin = getSavedPin();
@@ -558,7 +584,24 @@ export function OrdersManager() {
                   </p>
                 </div>
 
-                <div className="flex flex-wrap gap-2 xl:justify-end">
+                <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                  <select
+                    aria-label="Cambio rápido de estado"
+                    value={order.status}
+                    disabled={savingStatusId === order.id}
+                    onChange={(event) =>
+                      updateOrderStatusQuick(order.id, event.target.value)
+                    }
+                    className="h-11 rounded-full border border-[#25262B]/10 bg-[#F8F3E8] px-3 text-xs font-black text-[#25262B] outline-none disabled:opacity-60"
+                  >
+                    {statusOptions
+                      .filter((item) => item.value !== "all")
+                      .map((item) => (
+                        <option key={item.value} value={item.value}>
+                          {item.label}
+                        </option>
+                      ))}
+                  </select>
                   {gpsUrl && (
                     <a
                       href={gpsUrl}
@@ -595,3 +638,4 @@ export function OrdersManager() {
     </div>
   );
 }
+

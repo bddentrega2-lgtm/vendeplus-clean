@@ -103,11 +103,11 @@ export function CheckoutForm({ store }: { store: Store }) {
   }
 
   function validate() {
-    if (items.length === 0) return "Tu carrito estÃ¡ vacÃ­o.";
+    if (items.length === 0) return "Tu carrito está vacío.";
     if (!form.customerName.trim()) return "Escribe el nombre del cliente.";
-    if (!form.customerPhone.trim()) return "Escribe el telÃ©fono del cliente.";
-    if (!form.paymentMethod.trim()) return "Selecciona un mÃ©todo de pago.";
-    if (form.deliveryType === "delivery" && !location) return "Selecciona la ubicaciÃ³n de entrega usando GPS o tocando el mapa.";
+    if (!form.customerPhone.trim()) return "Escribe el teléfono del cliente.";
+    if (!form.paymentMethod.trim()) return "Selecciona un método de pago.";
+    if (form.deliveryType === "delivery" && !location) return "Selecciona la ubicación de entrega usando GPS o tocando el mapa.";
     return "";
   }
 
@@ -201,7 +201,7 @@ export function CheckoutForm({ store }: { store: Store }) {
             <p className="text-sm font-bold text-white/65">{store.name}</p>
             <h1 className="mt-2 max-w-xl text-3xl font-black tracking-tight sm:text-5xl">Confirma tu pedido</h1>
             <p className="mt-3 max-w-xl text-sm font-semibold leading-relaxed text-white/72">
-              Calculamos delivery por ubicaciÃ³n, armamos el pedido completo y lo dejamos listo para WhatsApp.
+              Calculamos delivery por ubicación, armamos el pedido completo y lo dejamos listo para WhatsApp.
             </p>
           </div>
         </section>
@@ -213,10 +213,10 @@ export function CheckoutForm({ store }: { store: Store }) {
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <label>
                   <span className="vp-label">Nombre</span>
-                  <input className="vp-input" value={form.customerName} onChange={(event) => updateField("customerName", event.target.value)} placeholder="Ej: Ana RodrÃ­guez" />
+                  <input className="vp-input" value={form.customerName} onChange={(event) => updateField("customerName", event.target.value)} placeholder="Ej: Ana Rodríguez" />
                 </label>
                 <label>
-                  <span className="vp-label">TelÃ©fono</span>
+                  <span className="vp-label">Teléfono</span>
                   <input className="vp-input" value={form.customerPhone} onChange={(event) => updateField("customerPhone", event.target.value)} placeholder="Ej: 0412-0000000" />
                 </label>
               </div>
@@ -227,7 +227,7 @@ export function CheckoutForm({ store }: { store: Store }) {
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <button type="button" onClick={() => updateField("deliveryType", "delivery")} className={form.deliveryType === "delivery" ? "rounded-[24px] bg-[#2E3A79] p-4 text-left text-white" : "rounded-[24px] bg-[#FFF8F0] p-4 text-left text-[#25262B] ring-1 ring-[#25262B]/[0.07]"}>
                   <p className="text-lg font-black">Delivery</p>
-                  <p className="mt-1 text-sm font-bold opacity-75">GPS o mapa + tarifa automÃ¡tica</p>
+                  <p className="mt-1 text-sm font-bold opacity-75">GPS o mapa + tarifa automática</p>
                 </button>
                 <button type="button" onClick={() => updateField("deliveryType", "pickup")} className={form.deliveryType === "pickup" ? "rounded-[24px] bg-[#2E3A79] p-4 text-left text-white" : "rounded-[24px] bg-[#FFF8F0] p-4 text-left text-[#25262B] ring-1 ring-[#25262B]/[0.07]"}>
                   <p className="text-lg font-black">Pickup</p>
@@ -240,8 +240,8 @@ export function CheckoutForm({ store }: { store: Store }) {
               <section className="vp-card p-4 sm:p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h2 className="text-xl font-black text-[#25262B]">3. UbicaciÃ³n de entrega</h2>
-                    <p className="mt-1 text-sm font-bold text-[#746f69]">Usa tu ubicaciÃ³n actual o toca el punto exacto en el mapa.</p>
+                    <h2 className="text-xl font-black text-[#25262B]">3. Ubicación de entrega</h2>
+                    <p className="mt-1 text-sm font-bold text-[#746f69]">Usa tu ubicación actual o toca el punto exacto en el mapa.</p>
                   </div>
                   {isCalculating ? <Loader2 className="animate-spin text-[#2E3A79]" /> : <Navigation className="text-[#FFB547]" />}
                 </div>
@@ -250,14 +250,14 @@ export function CheckoutForm({ store }: { store: Store }) {
                 </div>
                 <label className="mt-4 block">
                   <span className="vp-label">Referencia opcional</span>
-                  <textarea className="vp-input min-h-24 resize-none" value={form.deliveryReference} onChange={(event) => updateField("deliveryReference", event.target.value)} placeholder="Ej: casa azul, portÃ³n negro, frente a la panaderÃ­a..." />
+                  <textarea className="vp-input min-h-24 resize-none" value={form.deliveryReference} onChange={(event) => updateField("deliveryReference", event.target.value)} placeholder="Ej: casa azul, portón negro, frente a la panadería..." />
                 </label>
               </section>
             ) : (
               <section className="vp-card p-4 sm:p-5">
                 <h2 className="text-xl font-black text-[#25262B]">3. Retiro en tienda</h2>
                 <p className="mt-2 rounded-[24px] bg-[#FFF8F0] p-4 text-sm font-bold leading-relaxed text-[#746f69]">
-                  El cliente retirarÃ¡ en {store.name}. DirecciÃ³n: {store.address}. Tiempo estimado: {store.pickupEstimate}.
+                  El cliente retirará en {store.name}. Dirección: {store.address}. Tiempo estimado: {store.pickupEstimate}.
                 </p>
               </section>
             )}
@@ -266,7 +266,7 @@ export function CheckoutForm({ store }: { store: Store }) {
               <h2 className="text-xl font-black text-[#25262B]">4. Pago y detalles</h2>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <label>
-                  <span className="vp-label">MÃ©todo de pago</span>
+                  <span className="vp-label">Método de pago</span>
                   <select className="vp-input" value={form.paymentMethod} onChange={(event) => updateField("paymentMethod", event.target.value)}>
                     <option value="">Seleccionar</option>
                     {store.paymentMethods.map((method) => <option key={method} value={method}>{method}</option>)}
@@ -279,7 +279,7 @@ export function CheckoutForm({ store }: { store: Store }) {
               </div>
               <label className="mt-4 block">
                 <span className="vp-label">Nota adicional</span>
-                <textarea className="vp-input min-h-24 resize-none" value={form.notes} onChange={(event) => updateField("notes", event.target.value)} placeholder="Cualquier instrucciÃ³n extra para el comercio u operadora." />
+                <textarea className="vp-input min-h-24 resize-none" value={form.notes} onChange={(event) => updateField("notes", event.target.value)} placeholder="Cualquier instrucción extra para el comercio u operadora." />
               </label>
             </section>
           </div>
@@ -301,7 +301,7 @@ export function CheckoutForm({ store }: { store: Store }) {
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between"><span className="font-bold text-[#746f69]">Subtotal</span><span className="font-black">{formatUsd(subtotalUsd)}</span></div>
                   <div className="flex justify-between"><span className="font-bold text-[#746f69]">Delivery</span><span className="font-black">{form.deliveryType === "delivery" ? formatUsd(deliveryUsd) : "Gratis"}</span></div>
-                  {form.deliveryType === "delivery" ? <p className="rounded-2xl bg-[#FFF8F0] p-3 text-xs font-black text-[#746f69]">{quote.label} {quote.source === "fallback" ? "Â· estimado aproximado" : ""}</p> : null}
+                  {form.deliveryType === "delivery" ? <p className="rounded-2xl bg-[#FFF8F0] p-3 text-xs font-black text-[#746f69]">{quote.label} {quote.source === "fallback" ? "· estimado aproximado" : ""}</p> : null}
                 </div>
 
                 <div className="mt-4 rounded-[24px] bg-[#2E3A79] p-4 text-white">
@@ -341,6 +341,9 @@ export function CheckoutForm({ store }: { store: Store }) {
     </main>
   );
 }
+
+
+
 
 
 

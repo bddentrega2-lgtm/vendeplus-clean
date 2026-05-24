@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Search } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -71,7 +71,11 @@ export function CatalogClient({ store }: { store: Store }) {
         </div>
       ) : null}
 
+      <div className="mobile-cart-safe-space h-44 md:h-10" aria-hidden="true" />
       <CartBar storeSlug={store.slug} />
     </main>
   );
 }
+
+
+
