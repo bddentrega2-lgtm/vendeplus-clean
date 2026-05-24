@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
 
     let storesQuery = supabase
       .from("stores")
-      .select("id, slug, name")
+      .select("id, slug, name, whatsapp, address, latitude, longitude, is_active, accepts_delivery, accepts_pickup")
       .order("name", { ascending: true });
 
     let categoriesQuery = supabase
@@ -215,3 +215,4 @@ export async function PATCH(request: NextRequest) {
     );
   }
 }
+
