@@ -26,6 +26,28 @@ function toNumber(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function toStringArray(value: unknown, fallback: string[]) {
+  if (Array.isArray(value)) {
+    const clean = value.map((item) => String(item).trim()).filter(Boolean);
+    return clean.length ? clean : fallback;
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        const clean = parsed.map((item) => String(item).trim()).filter(Boolean);
+        return clean.length ? clean : fallback;
+      }
+    } catch {
+      const clean = value.split(",").map((item) => item.trim()).filter(Boolean);
+      return clean.length ? clean : fallback;
+    }
+  }
+
+  return fallback;
+}
+
 function mapVariant(row: AnyRecord, productPriceUsd: number): ProductVariant {
   const variantPrice = toNumber(row.price_usd, productPriceUsd);
 
@@ -86,22 +108,22 @@ function mapStore(row: AnyRecord): Store {
     id: String(row.id),
     name: row.name || fallback?.name || "Comercio",
     slug: row.slug,
-    category: fallback?.category || row.description || "Comercio aliado",
+    category: row.business_type || fallback?.category || row.description || "Comercio aliado",
     description: row.description || fallback?.description || "Catálogo disponible en Vende+.",
     whatsappPhone: row.whatsapp || fallback?.whatsappPhone || "584245666025",
     address: row.address || fallback?.address || "Maracay, Aragua",
     latitude: toNumber(row.latitude, fallback?.latitude || 0),
     longitude: toNumber(row.longitude, fallback?.longitude || 0),
-    openingHours: fallback?.openingHours || "Disponible hoy",
-    deliveryEstimate: fallback?.deliveryEstimate || "25-40 min",
-    pickupEstimate: fallback?.pickupEstimate || "15-25 min",
+    openingHours: row.opening_hours || fallback?.openingHours || "Disponible hoy",
+    deliveryEstimate: row.delivery_estimate || fallback?.deliveryEstimate || "25-40 min",
+    pickupEstimate: row.pickup_estimate || fallback?.pickupEstimate || "15-25 min",
     badge: fallback?.badge || "Aliado Vende+",
     heroImageUrl: row.cover_image_url || fallback?.heroImageUrl || fallbackHeroImages[row.slug] || fallbackHeroImages["don-aniello"],
     primaryColor: fallback?.primaryColor || "#2E3A79",
     accentColor: fallback?.accentColor || "#FFB547",
     categories: categories.length ? categories : fallback?.categories || [],
     products: products.length ? products : fallback?.products || [],
-    paymentMethods: fallback?.paymentMethods || defaultPaymentMethods,
+    paymentMethods: toStringArray(row.payment_methods, fallback?.paymentMethods || defaultPaymentMethods),
   };
 }
 
@@ -116,6 +138,13 @@ const storeSelect = `
   whatsapp,
   cover_image_url,
   logo_url,
+  business_type,
+  opening_hours,
+  delivery_estimate,
+  pickup_estimate,
+  payment_methods,
+  usd_to_bs,
+  whatsapp_message_note,
   is_active,
   accepts_delivery,
   accepts_pickup,
@@ -188,3 +217,5 @@ export async function getPublicStoreSlugs() {
   const stores = await getPublicStores();
   return stores.map((store) => store.slug);
 }
+
+

@@ -9,7 +9,7 @@ export default async function PanelSettingsPage() {
     <PanelShell
       active="/panel/configuracion"
       title="Configuración"
-      subtitle="Datos operativos filtrados por los comercios asignados al usuario conectado."
+      subtitle="Edita la información comercial y operativa de cada negocio asignado."
     >
       <ConfigManager />
     </PanelShell>
