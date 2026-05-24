@@ -2,16 +2,8 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getPanelAuthContext } from "@/lib/panel/auth";
 
-async function isAuthorized(request: NextRequest) {
-  const auth = await getPanelAuthContext(request);
-  return auth.isAuthorized;
-}
-
-function unauthorized() {
-  return NextResponse.json(
-    { error: "PIN invalido o no autorizado." },
-    { status: 401 }
-  );
+function unauthorized(message = "No autorizado.") {
+  return NextResponse.json({ error: message }, { status: 401 });
 }
 
 function toNumber(value: unknown) {
@@ -71,12 +63,13 @@ function groupCount<T>(rows: T[], keyGetter: (row: T) => string) {
 }
 
 export async function GET(request: NextRequest) {
-  if (!(await isAuthorized(request))) return unauthorized();
+  const auth = await getPanelAuthContext(request);
+  if (!auth.isAuthorized) return unauthorized(auth.error);
 
   try {
     const supabase = createSupabaseAdminClient();
 
-    const { data: orders, error: ordersError } = await supabase
+    let ordersQuery = supabase
       .from("orders")
       .select(
         `
@@ -109,12 +102,19 @@ export async function GET(request: NextRequest) {
       )
       .order("created_at", { ascending: false });
 
-    if (ordersError) throw ordersError;
-
-    const { data: products, error: productsError } = await supabase
+    let productsQuery = supabase
       .from("products")
       .select("id, name, store_id, is_available, is_featured, price_usd, stores(name)");
 
+    if (auth.storeIds !== null) {
+      ordersQuery = ordersQuery.in("store_id", auth.storeIds);
+      productsQuery = productsQuery.in("store_id", auth.storeIds);
+    }
+
+    const [{ data: orders, error: ordersError }, { data: products, error: productsError }] =
+      await Promise.all([ordersQuery, productsQuery]);
+
+    if (ordersError) throw ordersError;
     if (productsError) throw productsError;
 
     const safeOrders = orders || [];
@@ -132,21 +132,10 @@ export async function GET(request: NextRequest) {
       String(order.created_at || "").startsWith(monthKey)
     );
 
-    const completedOrders = safeOrders.filter(
-      (order: any) => order.status === "completed"
-    );
-
-    const cancelledOrders = safeOrders.filter(
-      (order: any) => order.status === "cancelled"
-    );
-
-    const deliveryOrders = safeOrders.filter(
-      (order: any) => order.delivery_type === "delivery"
-    );
-
-    const pickupOrders = safeOrders.filter(
-      (order: any) => order.delivery_type === "pickup"
-    );
+    const completedOrders = safeOrders.filter((order: any) => order.status === "completed");
+    const cancelledOrders = safeOrders.filter((order: any) => order.status === "cancelled");
+    const deliveryOrders = safeOrders.filter((order: any) => order.delivery_type === "delivery");
+    const pickupOrders = safeOrders.filter((order: any) => order.delivery_type === "pickup");
 
     const totalRevenueUsd = safeOrders.reduce(
       (sum: number, order: any) => sum + toNumber(order.total_usd),
@@ -225,7 +214,7 @@ export async function GET(request: NextRequest) {
     >();
 
     safeOrders.forEach((order: any) => {
-      const phone = order.customer_phone || "Sin telefono";
+      const phone = order.customer_phone || "Sin teléfono";
       const current = customerMap.get(phone) || {
         customer: order.customer_name || "Cliente",
         phone,
@@ -289,13 +278,8 @@ export async function GET(request: NextRequest) {
       (order: any) => toNumber(order.total_usd)
     ).sort((a, b) => b.value - a.value);
 
-    const activeProducts = safeProducts.filter(
-      (product: any) => product.is_available
-    );
-
-    const inactiveProducts = safeProducts.filter(
-      (product: any) => !product.is_available
-    );
+    const activeProducts = safeProducts.filter((product: any) => product.is_available);
+    const inactiveProducts = safeProducts.filter((product: any) => !product.is_available);
 
     return NextResponse.json({
       summary: {
@@ -327,12 +311,16 @@ export async function GET(request: NextRequest) {
       ordersByDeliveryType,
       revenueByStore,
       recentOrders: safeOrders.slice(0, 8),
+      auth: {
+        mode: auth.mode,
+        email: auth.email || null,
+        role: auth.role || null,
+      },
     });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Error cargando estadisticas." },
+      { error: error.message || "Error cargando estadísticas." },
       { status: 500 }
     );
   }
 }
-

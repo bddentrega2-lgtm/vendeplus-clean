@@ -12,20 +12,18 @@ const allowedStatuses = [
   "cancelled",
 ];
 
-async function isAuthorized(request: NextRequest) {
-  const auth = await getPanelAuthContext(request);
-  return auth.isAuthorized;
+function unauthorized(message = "No autorizado.") {
+  return NextResponse.json({ error: message }, { status: 401 });
 }
 
-function unauthorized() {
-  return NextResponse.json(
-    { error: "PIN inválido o no autorizado." },
-    { status: 401 }
-  );
+function canAccessStore(storeIds: string[] | null, storeId?: string) {
+  if (storeIds === null) return true;
+  return Boolean(storeId && storeIds.includes(storeId));
 }
 
 export async function GET(request: NextRequest) {
-  if (!(await isAuthorized(request))) return unauthorized();
+  const auth = await getPanelAuthContext(request);
+  if (!auth.isAuthorized) return unauthorized(auth.error);
 
   try {
     const supabase = createSupabaseAdminClient();
@@ -76,6 +74,10 @@ export async function GET(request: NextRequest) {
       )
       .order("created_at", { ascending: false });
 
+    if (auth.storeIds !== null) {
+      query = query.in("store_id", auth.storeIds);
+    }
+
     if (orderId) {
       const { data, error } = await query.eq("id", orderId).maybeSingle();
 
@@ -92,7 +94,14 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error;
 
-    return NextResponse.json({ orders: data || [] });
+    return NextResponse.json({
+      orders: data || [],
+      auth: {
+        mode: auth.mode,
+        email: auth.email || null,
+        role: auth.role || null,
+      },
+    });
   } catch (error: any) {
     return NextResponse.json(
       { error: error.message || "Error cargando pedidos." },
@@ -102,7 +111,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  if (!(await isAuthorized(request))) return unauthorized();
+  const auth = await getPanelAuthContext(request);
+  if (!auth.isAuthorized) return unauthorized(auth.error);
 
   try {
     const body = await request.json();
@@ -125,6 +135,21 @@ export async function PATCH(request: NextRequest) {
 
     const supabase = createSupabaseAdminClient();
 
+    const { data: existingOrder, error: existingError } = await supabase
+      .from("orders")
+      .select("id, store_id")
+      .eq("id", id)
+      .single();
+
+    if (existingError) throw existingError;
+
+    if (!canAccessStore(auth.storeIds, existingOrder.store_id)) {
+      return NextResponse.json(
+        { error: "No tienes permiso para operar este pedido." },
+        { status: 403 }
+      );
+    }
+
     const { data, error } = await supabase
       .from("orders")
       .update({ status })
@@ -142,4 +167,3 @@ export async function PATCH(request: NextRequest) {
     );
   }
 }
-
