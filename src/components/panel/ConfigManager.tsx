@@ -6,6 +6,8 @@ import {
   Loader2,
   Lock,
   RefreshCcw,
+  Copy,
+  ExternalLink,
   Save,
   Settings,
   Store,
@@ -118,6 +120,14 @@ function StoreSettingsCard({
     }));
   }
 
+  async function copyStoreLink() {
+    const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+    const url = `${baseUrl}/${store.slug}`;
+
+    await navigator.clipboard.writeText(url);
+    setMessage("Link público copiado.");
+  }
+
   async function saveSettings() {
     setIsSaving(true);
     setMessage("");
@@ -154,15 +164,36 @@ function StoreSettingsCard({
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={saveSettings}
-          disabled={isSaving}
-          className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B] disabled:opacity-60"
-        >
-          {isSaving ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />}
-          Guardar cambios
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <a
+            href={`/${store.slug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-5 py-3 text-sm font-black text-white"
+          >
+            <ExternalLink size={17} />
+            Ver tienda pública
+          </a>
+
+          <button
+            type="button"
+            onClick={copyStoreLink}
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F8F3E8] px-5 py-3 text-sm font-black text-[#2E3A79]"
+          >
+            <Copy size={17} />
+            Copiar link
+          </button>
+
+          <button
+            type="button"
+            onClick={saveSettings}
+            disabled={isSaving}
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B] disabled:opacity-60"
+          >
+            {isSaving ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />}
+            Guardar cambios
+          </button>
+        </div>
       </div>
 
       <div className="mt-6 grid gap-4 xl:grid-cols-2">
@@ -499,3 +530,4 @@ export function ConfigManager() {
     </div>
   );
 }
+
