@@ -31,6 +31,9 @@ type StoreRow = {
   payment_methods: string[] | null;
   usd_to_bs: number | string | null;
   whatsapp_message_note: string | null;
+  primary_color: string | null;
+  accent_color: string | null;
+  button_text_color: string | null;
   accepts_delivery: boolean;
   accepts_pickup: boolean;
   is_active: boolean;
@@ -105,6 +108,9 @@ function StoreSettingsCard({
       : "Pago móvil, Transferencia, Efectivo, Binance",
     usd_to_bs: String(store.usd_to_bs || 600),
     whatsapp_message_note: store.whatsapp_message_note || "",
+    primary_color: store.primary_color || "#2E3A79",
+    accent_color: store.accent_color || "#FFB547",
+    button_text_color: store.button_text_color || "#25262B",
     accepts_delivery: store.accepts_delivery !== false,
     accepts_pickup: store.accepts_pickup !== false,
     is_active: store.is_active !== false,
@@ -530,4 +536,5 @@ export function ConfigManager() {
     </div>
   );
 }
+
 

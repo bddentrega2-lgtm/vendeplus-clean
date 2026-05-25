@@ -1,5 +1,6 @@
 ﻿"use client";
-
+import { StoreBrandHeader } from "@/components/public/StoreBrandHeader";
+import type { CSSProperties } from "react";
 import { Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { Store } from "@/types";
@@ -7,6 +8,13 @@ import { CategoryTabs } from "@/components/public/CategoryTabs";
 import { ProductCard } from "@/components/public/ProductCard";
 import { CartBar } from "@/components/public/CartBar";
 
+function getBrandStyle(store: any): CSSProperties {
+  return {
+    "--brand-primary": store.primaryColor || "#2E3A79",
+    "--brand-accent": store.accentColor || "#FFB547",
+    "--brand-button-text": store.buttonTextColor || "#25262B",
+  } as CSSProperties;
+}
 export function CatalogClient({ store }: { store: Store }) {
   const [selectedCategoryId, setSelectedCategoryId] = useState("all");
   const [query, setQuery] = useState("");
@@ -21,7 +29,8 @@ export function CatalogClient({ store }: { store: Store }) {
   }, [query, selectedCategoryId, store.products]);
 
   return (
-    <main className="vp-container pb-32 pt-5">
+    <main style={getBrandStyle(store)} className="vp-public-store vp-container pb-32 pt-5">
+      <StoreBrandHeader store={store} />
       <section className="mb-4 rounded-[30px] bg-white/90 p-4 shadow-xl shadow-[#2E3A79]/[0.08] ring-1 ring-[#25262B]/[0.07]">
         <div className="flex items-center gap-3 rounded-2xl bg-[#FFF8F0] px-4 py-3 ring-1 ring-[#25262B]/[0.06]">
           <Search size={18} className="text-[#746f69]" />
@@ -76,6 +85,8 @@ export function CatalogClient({ store }: { store: Store }) {
     </main>
   );
 }
+
+
 
 
 

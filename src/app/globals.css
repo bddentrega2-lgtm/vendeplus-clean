@@ -182,3 +182,19 @@ img {
 .leaflet-container {
   font-family: var(--font-nunito), Arial, Helvetica, sans-serif;
 }
+
+/* Vende+ dynamic public store branding */
+.vp-public-store .vp-button-mango {
+  background: var(--brand-accent) !important;
+  color: var(--brand-button-text) !important;
+}
+
+.vp-public-store .vp-brand-primary {
+  background: var(--brand-primary) !important;
+  color: #ffffff !important;
+}
+
+.vp-public-store .vp-brand-accent {
+  background: var(--brand-accent) !important;
+  color: var(--brand-button-text) !important;
+}

@@ -1,4 +1,4 @@
-export type DeliveryType = "delivery" | "pickup";
+﻿export type DeliveryType = "delivery" | "pickup";
 export type DeliverySource = "none" | "current" | "map";
 
 export type Category = {
@@ -112,3 +112,5 @@ export type SavedOrder = {
   whatsappMessage: string;
   whatsappUrl: string;
 };
+
+

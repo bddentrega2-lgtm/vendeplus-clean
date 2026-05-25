@@ -138,6 +138,9 @@ const storeSelect = `
   whatsapp,
   cover_image_url,
   logo_url,
+  primary_color,
+  accent_color,
+  button_text_color,
   business_type,
   opening_hours,
   delivery_estimate,
@@ -217,5 +220,6 @@ export async function getPublicStoreSlugs() {
   const stores = await getPublicStores();
   return stores.map((store) => store.slug);
 }
+
 
 

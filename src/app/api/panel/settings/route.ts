@@ -49,6 +49,9 @@ function normalizeStorePayload(body: any) {
     payment_methods: normalizePaymentMethods(body.payment_methods),
     usd_to_bs: Number(body.usd_to_bs || 600),
     whatsapp_message_note: body.whatsapp_message_note ? String(body.whatsapp_message_note).trim() : null,
+    primary_color: body.primary_color ? String(body.primary_color).trim() : "#2E3A79",
+    accent_color: body.accent_color ? String(body.accent_color).trim() : "#FFB547",
+    button_text_color: body.button_text_color ? String(body.button_text_color).trim() : "#25262B",
     accepts_delivery: Boolean(body.accepts_delivery),
     accepts_pickup: Boolean(body.accepts_pickup),
     is_active: Boolean(body.is_active),
@@ -73,6 +76,9 @@ const storeSelect = `
   payment_methods,
   usd_to_bs,
   whatsapp_message_note,
+  primary_color,
+  accent_color,
+  button_text_color,
   accepts_delivery,
   accepts_pickup,
   is_active
@@ -163,3 +169,4 @@ export async function PATCH(request: NextRequest) {
     );
   }
 }
+
