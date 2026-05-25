@@ -230,7 +230,55 @@ function StoreSettingsCard({
             ))}
           </select>
         </label>
-      </div>
+      </div>      <section className="mt-6 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h3 className="text-xl font-black text-[#25262B]">Identidad visual</h3>
+            <p className="mt-1 text-sm font-bold text-[#746f69]">
+              Personaliza cómo se ve la tienda pública de este comercio.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4 xl:grid-cols-3">
+          <label className="space-y-1">
+            <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
+              Color primario
+            </span>
+            <input
+              type="color"
+              value={draft.primary_color}
+              onChange={(event) => updateField("primary_color", event.target.value)}
+              className="h-12 w-full rounded-2xl border border-[#25262B]/10 bg-white px-2 py-2 outline-none"
+            />
+          </label>
+
+          <label className="space-y-1">
+            <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
+              Color de botón
+            </span>
+            <input
+              type="color"
+              value={draft.accent_color}
+              onChange={(event) => updateField("accent_color", event.target.value)}
+              className="h-12 w-full rounded-2xl border border-[#25262B]/10 bg-white px-2 py-2 outline-none"
+            />
+          </label>
+
+          <label className="space-y-1">
+            <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
+              Texto del botón
+            </span>
+            <input
+              type="color"
+              value={draft.button_text_color}
+              onChange={(event) => updateField("button_text_color", event.target.value)}
+              className="h-12 w-full rounded-2xl border border-[#25262B]/10 bg-white px-2 py-2 outline-none"
+            />
+          </label>
+        </div>
+      </section>
+
 
       <div className="mt-4">
         <label className="space-y-1">
@@ -363,6 +411,17 @@ function StoreSettingsCard({
           <input
             value={draft.cover_image_url}
             onChange={(event) => updateField("cover_image_url", event.target.value)}
+            className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
+            Logo URL
+          </span>
+          <input
+            value={draft.logo_url}
+            onChange={(event) => updateField("logo_url", event.target.value)}
+            placeholder="https://..."
             className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
           />
         </label>
@@ -536,5 +595,6 @@ export function ConfigManager() {
     </div>
   );
 }
+
 
 
