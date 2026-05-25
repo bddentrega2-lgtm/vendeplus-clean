@@ -31,7 +31,7 @@ export function CatalogClient({ store }: { store: Store }) {
   return (
     <main style={getBrandStyle(store)} className="vp-public-store vp-container pb-32 pt-5">
       <StoreBrandHeader store={store} />
-      <section className="mb-4 rounded-[30px] bg-white/90 p-4 shadow-xl shadow-[#2E3A79]/[0.08] ring-1 ring-[#25262B]/[0.07]">
+      <section className="hidden vp-old-hero-hidden mb-4 rounded-[30px] bg-white/90 p-4 shadow-xl shadow-[#2E3A79]/[0.08] ring-1 ring-[#25262B]/[0.07]">
         <div className="flex items-center gap-3 rounded-2xl bg-[#FFF8F0] px-4 py-3 ring-1 ring-[#25262B]/[0.06]">
           <Search size={18} className="text-[#746f69]" />
           <input
@@ -85,6 +85,8 @@ export function CatalogClient({ store }: { store: Store }) {
     </main>
   );
 }
+
+
 
 
 

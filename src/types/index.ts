@@ -51,6 +51,9 @@ export type Store = {
   categories: Category[];
   products: Product[];
   paymentMethods: string[];
+  logoUrl?: string;
+  coverImageUrl?: string;
+  buttonTextColor?: string;
 };
 
 export type CartItem = {
@@ -112,5 +115,7 @@ export type SavedOrder = {
   whatsappMessage: string;
   whatsappUrl: string;
 };
+
+
 
 

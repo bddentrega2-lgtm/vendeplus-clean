@@ -119,11 +119,14 @@ function mapStore(row: AnyRecord): Store {
     pickupEstimate: row.pickup_estimate || fallback?.pickupEstimate || "15-25 min",
     badge: fallback?.badge || "Aliado Vende+",
     heroImageUrl: row.cover_image_url || fallback?.heroImageUrl || fallbackHeroImages[row.slug] || fallbackHeroImages["don-aniello"],
-    primaryColor: fallback?.primaryColor || "#2E3A79",
-    accentColor: fallback?.accentColor || "#FFB547",
     categories: categories.length ? categories : fallback?.categories || [],
     products: products.length ? products : fallback?.products || [],
     paymentMethods: toStringArray(row.payment_methods, fallback?.paymentMethods || defaultPaymentMethods),
+    logoUrl: row.logo_url || fallback?.logoUrl || "",
+    coverImageUrl: row.cover_image_url || fallback?.coverImageUrl || fallback?.heroImageUrl || "",
+    primaryColor: row.primary_color || fallback?.primaryColor || "#2E3A79",
+    accentColor: row.accent_color || fallback?.accentColor || "#FFB547",
+    buttonTextColor: row.button_text_color || fallback?.buttonTextColor || "#25262B",
   };
 }
 
@@ -220,6 +223,10 @@ export async function getPublicStoreSlugs() {
   const stores = await getPublicStores();
   return stores.map((store) => store.slug);
 }
+
+
+
+
 
 
 
