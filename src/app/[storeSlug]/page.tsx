@@ -1,6 +1,5 @@
 ﻿import { notFound } from "next/navigation";
 import { CatalogClient } from "@/components/public/CatalogClient";
-import { StoreHeader } from "@/components/public/StoreHeader";
 import { getPublicStoreBySlug } from "@/lib/supabase/catalog";
 
 export const dynamic = "force-dynamic";
@@ -16,10 +15,5 @@ export default async function StorePage({
 
   if (!store) notFound();
 
-  return (
-    <>
-      <StoreHeader store={store} />
-      <CatalogClient store={store} />
-    </>
-  );
+  return <CatalogClient store={store} />;
 }

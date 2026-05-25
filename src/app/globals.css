@@ -198,3 +198,30 @@ img {
   background: var(--brand-accent) !important;
   color: var(--brand-button-text) !important;
 }
+
+/* Vende+ dynamic brand overrides final */
+.vp-public-store [class*="bg-[#FFB547]"],
+.vp-public-store [class*="bg-[#ffb547]"] {
+  background-color: var(--brand-accent) !important;
+  color: var(--brand-button-text) !important;
+}
+
+.vp-public-store [class*="text-[#FFB547]"],
+.vp-public-store [class*="text-[#ffb547]"] {
+  color: var(--brand-accent) !important;
+}
+
+.vp-public-store [class*="bg-[#2E3A79]"],
+.vp-public-store [class*="bg-[#2e3a79]"] {
+  background-color: var(--brand-primary) !important;
+}
+
+.vp-public-store [class*="text-[#2E3A79]"],
+.vp-public-store [class*="text-[#2e3a79]"] {
+  color: var(--brand-primary) !important;
+}
+
+.vp-public-store .vp-button-mango {
+  background-color: var(--brand-accent) !important;
+  color: var(--brand-button-text) !important;
+}
