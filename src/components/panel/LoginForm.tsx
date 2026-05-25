@@ -42,6 +42,7 @@ export function LoginForm() {
       }
 
       sessionStorage.setItem("vendeplus_panel_token", accessToken);
+      sessionStorage.removeItem("vendeplus_panel_pin");
       router.push("/panel");
     } finally {
       setIsLoading(false);
@@ -110,3 +111,4 @@ export function LoginForm() {
     </main>
   );
 }
+

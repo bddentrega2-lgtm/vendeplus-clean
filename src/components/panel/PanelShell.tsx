@@ -1,4 +1,5 @@
 ﻿import Link from "next/link";
+import { LogoutButton } from "@/components/panel/LogoutButton";
 import {
   BarChart3,
   Boxes,
@@ -84,6 +85,7 @@ export function PanelShell({
             <Home size={17} />
             Ver tienda pública
           </Link>
+                  <div className="mt-4"><LogoutButton /></div>
         </aside>
 
         <section className="flex-1 px-4 py-5 sm:px-6 lg:px-8">
@@ -130,9 +132,11 @@ export function PanelShell({
             })}
           </div>
 
+          <div className="mt-4 lg:hidden"><LogoutButton /></div>
           <div className="mt-6">{children}</div>
         </section>
       </div>
     </main>
   );
 }
+
