@@ -8,10 +8,12 @@ import {
   LayoutDashboard,
   Settings,
   Sparkles,
+  Tags,
 } from "lucide-react";
 
 const navItems = [
   { href: "/panel", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/panel/catalogo", label: "Catálogo", icon: Tags },
   { href: "/panel/productos", label: "Productos", icon: Boxes },
   { href: "/panel/pedidos", label: "Pedidos", icon: ClipboardList },
   { href: "/panel/estadisticas", label: "Estadísticas", icon: BarChart3 },
@@ -139,4 +141,5 @@ export function PanelShell({
     </main>
   );
 }
+
 
