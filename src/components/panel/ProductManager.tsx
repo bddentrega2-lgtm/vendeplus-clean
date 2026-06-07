@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   Eye,
@@ -11,6 +11,7 @@ import {
   Plus,
   Save,
   Sparkles,
+  Upload,
 } from "lucide-react";
 
 type StoreRow = {
@@ -72,6 +73,36 @@ async function apiRequest(pin: string, options?: RequestInit) {
   return data;
 }
 
+async function uploadProductImage(
+  file: File,
+  storeId: string,
+  productId?: string,
+  pin?: string
+) {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("store_id", storeId);
+  formData.append("product_id", productId || "new-product");
+
+  const response = await fetch("/api/panel/uploads", {
+    method: "POST",
+    headers: {
+      ...(getSavedToken()
+        ? { Authorization: `Bearer ${getSavedToken()}` }
+        : { "x-panel-pin": pin || "" }),
+    },
+    body: formData,
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || "No se pudo subir la imagen.");
+  }
+
+  return data as { path: string; publicUrl: string };
+}
+
 function ProductEditor({
   product,
   stores,
@@ -98,7 +129,9 @@ function ProductEditor({
   });
 
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [message, setMessage] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const filteredCategories = categories.filter(
     (category) => category.store_id === draft.store_id
@@ -124,6 +157,24 @@ function ProductEditor({
       setMessage(error.message || "Error al guardar.");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleImageUpload(file?: File) {
+    if (!file) return;
+
+    setIsUploadingImage(true);
+    setMessage("Subiendo imagen...");
+
+    try {
+      const data = await uploadProductImage(file, draft.store_id, product.id, pin);
+      setDraft((current) => ({ ...current, image_url: data.publicUrl }));
+      setMessage("Imagen subida. Presiona Guardar para aplicar.");
+    } catch (error: any) {
+      setMessage(error.message || "No se pudo subir la imagen.");
+    } finally {
+      setIsUploadingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
 
@@ -183,17 +234,40 @@ function ProductEditor({
             className="w-full rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
           />
 
-          <input
-            value={draft.image_url}
-            onChange={(event) =>
-              setDraft((current) => ({
-                ...current,
-                image_url: event.target.value,
-              }))
-            }
-            placeholder="URL de imagen"
-            className="w-full rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-          />
+          <div className="grid gap-3 md:grid-cols-[auto_1fr] md:items-center">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(event) => handleImageUpload(event.target.files?.[0])}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploadingImage}
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B] disabled:opacity-60"
+            >
+              {isUploadingImage ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Upload size={16} />
+              )}
+              Subir imagen
+            </button>
+
+            <input
+              value={draft.image_url}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  image_url: event.target.value,
+                }))
+              }
+              placeholder="URL de imagen opcional"
+              className="w-full rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+            />
+          </div>
 
           <div className="grid gap-3 md:grid-cols-2">
             <select
@@ -305,7 +379,10 @@ export function ProductManager() {
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploadingNewImage, setIsUploadingNewImage] = useState(false);
   const [error, setError] = useState("");
+  const [newProductMessage, setNewProductMessage] = useState("");
+  const newProductFileInputRef = useRef<HTMLInputElement>(null);
 
   const [newProduct, setNewProduct] = useState({
     store_id: "",
@@ -376,12 +453,44 @@ export function ProductManager() {
         is_available: true,
         is_featured: false,
       }));
+      setNewProductMessage("");
 
       await loadData(pin);
     } catch (error: any) {
       setError(error.message || "No se pudo crear el producto.");
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function uploadNewProductImage(file?: File) {
+    if (!file) return;
+
+    if (!newProduct.store_id) {
+      setNewProductMessage("Selecciona un comercio antes de subir la imagen.");
+      if (newProductFileInputRef.current) newProductFileInputRef.current.value = "";
+      return;
+    }
+
+    setIsUploadingNewImage(true);
+    setNewProductMessage("Subiendo imagen...");
+
+    try {
+      const data = await uploadProductImage(
+        file,
+        newProduct.store_id,
+        "new-product",
+        pin
+      );
+      setNewProduct((current) => ({ ...current, image_url: data.publicUrl }));
+      setNewProductMessage(
+        "Imagen subida. Completa el producto y presiona Crear producto."
+      );
+    } catch (error: any) {
+      setNewProductMessage(error.message || "No se pudo subir la imagen.");
+    } finally {
+      setIsUploadingNewImage(false);
+      if (newProductFileInputRef.current) newProductFileInputRef.current.value = "";
     }
   }
 
@@ -536,18 +645,60 @@ export function ProductManager() {
             className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
           />
 
-          <input
-            value={newProduct.image_url}
-            onChange={(event) =>
-              setNewProduct((current) => ({
-                ...current,
-                image_url: event.target.value,
-              }))
-            }
-            placeholder="URL de imagen"
-            className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-          />
+          <div className="grid gap-3 sm:grid-cols-[auto_1fr]">
+            <input
+              ref={newProductFileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(event) => uploadNewProductImage(event.target.files?.[0])}
+            />
+            <button
+              type="button"
+              onClick={() => newProductFileInputRef.current?.click()}
+              disabled={isUploadingNewImage}
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B] disabled:opacity-60"
+            >
+              {isUploadingNewImage ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Upload size={16} />
+              )}
+              Subir imagen
+            </button>
+
+            <input
+              value={newProduct.image_url}
+              onChange={(event) =>
+                setNewProduct((current) => ({
+                  ...current,
+                  image_url: event.target.value,
+                }))
+              }
+              placeholder="URL de imagen opcional"
+              className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+            />
+          </div>
         </div>
+
+        {newProduct.image_url && (
+          <div className="mt-3 flex flex-col gap-3 rounded-2xl bg-[#F8F3E8] p-3 sm:flex-row sm:items-center">
+            <img
+              src={newProduct.image_url}
+              alt={newProduct.name || "Imagen del producto"}
+              className="h-28 w-full rounded-xl object-cover sm:w-36"
+            />
+            <p className="text-sm font-black text-[#2E3A79]">
+              Imagen lista para este producto.
+            </p>
+          </div>
+        )}
+
+        {newProductMessage && (
+          <p className="mt-3 text-sm font-black text-[#2E3A79]">
+            {newProductMessage}
+          </p>
+        )}
 
         {error && <p className="mt-3 text-sm font-black text-red-600">{error}</p>}
       </section>

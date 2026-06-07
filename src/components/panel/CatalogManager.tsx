@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
+  Copy,
+  Edit3,
+  ExternalLink,
   Eye,
   EyeOff,
   ImageIcon,
@@ -18,6 +21,13 @@ type StoreRow = {
   id: string;
   slug: string;
   name: string;
+  whatsapp: string | null;
+  address: string | null;
+  cover_image_url: string | null;
+  payment_methods: string[] | null;
+  is_active: boolean;
+  accepts_delivery: boolean;
+  accepts_pickup: boolean;
 };
 
 type CategoryRow = {
@@ -231,11 +241,32 @@ function ProductCatalogCard({
             <div>
               <h3 className="text-lg font-black">{product.name}</h3>
               <p className="text-sm font-bold text-[#746f69]">
-                ${Number(product.price_usd || 0).toFixed(2)}
+                ${Number(product.price_usd || 0).toFixed(2)} ·{" "}
+                {product.categories?.name || "Sin categoría"}
               </p>
             </div>
 
             <div className="flex flex-wrap gap-2">
+              <a
+                href="/panel/productos"
+                className="inline-flex items-center gap-2 rounded-full bg-[#2E3A79] px-4 py-2 text-xs font-black text-white"
+              >
+                <Edit3 size={14} />
+                Editar
+              </a>
+
+              {product.stores?.slug && (
+                <a
+                  href={`/${product.stores.slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-full bg-[#F8F3E8] px-4 py-2 text-xs font-black text-[#2E3A79]"
+                >
+                  <ExternalLink size={14} />
+                  Ver
+                </a>
+              )}
+
               <button
                 type="button"
                 onClick={() =>
@@ -420,6 +451,72 @@ export function CatalogManager() {
     (product) => !product.category_id
   );
 
+  const catalogSummary = useMemo(() => {
+    const activeProducts = storeProducts.filter((product) => product.is_available);
+    const inactiveProducts = storeProducts.filter((product) => !product.is_available);
+    const featuredProducts = storeProducts.filter((product) => product.is_featured);
+    const withoutImage = storeProducts.filter((product) => !product.image_url);
+    const withoutPrice = storeProducts.filter(
+      (product) => Number(product.price_usd || 0) <= 0
+    );
+    const activeCategories = storeCategories.filter(
+      (category) => category.is_active !== false
+    );
+    const checks = [
+      {
+        label: "Todos los productos tienen imagen",
+        ok: storeProducts.length > 0 && withoutImage.length === 0,
+      },
+      {
+        label: "Todos los productos tienen precio",
+        ok: storeProducts.length > 0 && withoutPrice.length === 0,
+      },
+      {
+        label: "Hay al menos 3 productos activos",
+        ok: activeProducts.length >= 3,
+      },
+      {
+        label: "Hay productos destacados",
+        ok: featuredProducts.length > 0,
+      },
+      {
+        label: "WhatsApp configurado",
+        ok: Boolean(selectedStore?.whatsapp),
+      },
+      {
+        label: "Dirección configurada",
+        ok: Boolean(selectedStore?.address),
+      },
+      {
+        label: "Portada configurada",
+        ok: Boolean(selectedStore?.cover_image_url),
+      },
+      {
+        label: "Métodos de pago configurados",
+        ok: Boolean(selectedStore?.payment_methods?.length),
+      },
+    ];
+
+    return {
+      activeProducts,
+      inactiveProducts,
+      featuredProducts,
+      withoutImage,
+      withoutPrice,
+      activeCategories,
+      checks,
+      readiness: Math.round(
+        (checks.filter((check) => check.ok).length / checks.length) * 100
+      ),
+    };
+  }, [selectedStore, storeCategories, storeProducts]);
+
+  async function copyPublicLink() {
+    if (!selectedStore) return;
+    const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+    await navigator.clipboard.writeText(`${baseUrl}/${selectedStore.slug}`);
+  }
+
   if (!isUnlocked) {
     return (
       <section className="mx-auto max-w-xl rounded-[36px] bg-white p-6 text-center shadow-2xl shadow-[#2E3A79]/[0.08] ring-1 ring-[#25262B]/[0.06]">
@@ -505,6 +602,83 @@ export function CatalogManager() {
             Comercio activo: <span className="font-black text-[#25262B]">{selectedStore.name}</span>
           </p>
         )}
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+        <section className="rounded-[34px] bg-[#25262B] p-5 text-white shadow-xl shadow-[#25262B]/20">
+          <p className="text-sm font-black uppercase tracking-[0.18em] text-[#FFB547]">
+            Calidad del catálogo
+          </p>
+          <h2 className="mt-2 text-3xl font-black">
+            {catalogSummary.readiness}% listo para vender
+          </h2>
+          <div className="mt-5 h-3 overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-full rounded-full bg-[#FFB547]"
+              style={{ width: `${catalogSummary.readiness}%` }}
+            />
+          </div>
+
+          {selectedStore && (
+            <div className="mt-5 flex flex-wrap gap-2">
+              <a
+                href={`/${selectedStore.slug}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
+              >
+                <ExternalLink size={17} />
+                Ver tienda pública
+              </a>
+              <button
+                type="button"
+                onClick={copyPublicLink}
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-white/10 px-5 py-3 text-sm font-black"
+              >
+                <Copy size={17} />
+                Copiar link
+              </button>
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
+          <h2 className="text-2xl font-black">Resumen del catálogo</h2>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              ["Productos", storeProducts.length],
+              ["Activos", catalogSummary.activeProducts.length],
+              ["Inactivos", catalogSummary.inactiveProducts.length],
+              ["Destacados", catalogSummary.featuredProducts.length],
+              ["Sin imagen", catalogSummary.withoutImage.length],
+              ["Sin precio", catalogSummary.withoutPrice.length],
+              ["Categorías activas", catalogSummary.activeCategories.length],
+              ["Sin categoría", uncategorizedProducts.length],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-2xl bg-[#F8F3E8] p-4">
+                <p className="text-xs font-black text-[#746f69]">{label}</p>
+                <p className="mt-1 text-2xl font-black text-[#2E3A79]">{value}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      </section>
+
+      <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
+        <h2 className="text-2xl font-black">Checklist comercial</h2>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          {catalogSummary.checks.map((check) => (
+            <div
+              key={check.label}
+              className="flex items-center justify-between gap-3 rounded-2xl bg-[#F8F3E8] p-4 text-sm font-black"
+            >
+              <span>{check.label}</span>
+              <span className={check.ok ? "text-green-700" : "text-red-700"}>
+                {check.ok ? "Listo" : "Pendiente"}
+              </span>
+            </div>
+          ))}
+        </div>
       </section>
 
       <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">

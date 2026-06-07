@@ -23,6 +23,72 @@ function toHourKey(value: string) {
   return String(new Date(value).getHours()).padStart(2, "0") + ":00";
 }
 
+function startOfDay(date: Date) {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function endOfDay(date: Date) {
+  const next = new Date(date);
+  next.setHours(23, 59, 59, 999);
+  return next;
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function getDateRange(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const range = searchParams.get("range") || "last_30_days";
+  const now = new Date();
+
+  if (range === "today") {
+    return { start: startOfDay(now), end: endOfDay(now), range };
+  }
+
+  if (range === "last_7_days") {
+    return { start: startOfDay(addDays(now, -6)), end: endOfDay(now), range };
+  }
+
+  if (range === "this_month") {
+    return {
+      start: new Date(now.getFullYear(), now.getMonth(), 1),
+      end: endOfDay(now),
+      range,
+    };
+  }
+
+  if (range === "previous_month") {
+    return {
+      start: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+      end: endOfDay(new Date(now.getFullYear(), now.getMonth(), 0)),
+      range,
+    };
+  }
+
+  if (range === "custom") {
+    const startParam = searchParams.get("start");
+    const endParam = searchParams.get("end");
+    const start = startParam ? startOfDay(new Date(startParam)) : startOfDay(addDays(now, -29));
+    const end = endParam ? endOfDay(new Date(endParam)) : endOfDay(now);
+
+    return { start, end, range };
+  }
+
+  return { start: startOfDay(addDays(now, -29)), end: endOfDay(now), range: "last_30_days" };
+}
+
+function countDays(start: Date, end: Date) {
+  return Math.max(
+    1,
+    Math.ceil((Number(endOfDay(end)) - Number(startOfDay(start))) / 86400000)
+  );
+}
+
 function getWeekKey(value: string) {
   const date = new Date(value);
   const firstDay = new Date(date.getFullYear(), 0, 1);
@@ -68,6 +134,27 @@ export async function GET(request: NextRequest) {
 
   try {
     const supabase = createSupabaseAdminClient();
+    const { searchParams } = new URL(request.url);
+    const requestedStoreId = searchParams.get("storeId");
+    const selectedStoreId =
+      requestedStoreId && requestedStoreId !== "all" ? requestedStoreId : null;
+    const dateRange = getDateRange(request);
+
+    if (
+      selectedStoreId &&
+      auth.storeIds !== null &&
+      !auth.storeIds.includes(selectedStoreId)
+    ) {
+      return NextResponse.json(
+        { error: "No tienes permiso para consultar este comercio." },
+        { status: 403 }
+      );
+    }
+
+    let storesQuery = supabase
+      .from("stores")
+      .select("id, slug, name")
+      .order("name", { ascending: true });
 
     let ordersQuery = supabase
       .from("orders")
@@ -100,6 +187,8 @@ export async function GET(request: NextRequest) {
         )
       `
       )
+      .gte("created_at", dateRange.start.toISOString())
+      .lte("created_at", dateRange.end.toISOString())
       .order("created_at", { ascending: false });
 
     let productsQuery = supabase
@@ -107,33 +196,35 @@ export async function GET(request: NextRequest) {
       .select("id, name, store_id, is_available, is_featured, price_usd, stores(name)");
 
     if (auth.storeIds !== null) {
+      storesQuery = storesQuery.in("id", auth.storeIds);
       ordersQuery = ordersQuery.in("store_id", auth.storeIds);
       productsQuery = productsQuery.in("store_id", auth.storeIds);
     }
 
-    const [{ data: orders, error: ordersError }, { data: products, error: productsError }] =
-      await Promise.all([ordersQuery, productsQuery]);
+    if (selectedStoreId) {
+      ordersQuery = ordersQuery.eq("store_id", selectedStoreId);
+      productsQuery = productsQuery.eq("store_id", selectedStoreId);
+    }
 
+    const [
+      { data: stores, error: storesError },
+      { data: orders, error: ordersError },
+      { data: products, error: productsError },
+    ] = await Promise.all([storesQuery, ordersQuery, productsQuery]);
+
+    if (storesError) throw storesError;
     if (ordersError) throw ordersError;
     if (productsError) throw productsError;
 
+    const safeStores = stores || [];
     const safeOrders = orders || [];
     const safeProducts = products || [];
 
-    const now = new Date();
-    const todayKey = now.toISOString().slice(0, 10);
-    const monthKey = now.toISOString().slice(0, 7);
-
-    const todayOrders = safeOrders.filter((order: any) =>
-      String(order.created_at || "").startsWith(todayKey)
-    );
-
-    const monthOrders = safeOrders.filter((order: any) =>
-      String(order.created_at || "").startsWith(monthKey)
-    );
-
     const completedOrders = safeOrders.filter((order: any) => order.status === "completed");
     const cancelledOrders = safeOrders.filter((order: any) => order.status === "cancelled");
+    const inProgressOrders = safeOrders.filter(
+      (order: any) => !["completed", "cancelled"].includes(order.status)
+    );
     const deliveryOrders = safeOrders.filter((order: any) => order.delivery_type === "delivery");
     const pickupOrders = safeOrders.filter((order: any) => order.delivery_type === "pickup");
 
@@ -142,19 +233,14 @@ export async function GET(request: NextRequest) {
       0
     );
 
-    const todayRevenueUsd = todayOrders.reduce(
-      (sum: number, order: any) => sum + toNumber(order.total_usd),
-      0
-    );
-
-    const monthRevenueUsd = monthOrders.reduce(
-      (sum: number, order: any) => sum + toNumber(order.total_usd),
-      0
-    );
-
     const averageTicketUsd = safeOrders.length
       ? totalRevenueUsd / safeOrders.length
       : 0;
+    const operationalConversionRate = safeOrders.length
+      ? (completedOrders.length / safeOrders.length) * 100
+      : 0;
+    const averageRevenuePerDayUsd =
+      totalRevenueUsd / countDays(dateRange.start, dateRange.end);
 
     const averageDeliveryUsd = deliveryOrders.length
       ? deliveryOrders.reduce(
@@ -169,6 +255,14 @@ export async function GET(request: NextRequest) {
           0
         ) / deliveryOrders.length
       : 0;
+    const deliveryRevenueUsd = deliveryOrders.reduce(
+      (sum: number, order: any) => sum + toNumber(order.total_usd),
+      0
+    );
+    const pickupRevenueUsd = pickupOrders.reduce(
+      (sum: number, order: any) => sum + toNumber(order.total_usd),
+      0
+    );
 
     const allItems = safeOrders.flatMap((order: any) =>
       (order.order_items || []).map((item: any) => ({
@@ -205,12 +299,16 @@ export async function GET(request: NextRequest) {
     });
 
     const topProducts = Array.from(productMap.values())
+      .map((product) => ({
+        ...product,
+        share: totalRevenueUsd ? (product.revenue / totalRevenueUsd) * 100 : 0,
+      }))
       .sort((a, b) => b.quantity - a.quantity)
       .slice(0, 10);
 
     const customerMap = new Map<
       string,
-      { customer: string; phone: string; orders: number; revenue: number }
+      { customer: string; phone: string; orders: number; revenue: number; lastOrderAt: string }
     >();
 
     safeOrders.forEach((order: any) => {
@@ -220,10 +318,14 @@ export async function GET(request: NextRequest) {
         phone,
         orders: 0,
         revenue: 0,
+        lastOrderAt: order.created_at,
       };
 
       current.orders += 1;
       current.revenue += toNumber(order.total_usd);
+      if (new Date(order.created_at) > new Date(current.lastOrderAt)) {
+        current.lastOrderAt = order.created_at;
+      }
 
       customerMap.set(phone, current);
     });
@@ -236,13 +338,12 @@ export async function GET(request: NextRequest) {
       safeOrders,
       (order: any) => toDateKey(order.created_at),
       (order: any) => toNumber(order.total_usd)
-    ).slice(-14);
+    );
 
     const ordersByDay = groupCount(safeOrders, (order: any) =>
       toDateKey(order.created_at)
     )
-      .sort((a, b) => a.label.localeCompare(b.label))
-      .slice(-14);
+      .sort((a, b) => a.label.localeCompare(b.label));
 
     const salesByWeek = groupSum(
       safeOrders,
@@ -259,6 +360,12 @@ export async function GET(request: NextRequest) {
     const ordersByHour = groupCount(safeOrders, (order: any) =>
       toHourKey(order.created_at)
     ).sort((a, b) => a.label.localeCompare(b.label));
+
+    const ordersByWeekday = groupCount(safeOrders, (order: any) =>
+      new Intl.DateTimeFormat("es-VE", { weekday: "long" }).format(
+        new Date(order.created_at)
+      )
+    );
 
     const ordersByStatus = groupCount(safeOrders, (order: any) => order.status);
 
@@ -280,20 +387,31 @@ export async function GET(request: NextRequest) {
 
     const activeProducts = safeProducts.filter((product: any) => product.is_available);
     const inactiveProducts = safeProducts.filter((product: any) => !product.is_available);
+    const strongestHour = [...ordersByHour].sort((a, b) => b.value - a.value)[0] || null;
+    const strongestWeekday = ordersByWeekday[0] || null;
 
     return NextResponse.json({
+      stores: safeStores,
+      selectedStoreId,
+      range: {
+        key: dateRange.range,
+        start: dateRange.start.toISOString(),
+        end: dateRange.end.toISOString(),
+        days: countDays(dateRange.start, dateRange.end),
+      },
       summary: {
         totalOrders: safeOrders.length,
-        todayOrders: todayOrders.length,
-        monthOrders: monthOrders.length,
         completedOrders: completedOrders.length,
+        inProgressOrders: inProgressOrders.length,
         cancelledOrders: cancelledOrders.length,
         totalRevenueUsd,
-        todayRevenueUsd,
-        monthRevenueUsd,
         averageTicketUsd,
+        averageRevenuePerDayUsd,
+        operationalConversionRate,
         averageDeliveryUsd,
         averageDistanceKm,
+        deliveryRevenueUsd,
+        pickupRevenueUsd,
         deliveryOrders: deliveryOrders.length,
         pickupOrders: pickupOrders.length,
         activeProducts: activeProducts.length,
@@ -306,10 +424,15 @@ export async function GET(request: NextRequest) {
       salesByWeek,
       salesByMonth,
       ordersByHour,
+      ordersByWeekday,
       ordersByStatus,
       ordersByPaymentMethod,
       ordersByDeliveryType,
       revenueByStore,
+      peak: {
+        strongestHour,
+        strongestWeekday,
+      },
       recentOrders: safeOrders.slice(0, 8),
       auth: {
         mode: auth.mode,
