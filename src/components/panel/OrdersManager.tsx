@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
@@ -9,12 +10,21 @@ import {
   Lock,
   MapPin,
   Navigation,
+  Plus,
   RefreshCcw,
   Search,
   Send,
+  Truck,
   X,
 } from "lucide-react";
 import { formatBs, formatUsd } from "@/lib/currency";
+import {
+  getPanelAuthHeaders,
+  getSavedPanelPin,
+  getSavedPanelToken,
+  hasSavedPanelAuth,
+  savePanelPin,
+} from "@/lib/panel/client-auth";
 
 type OrderItem = {
   id: string;
@@ -52,6 +62,15 @@ type OrderRow = {
     longitude?: number | string | null;
   } | null;
   order_items?: OrderItem[];
+  order_integrations?: OrderIntegration[];
+};
+
+type OrderIntegration = {
+  provider: string;
+  external_id: string | null;
+  status: string;
+  last_error: string | null;
+  updated_at: string | null;
 };
 
 const statusOptions = [
@@ -85,22 +104,36 @@ const statusStyles: Record<string, string> = {
   cancelled: "bg-red-100 text-red-700",
 };
 
+const entrega2StatusLabels: Record<string, string> = {
+  sending: "Enviando",
+  sent: "Enviado",
+  accepted: "Aceptado",
+  assigned: "Asignado",
+  delivering: "En camino",
+  delivered: "Entregado",
+  completed: "Completado",
+  error: "Error",
+  failed: "Error",
+};
+
+const entrega2StatusStyles: Record<string, string> = {
+  sending: "bg-blue-100 text-blue-700",
+  sent: "bg-indigo-100 text-indigo-700",
+  accepted: "bg-indigo-100 text-indigo-700",
+  assigned: "bg-indigo-100 text-indigo-700",
+  delivering: "bg-purple-100 text-purple-700",
+  delivered: "bg-green-100 text-green-700",
+  completed: "bg-green-100 text-green-700",
+  error: "bg-red-100 text-red-700",
+  failed: "bg-red-100 text-red-700",
+};
+
 const dateOptions = [
   { value: "all", label: "Todas las fechas" },
   { value: "today", label: "Hoy" },
   { value: "last_7_days", label: "Últimos 7 días" },
   { value: "last_30_days", label: "Últimos 30 días" },
 ];
-
-function getSavedToken() {
-  if (typeof window === "undefined") return "";
-  return sessionStorage.getItem("vendeplus_panel_token") || "";
-}
-
-function getSavedPin() {
-  if (typeof window === "undefined") return "";
-  return sessionStorage.getItem("vendeplus_panel_pin") || "";
-}
 
 function formatDate(value: string) {
   try {
@@ -137,14 +170,27 @@ function getWhatsappUrl(phone: string) {
   return `https://wa.me/${cleanPhone}`;
 }
 
+function getEntrega2Integration(order: OrderRow) {
+  return (order.order_integrations || []).find(
+    (integration) => integration.provider === "entrega2"
+  );
+}
+
+function canSendToEntrega2(order: OrderRow) {
+  const integration = getEntrega2Integration(order);
+
+  if (order.delivery_type !== "delivery") return false;
+  if (!integration) return true;
+
+  return ["error", "failed"].includes(integration.status);
+}
+
 async function apiRequest(pin: string, url: string, options?: RequestInit) {
   const response = await fetch(url, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...(getSavedToken()
-        ? { Authorization: `Bearer ${getSavedToken()}` }
-        : { "x-panel-pin": pin }),
+      ...(await getPanelAuthHeaders(pin)),
       ...(options?.headers || {}),
     },
   });
@@ -343,7 +389,7 @@ function OrderDetail({
                   className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-4 py-3 text-sm font-black text-[#25262B]"
                 >
                   <Clipboard size={16} />
-                  {copied ? "Comanda copiada" : "Copiar comanda"}
+                  {copied ? "Pedido copiado" : "Copiar pedido"}
                 </button>
 
                 {gpsUrl && (
@@ -388,8 +434,10 @@ export function OrdersManager() {
   const [selectedDeliveryType, setSelectedDeliveryType] = useState("all");
   const [search, setSearch] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<OrderRow | null>(null);
+  const [isCheckingAccess, setIsCheckingAccess] = useState(() => hasSavedPanelAuth());
   const [isLoading, setIsLoading] = useState(false);
   const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
+  const [sendingDeliveryId, setSendingDeliveryId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   async function loadOrders(
@@ -419,12 +467,13 @@ export function OrdersManager() {
 
       setOrders(data.orders || []);
       setIsUnlocked(true);
-      sessionStorage.setItem("vendeplus_panel_pin", currentPin);
+      savePanelPin(currentPin);
     } catch (error: any) {
       setError(error.message || "No se pudieron cargar los pedidos.");
       setIsUnlocked(false);
     } finally {
       setIsLoading(false);
+      setIsCheckingAccess(false);
     }
   }
 
@@ -482,16 +531,46 @@ export function OrdersManager() {
     }
   }
 
+  async function sendOrderToEntrega2(orderId: string) {
+    setSendingDeliveryId(orderId);
+    setError("");
+
+    try {
+      await apiRequest(pin, `/api/panel/orders/${orderId}/send-delivery`, {
+        method: "POST",
+      });
+
+      await loadOrders(pin);
+    } catch (error: any) {
+      setError(error.message || "No se pudo enviar el pedido a Entrega2.");
+    } finally {
+      setSendingDeliveryId(null);
+    }
+  }
+
   useEffect(() => {
-    const savedPin = getSavedPin();
-    const savedToken = getSavedToken();
+    const savedPin = getSavedPanelPin();
+    const savedToken = getSavedPanelToken();
 
     if (savedPin || savedToken) {
       setPin(savedPin);
       loadOrders(savedPin);
+    } else {
+      setIsCheckingAccess(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  if (isCheckingAccess) {
+    return (
+      <section className="mx-auto max-w-xl rounded-[36px] bg-white p-6 text-center shadow-2xl shadow-[#2E3A79]/[0.08] ring-1 ring-[#25262B]/[0.06]">
+        <Loader2 size={22} className="mx-auto animate-spin text-[#2E3A79]" />
+        <p className="mt-3 text-sm font-black text-[#746f69]">
+          Validando acceso...
+        </p>
+      </section>
+    );
+  }
 
   if (!isUnlocked) {
     return (
@@ -542,14 +621,23 @@ export function OrdersManager() {
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => loadOrders(pin)}
-            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-5 py-3 text-sm font-black text-white"
-          >
-            <RefreshCcw size={16} />
-            Actualizar
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/panel/pedidos/nuevo"
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
+            >
+              <Plus size={16} />
+              Crear pedido
+            </Link>
+            <button
+              type="button"
+              onClick={() => loadOrders(pin)}
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-5 py-3 text-sm font-black text-white"
+            >
+              <RefreshCcw size={16} />
+              Actualizar
+            </button>
+          </div>
         </div>
 
         <div className="mt-5 grid gap-3 xl:grid-cols-[1fr_180px_180px_180px_180px]">
@@ -647,6 +735,10 @@ export function OrdersManager() {
           const gpsUrl = getGpsUrl(order);
           const routeUrl = getRouteUrl(order);
           const whatsappUrl = getWhatsappUrl(order.customer_phone);
+          const entrega2Integration = getEntrega2Integration(order);
+          const entrega2Status = entrega2Integration?.status || "";
+          const showEntrega2Button = canSendToEntrega2(order);
+          const isSendingDelivery = sendingDeliveryId === order.id;
 
           return (
             <article
@@ -741,6 +833,42 @@ export function OrdersManager() {
                     >
                       <Send size={17} />
                     </a>
+                  )}
+
+                  {order.delivery_type === "delivery" && (
+                    <>
+                      {entrega2Integration && (
+                        <span
+                          title={entrega2Integration.last_error || undefined}
+                          className={[
+                            "inline-flex h-11 items-center rounded-full px-3 text-xs font-black",
+                            entrega2StatusStyles[entrega2Status] ||
+                              "bg-[#F8F3E8] text-[#746f69]",
+                          ].join(" ")}
+                        >
+                          Entrega2:{" "}
+                          {entrega2StatusLabels[entrega2Status] ||
+                            entrega2Status ||
+                            "Registrado"}
+                        </span>
+                      )}
+
+                      {showEntrega2Button && (
+                        <button
+                          type="button"
+                          onClick={() => sendOrderToEntrega2(order.id)}
+                          disabled={isSendingDelivery}
+                          className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-4 text-xs font-black text-white disabled:opacity-60"
+                        >
+                          {isSendingDelivery ? (
+                            <Loader2 size={16} className="animate-spin" />
+                          ) : (
+                            <Truck size={16} />
+                          )}
+                          {entrega2Integration ? "Reintentar Entrega2" : "Enviar a Entrega2"}
+                        </button>
+                      )}
+                    </>
                   )}
 
                   <button

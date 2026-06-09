@@ -4,6 +4,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 export type PanelAuthContext = {
   isAuthorized: boolean;
   mode: "pin" | "user" | "none";
+  method: "pin" | "auth" | "none";
+  isFounderMode: boolean;
   userId?: string;
   email?: string;
   storeIds: string[] | null;
@@ -16,11 +18,22 @@ export async function getPanelAuthContext(
 ): Promise<PanelAuthContext> {
   const expectedPin = process.env.PANEL_ACCESS_PIN;
   const receivedPin = request.headers.get("x-panel-pin");
+  const isProduction = process.env.NODE_ENV === "production";
+  const isPanelPinAllowed =
+    !isProduction || process.env.ALLOW_PANEL_PIN_IN_PRODUCTION !== "false";
 
-  if (expectedPin && receivedPin && receivedPin === expectedPin) {
+  /*
+   * Founder PIN is a temporary operational fallback, not a customer auth model.
+   * It grants global access through storeIds: null and must be replaced by real
+   * owner/admin roles before selling Vende+ at scale. Set
+   * ALLOW_PANEL_PIN_IN_PRODUCTION=false to disable it in production.
+   */
+  if (isPanelPinAllowed && expectedPin && receivedPin && receivedPin === expectedPin) {
     return {
       isAuthorized: true,
       mode: "pin",
+      method: "pin",
+      isFounderMode: true,
       storeIds: null,
       role: "owner",
     };
@@ -33,6 +46,8 @@ export async function getPanelAuthContext(
     return {
       isAuthorized: false,
       mode: "none",
+      method: "none",
+      isFounderMode: false,
       storeIds: [],
       error: "No autorizado.",
     };
@@ -48,6 +63,8 @@ export async function getPanelAuthContext(
       return {
         isAuthorized: false,
         mode: "none",
+        method: "none",
+        isFounderMode: false,
         storeIds: [],
         error: "Sesión inválida.",
       };
@@ -64,6 +81,8 @@ export async function getPanelAuthContext(
       return {
         isAuthorized: false,
         mode: "user",
+        method: "auth",
+        isFounderMode: false,
         userId: userResult.user.id,
         email: userResult.user.email || "",
         storeIds: [],
@@ -74,6 +93,8 @@ export async function getPanelAuthContext(
     return {
       isAuthorized: true,
       mode: "user",
+      method: "auth",
+      isFounderMode: false,
       userId: userResult.user.id,
       email: userResult.user.email || "",
       storeIds: storeUsers.map((row) => row.store_id),
@@ -83,6 +104,8 @@ export async function getPanelAuthContext(
     return {
       isAuthorized: false,
       mode: "none",
+      method: "none",
+      isFounderMode: false,
       storeIds: [],
       error: error.message || "Error validando sesión.",
     };

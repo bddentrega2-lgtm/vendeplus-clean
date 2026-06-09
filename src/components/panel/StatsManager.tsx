@@ -19,6 +19,13 @@ import {
   XCircle,
 } from "lucide-react";
 import { formatUsd } from "@/lib/currency";
+import {
+  getPanelAuthHeaders,
+  getSavedPanelPin,
+  getSavedPanelToken,
+  hasSavedPanelAuth,
+  savePanelPin,
+} from "@/lib/panel/client-auth";
 
 type ChartItem = { label: string; value: number };
 type StoreRow = { id: string; slug: string; name: string };
@@ -84,16 +91,6 @@ const rangeOptions = [
   { value: "custom", label: "Personalizado" },
 ];
 
-function getSavedToken() {
-  if (typeof window === "undefined") return "";
-  return sessionStorage.getItem("vendeplus_panel_token") || "";
-}
-
-function getSavedPin() {
-  if (typeof window === "undefined") return "";
-  return sessionStorage.getItem("vendeplus_panel_pin") || "";
-}
-
 function formatNumber(value: number) {
   return new Intl.NumberFormat("es-VE").format(Number(value || 0));
 }
@@ -140,11 +137,7 @@ async function apiRequest(
   filters: { storeId: string; range: string; startDate: string; endDate: string }
 ) {
   const response = await fetch(buildStatsUrl(filters), {
-    headers: {
-      ...(getSavedToken()
-        ? { Authorization: `Bearer ${getSavedToken()}` }
-        : { "x-panel-pin": pin }),
-    },
+    headers: await getPanelAuthHeaders(pin),
   });
 
   const data = await response.json();
@@ -230,6 +223,7 @@ export function StatsManager() {
   const [range, setRange] = useState("last_30_days");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [isCheckingAccess, setIsCheckingAccess] = useState(() => hasSavedPanelAuth());
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -254,21 +248,24 @@ export function StatsManager() {
       setStats(data);
       setIsUnlocked(true);
       if (!filters.storeId && data.stores.length === 1) setSelectedStoreId(data.stores[0].id);
-      if (currentPin) sessionStorage.setItem("vendeplus_panel_pin", currentPin);
+      savePanelPin(currentPin);
     } catch (error: any) {
       setError(error.message || "No se pudieron cargar las estadísticas.");
       setIsUnlocked(false);
     } finally {
       setIsLoading(false);
+      setIsCheckingAccess(false);
     }
   }
 
   useEffect(() => {
-    const savedPin = getSavedPin();
-    const savedToken = getSavedToken();
+    const savedPin = getSavedPanelPin();
+    const savedToken = getSavedPanelToken();
     if (savedPin || savedToken) {
       setPin(savedPin);
       loadStats(savedPin);
+    } else {
+      setIsCheckingAccess(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -292,6 +289,17 @@ export function StatsManager() {
       `Tienes ${repeatCustomers} clientes que compraron más de una vez.`,
     ];
   }, [stats]);
+
+  if (isCheckingAccess) {
+    return (
+      <section className="mx-auto max-w-xl rounded-3xl bg-white p-6 text-center shadow-2xl shadow-[#2E3A79]/[0.08] ring-1 ring-[#25262B]/[0.06]">
+        <Loader2 size={22} className="mx-auto animate-spin text-[#2E3A79]" />
+        <p className="mt-3 text-sm font-black text-[#746f69]">
+          Validando acceso...
+        </p>
+      </section>
+    );
+  }
 
   if (!isUnlocked || !stats) {
     return (

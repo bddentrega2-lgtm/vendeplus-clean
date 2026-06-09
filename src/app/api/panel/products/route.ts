@@ -1,15 +1,11 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getPanelAuthContext } from "@/lib/panel/auth";
-
-function unauthorized(message = "No autorizado.") {
-  return NextResponse.json({ error: message }, { status: 401 });
-}
-
-function canAccessStore(storeIds: string[] | null, storeId?: string) {
-  if (storeIds === null) return true;
-  return Boolean(storeId && storeIds.includes(storeId));
-}
+import {
+  assertStoreAccess,
+  badRequest,
+  panelErrorResponse,
+  requirePanelAuth,
+} from "@/lib/panel/access";
 
 function normalizeProductPayload(body: any) {
   return {
@@ -26,10 +22,8 @@ function normalizeProductPayload(body: any) {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await getPanelAuthContext(request);
-  if (!auth.isAuthorized) return unauthorized(auth.error);
-
   try {
+    const auth = await requirePanelAuth(request);
     const supabase = createSupabaseAdminClient();
 
     let storesQuery = supabase
@@ -89,47 +83,32 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || "Error cargando productos." },
-      { status: 500 }
-    );
+    return panelErrorResponse(error, "Error cargando productos.");
   }
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await getPanelAuthContext(request);
-  if (!auth.isAuthorized) return unauthorized(auth.error);
-
   try {
+    const auth = await requirePanelAuth(request);
     const body = await request.json();
     const payload = normalizeProductPayload(body);
 
     if (!payload.store_id) {
-      return NextResponse.json(
-        { error: "Selecciona un comercio." },
-        { status: 400 }
-      );
+      return badRequest("Selecciona un comercio.");
     }
 
-    if (!canAccessStore(auth.storeIds, payload.store_id)) {
-      return NextResponse.json(
-        { error: "No tienes permiso para crear productos en este comercio." },
-        { status: 403 }
-      );
-    }
+    assertStoreAccess(
+      auth,
+      payload.store_id,
+      "No tienes permiso para crear productos en este comercio."
+    );
 
     if (!payload.name) {
-      return NextResponse.json(
-        { error: "El nombre del producto es obligatorio." },
-        { status: 400 }
-      );
+      return badRequest("El nombre del producto es obligatorio.");
     }
 
     if (payload.price_usd < 0) {
-      return NextResponse.json(
-        { error: "El precio no puede ser negativo." },
-        { status: 400 }
-      );
+      return badRequest("El precio no puede ser negativo.");
     }
 
     const supabase = createSupabaseAdminClient();
@@ -144,42 +123,30 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ product: data });
   } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || "Error creando producto." },
-      { status: 500 }
-    );
+    return panelErrorResponse(error, "Error creando producto.");
   }
 }
 
 export async function PATCH(request: NextRequest) {
-  const auth = await getPanelAuthContext(request);
-  if (!auth.isAuthorized) return unauthorized(auth.error);
-
   try {
+    const auth = await requirePanelAuth(request);
     const body = await request.json();
 
     if (!body.id) {
-      return NextResponse.json(
-        { error: "Falta el ID del producto." },
-        { status: 400 }
-      );
+      return badRequest("Falta el ID del producto.");
     }
 
     const payload = normalizeProductPayload(body);
 
     if (!payload.name) {
-      return NextResponse.json(
-        { error: "El nombre del producto es obligatorio." },
-        { status: 400 }
-      );
+      return badRequest("El nombre del producto es obligatorio.");
     }
 
-    if (!canAccessStore(auth.storeIds, payload.store_id)) {
-      return NextResponse.json(
-        { error: "No tienes permiso para editar productos de este comercio." },
-        { status: 403 }
-      );
-    }
+    assertStoreAccess(
+      auth,
+      payload.store_id,
+      "No tienes permiso para editar productos de este comercio."
+    );
 
     const supabase = createSupabaseAdminClient();
 
@@ -191,12 +158,11 @@ export async function PATCH(request: NextRequest) {
 
     if (existingError) throw existingError;
 
-    if (!canAccessStore(auth.storeIds, existingProduct.store_id)) {
-      return NextResponse.json(
-        { error: "No tienes permiso para editar este producto." },
-        { status: 403 }
-      );
-    }
+    assertStoreAccess(
+      auth,
+      existingProduct.store_id,
+      "No tienes permiso para editar este producto."
+    );
 
     const { data, error } = await supabase
       .from("products")
@@ -209,10 +175,45 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({ product: data });
   } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || "Error actualizando producto." },
-      { status: 500 }
+    return panelErrorResponse(error, "Error actualizando producto.");
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const auth = await requirePanelAuth(request);
+    const body = await request.json();
+
+    if (!body.id) {
+      return badRequest("Falta el ID del producto.");
+    }
+
+    const supabase = createSupabaseAdminClient();
+
+    const { data: existingProduct, error: existingError } = await supabase
+      .from("products")
+      .select("id, store_id")
+      .eq("id", body.id)
+      .single();
+
+    if (existingError) throw existingError;
+
+    assertStoreAccess(
+      auth,
+      existingProduct.store_id,
+      "No tienes permiso para eliminar este producto."
     );
+
+    const { error } = await supabase
+      .from("products")
+      .delete()
+      .eq("id", body.id);
+
+    if (error) throw error;
+
+    return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    return panelErrorResponse(error, "Error eliminando producto.");
   }
 }
 

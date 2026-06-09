@@ -16,6 +16,13 @@ import {
   Save,
   Sparkles,
 } from "lucide-react";
+import {
+  getPanelAuthHeaders,
+  getSavedPanelPin,
+  getSavedPanelToken,
+  hasSavedPanelAuth,
+  savePanelPin,
+} from "@/lib/panel/client-auth";
 
 type StoreRow = {
   id: string;
@@ -53,24 +60,12 @@ type ProductRow = {
   categories?: { name?: string } | null;
 };
 
-function getSavedToken() {
-  if (typeof window === "undefined") return "";
-  return sessionStorage.getItem("vendeplus_panel_token") || "";
-}
-
-function getSavedPin() {
-  if (typeof window === "undefined") return "";
-  return sessionStorage.getItem("vendeplus_panel_pin") || "";
-}
-
 async function apiRequest(pin: string, options?: RequestInit) {
   const response = await fetch("/api/panel/catalogo", {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...(getSavedToken()
-        ? { Authorization: `Bearer ${getSavedToken()}` }
-        : { "x-panel-pin": pin }),
+      ...(await getPanelAuthHeaders(pin)),
     },
   });
 
@@ -360,6 +355,7 @@ export function CatalogManager() {
   const [selectedStoreId, setSelectedStoreId] = useState("");
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategoryOrder, setNewCategoryOrder] = useState(0);
+  const [isCheckingAccess, setIsCheckingAccess] = useState(() => hasSavedPanelAuth());
   const [isLoading, setIsLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState("");
@@ -379,12 +375,13 @@ export function CatalogManager() {
       setSelectedStoreId((current) => current || firstStoreId);
 
       setIsUnlocked(true);
-      sessionStorage.setItem("vendeplus_panel_pin", currentPin);
+      savePanelPin(currentPin);
     } catch (error: any) {
       setError(error.message || "No se pudo abrir el catálogo.");
       setIsUnlocked(false);
     } finally {
       setIsLoading(false);
+      setIsCheckingAccess(false);
     }
   }
 
@@ -419,12 +416,14 @@ export function CatalogManager() {
   }
 
   useEffect(() => {
-    const savedPin = getSavedPin();
-    const savedToken = getSavedToken();
+    const savedPin = getSavedPanelPin();
+    const savedToken = getSavedPanelToken();
 
     if (savedPin || savedToken) {
       setPin(savedPin);
       loadData(savedPin);
+    } else {
+      setIsCheckingAccess(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -515,6 +514,17 @@ export function CatalogManager() {
     if (!selectedStore) return;
     const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
     await navigator.clipboard.writeText(`${baseUrl}/${selectedStore.slug}`);
+  }
+
+  if (isCheckingAccess) {
+    return (
+      <section className="mx-auto max-w-xl rounded-[36px] bg-white p-6 text-center shadow-2xl shadow-[#2E3A79]/[0.08] ring-1 ring-[#25262B]/[0.06]">
+        <Loader2 size={22} className="mx-auto animate-spin text-[#2E3A79]" />
+        <p className="mt-3 text-sm font-black text-[#746f69]">
+          Validando acceso...
+        </p>
+      </section>
+    );
   }
 
   if (!isUnlocked) {

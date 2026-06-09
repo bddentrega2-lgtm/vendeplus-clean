@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { CheckCircle2, KeyRound, Loader2, Lock, ShieldCheck } from "lucide-react";
+import { clearPanelAuthStorage } from "@/lib/panel/client-auth";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 function cleanRecoveryUrl() {
@@ -109,8 +110,7 @@ export function UpdatePasswordForm() {
 
       if (error) throw error;
 
-      sessionStorage.removeItem("vendeplus_panel_token");
-      sessionStorage.removeItem("vendeplus_panel_pin");
+      clearPanelAuthStorage();
       await supabase.auth.signOut();
       setSuccess(true);
       setPassword("");

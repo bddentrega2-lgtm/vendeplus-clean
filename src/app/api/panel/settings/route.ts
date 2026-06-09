@@ -1,15 +1,11 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getPanelAuthContext } from "@/lib/panel/auth";
-
-function unauthorized(message = "No autorizado.") {
-  return NextResponse.json({ error: message }, { status: 401 });
-}
-
-function canAccessStore(storeIds: string[] | null, storeId?: string) {
-  if (storeIds === null) return true;
-  return Boolean(storeId && storeIds.includes(storeId));
-}
+import {
+  assertStoreAccess,
+  badRequest,
+  panelErrorResponse,
+  requirePanelAuth,
+} from "@/lib/panel/access";
 
 function optionalNumber(value: unknown) {
   if (value === "" || value === null || value === undefined) return null;
@@ -85,10 +81,8 @@ const storeSelect = `
 `;
 
 export async function GET(request: NextRequest) {
-  const auth = await getPanelAuthContext(request);
-  if (!auth.isAuthorized) return unauthorized(auth.error);
-
   try {
+    const auth = await requirePanelAuth(request);
     const supabase = createSupabaseAdminClient();
 
     let query = supabase
@@ -113,41 +107,29 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || "Error cargando configuración." },
-      { status: 500 }
-    );
+    return panelErrorResponse(error, "Error cargando configuración.");
   }
 }
 
 export async function PATCH(request: NextRequest) {
-  const auth = await getPanelAuthContext(request);
-  if (!auth.isAuthorized) return unauthorized(auth.error);
-
   try {
+    const auth = await requirePanelAuth(request);
     const body = await request.json();
 
     if (!body.id) {
-      return NextResponse.json(
-        { error: "Falta el ID del comercio." },
-        { status: 400 }
-      );
+      return badRequest("Falta el ID del comercio.");
     }
 
-    if (!canAccessStore(auth.storeIds, body.id)) {
-      return NextResponse.json(
-        { error: "No tienes permiso para editar este comercio." },
-        { status: 403 }
-      );
-    }
+    assertStoreAccess(
+      auth,
+      body.id,
+      "No tienes permiso para editar este comercio."
+    );
 
     const payload = normalizeStorePayload(body);
 
     if (!payload.name) {
-      return NextResponse.json(
-        { error: "El nombre del comercio es obligatorio." },
-        { status: 400 }
-      );
+      return badRequest("El nombre del comercio es obligatorio.");
     }
 
     const supabase = createSupabaseAdminClient();
@@ -163,10 +145,7 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({ store: data });
   } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || "Error actualizando configuración." },
-      { status: 500 }
-    );
+    return panelErrorResponse(error, "Error actualizando configuración.");
   }
 }
 

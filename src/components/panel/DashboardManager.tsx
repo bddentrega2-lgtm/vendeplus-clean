@@ -15,24 +15,17 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { formatUsd } from "@/lib/currency";
-
-function getSavedToken() {
-  if (typeof window === "undefined") return "";
-  return sessionStorage.getItem("vendeplus_panel_token") || "";
-}
-
-function getSavedPin() {
-  if (typeof window === "undefined") return "";
-  return sessionStorage.getItem("vendeplus_panel_pin") || "";
-}
+import {
+  getPanelAuthHeaders,
+  getSavedPanelPin,
+  getSavedPanelToken,
+  hasSavedPanelAuth,
+  savePanelPin,
+} from "@/lib/panel/client-auth";
 
 async function apiRequest(pin: string) {
-  const token = getSavedToken();
-
   const response = await fetch("/api/panel/stats", {
-    headers: token
-      ? { Authorization: `Bearer ${token}` }
-      : { "x-panel-pin": pin },
+    headers: await getPanelAuthHeaders(pin),
   });
 
   const data = await response.json();
@@ -75,6 +68,7 @@ export function DashboardManager() {
   const [pin, setPin] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [stats, setStats] = useState<any>(null);
+  const [isCheckingAccess, setIsCheckingAccess] = useState(() => hasSavedPanelAuth());
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -88,25 +82,39 @@ export function DashboardManager() {
       setIsUnlocked(true);
 
       if (currentPin) {
-        sessionStorage.setItem("vendeplus_panel_pin", currentPin);
+        savePanelPin(currentPin);
       }
     } catch (error: any) {
       setError(error.message || "No se pudo cargar el dashboard.");
       setIsUnlocked(false);
     } finally {
       setIsLoading(false);
+      setIsCheckingAccess(false);
     }
   }
 
   useEffect(() => {
-    const savedPin = getSavedPin();
-    const savedToken = getSavedToken();
+    const savedPin = getSavedPanelPin();
+    const savedToken = getSavedPanelToken();
 
     if (savedPin || savedToken) {
       setPin(savedPin);
       loadDashboard(savedPin);
+    } else {
+      setIsCheckingAccess(false);
     }
   }, []);
+
+  if (isCheckingAccess) {
+    return (
+      <section className="mx-auto max-w-xl rounded-[36px] bg-white p-6 text-center shadow-2xl shadow-[#2E3A79]/[0.08] ring-1 ring-[#25262B]/[0.06]">
+        <Loader2 size={22} className="mx-auto animate-spin text-[#2E3A79]" />
+        <p className="mt-3 text-sm font-black text-[#746f69]">
+          Validando acceso...
+        </p>
+      </section>
+    );
+  }
 
   if (!isUnlocked || !stats) {
     return (
@@ -142,25 +150,25 @@ export function DashboardManager() {
     );
   }
 
-  const summary = stats.summary;
+  const summary = stats.summary || {};
 
   const cards = [
     {
-      label: "Ventas hoy",
-      value: formatUsd(summary.todayRevenueUsd),
-      detail: `${summary.todayOrders} pedidos hoy`,
+      label: "Ventas del período",
+      value: formatUsd(summary.totalRevenueUsd),
+      detail: `${summary.totalOrders || 0} pedidos registrados`,
       icon: DollarSign,
     },
     {
-      label: "Ventas del mes",
-      value: formatUsd(summary.monthRevenueUsd),
-      detail: `${summary.monthOrders} pedidos este mes`,
+      label: "Ingreso diario",
+      value: formatUsd(summary.averageRevenuePerDayUsd),
+      detail: `${stats.range?.days || 1} días analizados`,
       icon: TrendingUp,
     },
     {
       label: "Pedidos registrados",
-      value: String(summary.totalOrders),
-      detail: `${summary.completedOrders} completados · ${summary.cancelledOrders} cancelados`,
+      value: String(summary.totalOrders || 0),
+      detail: `${summary.completedOrders || 0} completados · ${summary.cancelledOrders || 0} cancelados`,
       icon: ClipboardList,
     },
     {
@@ -171,13 +179,13 @@ export function DashboardManager() {
     },
     {
       label: "Productos activos",
-      value: String(summary.activeProducts),
-      detail: `${summary.inactiveProducts} productos inactivos`,
+      value: String(summary.activeProducts || 0),
+      detail: `${summary.inactiveProducts || 0} productos inactivos`,
       icon: Boxes,
     },
     {
-      label: "Delivery",
-      value: String(summary.deliveryOrders),
+      label: "Entregas",
+      value: String(summary.deliveryOrders || 0),
       detail: `${Number(summary.averageDistanceKm || 0).toFixed(2)} km promedio`,
       icon: Store,
     },
