@@ -645,54 +645,83 @@ export function ProductManager() {
             className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
           />
 
-          <div className="grid gap-3 sm:grid-cols-[auto_1fr]">
-            <input
-              ref={newProductFileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(event) => uploadNewProductImage(event.target.files?.[0])}
-            />
-            <button
-              type="button"
-              onClick={() => newProductFileInputRef.current?.click()}
-              disabled={isUploadingNewImage}
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B] disabled:opacity-60"
-            >
-              {isUploadingNewImage ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <Upload size={16} />
-              )}
-              Subir imagen
-            </button>
-
-            <input
-              value={newProduct.image_url}
-              onChange={(event) =>
-                setNewProduct((current) => ({
-                  ...current,
-                  image_url: event.target.value,
-                }))
-              }
-              placeholder="URL de imagen opcional"
-              className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-            />
-          </div>
+          <input
+            value={newProduct.image_url}
+            onChange={(event) =>
+              setNewProduct((current) => ({
+                ...current,
+                image_url: event.target.value,
+              }))
+            }
+            placeholder="URL de imagen opcional"
+            className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+          />
         </div>
 
-        {newProduct.image_url && (
-          <div className="mt-3 flex flex-col gap-3 rounded-2xl bg-[#F8F3E8] p-3 sm:flex-row sm:items-center">
-            <img
-              src={newProduct.image_url}
-              alt={newProduct.name || "Imagen del producto"}
-              className="h-28 w-full rounded-xl object-cover sm:w-36"
-            />
-            <p className="text-sm font-black text-[#2E3A79]">
-              Imagen lista para este producto.
-            </p>
+        <div className="mt-3 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
+          <div className="grid gap-4 md:grid-cols-[160px_1fr] md:items-center">
+            <div className="overflow-hidden rounded-2xl bg-white">
+              {newProduct.image_url ? (
+                <img
+                  src={newProduct.image_url}
+                  alt={newProduct.name || "Imagen del producto"}
+                  className="h-36 w-full object-cover"
+                />
+              ) : (
+                <div className="grid h-36 place-items-center text-[#746f69]">
+                  <ImageIcon size={34} />
+                </div>
+              )}
+            </div>
+
+            <div>
+              <h3 className="text-lg font-black">Imagen del producto</h3>
+              <p className="mt-1 text-sm font-bold text-[#746f69]">
+                Sube una foto desde tu equipo o pega una URL de imagen arriba.
+              </p>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <input
+                  ref={newProductFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(event) =>
+                    uploadNewProductImage(event.target.files?.[0])
+                  }
+                />
+                <button
+                  type="button"
+                  onClick={() => newProductFileInputRef.current?.click()}
+                  disabled={isUploadingNewImage}
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B] disabled:opacity-60"
+                >
+                  {isUploadingNewImage ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Upload size={16} />
+                  )}
+                  Subir imagen
+                </button>
+
+                {newProduct.image_url && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setNewProduct((current) => ({
+                        ...current,
+                        image_url: "",
+                      }))
+                    }
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-black text-[#2E3A79]"
+                  >
+                    Quitar imagen
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
-        )}
+        </div>
 
         {newProductMessage && (
           <p className="mt-3 text-sm font-black text-[#2E3A79]">
