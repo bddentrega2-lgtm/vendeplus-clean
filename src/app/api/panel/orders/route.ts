@@ -31,6 +31,9 @@ export async function GET(request: NextRequest) {
 
     const status = searchParams.get("status");
     const orderId = searchParams.get("orderId");
+    const paymentMethod = searchParams.get("paymentMethod");
+    const deliveryType = searchParams.get("deliveryType");
+    const date = searchParams.get("date");
 
     let query = supabase
       .from("orders")
@@ -88,6 +91,37 @@ export async function GET(request: NextRequest) {
 
     if (status && status !== "all") {
       query = query.eq("status", status);
+    }
+
+    if (paymentMethod && paymentMethod !== "all") {
+      query = query.eq("payment_method", paymentMethod);
+    }
+
+    if (deliveryType && deliveryType !== "all") {
+      query = query.eq("delivery_type", deliveryType);
+    }
+
+    if (date && date !== "all") {
+      const now = new Date();
+      let start = new Date(now);
+      let end = new Date(now);
+
+      if (date === "today") {
+        start.setHours(0, 0, 0, 0);
+        end.setHours(23, 59, 59, 999);
+      } else if (date === "last_7_days") {
+        start.setDate(start.getDate() - 6);
+        start.setHours(0, 0, 0, 0);
+        end.setHours(23, 59, 59, 999);
+      } else if (date === "last_30_days") {
+        start.setDate(start.getDate() - 29);
+        start.setHours(0, 0, 0, 0);
+        end.setHours(23, 59, 59, 999);
+      }
+
+      query = query
+        .gte("created_at", start.toISOString())
+        .lte("created_at", end.toISOString());
     }
 
     const { data, error } = await query.limit(80);

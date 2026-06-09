@@ -11,6 +11,7 @@ import {
   Navigation,
   RefreshCcw,
   Search,
+  Send,
   X,
 } from "lucide-react";
 import { formatBs, formatUsd } from "@/lib/currency";
@@ -84,6 +85,13 @@ const statusStyles: Record<string, string> = {
   cancelled: "bg-red-100 text-red-700",
 };
 
+const dateOptions = [
+  { value: "all", label: "Todas las fechas" },
+  { value: "today", label: "Hoy" },
+  { value: "last_7_days", label: "Últimos 7 días" },
+  { value: "last_30_days", label: "Últimos 30 días" },
+];
+
 function getSavedToken() {
   if (typeof window === "undefined") return "";
   return sessionStorage.getItem("vendeplus_panel_token") || "";
@@ -121,6 +129,12 @@ function getRouteUrl(order: OrderRow) {
   }
 
   return `https://www.google.com/maps/dir/?api=1&origin=${order.stores.latitude},${order.stores.longitude}&destination=${order.delivery_lat},${order.delivery_lng}&travelmode=driving`;
+}
+
+function getWhatsappUrl(phone: string) {
+  const cleanPhone = String(phone || "").replace(/[^0-9]/g, "");
+  if (!cleanPhone) return null;
+  return `https://wa.me/${cleanPhone}`;
 }
 
 async function apiRequest(pin: string, url: string, options?: RequestInit) {
@@ -369,19 +383,39 @@ export function OrdersManager() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [selectedStatus, setSelectedStatus] = useState("all");
+  const [selectedDate, setSelectedDate] = useState("all");
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("all");
+  const [selectedDeliveryType, setSelectedDeliveryType] = useState("all");
   const [search, setSearch] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<OrderRow | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
-  async function loadOrders(currentPin: string, status = selectedStatus) {
+  async function loadOrders(
+    currentPin: string,
+    filters = {
+      status: selectedStatus,
+      date: selectedDate,
+      paymentMethod: selectedPaymentMethod,
+      deliveryType: selectedDeliveryType,
+    }
+  ) {
     setIsLoading(true);
     setError("");
 
     try {
-      const params = status === "all" ? "" : `?status=${status}`;
-      const data = await apiRequest(currentPin, `/api/panel/orders${params}`);
+      const params = new URLSearchParams();
+      if (filters.status !== "all") params.set("status", filters.status);
+      if (filters.date !== "all") params.set("date", filters.date);
+      if (filters.paymentMethod !== "all") {
+        params.set("paymentMethod", filters.paymentMethod);
+      }
+      if (filters.deliveryType !== "all") {
+        params.set("deliveryType", filters.deliveryType);
+      }
+      const queryString = params.toString() ? `?${params.toString()}` : "";
+      const data = await apiRequest(currentPin, `/api/panel/orders${queryString}`);
 
       setOrders(data.orders || []);
       setIsUnlocked(true);
@@ -411,6 +445,17 @@ export function OrdersManager() {
         .some((value) => String(value).toLowerCase().includes(needle));
     });
   }, [orders, search]);
+
+  const paymentMethodOptions = useMemo(() => {
+    const values = Array.from(
+      new Set(orders.map((order) => order.payment_method).filter(Boolean))
+    );
+
+    return [
+      { value: "all", label: "Todos los pagos" },
+      ...values.map((value) => ({ value, label: value })),
+    ];
+  }, [orders]);
 
   async function updateOrderStatusQuick(orderId: string, nextStatus: string) {
     setSavingStatusId(orderId);
@@ -507,7 +552,7 @@ export function OrdersManager() {
           </button>
         </div>
 
-        <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_260px]">
+        <div className="mt-5 grid gap-3 xl:grid-cols-[1fr_180px_180px_180px_180px]">
           <div className="relative">
             <Search
               size={18}
@@ -526,7 +571,7 @@ export function OrdersManager() {
             onChange={(event) => {
               const value = event.target.value;
               setSelectedStatus(value);
-              loadOrders(pin, value);
+              loadOrders(pin, { status: value, date: selectedDate, paymentMethod: selectedPaymentMethod, deliveryType: selectedDeliveryType });
             }}
             className="rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
           >
@@ -535,6 +580,52 @@ export function OrdersManager() {
                 {status.label}
               </option>
             ))}
+          </select>
+
+          <select
+            value={selectedDate}
+            onChange={(event) => {
+              const value = event.target.value;
+              setSelectedDate(value);
+              loadOrders(pin, { status: selectedStatus, date: value, paymentMethod: selectedPaymentMethod, deliveryType: selectedDeliveryType });
+            }}
+            className="rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
+          >
+            {dateOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={selectedPaymentMethod}
+            onChange={(event) => {
+              const value = event.target.value;
+              setSelectedPaymentMethod(value);
+              loadOrders(pin, { status: selectedStatus, date: selectedDate, paymentMethod: value, deliveryType: selectedDeliveryType });
+            }}
+            className="rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
+          >
+            {paymentMethodOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={selectedDeliveryType}
+            onChange={(event) => {
+              const value = event.target.value;
+              setSelectedDeliveryType(value);
+              loadOrders(pin, { status: selectedStatus, date: selectedDate, paymentMethod: selectedPaymentMethod, deliveryType: value });
+            }}
+            className="rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
+          >
+            <option value="all">Delivery y pickup</option>
+            <option value="delivery">Solo delivery</option>
+            <option value="pickup">Solo pickup</option>
           </select>
         </div>
       </section>
@@ -548,12 +639,14 @@ export function OrdersManager() {
 
         {!isLoading && filteredOrders.length === 0 && (
           <div className="rounded-[32px] bg-white p-6 text-sm font-bold text-[#746f69] shadow-xl shadow-[#2E3A79]/[0.07]">
-            No hay pedidos con este filtro.
+            Todavía no hay pedidos en este período.
           </div>
         )}
 
         {filteredOrders.map((order) => {
           const gpsUrl = getGpsUrl(order);
+          const routeUrl = getRouteUrl(order);
+          const whatsappUrl = getWhatsappUrl(order.customer_phone);
 
           return (
             <article
@@ -590,6 +683,11 @@ export function OrdersManager() {
                   <p className="text-xs font-bold text-[#746f69]">
                     {order.delivery_type === "delivery" ? "Delivery" : "Pickup"} · {order.payment_method}
                   </p>
+                  {(order.delivery_reference || order.order_details) && (
+                    <p className="mt-1 text-xs font-bold text-[#746f69]">
+                      {order.delivery_reference || order.order_details}
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 xl:justify-end">
@@ -618,6 +716,30 @@ export function OrdersManager() {
                       className="grid h-11 w-11 place-items-center rounded-full bg-[#F8F3E8] text-[#2E3A79]"
                     >
                       <ExternalLink size={17} />
+                    </a>
+                  )}
+
+                  {routeUrl && (
+                    <a
+                      href={routeUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="grid h-11 w-11 place-items-center rounded-full bg-[#F8F3E8] text-[#2E3A79]"
+                      aria-label="Abrir ruta"
+                    >
+                      <Navigation size={17} />
+                    </a>
+                  )}
+
+                  {whatsappUrl && (
+                    <a
+                      href={whatsappUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="grid h-11 w-11 place-items-center rounded-full bg-[#F8F3E8] text-[#2E3A79]"
+                      aria-label="Abrir WhatsApp"
+                    >
+                      <Send size={17} />
                     </a>
                   )}
 

@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
 
     let storesQuery = supabase
       .from("stores")
-      .select("id, slug, name, whatsapp, address, is_active, accepts_delivery, accepts_pickup")
+      .select("id, slug, name, whatsapp, address, cover_image_url, payment_methods, is_active, accepts_delivery, accepts_pickup")
       .order("name", { ascending: true });
 
     let categoriesQuery = supabase
