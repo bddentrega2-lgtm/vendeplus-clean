@@ -13,7 +13,7 @@ export type PanelAuthContext = {
   error?: string;
 };
 
-function normalizeAuthEmail(value?: string | null) {
+export function normalizeAuthEmail(value?: string | null) {
   return String(value || "")
     .trim()
     .replace(/^["']+|["']+$/g, "")
@@ -21,14 +21,14 @@ function normalizeAuthEmail(value?: string | null) {
     .toLowerCase();
 }
 
-function getFounderEmails() {
+export function getFounderEmails() {
   return (process.env.FOUNDER_EMAILS || "")
     .split(",")
     .map((email) => normalizeAuthEmail(email))
     .filter(Boolean);
 }
 
-function isFounderEmail(email?: string | null) {
+export function isFounderEmail(email?: string | null) {
   const normalizedEmail = normalizeAuthEmail(email);
 
   if (!normalizedEmail) return false;
@@ -36,7 +36,7 @@ function isFounderEmail(email?: string | null) {
   return getFounderEmails().includes(normalizedEmail);
 }
 
-function getSupabaseUserEmail(user: any) {
+export function getSupabaseUserEmail(user: any) {
   const directEmail = normalizeAuthEmail(user?.email);
 
   if (directEmail) return directEmail;

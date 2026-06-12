@@ -38,6 +38,16 @@ type RecentStore = {
   is_active: boolean;
 };
 
+type AuthCheck = {
+  authenticated: boolean;
+  userEmail: string | null;
+  founderEmailsConfigured: boolean;
+  founderEmailCount: number;
+  founderEmailsPreview: string[];
+  matchesFounderEmail: boolean;
+  reason: string;
+};
+
 async function adminRequest(path: string, pin: string, options?: RequestInit) {
   const response = await fetch(path, {
     ...options,
@@ -54,6 +64,19 @@ async function adminRequest(path: string, pin: string, options?: RequestInit) {
   return data;
 }
 
+async function getAdminAuthCheck(): Promise<AuthCheck | null> {
+  try {
+    const response = await fetch("/api/admin/auth-check", {
+      headers: await getPanelAuthHeaders(""),
+    });
+    const data = await response.json();
+
+    return data as AuthCheck;
+  } catch {
+    return null;
+  }
+}
+
 function formatUsd(value: number) {
   return new Intl.NumberFormat("es-VE", {
     style: "currency",
@@ -63,10 +86,12 @@ function formatUsd(value: number) {
 
 function AccessBox({
   error,
+  authCheck,
   isLoading,
   onSubmit,
 }: {
   error: string;
+  authCheck: AuthCheck | null;
   isLoading: boolean;
   onSubmit: () => void;
 }) {
@@ -98,6 +123,25 @@ function AccessBox({
       </Link>
 
       {error && <p className="mt-3 text-sm font-black text-red-600">{error}</p>}
+
+      {authCheck && (
+        <div className="mt-4 rounded-2xl bg-[#F8F3E8] p-4 text-left text-sm font-bold text-[#25262B]">
+          <p className="font-black text-[#2E3A79]">Diagnóstico</p>
+          <p className="mt-2">Sesión: {authCheck.authenticated ? "activa" : "no detectada"}</p>
+          <p>Email detectado: {authCheck.userEmail || "ninguno"}</p>
+          <p>
+            FOUNDER_EMAILS:{" "}
+            {authCheck.founderEmailsConfigured
+              ? `${authCheck.founderEmailCount} configurado(s)`
+              : "no configurado en producción"}
+          </p>
+          {authCheck.founderEmailsPreview.length > 0 && (
+            <p>Founder configurado: {authCheck.founderEmailsPreview.join(", ")}</p>
+          )}
+          <p>Coincide: {authCheck.matchesFounderEmail ? "sí" : "no"}</p>
+          <p className="mt-2 text-[#746f69]">{authCheck.reason}</p>
+        </div>
+      )}
     </section>
   );
 }
@@ -107,6 +151,7 @@ export function AdminDashboard() {
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => hasSavedPanelAuth());
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [authCheck, setAuthCheck] = useState<AuthCheck | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [recentStores, setRecentStores] = useState<RecentStore[]>([]);
 
@@ -119,8 +164,10 @@ export function AdminDashboard() {
       setSummary(data.summary);
       setRecentStores(data.recentStores || []);
       setIsUnlocked(true);
+      setAuthCheck(null);
     } catch (error: any) {
       setError(error.message || "No se pudo cargar admin.");
+      setAuthCheck(await getAdminAuthCheck());
       setIsUnlocked(false);
     } finally {
       setIsLoading(false);
@@ -151,6 +198,7 @@ export function AdminDashboard() {
     return (
       <AccessBox
         error={error}
+        authCheck={authCheck}
         isLoading={isLoading}
         onSubmit={() => loadSummary()}
       />
