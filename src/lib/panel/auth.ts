@@ -13,6 +13,18 @@ export type PanelAuthContext = {
   error?: string;
 };
 
+function getFounderEmails() {
+  return (process.env.FOUNDER_EMAILS || "")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function isFounderEmail(email?: string | null) {
+  if (!email) return false;
+  return getFounderEmails().includes(email.trim().toLowerCase());
+}
+
 export async function getPanelAuthContext(
   request: NextRequest
 ): Promise<PanelAuthContext> {
@@ -70,6 +82,21 @@ export async function getPanelAuthContext(
       };
     }
 
+    const userEmail = userResult.user.email || "";
+
+    if (isFounderEmail(userEmail)) {
+      return {
+        isAuthorized: true,
+        mode: "user",
+        method: "auth",
+        isFounderMode: true,
+        userId: userResult.user.id,
+        email: userEmail,
+        storeIds: null,
+        role: "owner",
+      };
+    }
+
     const { data: storeUsers, error: storeUsersError } = await supabase
       .from("store_users")
       .select("store_id, role")
@@ -84,7 +111,7 @@ export async function getPanelAuthContext(
         method: "auth",
         isFounderMode: false,
         userId: userResult.user.id,
-        email: userResult.user.email || "",
+        email: userEmail,
         storeIds: [],
         error: "Usuario sin comercio asignado.",
       };
@@ -96,7 +123,7 @@ export async function getPanelAuthContext(
       method: "auth",
       isFounderMode: false,
       userId: userResult.user.id,
-      email: userResult.user.email || "",
+      email: userEmail,
       storeIds: storeUsers.map((row) => row.store_id),
       role: storeUsers[0]?.role || "operator",
     };
