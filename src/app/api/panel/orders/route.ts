@@ -1,6 +1,12 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getPanelAuthContext } from "@/lib/panel/auth";
+import { randomUUID } from "crypto";
+import {
+  assertStoreAccess,
+  badRequest,
+  panelErrorResponse,
+  requirePanelAuth,
+} from "@/lib/panel/access";
 
 const allowedStatuses = [
   "received",
@@ -12,20 +18,115 @@ const allowedStatuses = [
   "cancelled",
 ];
 
-function unauthorized(message = "No autorizado.") {
-  return NextResponse.json({ error: message }, { status: 401 });
+function createManualPublicCode() {
+  const now = new Date();
+  const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+  const suffix = randomUUID().slice(0, 4).toUpperCase();
+  return `VP-${date}-${suffix}`;
 }
 
-function canAccessStore(storeIds: string[] | null, storeId?: string) {
-  if (storeIds === null) return true;
-  return Boolean(storeId && storeIds.includes(storeId));
+function cleanText(value: unknown) {
+  return String(value || "").trim();
+}
+
+function toSafeNumber(value: unknown, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeManualItems(value: unknown) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => ({
+      productId: cleanText(item?.productId),
+      quantity: Math.max(1, Math.floor(toSafeNumber(item?.quantity, 1))),
+      notes: cleanText(item?.notes),
+    }))
+    .filter((item) => item.productId);
+}
+
+function buildManualMessage({
+  publicCode,
+  customerName,
+  customerPhone,
+  deliveryType,
+  paymentMethod,
+  deliveryReference,
+  orderDetails,
+  originalMessage,
+  items,
+  subtotalUsd,
+  deliveryUsd,
+  totalUsd,
+}: {
+  publicCode: string;
+  customerName: string;
+  customerPhone: string;
+  deliveryType: "delivery" | "pickup";
+  paymentMethod: string;
+  deliveryReference: string;
+  orderDetails: string;
+  originalMessage: string;
+  items: Array<{ product_name: string; quantity: number; total_usd: number }>;
+  subtotalUsd: number;
+  deliveryUsd: number;
+  totalUsd: number;
+}) {
+  const lines = [
+    `Pedido manual ${publicCode}`,
+    `Cliente: ${customerName}`,
+    customerPhone ? `Telefono: ${customerPhone}` : "",
+    `Modalidad: ${deliveryType === "delivery" ? "Entrega" : "Retiro"}`,
+    paymentMethod ? `Pago: ${paymentMethod}` : "",
+    deliveryReference ? `Referencia: ${deliveryReference}` : "",
+    "",
+    "Productos:",
+    ...items.map(
+      (item) => `- ${item.quantity}x ${item.product_name} ($${item.total_usd.toFixed(2)})`
+    ),
+    "",
+    `Subtotal: $${subtotalUsd.toFixed(2)}`,
+    `Entrega: $${deliveryUsd.toFixed(2)}`,
+    `Total: $${totalUsd.toFixed(2)}`,
+    orderDetails ? `Nota: ${orderDetails}` : "",
+    originalMessage ? `Mensaje original: ${originalMessage}` : "",
+  ];
+
+  return lines.filter(Boolean).join("\n");
+}
+
+async function attachOrderIntegrations(supabase: any, orders: any[]) {
+  if (!orders.length) return orders;
+
+  try {
+    const orderIds = orders.map((order) => order.id).filter(Boolean);
+    const { data, error } = await supabase
+      .from("order_integrations")
+      .select("order_id, provider, external_id, status, last_error, updated_at")
+      .in("order_id", orderIds);
+
+    if (error) return orders;
+
+    const integrationsByOrder = new Map<string, any[]>();
+    for (const integration of data || []) {
+      const current = integrationsByOrder.get(integration.order_id) || [];
+      current.push(integration);
+      integrationsByOrder.set(integration.order_id, current);
+    }
+
+    return orders.map((order) => ({
+      ...order,
+      order_integrations: integrationsByOrder.get(order.id) || [],
+    }));
+  } catch {
+    return orders;
+  }
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await getPanelAuthContext(request);
-  if (!auth.isAuthorized) return unauthorized(auth.error);
-
   try {
+    const auth = await requirePanelAuth(request);
     const supabase = createSupabaseAdminClient();
     const { searchParams } = new URL(request.url);
 
@@ -86,7 +187,12 @@ export async function GET(request: NextRequest) {
 
       if (error) throw error;
 
-      return NextResponse.json({ order: data });
+      const [order] = await attachOrderIntegrations(
+        supabase,
+        data ? [data] : []
+      );
+
+      return NextResponse.json({ order: order || null });
     }
 
     if (status && status !== "all") {
@@ -128,8 +234,10 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error;
 
+    const orders = await attachOrderIntegrations(supabase, data || []);
+
     return NextResponse.json({
-      orders: data || [],
+      orders,
       auth: {
         mode: auth.mode,
         email: auth.email || null,
@@ -137,34 +245,184 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || "Error cargando pedidos." },
-      { status: 500 }
+    return panelErrorResponse(error, "Error cargando pedidos.");
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const auth = await requirePanelAuth(request);
+    const body = await request.json();
+
+    const storeId = cleanText(body.storeId);
+    const customerName = cleanText(body.customerName);
+    const customerPhone = cleanText(body.customerPhone);
+    const deliveryType: "delivery" | "pickup" =
+      body.deliveryType === "pickup" ? "pickup" : "delivery";
+    const paymentMethod = cleanText(body.paymentMethod);
+    const deliveryReference = cleanText(body.deliveryReference);
+    const orderDetails = cleanText(body.orderDetails);
+    const originalMessage = cleanText(body.originalMessage);
+    const requestedItems = normalizeManualItems(body.items);
+
+    if (!storeId) return badRequest("Selecciona un comercio.");
+    assertStoreAccess(
+      auth,
+      storeId,
+      "No tienes permiso para crear pedidos en este comercio."
     );
+
+    if (!customerName) return badRequest("El nombre del cliente es obligatorio.");
+    if (!customerPhone) return badRequest("El teléfono del cliente es obligatorio.");
+    if (!paymentMethod) return badRequest("Selecciona un método de pago.");
+    if (!requestedItems.length) return badRequest("Agrega al menos un producto.");
+
+    const supabase = createSupabaseAdminClient();
+
+    const { data: store, error: storeError } = await supabase
+      .from("stores")
+      .select("id, name, usd_to_bs")
+      .eq("id", storeId)
+      .single();
+
+    if (storeError) throw storeError;
+
+    const productIds = Array.from(
+      new Set(requestedItems.map((item) => item.productId))
+    );
+    const { data: products, error: productsError } = await supabase
+      .from("products")
+      .select("id, store_id, name, price_usd, is_available")
+      .eq("store_id", storeId)
+      .in("id", productIds);
+
+    if (productsError) throw productsError;
+
+    const productMap = new Map(
+      (products || []).map((product: any) => [String(product.id), product])
+    );
+
+    if (productMap.size !== productIds.length) {
+      return badRequest("Uno o más productos no pertenecen al comercio seleccionado.");
+    }
+
+    const itemsPayload = requestedItems.map((item) => {
+      const product: any = productMap.get(item.productId);
+
+      if (product.is_available === false) {
+        throw new Error(`El producto ${product.name} no está disponible.`);
+      }
+
+      const unitPriceUsd = toSafeNumber(product.price_usd, 0);
+      const totalUsd = unitPriceUsd * item.quantity;
+
+      return {
+        product_id: item.productId,
+        product_name: product.name || "Producto",
+        variant_name: null,
+        quantity: item.quantity,
+        unit_price_usd: unitPriceUsd,
+        total_usd: totalUsd,
+        notes: item.notes || null,
+      };
+    });
+
+    const subtotalUsd = itemsPayload.reduce(
+      (sum, item) => sum + toSafeNumber(item.total_usd),
+      0
+    );
+    const deliveryUsd =
+      deliveryType === "delivery" ? Math.max(0, toSafeNumber(body.deliveryUsd, 0)) : 0;
+    const totalUsd = subtotalUsd + deliveryUsd;
+    const usdToBs = toSafeNumber((store as any)?.usd_to_bs, 600);
+    const totalBs = totalUsd * usdToBs;
+    const orderId = randomUUID();
+    const publicCode = createManualPublicCode();
+    const whatsappMessage = buildManualMessage({
+      publicCode,
+      customerName,
+      customerPhone,
+      deliveryType,
+      paymentMethod,
+      deliveryReference,
+      orderDetails,
+      originalMessage,
+      items: itemsPayload,
+      subtotalUsd,
+      deliveryUsd,
+      totalUsd,
+    });
+
+    const orderPayload = {
+      id: orderId,
+      public_code: publicCode,
+      store_id: storeId,
+      customer_name: customerName,
+      customer_phone: customerPhone,
+      delivery_type: deliveryType,
+      payment_method: paymentMethod,
+      subtotal_usd: subtotalUsd,
+      delivery_usd: deliveryUsd,
+      total_usd: totalUsd,
+      total_bs: totalBs,
+      distance_km: null,
+      delivery_lat: null,
+      delivery_lng: null,
+      delivery_reference: deliveryType === "delivery" ? deliveryReference || null : null,
+      order_details: orderDetails || null,
+      notes: originalMessage
+        ? `Pedido manual asistido. Mensaje recibido: ${originalMessage}`
+        : "Pedido manual asistido.",
+      status: "received",
+      whatsapp_message: whatsappMessage,
+    };
+
+    const { data: order, error: orderError } = await supabase
+      .from("orders")
+      .insert(orderPayload)
+      .select()
+      .single();
+
+    if (orderError) throw orderError;
+
+    const { error: itemsError } = await supabase.from("order_items").insert(
+      itemsPayload.map((item) => ({
+        ...item,
+        order_id: orderId,
+      }))
+    );
+
+    if (itemsError) {
+      await supabase.from("orders").delete().eq("id", orderId);
+      throw itemsError;
+    }
+
+    return NextResponse.json({
+      order,
+      items: itemsPayload,
+      store: {
+        id: storeId,
+        name: (store as any)?.name || "Comercio",
+      },
+    });
+  } catch (error: any) {
+    return panelErrorResponse(error, "Error creando pedido manual.");
   }
 }
 
 export async function PATCH(request: NextRequest) {
-  const auth = await getPanelAuthContext(request);
-  if (!auth.isAuthorized) return unauthorized(auth.error);
-
   try {
+    const auth = await requirePanelAuth(request);
     const body = await request.json();
     const id = body.id;
     const status = body.status;
 
     if (!id) {
-      return NextResponse.json(
-        { error: "Falta el ID del pedido." },
-        { status: 400 }
-      );
+      return badRequest("Falta el ID del pedido.");
     }
 
     if (!allowedStatuses.includes(status)) {
-      return NextResponse.json(
-        { error: "Estado inválido." },
-        { status: 400 }
-      );
+      return badRequest("Estado inválido.");
     }
 
     const supabase = createSupabaseAdminClient();
@@ -177,12 +435,11 @@ export async function PATCH(request: NextRequest) {
 
     if (existingError) throw existingError;
 
-    if (!canAccessStore(auth.storeIds, existingOrder.store_id)) {
-      return NextResponse.json(
-        { error: "No tienes permiso para operar este pedido." },
-        { status: 403 }
-      );
-    }
+    assertStoreAccess(
+      auth,
+      existingOrder.store_id,
+      "No tienes permiso para operar este pedido."
+    );
 
     const { data, error } = await supabase
       .from("orders")
@@ -195,9 +452,6 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({ order: data });
   } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || "Error actualizando pedido." },
-      { status: 500 }
-    );
+    return panelErrorResponse(error, "Error actualizando pedido.");
   }
 }

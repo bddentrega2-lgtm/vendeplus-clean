@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CheckCircle2,
   Loader2,
@@ -8,10 +8,19 @@ import {
   RefreshCcw,
   Copy,
   ExternalLink,
+  ImageIcon,
   Save,
   Settings,
   Store,
+  Upload,
 } from "lucide-react";
+import {
+  getPanelAuthHeaders,
+  getSavedPanelPin,
+  getSavedPanelToken,
+  hasSavedPanelAuth,
+  savePanelPin,
+} from "@/lib/panel/client-auth";
 
 type StoreRow = {
   id: string;
@@ -49,24 +58,12 @@ const businessTypes = [
   { value: "general", label: "General / Otro" },
 ];
 
-function getSavedToken() {
-  if (typeof window === "undefined") return "";
-  return sessionStorage.getItem("vendeplus_panel_token") || "";
-}
-
-function getSavedPin() {
-  if (typeof window === "undefined") return "";
-  return sessionStorage.getItem("vendeplus_panel_pin") || "";
-}
-
 async function apiRequest(pin: string, options?: RequestInit) {
-  const token = getSavedToken();
-
   const response = await fetch("/api/panel/settings", {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : { "x-panel-pin": pin }),
+      ...(await getPanelAuthHeaders(pin)),
       ...(options?.headers || {}),
     },
   });
@@ -78,6 +75,32 @@ async function apiRequest(pin: string, options?: RequestInit) {
   }
 
   return data;
+}
+
+async function uploadStoreAsset(
+  file: File,
+  storeId: string,
+  assetName: string,
+  pin: string
+) {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("store_id", storeId);
+  formData.append("product_id", assetName);
+
+  const response = await fetch("/api/panel/uploads", {
+    method: "POST",
+    headers: await getPanelAuthHeaders(pin),
+    body: formData,
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || "No se pudo subir la imagen.");
+  }
+
+  return data as { path: string; publicUrl: string };
 }
 
 function StoreSettingsCard({
@@ -117,7 +140,9 @@ function StoreSettingsCard({
   });
 
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [message, setMessage] = useState("");
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   function updateField(field: string, value: any) {
     setDraft((current) => ({
@@ -154,6 +179,24 @@ function StoreSettingsCard({
       setMessage(error.message || "No se pudo guardar.");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function uploadLogo(file?: File) {
+    if (!file) return;
+
+    setIsUploadingLogo(true);
+    setMessage("Subiendo logo...");
+
+    try {
+      const data = await uploadStoreAsset(file, store.id, "store-logo", pin);
+      setDraft((current) => ({ ...current, logo_url: data.publicUrl }));
+      setMessage("Logo subido. Presiona Guardar cambios para aplicarlo.");
+    } catch (error: any) {
+      setMessage(error.message || "No se pudo subir el logo.");
+    } finally {
+      setIsUploadingLogo(false);
+      if (logoInputRef.current) logoInputRef.current.value = "";
     }
   }
 
@@ -332,6 +375,60 @@ function StoreSettingsCard({
         </label>
       </div>
 
+      <section className="mt-4 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
+        <div className="grid gap-4 md:grid-cols-[120px_1fr] md:items-center">
+          <div className="grid h-28 w-28 place-items-center overflow-hidden rounded-3xl bg-white">
+            {draft.logo_url ? (
+              <img
+                src={draft.logo_url}
+                alt={`Logo de ${draft.name}`}
+                className="h-full w-full object-contain p-3"
+              />
+            ) : (
+              <ImageIcon size={30} className="text-[#746f69]" />
+            )}
+          </div>
+
+          <div>
+            <h3 className="text-lg font-black text-[#25262B]">Logo del comercio</h3>
+            <p className="mt-1 text-sm font-bold text-[#746f69]">
+              Sube una imagen desde tu equipo y luego guarda los cambios.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(event) => uploadLogo(event.target.files?.[0])}
+              />
+              <button
+                type="button"
+                onClick={() => logoInputRef.current?.click()}
+                disabled={isUploadingLogo}
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B] disabled:opacity-60"
+              >
+                {isUploadingLogo ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Upload size={16} />
+                )}
+                Subir logo
+              </button>
+              {draft.logo_url && (
+                <button
+                  type="button"
+                  onClick={() => updateField("logo_url", "")}
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-black text-[#2E3A79]"
+                >
+                  Quitar logo
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+
       <div className="mt-4">
         <label className="space-y-1">
           <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
@@ -486,6 +583,7 @@ export function ConfigManager() {
   const [pin, setPin] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [stores, setStores] = useState<StoreRow[]>([]);
+  const [isCheckingAccess, setIsCheckingAccess] = useState(() => hasSavedPanelAuth());
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -499,25 +597,39 @@ export function ConfigManager() {
       setIsUnlocked(true);
 
       if (currentPin) {
-        sessionStorage.setItem("vendeplus_panel_pin", currentPin);
+        savePanelPin(currentPin);
       }
     } catch (error: any) {
       setError(error.message || "No se pudo cargar la configuración.");
       setIsUnlocked(false);
     } finally {
       setIsLoading(false);
+      setIsCheckingAccess(false);
     }
   }
 
   useEffect(() => {
-    const savedPin = getSavedPin();
-    const savedToken = getSavedToken();
+    const savedPin = getSavedPanelPin();
+    const savedToken = getSavedPanelToken();
 
     if (savedPin || savedToken) {
       setPin(savedPin);
       loadConfig(savedPin);
+    } else {
+      setIsCheckingAccess(false);
     }
   }, []);
+
+  if (isCheckingAccess) {
+    return (
+      <section className="mx-auto max-w-xl rounded-[36px] bg-white p-6 text-center shadow-2xl shadow-[#2E3A79]/[0.08] ring-1 ring-[#25262B]/[0.06]">
+        <Loader2 size={22} className="mx-auto animate-spin text-[#2E3A79]" />
+        <p className="mt-3 text-sm font-black text-[#746f69]">
+          Validando acceso...
+        </p>
+      </section>
+    );
+  }
 
   if (!isUnlocked) {
     return (
@@ -527,26 +639,16 @@ export function ConfigManager() {
         </div>
         <h2 className="mt-5 text-3xl font-black">Acceso a configuración</h2>
         <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
-          Inicia sesión o usa el PIN temporal para editar comercios asignados.
+          Inicia sesión con tu usuario autorizado para continuar.
         </p>
 
-        <input
-          value={pin}
-          onChange={(event) => setPin(event.target.value)}
-          placeholder="PIN de acceso"
-          type="password"
-          className="mt-5 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-center text-lg font-black outline-none focus:border-[#2E3A79]"
-        />
-
-        <button
-          type="button"
-          onClick={() => loadConfig(pin)}
-          disabled={isLoading}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B] disabled:opacity-60"
+        <a
+          href="/panel/login"
+          className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B]"
         >
-          {isLoading ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
-          Entrar
-        </button>
+          <CheckCircle2 size={18} />
+          Iniciar sesión
+        </a>
 
         {error && <p className="mt-3 text-sm font-black text-red-600">{error}</p>}
       </section>

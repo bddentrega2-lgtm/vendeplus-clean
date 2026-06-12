@@ -3,7 +3,9 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export type PanelAuthContext = {
   isAuthorized: boolean;
-  mode: "pin" | "user" | "none";
+  mode: "user" | "none";
+  method: "auth" | "none";
+  isFounderMode: boolean;
   userId?: string;
   email?: string;
   storeIds: string[] | null;
@@ -11,21 +13,45 @@ export type PanelAuthContext = {
   error?: string;
 };
 
+export function normalizeAuthEmail(value?: string | null) {
+  return String(value || "")
+    .trim()
+    .replace(/^[A-Za-z_][A-Za-z0-9_]*\s*=\s*/, "")
+    .replace(/^["']+|["']+$/g, "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .toLowerCase();
+}
+
+export function getFounderEmails() {
+  return (process.env.FOUNDER_EMAILS || "")
+    .split(",")
+    .map((email) => normalizeAuthEmail(email))
+    .filter(Boolean);
+}
+
+export function isFounderEmail(email?: string | null) {
+  const normalizedEmail = normalizeAuthEmail(email);
+
+  if (!normalizedEmail) return false;
+
+  return getFounderEmails().includes(normalizedEmail);
+}
+
+export function getSupabaseUserEmail(user: any) {
+  const directEmail = normalizeAuthEmail(user?.email);
+
+  if (directEmail) return directEmail;
+
+  const identityEmail = user?.identities
+    ?.map((identity: any) => identity?.identity_data?.email)
+    .find(Boolean);
+
+  return normalizeAuthEmail(identityEmail);
+}
+
 export async function getPanelAuthContext(
   request: NextRequest
 ): Promise<PanelAuthContext> {
-  const expectedPin = process.env.PANEL_ACCESS_PIN;
-  const receivedPin = request.headers.get("x-panel-pin");
-
-  if (expectedPin && receivedPin && receivedPin === expectedPin) {
-    return {
-      isAuthorized: true,
-      mode: "pin",
-      storeIds: null,
-      role: "owner",
-    };
-  }
-
   const authorization = request.headers.get("authorization");
   const token = authorization?.replace("Bearer ", "").trim();
 
@@ -33,6 +59,8 @@ export async function getPanelAuthContext(
     return {
       isAuthorized: false,
       mode: "none",
+      method: "none",
+      isFounderMode: false,
       storeIds: [],
       error: "No autorizado.",
     };
@@ -48,8 +76,25 @@ export async function getPanelAuthContext(
       return {
         isAuthorized: false,
         mode: "none",
+        method: "none",
+        isFounderMode: false,
         storeIds: [],
         error: "Sesión inválida.",
+      };
+    }
+
+    const userEmail = getSupabaseUserEmail(userResult.user);
+
+    if (isFounderEmail(userEmail)) {
+      return {
+        isAuthorized: true,
+        mode: "user",
+        method: "auth",
+        isFounderMode: true,
+        userId: userResult.user.id,
+        email: userEmail,
+        storeIds: null,
+        role: "owner",
       };
     }
 
@@ -64,8 +109,10 @@ export async function getPanelAuthContext(
       return {
         isAuthorized: false,
         mode: "user",
+        method: "auth",
+        isFounderMode: false,
         userId: userResult.user.id,
-        email: userResult.user.email || "",
+        email: userEmail,
         storeIds: [],
         error: "Usuario sin comercio asignado.",
       };
@@ -74,8 +121,10 @@ export async function getPanelAuthContext(
     return {
       isAuthorized: true,
       mode: "user",
+      method: "auth",
+      isFounderMode: false,
       userId: userResult.user.id,
-      email: userResult.user.email || "",
+      email: userEmail,
       storeIds: storeUsers.map((row) => row.store_id),
       role: storeUsers[0]?.role || "operator",
     };
@@ -83,6 +132,8 @@ export async function getPanelAuthContext(
     return {
       isAuthorized: false,
       mode: "none",
+      method: "none",
+      isFounderMode: false,
       storeIds: [],
       error: error.message || "Error validando sesión.",
     };

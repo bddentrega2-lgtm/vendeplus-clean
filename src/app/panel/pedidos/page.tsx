@@ -9,7 +9,7 @@ export default async function PanelOrdersPage() {
     <PanelShell
       active="/panel/pedidos"
       title="Pedidos"
-      subtitle="Opera pedidos reales: revisa detalles, cambia estados, copia comandas y abre GPS o ruta."
+      subtitle="Opera pedidos reales: crea pedidos manuales, revisa detalles, cambia estados y abre GPS o ruta."
     >
       <OrdersManager />
     </PanelShell>

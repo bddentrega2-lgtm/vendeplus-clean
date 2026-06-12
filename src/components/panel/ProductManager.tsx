@@ -11,8 +11,16 @@ import {
   Plus,
   Save,
   Sparkles,
+  Trash2,
   Upload,
 } from "lucide-react";
+import {
+  getPanelAuthHeaders,
+  getSavedPanelPin,
+  getSavedPanelToken,
+  hasSavedPanelAuth,
+  savePanelPin,
+} from "@/lib/panel/client-auth";
 
 type StoreRow = {
   id: string;
@@ -43,24 +51,12 @@ type ProductRow = {
   categories?: { name?: string } | null;
 };
 
-function getSavedToken() {
-  if (typeof window === "undefined") return "";
-  return sessionStorage.getItem("vendeplus_panel_token") || "";
-}
-
-function getSavedPin() {
-  if (typeof window === "undefined") return "";
-  return sessionStorage.getItem("vendeplus_panel_pin") || "";
-}
-
 async function apiRequest(pin: string, options?: RequestInit) {
   const response = await fetch("/api/panel/products", {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...(getSavedToken()
-        ? { Authorization: `Bearer ${getSavedToken()}` }
-        : { "x-panel-pin": pin }),
+      ...(await getPanelAuthHeaders(pin)),
     },
   });
 
@@ -86,11 +82,7 @@ async function uploadProductImage(
 
   const response = await fetch("/api/panel/uploads", {
     method: "POST",
-    headers: {
-      ...(getSavedToken()
-        ? { Authorization: `Bearer ${getSavedToken()}` }
-        : { "x-panel-pin": pin || "" }),
-    },
+    headers: await getPanelAuthHeaders(pin || ""),
     body: formData,
   });
 
@@ -129,6 +121,7 @@ function ProductEditor({
   });
 
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [message, setMessage] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -175,6 +168,31 @@ function ProductEditor({
     } finally {
       setIsUploadingImage(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function deleteProduct() {
+    const confirmed = window.confirm(
+      `¿Eliminar "${product.name}"? Esta acción no se puede deshacer.`
+    );
+
+    if (!confirmed) return;
+
+    setIsDeleting(true);
+    setMessage("");
+
+    try {
+      await apiRequest(pin, {
+        method: "DELETE",
+        body: JSON.stringify({ id: product.id }),
+      });
+
+      setMessage("Producto eliminado correctamente.");
+      onSaved();
+    } catch (error: any) {
+      setMessage(error.message || "No se pudo eliminar el producto.");
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -351,7 +369,7 @@ function ProductEditor({
             <button
               type="button"
               onClick={saveProduct}
-              disabled={isSaving}
+              disabled={isSaving || isDeleting}
               className="inline-flex items-center gap-2 rounded-full bg-[#2E3A79] px-5 py-3 text-sm font-black text-white disabled:opacity-60"
             >
               {isSaving ? (
@@ -360,6 +378,20 @@ function ProductEditor({
                 <Save size={16} />
               )}
               Guardar
+            </button>
+
+            <button
+              type="button"
+              onClick={deleteProduct}
+              disabled={isSaving || isDeleting}
+              className="inline-flex items-center gap-2 rounded-full bg-red-100 px-5 py-3 text-sm font-black text-red-700 disabled:opacity-60"
+            >
+              {isDeleting ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Trash2 size={16} />
+              )}
+              Eliminar
             </button>
           </div>
 
@@ -378,6 +410,7 @@ export function ProductManager() {
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [products, setProducts] = useState<ProductRow[]>([]);
+  const [isCheckingAccess, setIsCheckingAccess] = useState(() => hasSavedPanelAuth());
   const [isLoading, setIsLoading] = useState(false);
   const [isUploadingNewImage, setIsUploadingNewImage] = useState(false);
   const [error, setError] = useState("");
@@ -421,12 +454,13 @@ export function ProductManager() {
       }
 
       setIsUnlocked(true);
-      sessionStorage.setItem("vendeplus_panel_pin", currentPin);
+      savePanelPin(currentPin);
     } catch (error: any) {
       setError(error.message || "No se pudo abrir el panel.");
       setIsUnlocked(false);
     } finally {
       setIsLoading(false);
+      setIsCheckingAccess(false);
     }
   }
 
@@ -495,15 +529,28 @@ export function ProductManager() {
   }
 
   useEffect(() => {
-    const savedPin = getSavedPin();
-    const savedToken = getSavedToken();
+    const savedPin = getSavedPanelPin();
+    const savedToken = getSavedPanelToken();
 
     if (savedPin || savedToken) {
       setPin(savedPin);
       loadData(savedPin);
+    } else {
+      setIsCheckingAccess(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  if (isCheckingAccess) {
+    return (
+      <section className="mx-auto max-w-xl rounded-[36px] bg-white p-6 text-center shadow-2xl shadow-[#2E3A79]/[0.08] ring-1 ring-[#25262B]/[0.06]">
+        <Loader2 size={22} className="mx-auto animate-spin text-[#2E3A79]" />
+        <p className="mt-3 text-sm font-black text-[#746f69]">
+          Validando acceso...
+        </p>
+      </section>
+    );
+  }
 
   if (!isUnlocked) {
     return (
@@ -513,30 +560,16 @@ export function ProductManager() {
         </div>
         <h2 className="mt-5 text-3xl font-black">Acceso del panel</h2>
         <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
-          Ingresa el PIN temporal de administración para editar productos.
+          Inicia sesión con tu usuario autorizado para continuar.
         </p>
 
-        <input
-          value={pin}
-          onChange={(event) => setPin(event.target.value)}
-          placeholder="PIN de acceso"
-          type="password"
-          className="mt-5 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-center text-lg font-black outline-none focus:border-[#2E3A79]"
-        />
-
-        <button
-          type="button"
-          onClick={() => loadData(pin)}
-          disabled={isLoading}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B] disabled:opacity-60"
+        <a
+          href="/panel/login"
+          className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B]"
         >
-          {isLoading ? (
-            <Loader2 size={18} className="animate-spin" />
-          ) : (
-            <CheckCircle2 size={18} />
-          )}
-          Entrar al panel
-        </button>
+          <CheckCircle2 size={18} />
+          Iniciar sesión
+        </a>
 
         {error && <p className="mt-3 text-sm font-black text-red-600">{error}</p>}
       </section>

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Loader2, Lock } from "lucide-react";
+import { savePanelToken } from "@/lib/panel/client-auth";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export function LoginForm() {
@@ -41,8 +42,7 @@ export function LoginForm() {
         return;
       }
 
-      sessionStorage.setItem("vendeplus_panel_token", accessToken);
-      sessionStorage.removeItem("vendeplus_panel_pin");
+      savePanelToken(accessToken);
       router.push("/panel");
     } finally {
       setIsLoading(false);

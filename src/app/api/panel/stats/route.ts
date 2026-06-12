@@ -1,10 +1,10 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getPanelAuthContext } from "@/lib/panel/auth";
-
-function unauthorized(message = "No autorizado.") {
-  return NextResponse.json({ error: message }, { status: 401 });
-}
+import {
+  assertStoreAccess,
+  panelErrorResponse,
+  requirePanelAuth,
+} from "@/lib/panel/access";
 
 function toNumber(value: unknown) {
   const parsed = Number(value || 0);
@@ -129,10 +129,8 @@ function groupCount<T>(rows: T[], keyGetter: (row: T) => string) {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await getPanelAuthContext(request);
-  if (!auth.isAuthorized) return unauthorized(auth.error);
-
   try {
+    const auth = await requirePanelAuth(request);
     const supabase = createSupabaseAdminClient();
     const { searchParams } = new URL(request.url);
     const requestedStoreId = searchParams.get("storeId");
@@ -140,14 +138,11 @@ export async function GET(request: NextRequest) {
       requestedStoreId && requestedStoreId !== "all" ? requestedStoreId : null;
     const dateRange = getDateRange(request);
 
-    if (
-      selectedStoreId &&
-      auth.storeIds !== null &&
-      !auth.storeIds.includes(selectedStoreId)
-    ) {
-      return NextResponse.json(
-        { error: "No tienes permiso para consultar este comercio." },
-        { status: 403 }
+    if (selectedStoreId) {
+      assertStoreAccess(
+        auth,
+        selectedStoreId,
+        "No tienes permiso para consultar este comercio."
       );
     }
 
@@ -441,9 +436,6 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || "Error cargando estadísticas." },
-      { status: 500 }
-    );
+    return panelErrorResponse(error, "Error cargando estadísticas.");
   }
 }

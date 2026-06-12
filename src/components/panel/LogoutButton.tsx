@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
+import { clearPanelAuthStorage } from "@/lib/panel/client-auth";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export function LogoutButton() {
@@ -15,8 +16,7 @@ export function LogoutButton() {
       // Si Supabase no responde, igual limpiamos sesión local.
     }
 
-    sessionStorage.removeItem("vendeplus_panel_token");
-    sessionStorage.removeItem("vendeplus_panel_pin");
+    clearPanelAuthStorage();
 
     router.push("/panel/login");
     router.refresh();

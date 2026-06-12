@@ -1,15 +1,11 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getPanelAuthContext } from "@/lib/panel/auth";
-
-function unauthorized(message = "No autorizado.") {
-  return NextResponse.json({ error: message }, { status: 401 });
-}
-
-function canAccessStore(storeIds: string[] | null, storeId?: string | null) {
-  if (storeIds === null) return true;
-  return Boolean(storeId && storeIds.includes(storeId));
-}
+import {
+  assertStoreAccess,
+  badRequest,
+  panelErrorResponse,
+  requirePanelAuth,
+} from "@/lib/panel/access";
 
 function cleanName(value: unknown) {
   return String(value || "").trim();
@@ -21,10 +17,8 @@ function toSafeNumber(value: unknown, fallback = 0) {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await getPanelAuthContext(request);
-  if (!auth.isAuthorized) return unauthorized(auth.error);
-
   try {
+    const auth = await requirePanelAuth(request);
     const supabase = createSupabaseAdminClient();
 
     let storesQuery = supabase
@@ -87,18 +81,13 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || "Error cargando catálogo." },
-      { status: 500 }
-    );
+    return panelErrorResponse(error, "Error cargando catálogo.");
   }
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await getPanelAuthContext(request);
-  if (!auth.isAuthorized) return unauthorized(auth.error);
-
   try {
+    const auth = await requirePanelAuth(request);
     const body = await request.json();
 
     const payload = {
@@ -109,24 +98,17 @@ export async function POST(request: NextRequest) {
     };
 
     if (!payload.store_id) {
-      return NextResponse.json(
-        { error: "Selecciona un comercio." },
-        { status: 400 }
-      );
+      return badRequest("Selecciona un comercio.");
     }
 
-    if (!canAccessStore(auth.storeIds, payload.store_id)) {
-      return NextResponse.json(
-        { error: "No tienes permiso para crear categorías en este comercio." },
-        { status: 403 }
-      );
-    }
+    assertStoreAccess(
+      auth,
+      payload.store_id,
+      "No tienes permiso para crear categorías en este comercio."
+    );
 
     if (!payload.name) {
-      return NextResponse.json(
-        { error: "El nombre de la categoría es obligatorio." },
-        { status: 400 }
-      );
+      return badRequest("El nombre de la categoría es obligatorio.");
     }
 
     const supabase = createSupabaseAdminClient();
@@ -141,26 +123,18 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ category: data });
   } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || "Error creando categoría." },
-      { status: 500 }
-    );
+    return panelErrorResponse(error, "Error creando categoría.");
   }
 }
 
 export async function PATCH(request: NextRequest) {
-  const auth = await getPanelAuthContext(request);
-  if (!auth.isAuthorized) return unauthorized(auth.error);
-
   try {
+    const auth = await requirePanelAuth(request);
     const body = await request.json();
     const resource = String(body.resource || "");
 
     if (!body.id) {
-      return NextResponse.json(
-        { error: "Falta el ID del recurso." },
-        { status: 400 }
-      );
+      return badRequest("Falta el ID del recurso.");
     }
 
     const supabase = createSupabaseAdminClient();
@@ -174,12 +148,11 @@ export async function PATCH(request: NextRequest) {
 
       if (existingError) throw existingError;
 
-      if (!canAccessStore(auth.storeIds, existingCategory.store_id)) {
-        return NextResponse.json(
-          { error: "No tienes permiso para editar esta categoría." },
-          { status: 403 }
-        );
-      }
+      assertStoreAccess(
+        auth,
+        existingCategory.store_id,
+        "No tienes permiso para editar esta categoría."
+      );
 
       const payload: Record<string, any> = {};
 
@@ -187,10 +160,7 @@ export async function PATCH(request: NextRequest) {
         const name = cleanName(body.name);
 
         if (!name) {
-          return NextResponse.json(
-            { error: "El nombre de la categoría no puede estar vacío." },
-            { status: 400 }
-          );
+          return badRequest("El nombre de la categoría no puede estar vacío.");
         }
 
         payload.name = name;
@@ -225,12 +195,11 @@ export async function PATCH(request: NextRequest) {
 
       if (existingError) throw existingError;
 
-      if (!canAccessStore(auth.storeIds, existingProduct.store_id)) {
-        return NextResponse.json(
-          { error: "No tienes permiso para editar este producto." },
-          { status: 403 }
-        );
-      }
+      assertStoreAccess(
+        auth,
+        existingProduct.store_id,
+        "No tienes permiso para editar este producto."
+      );
 
       const payload: Record<string, any> = {};
 
@@ -262,14 +231,8 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ product: data });
     }
 
-    return NextResponse.json(
-      { error: "Recurso no soportado." },
-      { status: 400 }
-    );
+    return badRequest("Recurso no soportado.");
   } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || "Error actualizando catálogo." },
-      { status: 500 }
-    );
+    return panelErrorResponse(error, "Error actualizando catálogo.");
   }
 }

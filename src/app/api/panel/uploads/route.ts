@@ -1,19 +1,15 @@
 ﻿import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getPanelAuthContext } from "@/lib/panel/auth";
+import {
+  assertStoreAccess,
+  badRequest,
+  panelErrorResponse,
+  requirePanelAuth,
+} from "@/lib/panel/access";
 
 const BUCKET_NAME = "product-images";
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
-
-function unauthorized(message = "No autorizado.") {
-  return NextResponse.json({ error: message }, { status: 401 });
-}
-
-function canAccessStore(storeIds: string[] | null, storeId?: string | null) {
-  if (storeIds === null) return true;
-  return Boolean(storeId && storeIds.includes(storeId));
-}
 
 function getExtension(file: File) {
   const fromName = file.name.split(".").pop()?.toLowerCase();
@@ -35,10 +31,8 @@ function safePathSegment(value: string, fallback: string) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await getPanelAuthContext(request);
-  if (!auth.isAuthorized) return unauthorized(auth.error);
-
   try {
+    const auth = await requirePanelAuth(request);
     const formData = await request.formData();
 
     const file = formData.get("file");
@@ -46,38 +40,25 @@ export async function POST(request: NextRequest) {
     const productId = String(formData.get("product_id") || "");
 
     if (!storeId) {
-      return NextResponse.json(
-        { error: "Falta el comercio para subir la imagen." },
-        { status: 400 }
-      );
+      return badRequest("Falta el comercio para subir la imagen.");
     }
 
-    if (!canAccessStore(auth.storeIds, storeId)) {
-      return NextResponse.json(
-        { error: "No tienes permiso para subir imágenes a este comercio." },
-        { status: 403 }
-      );
-    }
+    assertStoreAccess(
+      auth,
+      storeId,
+      "No tienes permiso para subir imágenes a este comercio."
+    );
 
     if (!(file instanceof File)) {
-      return NextResponse.json(
-        { error: "Selecciona una imagen válida." },
-        { status: 400 }
-      );
+      return badRequest("Selecciona una imagen válida.");
     }
 
     if (!file.type.startsWith("image/")) {
-      return NextResponse.json(
-        { error: "Solo se permiten archivos de imagen." },
-        { status: 400 }
-      );
+      return badRequest("Solo se permiten archivos de imagen.");
     }
 
     if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json(
-        { error: "La imagen no debe pesar más de 5 MB." },
-        { status: 400 }
-      );
+      return badRequest("La imagen no debe pesar más de 5 MB.");
     }
 
     const supabase = createSupabaseAdminClient();
@@ -106,9 +87,6 @@ export async function POST(request: NextRequest) {
       publicUrl: data.publicUrl,
     });
   } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || "Error subiendo imagen." },
-      { status: 500 }
-    );
+    return panelErrorResponse(error, "Error subiendo imagen.");
   }
 }
