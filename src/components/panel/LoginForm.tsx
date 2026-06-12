@@ -21,7 +21,7 @@ export function LoginForm() {
       const supabase = createSupabaseBrowserClient();
 
       if (!supabase) {
-        setError("Supabase no está configurado.");
+        setError("El inicio de sesión no está disponible en este momento.");
         return;
       }
 

@@ -11,9 +11,9 @@ export function HomeClient({ stores }: { stores: Store[] }) {
         <div className="absolute -bottom-14 -left-10 h-48 w-48 rounded-full bg-white/10 blur-2xl" />
         <div className="relative">
           <BrandLogo />
-          <h1 className="mt-8 max-w-3xl text-4xl font-black tracking-tight sm:text-6xl">Vende más. Cobra mejor. Conecta tu delivery.</h1>
+          <h1 className="mt-8 max-w-3xl text-4xl font-black tracking-tight sm:text-6xl">Vende más. Cobra mejor. Gestiona tus entregas.</h1>
           <p className="mt-4 max-w-2xl text-base font-semibold leading-relaxed text-white/76">
-            Catálogos inteligentes para comercios: productos, carrito, checkout, ubicación GPS, cálculo de delivery y pedido directo a WhatsApp.
+            Catálogos inteligentes para comercios: productos, carrito, checkout, ubicación GPS, cálculo de entrega y pedido directo a WhatsApp.
           </p>
           <div className="mt-6 grid gap-3 sm:grid-cols-3">
             <div className="rounded-3xl bg-white/10 p-4 backdrop-blur"><ShoppingCart className="text-[#FFB547]" /><p className="mt-2 font-black">Compra fácil</p></div>

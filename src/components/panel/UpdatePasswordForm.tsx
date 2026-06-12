@@ -29,7 +29,7 @@ export function UpdatePasswordForm() {
         const supabase = createSupabaseBrowserClient();
 
         if (!supabase) {
-          setError("Supabase no está configurado.");
+          setError("La recuperación de contraseña no está disponible en este momento.");
           return;
         }
 
@@ -102,7 +102,7 @@ export function UpdatePasswordForm() {
       const supabase = createSupabaseBrowserClient();
 
       if (!supabase) {
-        setError("Supabase no está configurado.");
+        setError("La actualización de contraseña no está disponible en este momento.");
         return;
       }
 

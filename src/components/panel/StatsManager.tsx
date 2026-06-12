@@ -84,8 +84,8 @@ type StatsData = {
 
 const rangeOptions = [
   { value: "today", label: "Hoy" },
-  { value: "last_7_days", label: "Ãšltimos 7 dÃ­as" },
-  { value: "last_30_days", label: "Ãšltimos 30 dÃ­as" },
+  { value: "last_7_days", label: "Últimos 7 días" },
+  { value: "last_30_days", label: "Últimos 30 días" },
   { value: "this_month", label: "Este mes" },
   { value: "previous_month", label: "Mes anterior" },
   { value: "custom", label: "Personalizado" },
@@ -141,7 +141,7 @@ async function apiRequest(
   });
 
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "Error cargando estadÃ­sticas.");
+  if (!response.ok) throw new Error(data.error || "Error cargando estadísticas.");
   return data as StatsData;
 }
 
@@ -192,7 +192,7 @@ function BarList({
       <div className="mt-5 space-y-4">
         {items.length === 0 ? (
           <p className="rounded-2xl bg-[#F8F3E8] p-4 text-sm font-bold text-[#746f69]">
-            TodavÃ­a no hay data suficiente en este perÃ­odo.
+            Todavía no hay data suficiente en este período.
           </p>
         ) : (
           items.map((item) => {
@@ -250,7 +250,7 @@ export function StatsManager() {
       if (!filters.storeId && data.stores.length === 1) setSelectedStoreId(data.stores[0].id);
       savePanelPin(currentPin);
     } catch (error: any) {
-      setError(error.message || "No se pudieron cargar las estadÃ­sticas.");
+      setError(error.message || "No se pudieron cargar las estadísticas.");
       setIsUnlocked(false);
     } finally {
       setIsLoading(false);
@@ -275,18 +275,18 @@ export function StatsManager() {
     const topProduct = stats.topProducts[0];
     const repeatCustomers = stats.topCustomers.filter((customer) => customer.orders > 1).length;
     const preferredMode =
-      stats.summary.deliveryOrders >= stats.summary.pickupOrders ? "delivery" : "pickup";
+      stats.summary.deliveryOrders >= stats.summary.pickupOrders ? "entrega" : "retiro";
     const bestDay = stats.peak.strongestWeekday?.label || "sin suficiente data";
     const bestHour = stats.peak.strongestHour?.label || "sin suficiente data";
 
     return [
       topProduct
-        ? `Tu producto mÃ¡s vendido fue ${topProduct.product}.`
-        : "AÃºn no hay productos vendidos en este perÃ­odo.",
+        ? `Tu producto más vendido fue ${topProduct.product}.`
+        : "Aún no hay productos vendidos en este período.",
       `El ticket promedio fue de ${formatUsd(stats.summary.averageTicketUsd)}.`,
-      `La mayorÃ­a de tus pedidos fueron por ${preferredMode}.`,
-      `Tu dÃ­a con mÃ¡s pedidos fue ${bestDay} y la hora mÃ¡s fuerte fue ${bestHour}.`,
-      `Tienes ${repeatCustomers} clientes que compraron mÃ¡s de una vez.`,
+      `La mayoría de tus pedidos fueron por ${preferredMode}.`,
+      `Tu día con más pedidos fue ${bestDay} y la hora más fuerte fue ${bestHour}.`,
+      `Tienes ${repeatCustomers} clientes que compraron más de una vez.`,
     ];
   }, [stats]);
 
@@ -307,7 +307,7 @@ export function StatsManager() {
         <div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl bg-[#2E3A79] text-[#FFB547]">
           <Lock size={26} />
         </div>
-        <h2 className="mt-5 text-3xl font-black">Acceso a estadÃ­sticas</h2>
+        <h2 className="mt-5 text-3xl font-black">Acceso a estadísticas</h2>
         <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
           Inicia sesión con tu usuario autorizado para continuar.
         </p>
@@ -328,7 +328,7 @@ export function StatsManager() {
     {
       label: "Ventas totales",
       value: formatUsd(stats.summary.totalRevenueUsd),
-      detail: `${stats.range.days} dÃ­as analizados`,
+      detail: `${stats.range.days} días analizados`,
       icon: DollarSign,
     },
     {
@@ -346,13 +346,13 @@ export function StatsManager() {
     {
       label: "Ingreso diario",
       value: formatUsd(stats.summary.averageRevenuePerDayUsd),
-      detail: "Promedio por dÃ­a del rango",
+      detail: "Promedio por día del rango",
       icon: CalendarDays,
     },
     {
       label: "Completados",
       value: formatNumber(stats.summary.completedOrders),
-      detail: `${formatPercent(stats.summary.operationalConversionRate)} de conversiÃ³n operativa`,
+      detail: `${formatPercent(stats.summary.operationalConversionRate)} de conversión operativa`,
       icon: CheckCircle2,
     },
     {
@@ -368,7 +368,7 @@ export function StatsManager() {
       icon: XCircle,
     },
     {
-      label: "Delivery promedio",
+      label: "Entrega promedio",
       value: formatKm(stats.summary.averageDistanceKm),
       detail: `${formatUsd(stats.summary.averageDeliveryUsd)} costo promedio`,
       icon: Bike,
@@ -454,7 +454,7 @@ export function StatsManager() {
       </section>
 
       <section className="rounded-3xl bg-[#25262B] p-5 text-white shadow-xl shadow-[#25262B]/20">
-        <h2 className="text-2xl font-black">Lectura rÃ¡pida del negocio</h2>
+        <h2 className="text-2xl font-black">Lectura rápida del negocio</h2>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {insights.map((insight) => (
             <p key={insight} className="rounded-2xl bg-white/10 p-4 text-sm font-bold leading-relaxed">
@@ -465,23 +465,23 @@ export function StatsManager() {
       </section>
 
       <section className="grid gap-5 xl:grid-cols-2">
-        <BarList title="Ventas por dÃ­a" subtitle="Total vendido por fecha" items={stats.salesByDay} valueFormatter={formatUsd} />
-        <BarList title="Pedidos por dÃ­a" subtitle="Volumen diario dentro del rango" items={stats.ordersByDay} />
+        <BarList title="Ventas por día" subtitle="Total vendido por fecha" items={stats.salesByDay} valueFormatter={formatUsd} />
+        <BarList title="Pedidos por día" subtitle="Volumen diario dentro del rango" items={stats.ordersByDay} />
       </section>
 
       <section className="grid gap-5 xl:grid-cols-3">
-        <BarList title="MÃ©todos de pago" items={stats.ordersByPaymentMethod} />
-        <BarList title="Delivery vs Pickup" items={stats.ordersByDeliveryType} />
+        <BarList title="Métodos de pago" items={stats.ordersByPaymentMethod} />
+        <BarList title="Entrega vs retiro" items={stats.ordersByDeliveryType} />
         <BarList title="Estados de pedidos" items={stats.ordersByStatus} />
       </section>
 
       <section className="grid gap-5 xl:grid-cols-2">
         <section className="rounded-3xl bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.06] ring-1 ring-[#25262B]/[0.06]">
-          <h2 className="text-xl font-black">Productos mÃ¡s vendidos</h2>
+          <h2 className="text-xl font-black">Productos más vendidos</h2>
           <div className="mt-5 space-y-3">
             {stats.topProducts.length === 0 ? (
               <p className="rounded-2xl bg-[#F8F3E8] p-4 text-sm font-bold text-[#746f69]">
-                TodavÃ­a no hay productos vendidos en este perÃ­odo.
+                Todavía no hay productos vendidos en este período.
               </p>
             ) : (
               stats.topProducts.map((product, index) => (
@@ -489,7 +489,7 @@ export function StatsManager() {
                   <div>
                     <p className="font-black">#{index + 1} {product.product}</p>
                     <p className="text-xs font-bold text-[#746f69]">
-                      {formatNumber(product.quantity)} unidades Â· {formatPercent(product.share)} de ventas
+                      {formatNumber(product.quantity)} unidades · {formatPercent(product.share)} de ventas
                     </p>
                   </div>
                   <p className="font-black">{formatUsd(product.revenue)}</p>
@@ -504,7 +504,7 @@ export function StatsManager() {
           <div className="mt-5 space-y-3">
             {stats.topCustomers.length === 0 ? (
               <p className="rounded-2xl bg-[#F8F3E8] p-4 text-sm font-bold text-[#746f69]">
-                TodavÃ­a no hay clientes registrados.
+                Todavía no hay clientes registrados.
               </p>
             ) : (
               stats.topCustomers.map((customer) => (
@@ -512,7 +512,7 @@ export function StatsManager() {
                   <div>
                     <p className="font-black">{customer.customer}</p>
                     <p className="text-xs font-bold text-[#746f69]">
-                      {customer.phone} Â· {customer.orders} pedidos Â· Ãºltimo {formatDate(customer.lastOrderAt)}
+                      {customer.phone} · {customer.orders} pedidos · último {formatDate(customer.lastOrderAt)}
                     </p>
                   </div>
                   <p className="font-black">{formatUsd(customer.revenue)}</p>
@@ -525,12 +525,12 @@ export function StatsManager() {
 
       <section className="grid gap-5 xl:grid-cols-3">
         <BarList title="Horas pico" subtitle="Pedidos por hora" items={stats.ordersByHour} />
-        <BarList title="DÃ­as pico" subtitle="Pedidos por dÃ­a de semana" items={stats.ordersByWeekday} />
+        <BarList title="Días pico" subtitle="Pedidos por día de semana" items={stats.ordersByWeekday} />
         <section className="rounded-3xl bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.06] ring-1 ring-[#25262B]/[0.06]">
-          <h2 className="text-xl font-black">Delivery</h2>
+          <h2 className="text-xl font-black">Entrega</h2>
           <div className="mt-5 grid gap-3">
-            <MetricCard label="Pedidos delivery" value={formatNumber(stats.summary.deliveryOrders)} detail={formatUsd(stats.summary.deliveryRevenueUsd)} icon={Bike} />
-            <MetricCard label="Pedidos pickup" value={formatNumber(stats.summary.pickupOrders)} detail={formatUsd(stats.summary.pickupRevenueUsd)} icon={Package} />
+            <MetricCard label="Pedidos con entrega" value={formatNumber(stats.summary.deliveryOrders)} detail={formatUsd(stats.summary.deliveryRevenueUsd)} icon={Bike} />
+            <MetricCard label="Pedidos con retiro" value={formatNumber(stats.summary.pickupOrders)} detail={formatUsd(stats.summary.pickupRevenueUsd)} icon={Package} />
             <MetricCard label="Costo promedio" value={formatUsd(stats.summary.averageDeliveryUsd)} detail={`Distancia: ${formatKm(stats.summary.averageDistanceKm)}`} icon={CreditCard} />
           </div>
         </section>

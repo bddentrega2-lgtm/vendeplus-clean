@@ -51,7 +51,7 @@ export function ConfirmationClient({ store }: { store: Store }) {
             <div className="mt-5 space-y-3">
               <div className="flex justify-between gap-4 rounded-2xl bg-[#FFF8F0] p-3 text-sm">
                 <span className="font-bold text-[#746f69]">Modalidad</span>
-                <span className="font-black text-[#25262B]">{order.form.deliveryType === "delivery" ? "Delivery" : "Pickup"}</span>
+                <span className="font-black text-[#25262B]">{order.form.deliveryType === "delivery" ? "Entrega" : "Retiro"}</span>
               </div>
               <div className="flex justify-between gap-4 rounded-2xl bg-[#FFF8F0] p-3 text-sm">
                 <span className="font-bold text-[#746f69]">Total</span>

@@ -28,7 +28,7 @@ export async function saveOrderToSupabase(order: SavedOrder, store: Store) {
   if (!supabase) {
     return {
       ok: false,
-      error: "Supabase no está configurado.",
+      error: "El servicio de pedidos no está disponible en este momento.",
     };
   }
 

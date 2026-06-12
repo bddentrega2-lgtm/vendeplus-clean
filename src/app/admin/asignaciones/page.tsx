@@ -9,7 +9,7 @@ export default function AdminAssignmentsPage() {
     <AdminShell
       active="/admin/asignaciones"
       title="Asignaciones"
-      subtitle="Conecta usuarios existentes de Supabase Auth con los comercios que pueden administrar desde el panel."
+      subtitle="Conecta usuarios registrados con los comercios que pueden administrar desde el panel."
     >
       <AdminAssignmentsManager />
     </AdminShell>

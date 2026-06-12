@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       return badRequest(
-        "No existe un usuario Auth con ese email. Créalo primero en Supabase Auth."
+        "No existe un usuario registrado con ese email. Créalo primero desde el sistema de usuarios."
       );
     }
 

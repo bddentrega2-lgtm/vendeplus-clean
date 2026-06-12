@@ -494,9 +494,9 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
             ].join(" ")}
           >
             {field === "accepts_delivery"
-              ? draft[field] ? "Delivery activo" : "Delivery inactivo"
+              ? draft[field] ? "Entrega activa" : "Entrega inactiva"
               : field === "accepts_pickup"
-                ? draft[field] ? "Pickup activo" : "Pickup inactivo"
+                ? draft[field] ? "Retiro activo" : "Retiro inactivo"
                 : draft[field] ? "Comercio activo" : "Comercio oculto"}
           </button>
         ))}

@@ -23,8 +23,8 @@ export function StoreBrandHeader({ store }: { store: BrandedStore }) {
   const accentColor = store.accentColor || "#FFB547";
 
   const services = [
-    store.acceptsDelivery ? "Delivery" : "",
-    store.acceptsPickup ? "Pickup" : "",
+    store.acceptsDelivery ? "Entrega" : "",
+    store.acceptsPickup ? "Retiro" : "",
   ]
     .filter(Boolean)
     .join(" · ");

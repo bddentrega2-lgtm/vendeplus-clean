@@ -48,8 +48,8 @@ export function buildOrderMessage(params: {
 
   const deliveryBlock =
     form.deliveryType === "pickup"
-      ? `🛍️ Pickup / Retiro`
-      : `🚚 Delivery: ${formatUsd(totals.deliveryUsd)} | ${
+      ? `🛍️ Retiro`
+      : `🚚 Entrega: ${formatUsd(totals.deliveryUsd)} | ${
           quote.distanceKm !== null ? `${quote.distanceKm.toFixed(2)} km` : "distancia pendiente"
         }\n📍 ${mapsUrl || "Ubicación pendiente"}${reference}`;
 

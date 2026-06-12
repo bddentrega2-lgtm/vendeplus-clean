@@ -770,7 +770,7 @@ export function ProductManager() {
           <div>
             <h2 className="text-2xl font-black">Productos editables</h2>
             <p className="text-sm font-bold text-[#746f69]">
-              {products.length} productos conectados a Supabase.
+              {products.length} productos en tus catálogos.
             </p>
           </div>
           <button

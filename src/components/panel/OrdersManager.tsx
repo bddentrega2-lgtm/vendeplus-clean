@@ -75,7 +75,7 @@ type OrderIntegration = {
 
 const statusOptions = [
   { value: "all", label: "Todos" },
-  { value: "received", label: "Recibidos" },
+  { value: "received", label: "Nuevos" },
   { value: "accepted", label: "Aceptados" },
   { value: "preparing", label: "Preparando" },
   { value: "ready", label: "Listos" },
@@ -85,7 +85,7 @@ const statusOptions = [
 ];
 
 const statusLabels: Record<string, string> = {
-  received: "Recibido",
+  received: "Nuevo",
   accepted: "Aceptado",
   preparing: "Preparando",
   ready: "Listo",
@@ -95,7 +95,7 @@ const statusLabels: Record<string, string> = {
 };
 
 const statusStyles: Record<string, string> = {
-  received: "bg-blue-100 text-blue-700",
+  received: "bg-[#FFB547] text-[#25262B]",
   accepted: "bg-indigo-100 text-indigo-700",
   preparing: "bg-yellow-100 text-yellow-800",
   ready: "bg-orange-100 text-orange-700",
@@ -326,10 +326,10 @@ function OrderDetail({
             <section className="rounded-[32px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.06]">
               <h3 className="text-xl font-black">Cliente</h3>
               <div className="mt-4 space-y-3 text-sm font-bold">
-                <p>?? {order.customer_name}</p>
-                <p>?? {order.customer_phone}</p>
-                <p>?? {order.payment_method}</p>
-                <p>?? {order.delivery_type === "delivery" ? "Delivery" : "Pickup"}</p>
+                <p>Cliente: {order.customer_name}</p>
+                <p>Teléfono: {order.customer_phone}</p>
+                <p>Pago: {order.payment_method}</p>
+                <p>Modalidad: {order.delivery_type === "delivery" ? "Entrega" : "Retiro"}</p>
               </div>
             </section>
 
@@ -341,7 +341,7 @@ function OrderDetail({
                   <span>{formatUsd(Number(order.subtotal_usd || 0))}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Delivery</span>
+                  <span>Entrega</span>
                   <span>{formatUsd(Number(order.delivery_usd || 0))}</span>
                 </div>
                 <div className="flex justify-between border-t border-[#25262B]/10 pt-3 text-lg font-black">
@@ -697,9 +697,9 @@ export function OrdersManager() {
             }}
             className="rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
           >
-            <option value="all">Delivery y pickup</option>
-            <option value="delivery">Solo delivery</option>
-            <option value="pickup">Solo pickup</option>
+            <option value="all">Entrega y retiro</option>
+            <option value="delivery">Solo entrega</option>
+            <option value="pickup">Solo retiro</option>
           </select>
         </div>
       </section>
@@ -725,16 +725,27 @@ export function OrdersManager() {
           const entrega2Status = entrega2Integration?.status || "";
           const showEntrega2Button = canSendToEntrega2(order);
           const isSendingDelivery = sendingDeliveryId === order.id;
+          const isNewOrder = order.status === "received";
 
           return (
             <article
               key={order.id}
-              className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]"
+              className={[
+                "rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1",
+                isNewOrder
+                  ? "ring-2 ring-[#FFB547]"
+                  : "ring-[#25262B]/[0.06]",
+              ].join(" ")}
             >
               <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr_0.7fr_0.5fr] xl:items-center">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="text-xl font-black">{order.public_code}</h3>
+                    {isNewOrder && (
+                      <span className="rounded-full bg-[#25262B] px-3 py-1 text-xs font-black text-white">
+                        Pendiente de atención
+                      </span>
+                    )}
                     <span
                       className={[
                         "rounded-full px-3 py-1 text-xs font-black",
@@ -759,7 +770,7 @@ export function OrdersManager() {
                 <div>
                   <p className="font-black">{formatUsd(Number(order.total_usd || 0))}</p>
                   <p className="text-xs font-bold text-[#746f69]">
-                    {order.delivery_type === "delivery" ? "Delivery" : "Pickup"} · {order.payment_method}
+                    {order.delivery_type === "delivery" ? "Entrega" : "Retiro"} · {order.payment_method}
                   </p>
                   {(order.delivery_reference || order.order_details) && (
                     <p className="mt-1 text-xs font-bold text-[#746f69]">
@@ -814,10 +825,11 @@ export function OrdersManager() {
                       href={whatsappUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="grid h-11 w-11 place-items-center rounded-full bg-[#F8F3E8] text-[#2E3A79]"
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-green-100 px-4 text-xs font-black text-green-700"
                       aria-label="Abrir WhatsApp"
                     >
                       <Send size={17} />
+                      WhatsApp
                     </a>
                   )}
 
@@ -862,7 +874,7 @@ export function OrdersManager() {
                     onClick={() => setSelectedOrder(order)}
                     className="rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
                   >
-                    Ver detalle
+                    Ver resumen
                   </button>
                 </div>
               </div>

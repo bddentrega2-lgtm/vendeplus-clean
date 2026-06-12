@@ -10,7 +10,7 @@ const nunito = Nunito_Sans({
 
 export const metadata: Metadata = {
   title: "Vende+ | Catálogo inteligente",
-  description: "Vende más. Cobra mejor. Conecta tu delivery.",
+  description: "Vende más. Cobra mejor. Gestiona tus entregas.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

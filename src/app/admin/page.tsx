@@ -9,7 +9,7 @@ export default function AdminPage() {
     <AdminShell
       active="/admin"
       title="Resumen fundador"
-      subtitle="Vista global para preparar clientes, revisar comercios y operar el onboarding sin entrar directo a Supabase."
+      subtitle="Vista global para preparar clientes, revisar comercios y operar altas sin tocar herramientas técnicas."
     >
       <AdminDashboard />
     </AdminShell>

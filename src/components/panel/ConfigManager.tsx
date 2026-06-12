@@ -209,7 +209,7 @@ function StoreSettingsCard({
           </p>
           <h2 className="mt-1 text-3xl font-black">{draft.name}</h2>
           <p className="mt-2 text-sm font-bold text-[#746f69]">
-            Configuración multi-rubro del comercio.
+            Configuración del negocio.
           </p>
         </div>
 
@@ -221,7 +221,7 @@ function StoreSettingsCard({
             className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-5 py-3 text-sm font-black text-white"
           >
             <ExternalLink size={17} />
-            Ver tienda pública
+            Ver catálogo público
           </a>
 
           <button
@@ -278,7 +278,7 @@ function StoreSettingsCard({
           <div>
             <h3 className="text-xl font-black text-[#25262B]">Identidad visual</h3>
             <p className="mt-1 text-sm font-bold text-[#746f69]">
-              Personaliza cómo se ve la tienda pública de este comercio.
+              Personaliza cómo se ve el catálogo público de este comercio.
             </p>
           </div>
         </div>
@@ -467,7 +467,7 @@ function StoreSettingsCard({
 
         <label className="space-y-1">
           <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-            Tiempo delivery
+            Tiempo de entrega
           </span>
           <input
             value={draft.delivery_estimate}
@@ -478,7 +478,7 @@ function StoreSettingsCard({
 
         <label className="space-y-1">
           <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-            Tiempo pickup
+            Tiempo de retiro
           </span>
           <input
             value={draft.pickup_estimate}
@@ -548,7 +548,7 @@ function StoreSettingsCard({
             draft.accepts_delivery ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700",
           ].join(" ")}
         >
-          {draft.accepts_delivery ? "Delivery activo" : "Delivery inactivo"}
+          {draft.accepts_delivery ? "Entrega activa" : "Entrega inactiva"}
         </button>
 
         <button
@@ -559,7 +559,7 @@ function StoreSettingsCard({
             draft.accepts_pickup ? "bg-blue-100 text-blue-700" : "bg-red-100 text-red-700",
           ].join(" ")}
         >
-          {draft.accepts_pickup ? "Pickup activo" : "Pickup inactivo"}
+          {draft.accepts_pickup ? "Retiro activo" : "Retiro inactivo"}
         </button>
 
         <button
@@ -661,9 +661,9 @@ export function ConfigManager() {
         <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
           <div>
             <p className="text-sm font-black uppercase tracking-[0.18em] text-[#FFB547]">
-              Configuración multi-rubro
+              Configuración del negocio
             </p>
-            <h2 className="mt-2 text-3xl font-black">Comercios asignados</h2>
+            <h2 className="mt-2 text-3xl font-black">Tus negocios</h2>
             <p className="mt-2 text-sm font-semibold leading-relaxed text-white/70">
               Edita datos comerciales, tipo de negocio, métodos de pago, tiempos y operación.
             </p>

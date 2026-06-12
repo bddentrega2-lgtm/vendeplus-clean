@@ -37,7 +37,7 @@ export function CatalogClient({ store }: { store: Store }) {
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Buscar en el menú..."
+            placeholder="Buscar productos..."
             className="w-full bg-transparent text-sm font-bold text-[#25262B] outline-none placeholder:text-[#746f69]/70"
           />
         </div>

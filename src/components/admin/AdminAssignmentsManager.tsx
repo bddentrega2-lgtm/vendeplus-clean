@@ -154,7 +154,7 @@ export function AdminAssignmentsManager() {
         </div>
         <h2 className="mt-4 text-3xl font-black">Asignar usuario</h2>
         <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
-          El usuario debe existir primero en Supabase Auth. Aquí solo se conecta al comercio.
+          El usuario debe estar registrado primero. Aquí solo se conecta al comercio.
         </p>
 
         <div className="mt-5 space-y-4">

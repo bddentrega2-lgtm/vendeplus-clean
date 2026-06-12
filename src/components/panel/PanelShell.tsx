@@ -6,16 +6,18 @@ import {
   ClipboardList,
   Home,
   LayoutDashboard,
+  PlusCircle,
   Settings,
   Sparkles,
   Tags,
 } from "lucide-react";
 
 const navItems = [
-  { href: "/panel", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/panel/catalogo", label: "Catálogo", icon: Tags },
-  { href: "/panel/productos", label: "Productos", icon: Boxes },
+  { href: "/panel", label: "Inicio", icon: LayoutDashboard },
   { href: "/panel/pedidos", label: "Pedidos", icon: ClipboardList },
+  { href: "/panel/pedidos/nuevo", label: "Crear pedido", icon: PlusCircle },
+  { href: "/panel/productos", label: "Productos", icon: Boxes },
+  { href: "/panel/catalogo", label: "Catálogo", icon: Tags },
   { href: "/panel/estadisticas", label: "Estadísticas", icon: BarChart3 },
   { href: "/panel/configuracion", label: "Configuración", icon: Settings },
 ];
@@ -73,10 +75,9 @@ export function PanelShell({
           </nav>
 
           <div className="mt-8 rounded-[32px] bg-[#25262B] p-5 text-white">
-            <p className="text-sm font-black text-[#FFB547]">Modo fundador</p>
+            <p className="text-sm font-black text-[#FFB547]">Panel de ventas</p>
             <p className="mt-2 text-sm font-semibold leading-relaxed text-white/75">
-              Estamos construyendo la base de una plataforma seria: catálogo,
-              pedidos, métricas y operación comercial en un solo lugar.
+              Gestiona productos, pedidos, ventas y configuración de tu negocio en un solo lugar.
             </p>
           </div>
 
@@ -85,7 +86,7 @@ export function PanelShell({
             className="mt-4 flex items-center gap-2 rounded-3xl bg-[#F8F3E8] px-4 py-3 text-sm font-black text-[#2E3A79]"
           >
             <Home size={17} />
-            Ver tienda pública
+            Ver catálogo público
           </Link>
                   <div className="mt-4"><LogoutButton /></div>
         </aside>
@@ -95,7 +96,7 @@ export function PanelShell({
             <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
               <div>
                 <p className="text-sm font-black uppercase tracking-[0.18em] text-[#FFB547]">
-                  Vende+ Commerce OS
+                  Vende+ Panel de ventas
                 </p>
                 <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-5xl">
                   {title}
@@ -106,7 +107,7 @@ export function PanelShell({
               </div>
 
               <div className="rounded-3xl bg-white/10 px-4 py-3 text-sm font-black backdrop-blur">
-                Base conectada a Supabase
+                Datos guardados automáticamente
               </div>
             </div>
           </header>

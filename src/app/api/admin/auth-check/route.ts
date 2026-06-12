@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
           founderEmailCount: founderEmails.length,
           founderEmailsPreview: founderEmails.map(maskEmail),
           matchesFounderEmail: false,
-          reason: "La sesión no es válida para este proyecto Supabase.",
+          reason: "La sesión no es válida para este proyecto.",
         },
         { status: 401 }
       );

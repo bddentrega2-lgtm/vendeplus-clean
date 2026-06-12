@@ -114,7 +114,7 @@ export async function getPanelAuthContext(
         userId: userResult.user.id,
         email: userEmail,
         storeIds: [],
-        error: "Usuario sin comercio asignado.",
+        error: "Tu usuario aún no tiene un negocio vinculado.",
       };
     }
 

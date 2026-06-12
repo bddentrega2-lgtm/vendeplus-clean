@@ -359,6 +359,7 @@ export function CatalogManager() {
   const [isLoading, setIsLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState("");
+  const [copyMessage, setCopyMessage] = useState("");
 
   async function loadData(currentPin: string) {
     setIsLoading(true);
@@ -511,9 +512,21 @@ export function CatalogManager() {
   }, [selectedStore, storeCategories, storeProducts]);
 
   async function copyPublicLink() {
-    if (!selectedStore) return;
+    setCopyMessage("");
+
+    if (!selectedStore?.slug) {
+      setCopyMessage("No hay link público disponible para este comercio.");
+      return;
+    }
+
     const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
-    await navigator.clipboard.writeText(`${baseUrl}/${selectedStore.slug}`);
+
+    try {
+      await navigator.clipboard.writeText(`${baseUrl}/${selectedStore.slug}`);
+      setCopyMessage("Link del catálogo copiado.");
+    } catch {
+      setCopyMessage("No se pudo copiar el link. Abre el catálogo y copia la URL.");
+    }
   }
 
   if (isCheckingAccess) {
@@ -628,7 +641,7 @@ export function CatalogManager() {
                 className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
               >
                 <ExternalLink size={17} />
-                Ver tienda pública
+                Ver catálogo
               </a>
               <button
                 type="button"
@@ -636,9 +649,13 @@ export function CatalogManager() {
                 className="inline-flex items-center justify-center gap-2 rounded-full bg-white/10 px-5 py-3 text-sm font-black"
               >
                 <Copy size={17} />
-                Copiar link
+                Compartir catálogo
               </button>
             </div>
+          )}
+
+          {copyMessage && (
+            <p className="mt-3 text-sm font-black text-[#FFB547]">{copyMessage}</p>
           )}
         </section>
 

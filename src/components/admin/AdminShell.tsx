@@ -75,7 +75,7 @@ export function AdminShell({
               Zona fundador
             </p>
             <p className="mt-2 text-sm font-semibold leading-relaxed text-white/75">
-              Alta de comercios, control de usuarios asignados y preparación de clientes sin tocar Supabase directo.
+              Alta de comercios, control de usuarios asignados y preparación de clientes sin tocar herramientas técnicas.
             </p>
           </div>
 
@@ -84,7 +84,7 @@ export function AdminShell({
             className="mt-4 flex items-center gap-2 rounded-3xl bg-[#F8F3E8] px-4 py-3 text-sm font-black text-[#2E3A79]"
           >
             <Home size={17} />
-            Ver tienda pública
+            Ver catálogo público
           </Link>
 
           <div className="mt-4">

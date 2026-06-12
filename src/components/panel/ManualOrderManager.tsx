@@ -56,7 +56,7 @@ type SelectedItem = {
 };
 
 const fallbackPaymentMethods = [
-  "Pago mÃ³vil",
+  "Pago móvil",
   "Transferencia",
   "Efectivo",
   "Binance",
@@ -179,7 +179,7 @@ export function ManualOrderManager() {
       setIsUnlocked(true);
       savePanelPin(currentPin);
     } catch (error: any) {
-      setError(error.message || "No se pudo cargar la informaciÃ³n.");
+      setError(error.message || "No se pudo cargar la información.");
       setIsUnlocked(false);
     } finally {
       setIsLoading(false);
@@ -261,12 +261,12 @@ export function ManualOrderManager() {
     }
 
     if (!customerPhone.trim()) {
-      setError("Escribe el telÃ©fono del cliente.");
+      setError("Escribe el teléfono del cliente.");
       return;
     }
 
     if (!paymentMethod) {
-      setError("Selecciona un mÃ©todo de pago.");
+      setError("Selecciona un método de pago.");
       return;
     }
 
@@ -345,7 +345,7 @@ export function ManualOrderManager() {
             <div>
               <h2 className="text-2xl font-black">Pedido manual</h2>
               <p className="mt-1 text-sm font-bold text-[#746f69]">
-                Registra ventas recibidas por WhatsApp, Instagram, llamada o atenciÃ³n directa.
+                Registra ventas recibidas por WhatsApp, Instagram, llamada o atención directa.
               </p>
             </div>
             <Link
@@ -377,7 +377,7 @@ export function ManualOrderManager() {
 
             <label className="space-y-1">
               <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-                MÃ©todo de pago
+                Método de pago
               </span>
               <select
                 value={paymentMethod}
@@ -399,7 +399,7 @@ export function ManualOrderManager() {
           <textarea
             value={originalMessage}
             onChange={(event) => setOriginalMessage(event.target.value)}
-            placeholder="Ejemplo: Hola, quiero 2 pizzas margarita y 1 refresco para delivery en Base Aragua."
+            placeholder="Ejemplo: Hola, quiero 2 pizzas margarita y 1 refresco con entrega en Base Aragua."
             rows={4}
             className="mt-4 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
           />
@@ -417,7 +417,7 @@ export function ManualOrderManager() {
             <input
               value={customerPhone}
               onChange={(event) => setCustomerPhone(event.target.value)}
-              placeholder="TelÃ©fono"
+              placeholder="Teléfono"
               className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
             />
           </div>
@@ -426,7 +426,7 @@ export function ManualOrderManager() {
             <input
               value={deliveryReference}
               onChange={(event) => setDeliveryReference(event.target.value)}
-              placeholder="DirecciÃ³n o referencia"
+              placeholder="Dirección o referencia"
               className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
             />
             <input
@@ -522,7 +522,7 @@ export function ManualOrderManager() {
                   <div>
                     <p className="font-black">{product.name}</p>
                     <p className="text-xs font-bold text-[#746f69]">
-                      {category?.name || "Sin categorÃ­a"} Â· {formatUsd(Number(product.price_usd || 0))}
+                      {category?.name || "Sin categoría"} · {formatUsd(Number(product.price_usd || 0))}
                     </p>
                   </div>
                   <button
@@ -547,7 +547,7 @@ export function ManualOrderManager() {
             <div>
               <h2 className="text-2xl font-black">Resumen</h2>
               <p className="text-sm font-bold text-white/65">
-                {totalQuantity} productos Â· {deliveryType === "delivery" ? "Entrega" : "Retiro"}
+                {totalQuantity} productos · {deliveryType === "delivery" ? "Entrega" : "Retiro"}
               </p>
             </div>
           </div>

@@ -201,7 +201,7 @@ export function CheckoutForm({ store }: { store: Store }) {
             <p className="text-sm font-bold text-white/65">{store.name}</p>
             <h1 className="mt-2 max-w-xl text-3xl font-black tracking-tight sm:text-5xl">Confirma tu pedido</h1>
             <p className="mt-3 max-w-xl text-sm font-semibold leading-relaxed text-white/72">
-              Calculamos delivery por ubicación, armamos el pedido completo y lo dejamos listo para WhatsApp.
+              Calculamos la entrega por ubicación, armamos el pedido completo y lo dejamos listo para WhatsApp.
             </p>
           </div>
         </section>
@@ -226,12 +226,12 @@ export function CheckoutForm({ store }: { store: Store }) {
               <h2 className="text-xl font-black text-[#25262B]">2. Modalidad</h2>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <button type="button" onClick={() => updateField("deliveryType", "delivery")} className={form.deliveryType === "delivery" ? "rounded-[24px] bg-[#2E3A79] p-4 text-left text-white" : "rounded-[24px] bg-[#FFF8F0] p-4 text-left text-[#25262B] ring-1 ring-[#25262B]/[0.07]"}>
-                  <p className="text-lg font-black">Delivery</p>
+                  <p className="text-lg font-black">Entrega</p>
                   <p className="mt-1 text-sm font-bold opacity-75">GPS o mapa + tarifa automática</p>
                 </button>
                 <button type="button" onClick={() => updateField("deliveryType", "pickup")} className={form.deliveryType === "pickup" ? "rounded-[24px] bg-[#2E3A79] p-4 text-left text-white" : "rounded-[24px] bg-[#FFF8F0] p-4 text-left text-[#25262B] ring-1 ring-[#25262B]/[0.07]"}>
-                  <p className="text-lg font-black">Pickup</p>
-                  <p className="mt-1 text-sm font-bold opacity-75">Retiro en tienda, sin delivery</p>
+                  <p className="text-lg font-black">Retiro</p>
+                  <p className="mt-1 text-sm font-bold opacity-75">Retiro en tienda, sin costo de entrega</p>
                 </button>
               </div>
             </section>
@@ -300,7 +300,7 @@ export function CheckoutForm({ store }: { store: Store }) {
                 <div className="my-4 h-px bg-[#25262B]/10" />
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between"><span className="font-bold text-[#746f69]">Subtotal</span><span className="font-black">{formatUsd(subtotalUsd)}</span></div>
-                  <div className="flex justify-between"><span className="font-bold text-[#746f69]">Delivery</span><span className="font-black">{form.deliveryType === "delivery" ? formatUsd(deliveryUsd) : "Gratis"}</span></div>
+                  <div className="flex justify-between"><span className="font-bold text-[#746f69]">Entrega</span><span className="font-black">{form.deliveryType === "delivery" ? formatUsd(deliveryUsd) : "Gratis"}</span></div>
                   {form.deliveryType === "delivery" ? <p className="rounded-2xl bg-[#FFF8F0] p-3 text-xs font-black text-[#746f69]">{quote.label} {quote.source === "fallback" ? "· estimado aproximado" : ""}</p> : null}
                 </div>
 

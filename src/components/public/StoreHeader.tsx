@@ -32,12 +32,12 @@ export function StoreHeader({ store }: { store: Store }) {
             </div>
             <div className="rounded-2xl bg-white/10 p-3 backdrop-blur">
               <MapPin size={18} className="mb-1 text-[#FFB547]" />
-              <p className="text-xs font-bold text-white/65">Delivery</p>
+              <p className="text-xs font-bold text-white/65">Entrega</p>
               <p className="text-sm font-black">{store.deliveryEstimate}</p>
             </div>
             <div className="rounded-2xl bg-white/10 p-3 backdrop-blur">
               <Search size={18} className="mb-1 text-[#FFB547]" />
-              <p className="text-xs font-bold text-white/65">Pickup</p>
+              <p className="text-xs font-bold text-white/65">Retiro</p>
               <p className="text-sm font-black">{store.pickupEstimate}</p>
             </div>
           </div>

@@ -9,7 +9,7 @@ export default async function PanelProductsPage() {
     <PanelShell
       active="/panel/productos"
       title="Productos"
-      subtitle="Crea, edita y controla el catálogo real de cada comercio conectado a Supabase."
+      subtitle="Crea, edita y controla los productos que verán tus clientes en el catálogo."
     >
       <ProductManager />
     </PanelShell>
