@@ -16,6 +16,7 @@ export type PanelAuthContext = {
 export function normalizeAuthEmail(value?: string | null) {
   return String(value || "")
     .trim()
+    .replace(/^[A-Za-z_][A-Za-z0-9_]*\s*=\s*/, "")
     .replace(/^["']+|["']+$/g, "")
     .replace(/[\u200B-\u200D\uFEFF]/g, "")
     .toLowerCase();
