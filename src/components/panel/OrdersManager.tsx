@@ -326,10 +326,10 @@ function OrderDetail({
             <section className="rounded-[32px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.06]">
               <h3 className="text-xl font-black">Cliente</h3>
               <div className="mt-4 space-y-3 text-sm font-bold">
-                <p>👤 {order.customer_name}</p>
-                <p>📞 {order.customer_phone}</p>
-                <p>💳 {order.payment_method}</p>
-                <p>📦 {order.delivery_type === "delivery" ? "Delivery" : "Pickup"}</p>
+                <p>?? {order.customer_name}</p>
+                <p>?? {order.customer_phone}</p>
+                <p>?? {order.payment_method}</p>
+                <p>?? {order.delivery_type === "delivery" ? "Delivery" : "Pickup"}</p>
               </div>
             </section>
 
@@ -580,30 +580,16 @@ export function OrdersManager() {
         </div>
         <h2 className="mt-5 text-3xl font-black">Acceso de pedidos</h2>
         <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
-          Ingresa el PIN temporal para operar pedidos. Luego será reemplazado por login real por comercio.
+          Inicia sesión con tu usuario autorizado para continuar.
         </p>
 
-        <input
-          value={pin}
-          onChange={(event) => setPin(event.target.value)}
-          placeholder="PIN de acceso"
-          type="password"
-          className="mt-5 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-center text-lg font-black outline-none focus:border-[#2E3A79]"
-        />
-
-        <button
-          type="button"
-          onClick={() => loadOrders(pin)}
-          disabled={isLoading}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B] disabled:opacity-60"
+        <a
+          href="/panel/login"
+          className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B]"
         >
-          {isLoading ? (
-            <Loader2 size={18} className="animate-spin" />
-          ) : (
-            <CheckCircle2 size={18} />
-          )}
-          Entrar a pedidos
-        </button>
+          <CheckCircle2 size={18} />
+          Iniciar sesión
+        </a>
 
         {error && <p className="mt-3 text-sm font-black text-red-600">{error}</p>}
       </section>

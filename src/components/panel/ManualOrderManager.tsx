@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -56,7 +56,7 @@ type SelectedItem = {
 };
 
 const fallbackPaymentMethods = [
-  "Pago móvil",
+  "Pago mÃ³vil",
   "Transferencia",
   "Efectivo",
   "Binance",
@@ -179,7 +179,7 @@ export function ManualOrderManager() {
       setIsUnlocked(true);
       savePanelPin(currentPin);
     } catch (error: any) {
-      setError(error.message || "No se pudo cargar la información.");
+      setError(error.message || "No se pudo cargar la informaciÃ³n.");
       setIsUnlocked(false);
     } finally {
       setIsLoading(false);
@@ -261,12 +261,12 @@ export function ManualOrderManager() {
     }
 
     if (!customerPhone.trim()) {
-      setError("Escribe el teléfono del cliente.");
+      setError("Escribe el telÃ©fono del cliente.");
       return;
     }
 
     if (!paymentMethod) {
-      setError("Selecciona un método de pago.");
+      setError("Selecciona un mÃ©todo de pago.");
       return;
     }
 
@@ -322,24 +322,16 @@ export function ManualOrderManager() {
         </div>
         <h2 className="mt-5 text-3xl font-black">Acceso a pedidos</h2>
         <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
-          Inicia sesión o usa el PIN temporal para crear pedidos manuales.
+          Inicia sesión con tu usuario autorizado para continuar.
         </p>
-        <input
-          value={pin}
-          onChange={(event) => setPin(event.target.value)}
-          placeholder="PIN de acceso"
-          type="password"
-          className="mt-5 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-center text-lg font-black outline-none focus:border-[#2E3A79]"
-        />
-        <button
-          type="button"
-          onClick={() => loadData(pin)}
-          disabled={isLoading}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B] disabled:opacity-60"
+
+        <a
+          href="/panel/login"
+          className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B]"
         >
-          {isLoading ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
-          Entrar
-        </button>
+          <CheckCircle2 size={18} />
+          Iniciar sesión
+        </a>
         {error && <p className="mt-3 text-sm font-black text-red-600">{error}</p>}
       </section>
     );
@@ -353,7 +345,7 @@ export function ManualOrderManager() {
             <div>
               <h2 className="text-2xl font-black">Pedido manual</h2>
               <p className="mt-1 text-sm font-bold text-[#746f69]">
-                Registra ventas recibidas por WhatsApp, Instagram, llamada o atención directa.
+                Registra ventas recibidas por WhatsApp, Instagram, llamada o atenciÃ³n directa.
               </p>
             </div>
             <Link
@@ -385,7 +377,7 @@ export function ManualOrderManager() {
 
             <label className="space-y-1">
               <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-                Método de pago
+                MÃ©todo de pago
               </span>
               <select
                 value={paymentMethod}
@@ -425,7 +417,7 @@ export function ManualOrderManager() {
             <input
               value={customerPhone}
               onChange={(event) => setCustomerPhone(event.target.value)}
-              placeholder="Teléfono"
+              placeholder="TelÃ©fono"
               className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
             />
           </div>
@@ -434,7 +426,7 @@ export function ManualOrderManager() {
             <input
               value={deliveryReference}
               onChange={(event) => setDeliveryReference(event.target.value)}
-              placeholder="Dirección o referencia"
+              placeholder="DirecciÃ³n o referencia"
               className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
             />
             <input
@@ -530,7 +522,7 @@ export function ManualOrderManager() {
                   <div>
                     <p className="font-black">{product.name}</p>
                     <p className="text-xs font-bold text-[#746f69]">
-                      {category?.name || "Sin categoría"} · {formatUsd(Number(product.price_usd || 0))}
+                      {category?.name || "Sin categorÃ­a"} Â· {formatUsd(Number(product.price_usd || 0))}
                     </p>
                   </div>
                   <button
@@ -555,7 +547,7 @@ export function ManualOrderManager() {
             <div>
               <h2 className="text-2xl font-black">Resumen</h2>
               <p className="text-sm font-bold text-white/65">
-                {totalQuantity} productos · {deliveryType === "delivery" ? "Entrega" : "Retiro"}
+                {totalQuantity} productos Â· {deliveryType === "delivery" ? "Entrega" : "Retiro"}
               </p>
             </div>
           </div>

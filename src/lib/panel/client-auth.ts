@@ -11,12 +11,11 @@ export function getSavedPanelToken() {
 }
 
 export function getSavedPanelPin() {
-  if (typeof window === "undefined") return "";
-  return sessionStorage.getItem(PANEL_PIN_KEY) || "";
+  return "";
 }
 
 export function hasSavedPanelAuth() {
-  return Boolean(getSavedPanelToken() || getSavedPanelPin());
+  return Boolean(getSavedPanelToken());
 }
 
 export function savePanelToken(accessToken: string) {
@@ -26,8 +25,8 @@ export function savePanelToken(accessToken: string) {
 }
 
 export function savePanelPin(pin: string) {
-  if (typeof window === "undefined" || !pin) return;
-  sessionStorage.setItem(PANEL_PIN_KEY, pin);
+  if (typeof window === "undefined") return;
+  sessionStorage.removeItem(PANEL_PIN_KEY);
 }
 
 export function clearPanelAuthStorage() {
@@ -39,6 +38,8 @@ export function clearPanelAuthStorage() {
 export async function getPanelAuthHeaders(
   pin = getSavedPanelPin()
 ): Promise<Record<string, string>> {
+  void pin;
+
   try {
     const supabase = createSupabaseBrowserClient();
     const { data } = supabase ? await supabase.auth.getSession() : { data: null };
@@ -49,7 +50,7 @@ export async function getPanelAuthHeaders(
       return { Authorization: `Bearer ${accessToken}` };
     }
   } catch {
-    // Keep the current PIN fallback if the browser session cannot be read.
+    // Fall back to a previously saved auth token if Supabase session read fails.
   }
 
   const savedToken = getSavedPanelToken();
@@ -58,5 +59,5 @@ export async function getPanelAuthHeaders(
     return { Authorization: `Bearer ${savedToken}` };
   }
 
-  return { "x-panel-pin": pin };
+  return {};
 }

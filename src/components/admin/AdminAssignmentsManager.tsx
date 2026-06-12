@@ -10,10 +10,8 @@ import {
 } from "lucide-react";
 import {
   getPanelAuthHeaders,
-  getSavedPanelPin,
   getSavedPanelToken,
   hasSavedPanelAuth,
-  savePanelPin,
 } from "@/lib/panel/client-auth";
 
 type StoreRow = {
@@ -49,7 +47,6 @@ async function apiRequest(pin: string, options?: RequestInit) {
 }
 
 export function AdminAssignmentsManager() {
-  const [pin, setPin] = useState("");
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
   const [email, setEmail] = useState("");
@@ -62,19 +59,18 @@ export function AdminAssignmentsManager() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  async function loadAssignments(currentPin: string) {
+  async function loadAssignments() {
     setIsLoading(true);
     setError("");
 
     try {
-      const data = await apiRequest(currentPin);
+      const data = await apiRequest("");
       const nextStores = data.stores || [];
 
       setStores(nextStores);
       setAssignments(data.assignments || []);
       setStoreId((current) => current || nextStores[0]?.id || "");
       setIsUnlocked(true);
-      if (currentPin) savePanelPin(currentPin);
     } catch (error: any) {
       setError(error.message || "No se pudo cargar asignaciones.");
       setIsUnlocked(false);
@@ -90,7 +86,7 @@ export function AdminAssignmentsManager() {
     setMessage("");
 
     try {
-      const data = await apiRequest(pin, {
+      const data = await apiRequest("", {
         method: "POST",
         body: JSON.stringify({
           email,
@@ -101,7 +97,7 @@ export function AdminAssignmentsManager() {
 
       setMessage(data.message || "Usuario asignado.");
       setEmail("");
-      await loadAssignments(pin);
+      await loadAssignments();
     } catch (error: any) {
       setError(error.message || "No se pudo asignar usuario.");
     } finally {
@@ -110,12 +106,10 @@ export function AdminAssignmentsManager() {
   }
 
   useEffect(() => {
-    const savedPin = getSavedPanelPin();
     const savedToken = getSavedPanelToken();
 
-    if (savedPin || savedToken) {
-      setPin(savedPin);
-      loadAssignments(savedPin);
+    if (savedToken) {
+      loadAssignments();
     } else {
       setIsCheckingAccess(false);
     }
@@ -137,22 +131,16 @@ export function AdminAssignmentsManager() {
           <Lock size={26} />
         </div>
         <h2 className="mt-5 text-3xl font-black">Acceso fundador</h2>
-        <input
-          value={pin}
-          onChange={(event) => setPin(event.target.value)}
-          placeholder="PIN fundador"
-          type="password"
-          className="mt-5 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-center text-lg font-black outline-none focus:border-[#25262B]"
-        />
-        <button
-          type="button"
-          onClick={() => loadAssignments(pin)}
-          disabled={isLoading}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B] disabled:opacity-60"
+        <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
+          Inicia sesión con un email fundador para asignar usuarios.
+        </p>
+        <a
+          href="/panel/login"
+          className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B]"
         >
-          {isLoading ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
-          Entrar
-        </button>
+          <CheckCircle2 size={18} />
+          Iniciar sesión
+        </a>
         {error && <p className="mt-3 text-sm font-black text-red-600">{error}</p>}
       </section>
     );
@@ -240,7 +228,7 @@ export function AdminAssignmentsManager() {
           </div>
           <button
             type="button"
-            onClick={() => loadAssignments(pin)}
+            onClick={() => loadAssignments()}
             className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F8F3E8] px-4 py-3 text-sm font-black text-[#2E3A79]"
           >
             <RefreshCcw size={16} />

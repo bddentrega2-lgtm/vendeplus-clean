@@ -124,26 +124,16 @@ export function DashboardManager() {
         </div>
         <h2 className="mt-5 text-3xl font-black">Acceso al dashboard</h2>
         <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
-          Inicia sesión o usa el PIN temporal para ver el resumen de tus comercios asignados.
+          Inicia sesión para ver el resumen de tus comercios asignados.
         </p>
 
-        <input
-          value={pin}
-          onChange={(event) => setPin(event.target.value)}
-          placeholder="PIN de acceso"
-          type="password"
-          className="mt-5 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-center text-lg font-black outline-none focus:border-[#2E3A79]"
-        />
-
-        <button
-          type="button"
-          onClick={() => loadDashboard(pin)}
-          disabled={isLoading}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B] disabled:opacity-60"
+        <a
+          href="/panel/login"
+          className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B]"
         >
-          {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Activity size={18} />}
-          Entrar al dashboard
-        </button>
+          <Activity size={18} />
+          Iniciar sesión
+        </a>
 
         {error && <p className="mt-3 text-sm font-black text-red-600">{error}</p>}
       </section>

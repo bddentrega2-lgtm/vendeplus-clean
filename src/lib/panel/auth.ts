@@ -3,8 +3,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export type PanelAuthContext = {
   isAuthorized: boolean;
-  mode: "pin" | "user" | "none";
-  method: "pin" | "auth" | "none";
+  mode: "user" | "none";
+  method: "auth" | "none";
   isFounderMode: boolean;
   userId?: string;
   email?: string;
@@ -13,44 +13,44 @@ export type PanelAuthContext = {
   error?: string;
 };
 
+function normalizeAuthEmail(value?: string | null) {
+  return String(value || "")
+    .trim()
+    .replace(/^["']+|["']+$/g, "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .toLowerCase();
+}
+
 function getFounderEmails() {
   return (process.env.FOUNDER_EMAILS || "")
     .split(",")
-    .map((email) => email.trim().toLowerCase())
+    .map((email) => normalizeAuthEmail(email))
     .filter(Boolean);
 }
 
 function isFounderEmail(email?: string | null) {
-  if (!email) return false;
-  return getFounderEmails().includes(email.trim().toLowerCase());
+  const normalizedEmail = normalizeAuthEmail(email);
+
+  if (!normalizedEmail) return false;
+
+  return getFounderEmails().includes(normalizedEmail);
+}
+
+function getSupabaseUserEmail(user: any) {
+  const directEmail = normalizeAuthEmail(user?.email);
+
+  if (directEmail) return directEmail;
+
+  const identityEmail = user?.identities
+    ?.map((identity: any) => identity?.identity_data?.email)
+    .find(Boolean);
+
+  return normalizeAuthEmail(identityEmail);
 }
 
 export async function getPanelAuthContext(
   request: NextRequest
 ): Promise<PanelAuthContext> {
-  const expectedPin = process.env.PANEL_ACCESS_PIN;
-  const receivedPin = request.headers.get("x-panel-pin");
-  const isProduction = process.env.NODE_ENV === "production";
-  const isPanelPinAllowed =
-    !isProduction || process.env.ALLOW_PANEL_PIN_IN_PRODUCTION !== "false";
-
-  /*
-   * Founder PIN is a temporary operational fallback, not a customer auth model.
-   * It grants global access through storeIds: null and must be replaced by real
-   * owner/admin roles before selling Vende+ at scale. Set
-   * ALLOW_PANEL_PIN_IN_PRODUCTION=false to disable it in production.
-   */
-  if (isPanelPinAllowed && expectedPin && receivedPin && receivedPin === expectedPin) {
-    return {
-      isAuthorized: true,
-      mode: "pin",
-      method: "pin",
-      isFounderMode: true,
-      storeIds: null,
-      role: "owner",
-    };
-  }
-
   const authorization = request.headers.get("authorization");
   const token = authorization?.replace("Bearer ", "").trim();
 
@@ -82,7 +82,7 @@ export async function getPanelAuthContext(
       };
     }
 
-    const userEmail = userResult.user.email || "";
+    const userEmail = getSupabaseUserEmail(userResult.user);
 
     if (isFounderEmail(userEmail)) {
       return {

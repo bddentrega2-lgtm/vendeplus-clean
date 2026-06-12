@@ -15,10 +15,8 @@ import {
 } from "lucide-react";
 import {
   getPanelAuthHeaders,
-  getSavedPanelPin,
   getSavedPanelToken,
   hasSavedPanelAuth,
-  savePanelPin,
 } from "@/lib/panel/client-auth";
 
 type Summary = {
@@ -64,14 +62,10 @@ function formatUsd(value: number) {
 }
 
 function AccessBox({
-  pin,
-  setPin,
   error,
   isLoading,
   onSubmit,
 }: {
-  pin: string;
-  setPin: (value: string) => void;
   error: string;
   isLoading: boolean;
   onSubmit: () => void;
@@ -83,16 +77,8 @@ function AccessBox({
       </div>
       <h2 className="mt-5 text-3xl font-black">Acceso fundador</h2>
       <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
-        Entra con una sesión incluida en FOUNDER_EMAILS o usa el PIN temporal fundador.
+        Inicia sesión con un email incluido en FOUNDER_EMAILS para entrar al admin.
       </p>
-
-      <input
-        value={pin}
-        onChange={(event) => setPin(event.target.value)}
-        placeholder="PIN fundador"
-        type="password"
-        className="mt-5 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-center text-lg font-black outline-none focus:border-[#25262B]"
-      />
 
       <button
         type="button"
@@ -101,7 +87,7 @@ function AccessBox({
         className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B] disabled:opacity-60"
       >
         {isLoading ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
-        Entrar al admin
+        Validar sesión
       </button>
 
       <Link
@@ -117,7 +103,6 @@ function AccessBox({
 }
 
 export function AdminDashboard() {
-  const [pin, setPin] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => hasSavedPanelAuth());
   const [isLoading, setIsLoading] = useState(false);
@@ -125,17 +110,15 @@ export function AdminDashboard() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [recentStores, setRecentStores] = useState<RecentStore[]>([]);
 
-  async function loadSummary(currentPin: string) {
+  async function loadSummary() {
     setIsLoading(true);
     setError("");
 
     try {
-      const data = await adminRequest("/api/admin/summary", currentPin);
+      const data = await adminRequest("/api/admin/summary", "");
       setSummary(data.summary);
       setRecentStores(data.recentStores || []);
       setIsUnlocked(true);
-
-      if (currentPin) savePanelPin(currentPin);
     } catch (error: any) {
       setError(error.message || "No se pudo cargar admin.");
       setIsUnlocked(false);
@@ -146,12 +129,10 @@ export function AdminDashboard() {
   }
 
   useEffect(() => {
-    const savedPin = getSavedPanelPin();
     const savedToken = getSavedPanelToken();
 
-    if (savedPin || savedToken) {
-      setPin(savedPin);
-      loadSummary(savedPin);
+    if (savedToken) {
+      loadSummary();
     } else {
       setIsCheckingAccess(false);
     }
@@ -169,11 +150,9 @@ export function AdminDashboard() {
   if (!isUnlocked || !summary) {
     return (
       <AccessBox
-        pin={pin}
-        setPin={setPin}
         error={error}
         isLoading={isLoading}
-        onSubmit={() => loadSummary(pin)}
+        onSubmit={() => loadSummary()}
       />
     );
   }
@@ -218,7 +197,7 @@ export function AdminDashboard() {
             </div>
             <button
               type="button"
-              onClick={() => loadSummary(pin)}
+              onClick={() => loadSummary()}
               className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F8F3E8] px-4 py-3 text-sm font-black text-[#2E3A79]"
             >
               <RefreshCcw size={16} />

@@ -12,10 +12,8 @@ import {
 } from "lucide-react";
 import {
   getPanelAuthHeaders,
-  getSavedPanelPin,
   getSavedPanelToken,
   hasSavedPanelAuth,
-  savePanelPin,
 } from "@/lib/panel/client-auth";
 
 type StoreDraft = {
@@ -135,7 +133,6 @@ async function adminRequest(path: string, pin: string, options?: RequestInit) {
 export function AdminStoreForm({ storeId }: { storeId?: string }) {
   const router = useRouter();
   const isEditing = Boolean(storeId);
-  const [pin, setPin] = useState("");
   const [draft, setDraft] = useState<StoreDraft>(initialDraft);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => hasSavedPanelAuth());
@@ -161,20 +158,19 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
     });
   }
 
-  async function unlock(currentPin: string) {
+  async function unlock() {
     setIsLoading(true);
     setError("");
 
     try {
       if (isEditing) {
-        const data = await adminRequest(`/api/admin/stores/${storeId}`, currentPin);
+        const data = await adminRequest(`/api/admin/stores/${storeId}`, "");
         setDraft(mapStoreToDraft(data.store));
       } else {
-        await adminRequest("/api/admin/summary", currentPin);
+        await adminRequest("/api/admin/summary", "");
       }
 
       setIsUnlocked(true);
-      if (currentPin) savePanelPin(currentPin);
     } catch (error: any) {
       setError(error.message || "No se pudo validar acceso.");
       setIsUnlocked(false);
@@ -192,7 +188,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
     try {
       const path = isEditing ? `/api/admin/stores/${storeId}` : "/api/admin/stores";
       const method = isEditing ? "PATCH" : "POST";
-      const data = await adminRequest(path, pin, {
+      const data = await adminRequest(path, "", {
         method,
         body: JSON.stringify({
           ...draft,
@@ -214,12 +210,10 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
   }
 
   useEffect(() => {
-    const savedPin = getSavedPanelPin();
     const savedToken = getSavedPanelToken();
 
-    if (savedPin || savedToken) {
-      setPin(savedPin);
-      unlock(savedPin);
+    if (savedToken) {
+      unlock();
     } else {
       setIsCheckingAccess(false);
     }
@@ -241,22 +235,16 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
           <Lock size={26} />
         </div>
         <h2 className="mt-5 text-3xl font-black">Acceso fundador</h2>
-        <input
-          value={pin}
-          onChange={(event) => setPin(event.target.value)}
-          placeholder="PIN fundador"
-          type="password"
-          className="mt-5 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-center text-lg font-black outline-none focus:border-[#25262B]"
-        />
-        <button
-          type="button"
-          onClick={() => unlock(pin)}
-          disabled={isLoading}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B] disabled:opacity-60"
+        <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
+          Inicia sesión con un email fundador para crear o editar comercios.
+        </p>
+        <a
+          href="/panel/login"
+          className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B]"
         >
-          {isLoading ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
-          Entrar
-        </button>
+          <CheckCircle2 size={18} />
+          Iniciar sesión
+        </a>
         {error && <p className="mt-3 text-sm font-black text-red-600">{error}</p>}
       </section>
     );

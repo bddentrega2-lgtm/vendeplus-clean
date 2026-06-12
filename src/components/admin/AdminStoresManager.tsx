@@ -15,10 +15,8 @@ import {
 } from "lucide-react";
 import {
   getPanelAuthHeaders,
-  getSavedPanelPin,
   getSavedPanelToken,
   hasSavedPanelAuth,
-  savePanelPin,
 } from "@/lib/panel/client-auth";
 
 type StoreRow = {
@@ -45,7 +43,6 @@ async function apiRequest(pin: string) {
 }
 
 export function AdminStoresManager() {
-  const [pin, setPin] = useState("");
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [query, setQuery] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -64,15 +61,14 @@ export function AdminStoresManager() {
     );
   }, [query, stores]);
 
-  async function loadStores(currentPin: string) {
+  async function loadStores() {
     setIsLoading(true);
     setError("");
 
     try {
-      const data = await apiRequest(currentPin);
+      const data = await apiRequest("");
       setStores(data.stores || []);
       setIsUnlocked(true);
-      if (currentPin) savePanelPin(currentPin);
     } catch (error: any) {
       setError(error.message || "No se pudo cargar comercios.");
       setIsUnlocked(false);
@@ -83,12 +79,10 @@ export function AdminStoresManager() {
   }
 
   useEffect(() => {
-    const savedPin = getSavedPanelPin();
     const savedToken = getSavedPanelToken();
 
-    if (savedPin || savedToken) {
-      setPin(savedPin);
-      loadStores(savedPin);
+    if (savedToken) {
+      loadStores();
     } else {
       setIsCheckingAccess(false);
     }
@@ -110,22 +104,16 @@ export function AdminStoresManager() {
           <Lock size={26} />
         </div>
         <h2 className="mt-5 text-3xl font-black">Acceso fundador</h2>
-        <input
-          value={pin}
-          onChange={(event) => setPin(event.target.value)}
-          placeholder="PIN fundador"
-          type="password"
-          className="mt-5 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-center text-lg font-black outline-none focus:border-[#25262B]"
-        />
-        <button
-          type="button"
-          onClick={() => loadStores(pin)}
-          disabled={isLoading}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B] disabled:opacity-60"
+        <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
+          Inicia sesión con un email fundador para administrar comercios.
+        </p>
+        <a
+          href="/panel/login"
+          className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B]"
         >
-          {isLoading ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
-          Entrar
-        </button>
+          <CheckCircle2 size={18} />
+          Iniciar sesión
+        </a>
         {error && <p className="mt-3 text-sm font-black text-red-600">{error}</p>}
       </section>
     );
@@ -153,7 +141,7 @@ export function AdminStoresManager() {
             </label>
             <button
               type="button"
-              onClick={() => loadStores(pin)}
+              onClick={() => loadStores()}
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#F8F3E8] px-4 py-3 text-sm font-black text-[#2E3A79]"
             >
               <RefreshCcw size={16} />
