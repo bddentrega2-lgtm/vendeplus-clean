@@ -115,11 +115,11 @@ function ProductEditor({
     category_id: product.category_id || "",
     name: product.name,
     description: product.description || "",
-    price_usd: String(product.price_usd || 0),
+    price_usd: product.price_usd ? String(product.price_usd) : "",
     image_url: product.image_url || "",
     is_available: product.is_available,
     is_featured: product.is_featured,
-    sort_order: product.sort_order || 0,
+    sort_order: product.sort_order ? String(product.sort_order) : "",
   });
 
   const [isSaving, setIsSaving] = useState(false);
@@ -143,6 +143,7 @@ function ProductEditor({
           id: product.id,
           ...draft,
           price_usd: Number(draft.price_usd || 0),
+          sort_order: Number(draft.sort_order || 0),
         }),
       });
 
@@ -199,18 +200,18 @@ function ProductEditor({
   }
 
   return (
-    <article className="rounded-[32px] bg-white p-4 shadow-xl shadow-[#2E3A79]/[0.06] ring-1 ring-[#25262B]/[0.06]">
-      <div className="grid gap-4 xl:grid-cols-[220px_1fr]">
-        <div className="overflow-hidden rounded-[28px] bg-[#F8F3E8]">
+    <article className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-[#25262B]/[0.06]">
+      <div className="grid gap-3 xl:grid-cols-[120px_1fr]">
+        <div className="overflow-hidden rounded-2xl bg-[#F8F3E8]">
           {draft.image_url ? (
             <img
               src={draft.image_url}
               alt={draft.name}
-              className="h-48 w-full object-cover xl:h-full"
+              className="h-28 w-full object-cover xl:h-full"
             />
           ) : (
-            <div className="grid h-48 place-items-center text-[#746f69]">
-              <ImageIcon size={34} />
+            <div className="grid h-28 place-items-center text-[#746f69]">
+              <ImageIcon size={26} />
             </div>
           )}
         </div>
@@ -327,6 +328,19 @@ function ProductEditor({
             </select>
           </div>
 
+          <input
+            type="number"
+            value={draft.sort_order}
+            onChange={(event) =>
+              setDraft((current) => ({
+                ...current,
+                sort_order: event.target.value,
+              }))
+            }
+            placeholder="Orden en catálogo"
+            className="w-full rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+          />
+
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap gap-2">
               <button
@@ -424,11 +438,11 @@ export function ProductManager() {
     category_id: "",
     name: "",
     description: "",
-    price_usd: "0",
+    price_usd: "",
     image_url: "",
     is_available: true,
     is_featured: false,
-    sort_order: 99,
+    sort_order: "",
   });
 
   const filteredNewCategories = useMemo(
@@ -476,6 +490,7 @@ export function ProductManager() {
         body: JSON.stringify({
           ...newProduct,
           price_usd: Number(newProduct.price_usd || 0),
+          sort_order: Number(newProduct.sort_order || 99),
         }),
       });
 
@@ -484,7 +499,7 @@ export function ProductManager() {
         category_id: "",
         name: "",
         description: "",
-        price_usd: "0",
+        price_usd: "",
         image_url: "",
         is_available: true,
         is_featured: false,
@@ -590,10 +605,10 @@ export function ProductManager() {
 
   return (
     <div className="space-y-5">
-      <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
+      <section className="rounded-2xl bg-white p-4 shadow-lg shadow-[#2E3A79]/[0.05] ring-1 ring-[#25262B]/[0.06]">
         <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
           <div>
-            <h2 className="text-2xl font-black">Crear producto</h2>
+            <h2 className="text-xl font-black">Crear producto</h2>
             <p className="text-sm font-bold text-[#746f69]">
               Crea un producto y aparecerá en el catálogo público del comercio.
             </p>
@@ -613,7 +628,7 @@ export function ProductManager() {
           </button>
         </div>
 
-        <div className="mt-5 grid gap-3 lg:grid-cols-4">
+        <div className="mt-4 grid gap-3 lg:grid-cols-5">
           <select
             value={newProduct.store_id}
             onChange={(event) =>
@@ -675,6 +690,19 @@ export function ProductManager() {
             placeholder="Precio USD"
             className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
           />
+
+          <input
+            type="number"
+            value={newProduct.sort_order}
+            onChange={(event) =>
+              setNewProduct((current) => ({
+                ...current,
+                sort_order: event.target.value,
+              }))
+            }
+            placeholder="Orden en catálogo"
+            className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+          />
         </div>
 
         <div className="mt-3 grid gap-3 lg:grid-cols-2">
@@ -703,7 +731,7 @@ export function ProductManager() {
           />
         </div>
 
-        <div className="mt-3 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
+        <div className="mt-3 rounded-2xl bg-[#F8F3E8] p-3 ring-1 ring-[#25262B]/[0.06]">
           <div className="grid gap-4 md:grid-cols-[160px_1fr] md:items-center">
             <div className="overflow-hidden rounded-2xl bg-white">
               {newProduct.image_url ? (
@@ -720,8 +748,8 @@ export function ProductManager() {
             </div>
 
             <div>
-              <h3 className="text-lg font-black">Imagen del producto</h3>
-              <p className="mt-1 text-sm font-bold text-[#746f69]">
+              <h3 className="text-base font-black">Imagen del producto</h3>
+              <p className="mt-1 text-xs font-bold text-[#746f69]">
                 Sube una foto desde tu equipo o pega una URL de imagen arriba.
               </p>
 
@@ -788,8 +816,10 @@ export function ProductManager() {
           <button
             type="button"
             onClick={() => loadData(pin)}
-            className="rounded-full bg-[#2E3A79] px-5 py-3 text-sm font-black text-white"
+            disabled={isLoading}
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-5 py-3 text-sm font-black text-white disabled:opacity-60"
           >
+            {isLoading ? <Loader2 size={16} className="animate-spin" /> : null}
             Actualizar lista
           </button>
         </div>

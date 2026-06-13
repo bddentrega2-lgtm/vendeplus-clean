@@ -106,7 +106,7 @@ export function ManualOrderManager() {
   const [orderDetails, setOrderDetails] = useState("");
   const [deliveryType, setDeliveryType] = useState<"delivery" | "pickup">("delivery");
   const [paymentMethod, setPaymentMethod] = useState("");
-  const [deliveryUsd, setDeliveryUsd] = useState("0");
+  const [deliveryUsd, setDeliveryUsd] = useState("");
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<SelectedItem[]>([]);
   const [error, setError] = useState("");

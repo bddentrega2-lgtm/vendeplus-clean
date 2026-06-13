@@ -62,6 +62,14 @@ const businessTypes = [
   { value: "general", label: "General / Otro" },
 ];
 
+const defaultPaymentMethodOptions = [
+  "Pago móvil",
+  "Transferencia",
+  "Efectivo",
+  "Binance",
+  "Zelle",
+];
+
 const emptyPaymentDetails: StorePaymentDetails = {
   pagoMovil: {
     bank: "",
@@ -184,8 +192,8 @@ function StoreSettingsCard({
     delivery_estimate: store.delivery_estimate || "25-40 min",
     pickup_estimate: store.pickup_estimate || "15-25 min",
     payment_methods: Array.isArray(store.payment_methods)
-      ? store.payment_methods.join(", ")
-      : "Pago móvil, Transferencia, Efectivo, Binance",
+      ? store.payment_methods
+      : ["Pago móvil", "Transferencia", "Efectivo", "Binance"],
     payment_details: mergePaymentDetails(store.payment_details),
     usd_to_bs: String(store.usd_to_bs || 600),
     whatsapp_message_note: store.whatsapp_message_note || "",
@@ -199,8 +207,10 @@ function StoreSettingsCard({
 
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [isUploadingCover, setIsUploadingCover] = useState(false);
   const [message, setMessage] = useState("");
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
 
   function updateField(field: string, value: any) {
     setDraft((current) => ({
@@ -224,6 +234,18 @@ function StoreSettingsCard({
         },
       },
     }));
+  }
+
+  function togglePaymentMethod(method: string) {
+    setDraft((current) => {
+      const exists = current.payment_methods.includes(method);
+      return {
+        ...current,
+        payment_methods: exists
+          ? current.payment_methods.filter((item) => item !== method)
+          : [...current.payment_methods, method],
+      };
+    });
   }
 
   async function copyStoreLink() {
@@ -273,6 +295,24 @@ function StoreSettingsCard({
     } finally {
       setIsUploadingLogo(false);
       if (logoInputRef.current) logoInputRef.current.value = "";
+    }
+  }
+
+  async function uploadCover(file?: File) {
+    if (!file) return;
+
+    setIsUploadingCover(true);
+    setMessage("Subiendo portada...");
+
+    try {
+      const data = await uploadStoreAsset(file, store.id, "store-cover", pin);
+      setDraft((current) => ({ ...current, cover_image_url: data.publicUrl }));
+      setMessage("Portada subida. Presiona Guardar cambios para aplicarla.");
+    } catch (error: any) {
+      setMessage(error.message || "No se pudo subir la portada.");
+    } finally {
+      setIsUploadingCover(false);
+      if (coverInputRef.current) coverInputRef.current.value = "";
     }
   }
 
@@ -564,29 +604,87 @@ function StoreSettingsCard({
         </label>
       </div>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-2">
-        <label className="space-y-1">
-          <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-            Métodos de pago separados por coma
-          </span>
-          <input
-            value={draft.payment_methods}
-            onChange={(event) => updateField("payment_methods", event.target.value)}
-            placeholder="Pago móvil, Transferencia, Efectivo, Binance"
-            className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-          />
-        </label>
+      <section className="mt-4 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
+        <h3 className="text-lg font-black text-[#25262B]">Métodos de pago activos</h3>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {defaultPaymentMethodOptions.map((method) => {
+            const active = draft.payment_methods.includes(method);
+            return (
+              <button
+                key={method}
+                type="button"
+                onClick={() => togglePaymentMethod(method)}
+                className={[
+                  "rounded-full px-4 py-2 text-xs font-black",
+                  active ? "bg-[#2E3A79] text-white" : "bg-white text-[#746f69]",
+                ].join(" ")}
+              >
+                {active ? "Activo · " : "Agregar · "}
+                {method}
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
-        <label className="space-y-1">
-          <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-            Imagen de portada URL
-          </span>
-          <input
-            value={draft.cover_image_url}
-            onChange={(event) => updateField("cover_image_url", event.target.value)}
-            className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-          />
-        </label>
+      <section className="mt-4 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
+        <div className="grid gap-4 md:grid-cols-[180px_1fr] md:items-center">
+          <div className="overflow-hidden rounded-3xl bg-white">
+            {draft.cover_image_url ? (
+              <img
+                src={draft.cover_image_url}
+                alt={`Portada de ${draft.name}`}
+                className="h-32 w-full object-cover"
+              />
+            ) : (
+              <div className="grid h-32 place-items-center text-[#746f69]">
+                <ImageIcon size={30} />
+              </div>
+            )}
+          </div>
+          <div>
+            <h3 className="text-lg font-black text-[#25262B]">Imagen de portada</h3>
+            <p className="mt-1 text-sm font-bold text-[#746f69]">
+              Sube una portada o pega una URL para el catálogo público.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <input
+                ref={coverInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(event) => uploadCover(event.target.files?.[0])}
+              />
+              <button
+                type="button"
+                onClick={() => coverInputRef.current?.click()}
+                disabled={isUploadingCover}
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B] disabled:opacity-60"
+              >
+                {isUploadingCover ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                Subir portada
+              </button>
+              {draft.cover_image_url && (
+                <button
+                  type="button"
+                  onClick={() => updateField("cover_image_url", "")}
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-black text-[#2E3A79]"
+                >
+                  Quitar portada
+                </button>
+              )}
+            </div>
+            <input
+              value={draft.cover_image_url}
+              onChange={(event) => updateField("cover_image_url", event.target.value)}
+              placeholder="URL de portada opcional"
+              className="mt-3 w-full rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+            />
+          </div>
+        </div>
+      </section>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-2">
         <label className="space-y-1">
           <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
             Logo URL

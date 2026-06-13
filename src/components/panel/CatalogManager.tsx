@@ -93,7 +93,7 @@ function CategoryEditor({
 }) {
   const [draft, setDraft] = useState({
     name: category.name,
-    sort_order: category.sort_order || 0,
+    sort_order: category.sort_order ? String(category.sort_order) : "",
     is_active: category.is_active !== false,
   });
   const [isSaving, setIsSaving] = useState(false);
@@ -108,6 +108,7 @@ function CategoryEditor({
           resource: "category",
           id: category.id,
           ...draft,
+          sort_order: Number(draft.sort_order || 0),
         }),
       });
 
@@ -118,7 +119,7 @@ function CategoryEditor({
   }
 
   return (
-    <article className="rounded-[28px] bg-white p-4 shadow-lg shadow-[#2E3A79]/[0.05] ring-1 ring-[#25262B]/[0.06]">
+    <article className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-[#25262B]/[0.06]">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
         <div className="flex-1">
           <input
@@ -140,11 +141,11 @@ function CategoryEditor({
           onChange={(event) =>
             setDraft((current) => ({
               ...current,
-              sort_order: Number(event.target.value || 0),
+              sort_order: event.target.value,
             }))
           }
           className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79] lg:w-28"
-          placeholder="Orden visual"
+          placeholder="Orden en menú"
         />
 
         <button
@@ -217,18 +218,18 @@ function ProductCatalogCard({
   }
 
   return (
-    <article className="rounded-[28px] bg-white p-4 shadow-lg shadow-[#2E3A79]/[0.05] ring-1 ring-[#25262B]/[0.06]">
-      <div className="grid gap-4 md:grid-cols-[110px_1fr]">
-        <div className="overflow-hidden rounded-3xl bg-[#F8F3E8]">
+    <article className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-[#25262B]/[0.06]">
+      <div className="grid gap-3 md:grid-cols-[82px_1fr]">
+        <div className="overflow-hidden rounded-2xl bg-[#F8F3E8]">
           {product.image_url ? (
             <img
               src={product.image_url}
               alt={product.name}
-              className="h-32 w-full object-cover md:h-full"
+              className="h-24 w-full object-cover md:h-full"
             />
           ) : (
-            <div className="grid h-32 place-items-center text-[#746f69]">
-              <ImageIcon size={30} />
+            <div className="grid h-24 place-items-center text-[#746f69]">
+              <ImageIcon size={24} />
             </div>
           )}
         </div>
@@ -236,7 +237,7 @@ function ProductCatalogCard({
         <div className="space-y-3">
           <div className="flex flex-col justify-between gap-2 lg:flex-row lg:items-start">
             <div>
-              <h3 className="text-lg font-black">{product.name}</h3>
+              <h3 className="text-base font-black">{product.name}</h3>
               <p className="text-sm font-bold text-[#746f69]">
                 ${Number(product.price_usd || 0).toFixed(2)} ·{" "}
                 {product.categories?.name || "Sin categoría"}
@@ -356,7 +357,7 @@ export function CatalogManager() {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState("");
   const [newCategoryName, setNewCategoryName] = useState("");
-  const [newCategoryOrder, setNewCategoryOrder] = useState(0);
+  const [newCategoryOrder, setNewCategoryOrder] = useState("");
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => shouldShowPanelInitialAccessGate());
   const [isLoading, setIsLoading] = useState(() => hasSavedPanelAuth());
   const [isCreating, setIsCreating] = useState(false);
@@ -403,13 +404,13 @@ export function CatalogManager() {
         body: JSON.stringify({
           store_id: selectedStoreId,
           name: newCategoryName,
-          sort_order: newCategoryOrder,
+          sort_order: Number(newCategoryOrder || 0),
           is_active: true,
         }),
       });
 
       setNewCategoryName("");
-      setNewCategoryOrder(0);
+      setNewCategoryOrder("");
       await loadData(pin);
     } catch (error: any) {
       setError(error.message || "No se pudo crear la categoría.");
@@ -578,10 +579,10 @@ export function CatalogManager() {
 
   return (
     <div className="space-y-5">
-      <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
+      <section className="rounded-2xl bg-white p-4 shadow-lg shadow-[#2E3A79]/[0.05] ring-1 ring-[#25262B]/[0.06]">
         <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
           <div>
-            <h2 className="text-2xl font-black">Centro de catálogo</h2>
+            <h2 className="text-xl font-black">Centro de catálogo</h2>
             <p className="text-sm font-bold text-[#746f69]">
               Administra categorías, orden visual, disponibilidad y productos destacados.
             </p>
@@ -629,91 +630,56 @@ export function CatalogManager() {
         )}
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-        <section className="rounded-[34px] bg-[#25262B] p-5 text-white shadow-xl shadow-[#25262B]/20">
-          <p className="text-sm font-black uppercase tracking-[0.18em] text-[#FFB547]">
-            Calidad del catálogo
-          </p>
-          <h2 className="mt-2 text-3xl font-black">
-            {catalogSummary.readiness}% listo para vender
-          </h2>
-          <div className="mt-5 h-3 overflow-hidden rounded-full bg-white/10">
-            <div
-              className="h-full rounded-full bg-[#FFB547]"
-              style={{ width: `${catalogSummary.readiness}%` }}
-            />
-          </div>
-
-          {selectedStore && (
-            <div className="mt-5 flex flex-wrap gap-2">
-              <a
-                href={`/${selectedStore.slug}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
-              >
-                <ExternalLink size={17} />
-                Ver catálogo
-              </a>
-              <button
-                type="button"
-                onClick={copyPublicLink}
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-white/10 px-5 py-3 text-sm font-black"
-              >
-                <Copy size={17} />
-                Compartir catálogo
-              </button>
+      <section className="rounded-2xl bg-white p-4 shadow-lg shadow-[#2E3A79]/[0.05] ring-1 ring-[#25262B]/[0.06]">
+          <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
+            <div>
+              <h2 className="text-xl font-black">Vista rápida</h2>
+              <p className="text-sm font-bold text-[#746f69]">
+                {catalogSummary.readiness}% listo · {catalogSummary.featuredProducts.length} destacados
+              </p>
             </div>
-          )}
-
-          {copyMessage && (
-            <p className="mt-3 text-sm font-black text-[#FFB547]">{copyMessage}</p>
-          )}
-        </section>
-
-        <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
-          <h2 className="text-2xl font-black">Resumen del catálogo</h2>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {selectedStore && (
+              <div className="flex flex-wrap gap-2">
+                <a
+                  href={`/${selectedStore.slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-4 py-2 text-xs font-black text-[#25262B]"
+                >
+                  <ExternalLink size={15} />
+                  Ver catálogo
+                </a>
+                <button
+                  type="button"
+                  onClick={copyPublicLink}
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F8F3E8] px-4 py-2 text-xs font-black text-[#2E3A79]"
+                >
+                  <Copy size={15} />
+                  Compartir
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             {[
               ["Productos", storeProducts.length],
               ["Activos", catalogSummary.activeProducts.length],
-              ["Inactivos", catalogSummary.inactiveProducts.length],
               ["Destacados", catalogSummary.featuredProducts.length],
               ["Sin imagen", catalogSummary.withoutImage.length],
-              ["Sin precio", catalogSummary.withoutPrice.length],
-              ["Categorías activas", catalogSummary.activeCategories.length],
-              ["Sin categoría", uncategorizedProducts.length],
             ].map(([label, value]) => (
-              <div key={label} className="rounded-2xl bg-[#F8F3E8] p-4">
+              <div key={label} className="rounded-2xl bg-[#F8F3E8] px-4 py-3">
                 <p className="text-xs font-black text-[#746f69]">{label}</p>
-                <p className="mt-1 text-2xl font-black text-[#2E3A79]">{value}</p>
+                <p className="text-xl font-black text-[#2E3A79]">{value}</p>
               </div>
             ))}
           </div>
-        </section>
+          {copyMessage && <p className="mt-3 text-sm font-black text-[#2E3A79]">{copyMessage}</p>}
       </section>
 
-      <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
-        <h2 className="text-2xl font-black">Checklist comercial</h2>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          {catalogSummary.checks.map((check) => (
-            <div
-              key={check.label}
-              className="flex items-center justify-between gap-3 rounded-2xl bg-[#F8F3E8] p-4 text-sm font-black"
-            >
-              <span>{check.label}</span>
-              <span className={check.ok ? "text-green-700" : "text-red-700"}>
-                {check.ok ? "Listo" : "Pendiente"}
-              </span>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
+      <section className="rounded-2xl bg-white p-4 shadow-lg shadow-[#2E3A79]/[0.05] ring-1 ring-[#25262B]/[0.06]">
         <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
           <div>
-            <h2 className="text-2xl font-black">Crear categoría</h2>
+            <h2 className="text-xl font-black">Crear categoría</h2>
             <p className="text-sm font-bold text-[#746f69]">
               Organiza el catálogo por secciones claras. La cantidad de productos se calcula automáticamente según los productos asignados a cada categoría.
             </p>
@@ -741,8 +707,8 @@ export function CatalogManager() {
           <input
             type="number"
             value={newCategoryOrder}
-            onChange={(event) => setNewCategoryOrder(Number(event.target.value || 0))}
-            placeholder="Orden visual"
+            onChange={(event) => setNewCategoryOrder(event.target.value)}
+            placeholder="Orden en menú"
             className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
           />
         </div>

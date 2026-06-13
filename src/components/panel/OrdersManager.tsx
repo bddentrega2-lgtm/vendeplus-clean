@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   CircleDollarSign,
   Clipboard,
+  SlidersHorizontal,
   ExternalLink,
   Loader2,
   Lock,
@@ -166,10 +167,10 @@ const entrega2StatusStyles: Record<string, string> = {
 };
 
 const dateOptions = [
-  { value: "all", label: "Todas las fechas" },
   { value: "today", label: "Hoy" },
   { value: "last_7_days", label: "Últimos 7 días" },
   { value: "last_30_days", label: "Últimos 30 días" },
+  { value: "all", label: "Todas las fechas" },
 ];
 
 function formatDate(value: string) {
@@ -817,9 +818,10 @@ export function OrdersManager() {
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [selectedPaymentStatus, setSelectedPaymentStatus] = useState("all");
-  const [selectedDate, setSelectedDate] = useState("all");
+  const [selectedDate, setSelectedDate] = useState("today");
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("all");
   const [selectedDeliveryType, setSelectedDeliveryType] = useState("all");
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<OrderRow | null>(null);
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => shouldShowPanelInitialAccessGate());
@@ -1000,12 +1002,12 @@ export function OrdersManager() {
 
   return (
     <div className="space-y-5">
-      <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
+      <section className="rounded-2xl bg-white p-4 shadow-lg shadow-[#2E3A79]/[0.05] ring-1 ring-[#25262B]/[0.06]">
         <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
           <div>
-            <h2 className="text-2xl font-black">Pedidos operativos</h2>
+            <h2 className="text-xl font-black">Pedidos operativos</h2>
             <p className="text-sm font-bold text-[#746f69]">
-              {filteredOrders.length} pedidos visibles · {orders.length} cargados
+              {selectedDate === "today" ? "Hoy" : "Filtro activo"} · {filteredOrders.length} visibles
             </p>
           </div>
 
@@ -1025,10 +1027,18 @@ export function OrdersManager() {
               <RefreshCcw size={16} />
               Actualizar
             </button>
+            <button
+              type="button"
+              onClick={() => setShowAdvancedFilters((current) => !current)}
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F8F3E8] px-5 py-3 text-sm font-black text-[#2E3A79]"
+            >
+              <SlidersHorizontal size={16} />
+              Filtros
+            </button>
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 xl:grid-cols-[1fr_170px_170px_170px_170px_170px]">
+        <div className="mt-4 grid gap-3 xl:grid-cols-[1fr_170px]">
           <div className="relative">
             <Search
               size={18}
@@ -1043,6 +1053,25 @@ export function OrdersManager() {
           </div>
 
           <select
+            value={selectedDate}
+            onChange={(event) => {
+              const value = event.target.value;
+              setSelectedDate(value);
+              loadOrders(pin, { status: selectedStatus, paymentStatus: selectedPaymentStatus, date: value, paymentMethod: selectedPaymentMethod, deliveryType: selectedDeliveryType });
+            }}
+            className="rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
+          >
+            {dateOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {showAdvancedFilters && (
+        <div className="mt-3 grid gap-3 xl:grid-cols-4">
+          <select
             value={selectedStatus}
             onChange={(event) => {
               const value = event.target.value;
@@ -1055,7 +1084,7 @@ export function OrdersManager() {
               <option key={status.value} value={status.value}>
                 {status.label}
               </option>
-            ))}
+              ))}
           </select>
 
           <select
@@ -1068,22 +1097,6 @@ export function OrdersManager() {
             className="rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
           >
             {paymentStatusOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={selectedDate}
-            onChange={(event) => {
-              const value = event.target.value;
-              setSelectedDate(value);
-              loadOrders(pin, { status: selectedStatus, paymentStatus: selectedPaymentStatus, date: value, paymentMethod: selectedPaymentMethod, deliveryType: selectedDeliveryType });
-            }}
-            className="rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
-          >
-            {dateOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
@@ -1120,9 +1133,10 @@ export function OrdersManager() {
             <option value="pickup">Solo retiro</option>
           </select>
         </div>
+        )}
       </section>
 
-      <section className="grid gap-4">
+      <section className="grid gap-2">
         {isLoading && (
           <div className="rounded-[32px] bg-white p-5 text-sm font-black text-[#746f69]">
             Cargando pedidos...
@@ -1150,16 +1164,16 @@ export function OrdersManager() {
             <article
               key={order.id}
               className={[
-                "rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1",
+                "rounded-2xl bg-white p-3 shadow-sm ring-1",
                 isNewOrder
                   ? "ring-2 ring-[#FFB547]"
                   : "ring-[#25262B]/[0.06]",
               ].join(" ")}
             >
-              <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr_0.7fr_0.5fr] xl:items-center">
+              <div className="grid gap-3 xl:grid-cols-[1fr_0.8fr_0.65fr_auto] xl:items-center">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-xl font-black">{order.public_code}</h3>
+                    <h3 className="text-base font-black">{order.public_code}</h3>
                     {isNewOrder && (
                       <span className="rounded-full bg-[#25262B] px-3 py-1 text-xs font-black text-white">
                         Pendiente de atención
@@ -1189,7 +1203,7 @@ export function OrdersManager() {
 
                 <div>
                   <p className="font-black">{order.customer_name}</p>
-                  <p className="text-sm font-bold text-[#746f69]">
+                  <p className="text-xs font-bold text-[#746f69]">
                     {order.customer_phone}
                   </p>
                 </div>
@@ -1206,11 +1220,6 @@ export function OrdersManager() {
                         : "Este pedido aún no tiene pago verificado"}
                     </p>
                   ) : null}
-                  {(order.delivery_reference || order.order_details) && (
-                    <p className="mt-1 text-xs font-bold text-[#746f69]">
-                      {order.delivery_reference || order.order_details}
-                    </p>
-                  )}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 xl:justify-end">
@@ -1221,7 +1230,7 @@ export function OrdersManager() {
                     onChange={(event) =>
                       updateOrderStatusQuick(order.id, event.target.value)
                     }
-                    className="h-11 rounded-full border border-[#25262B]/10 bg-[#F8F3E8] px-3 text-xs font-black text-[#25262B] outline-none disabled:opacity-60"
+                    className="h-10 rounded-full border border-[#25262B]/10 bg-[#F8F3E8] px-3 text-xs font-black text-[#25262B] outline-none disabled:opacity-60"
                   >
                     {statusOptions
                       .filter((item) => item.value !== "all")
@@ -1236,7 +1245,7 @@ export function OrdersManager() {
                       href={gpsUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="grid h-11 w-11 place-items-center rounded-full bg-[#F8F3E8] text-[#2E3A79]"
+                      className="grid h-10 w-10 place-items-center rounded-full bg-[#F8F3E8] text-[#2E3A79]"
                     >
                       <ExternalLink size={17} />
                     </a>
@@ -1247,7 +1256,7 @@ export function OrdersManager() {
                       href={routeUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="grid h-11 w-11 place-items-center rounded-full bg-[#F8F3E8] text-[#2E3A79]"
+                      className="grid h-10 w-10 place-items-center rounded-full bg-[#F8F3E8] text-[#2E3A79]"
                       aria-label="Abrir ruta"
                     >
                       <Navigation size={17} />
@@ -1259,7 +1268,7 @@ export function OrdersManager() {
                       href={whatsappUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-green-100 px-4 text-xs font-black text-green-700"
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-green-100 px-3 text-xs font-black text-green-700"
                       aria-label="Abrir WhatsApp"
                     >
                       <Send size={17} />
@@ -1273,7 +1282,7 @@ export function OrdersManager() {
                         <span
                           title={entrega2Integration.last_error || undefined}
                           className={[
-                            "inline-flex h-11 items-center rounded-full px-3 text-xs font-black",
+                            "inline-flex h-10 items-center rounded-full px-3 text-xs font-black",
                             entrega2StatusStyles[entrega2Status] ||
                               "bg-[#F8F3E8] text-[#746f69]",
                           ].join(" ")}
@@ -1290,7 +1299,7 @@ export function OrdersManager() {
                           type="button"
                           onClick={() => sendOrderToEntrega2(order.id)}
                           disabled={isSendingDelivery}
-                          className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-4 text-xs font-black text-white disabled:opacity-60"
+                          className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-3 text-xs font-black text-white disabled:opacity-60"
                         >
                           {isSendingDelivery ? (
                             <Loader2 size={16} className="animate-spin" />
@@ -1306,7 +1315,7 @@ export function OrdersManager() {
                   <button
                     type="button"
                     onClick={() => setSelectedOrder(order)}
-                    className="rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
+                    className="rounded-full bg-[#FFB547] px-4 py-2 text-xs font-black text-[#25262B]"
                   >
                     Ver resumen
                   </button>

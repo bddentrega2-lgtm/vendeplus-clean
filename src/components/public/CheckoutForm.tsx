@@ -45,7 +45,6 @@ export function CheckoutForm({ store }: { store: Store }) {
   const [isCalculating, setIsCalculating] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
-  const [copiedPaymentData, setCopiedPaymentData] = useState(false);
   const [copiedPaymentLine, setCopiedPaymentLine] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -175,13 +174,6 @@ export function CheckoutForm({ store }: { store: Store }) {
     window.setTimeout(() => setCopied(false), 1800);
   }
 
-  async function copyPaymentData() {
-    if (!paymentInfo) return;
-    await navigator.clipboard.writeText(paymentInfo.copyText);
-    setCopiedPaymentData(true);
-    window.setTimeout(() => setCopiedPaymentData(false), 1800);
-  }
-
   async function copyPaymentLine(label: string, value: string) {
     await navigator.clipboard.writeText(value);
     setCopiedPaymentLine(`${label}-${value}`);
@@ -197,15 +189,15 @@ export function CheckoutForm({ store }: { store: Store }) {
     setIsSubmitting(true);
     setError("");
 
-    try {
-      const saveResult = await saveOrderToSupabase(order, store);
-
-      if (!saveResult.ok) {
-        console.warn("No se pudo guardar el pedido en Supabase:", saveResult.error);
-      }
-    } catch (error) {
-      console.warn("Error inesperado guardando el pedido:", error);
-    }
+    void saveOrderToSupabase(order, store)
+      .then((saveResult) => {
+        if (!saveResult.ok) {
+          console.warn("No se pudo guardar el pedido en Supabase:", saveResult.error);
+        }
+      })
+      .catch((error) => {
+        console.warn("Error inesperado guardando el pedido:", error);
+      });
 
     localStorage.setItem(getOrderKey(store.slug), JSON.stringify(order));
     clearCart(store.slug);
@@ -310,10 +302,6 @@ export function CheckoutForm({ store }: { store: Store }) {
                     {store.paymentMethods.map((method) => <option key={method} value={method}>{method}</option>)}
                   </select>
                 </label>
-                <label>
-                  <span className="vp-label">Nota del pedido</span>
-                  <input className="vp-input" value={form.orderDetails} onChange={(event) => updateField("orderDetails", event.target.value)} placeholder="Ej: sin cebolla, enviar factura..." />
-                </label>
               </div>
               <label className="mt-4 block">
                 <span className="vp-label">
@@ -345,14 +333,6 @@ export function CheckoutForm({ store }: { store: Store }) {
                       </p>
                       <h3 className="mt-1 text-xl font-black">{paymentInfo.title}</h3>
                     </div>
-                    <button
-                      type="button"
-                      onClick={copyPaymentData}
-                      className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-4 py-2 text-xs font-black text-[#25262B]"
-                    >
-                      <Copy size={15} />
-                      {copiedPaymentData ? "Copiado" : "Copiar datos"}
-                    </button>
                   </div>
 
                   <div className="mt-4 space-y-2">

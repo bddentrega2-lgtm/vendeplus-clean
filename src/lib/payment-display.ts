@@ -70,27 +70,27 @@ export function buildPaymentInfo({
     addLine(lines, "Banco", firstValue(data, ["bank", "banco"]));
     addLine(lines, "Telefono", firstValue(data, ["phone", "telefono", "teléfono", "number"]), true);
     addLine(lines, "Cedula/RIF", firstValue(data, ["idNumber", "cedula", "cédula", "rif", "document", "documento"]), true);
-    addLine(lines, "Titular", firstValue(data, ["holder", "titular", "name", "nombre"]));
-    addLine(lines, "Monto", formatBs(totals.totalBs));
+    addLine(lines, "Titular", firstValue(data, ["holder", "titular", "name", "nombre"]), true);
+    addLine(lines, "Monto", formatBs(totals.totalBs), true);
     addLine(lines, "Tasa usada", formatBs(exchangeRate));
   } else if (key === "transferencia") {
     const data = details.transferencia || {};
     addLine(lines, "Banco", firstValue(data, ["bank", "banco"]));
     addLine(lines, "Cuenta", firstValue(data, ["accountNumber", "cuenta", "account", "numeroCuenta"]));
     addLine(lines, "Cedula/RIF", firstValue(data, ["idNumber", "cedula", "cédula", "rif", "document", "documento"]));
-    addLine(lines, "Titular", firstValue(data, ["holder", "titular", "name", "nombre"]));
-    addLine(lines, "Monto", formatBs(totals.totalBs));
+    addLine(lines, "Titular", firstValue(data, ["holder", "titular", "name", "nombre"]), true);
+    addLine(lines, "Monto", formatBs(totals.totalBs), true);
     addLine(lines, "Tasa usada", formatBs(exchangeRate));
   } else if (key === "zelle") {
     const data = details.zelle || {};
     addLine(lines, "Correo", firstValue(data, ["contact", "email", "correo", "phone", "telefono"]), true);
-    addLine(lines, "Titular", firstValue(data, ["holder", "titular", "name", "nombre"]));
-    addLine(lines, "Monto", formatUsd(totals.totalUsd));
+    addLine(lines, "Titular", firstValue(data, ["holder", "titular", "name", "nombre"]), true);
+    addLine(lines, "Monto", formatUsd(totals.totalUsd), true);
   } else if (key === "binance") {
     const data = details.binance || {};
     addLine(lines, "Correo", firstValue(data, ["contact", "email", "correo", "binancePayId", "payId", "id", "binance"]), true);
-    addLine(lines, "Titular", firstValue(data, ["holder", "titular", "name", "nombre"]));
-    addLine(lines, "Monto", formatUsd(totals.totalUsd));
+    addLine(lines, "Titular", firstValue(data, ["holder", "titular", "name", "nombre"]), true);
+    addLine(lines, "Monto", formatUsd(totals.totalUsd), true);
   } else if (key === "efectivo") {
     const data = details.efectivo || {};
     addLine(lines, "Nota", firstValue(data, ["note", "nota"]));

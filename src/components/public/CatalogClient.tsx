@@ -28,6 +28,19 @@ export function CatalogClient({ store }: { store: Store }) {
     });
   }, [query, selectedCategoryId, store.products]);
 
+  const featuredProducts = useMemo(
+    () =>
+      store.products
+        .filter((product) => product.isFeatured)
+        .slice(0, 3),
+    [store.products]
+  );
+
+  const showFeatured = selectedCategoryId === "all" && !query.trim() && featuredProducts.length > 0;
+  const menuProducts = showFeatured
+    ? products.filter((product) => !product.isFeatured)
+    : products;
+
   return (
     <main style={getBrandStyle(store)} className="vp-public-store vp-container pb-32 pt-5">
       <StoreBrandHeader store={store} />
@@ -62,21 +75,37 @@ export function CatalogClient({ store }: { store: Store }) {
 
       <CategoryTabs categories={store.categories} selectedCategoryId={selectedCategoryId} onSelect={setSelectedCategoryId} />
 
-      <div className="mb-5 flex items-end justify-between gap-4">
+      {showFeatured ? (
+        <section className="mb-6">
+          <div className="mb-3 flex items-end justify-between gap-4">
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.18em] text-[#746f69]">Destacados</p>
+              <h2 className="mt-1 text-2xl font-black text-[#25262B]">Los favoritos</h2>
+            </div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            {featuredProducts.map((product) => (
+              <ProductCard key={product.id} product={product} storeSlug={store.slug} usdToBs={store.usdToBs || 600} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <div className="mb-4 flex items-end justify-between gap-4">
         <div>
           <p className="text-sm font-black uppercase tracking-[0.18em] text-[#746f69]">Catálogo disponible</p>
-          <h2 className="mt-1 text-2xl font-black text-[#25262B]">Productos disponibles</h2>
+          <h2 className="mt-1 text-xl font-black text-[#25262B]">Menú completo</h2>
         </div>
-        <p className="rounded-full bg-white px-3 py-2 text-xs font-black text-[#746f69] shadow-sm">{products.length} productos</p>
+        <p className="rounded-full bg-white px-3 py-2 text-xs font-black text-[#746f69] shadow-sm">{menuProducts.length} productos</p>
       </div>
 
-      <div className="grid gap-5 md:grid-cols-2">
-        {products.map((product) => (
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {menuProducts.map((product) => (
           <ProductCard key={product.id} product={product} storeSlug={store.slug} usdToBs={store.usdToBs || 600} />
         ))}
       </div>
 
-      {products.length === 0 ? (
+      {menuProducts.length === 0 ? (
         <div className="rounded-[28px] bg-white p-8 text-center shadow-sm">
           <p className="text-lg font-black text-[#25262B]">No encontramos productos</p>
           <p className="mt-2 text-sm font-bold text-[#746f69]">Prueba con otra categoría o búsqueda.</p>

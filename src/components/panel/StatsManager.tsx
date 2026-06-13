@@ -7,11 +7,9 @@ import {
   Bike,
   CalendarDays,
   CheckCircle2,
-  CreditCard,
   DollarSign,
   Loader2,
   Lock,
-  Package,
   RefreshCcw,
   ShoppingBag,
   TrendingUp,
@@ -362,30 +360,6 @@ export function StatsManager() {
       detail: "Promedio por día del rango",
       icon: CalendarDays,
     },
-    {
-      label: "Completados",
-      value: formatNumber(stats.summary.completedOrders),
-      detail: `${formatPercent(stats.summary.operationalConversionRate)} de conversión operativa`,
-      icon: CheckCircle2,
-    },
-    {
-      label: "Pendientes / en proceso",
-      value: formatNumber(stats.summary.inProgressOrders),
-      detail: "Pedidos no cerrados",
-      icon: Activity,
-    },
-    {
-      label: "Cancelados",
-      value: formatNumber(stats.summary.cancelledOrders),
-      detail: "Pedidos anulados",
-      icon: XCircle,
-    },
-    {
-      label: "Entrega promedio",
-      value: formatKm(stats.summary.averageDistanceKm),
-      detail: `${formatUsd(stats.summary.averageDeliveryUsd)} costo promedio`,
-      icon: Bike,
-    },
   ];
 
   return (
@@ -460,7 +434,7 @@ export function StatsManager() {
         {error && <p className="mt-3 text-sm font-black text-red-600">{error}</p>}
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {cards.map((card) => (
           <MetricCard key={card.label} {...card} />
         ))}
@@ -482,22 +456,16 @@ export function StatsManager() {
         <BarList title="Pedidos por día" subtitle="Volumen diario dentro del rango" items={stats.ordersByDay} />
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-3">
-        <BarList title="Métodos de pago" items={stats.ordersByPaymentMethod} />
-        <BarList title="Entrega vs retiro" items={stats.ordersByDeliveryType} />
-        <BarList title="Estados de pedidos" items={stats.ordersByStatus} />
-      </section>
-
       <section className="grid gap-5 xl:grid-cols-2">
         <section className="rounded-3xl bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.06] ring-1 ring-[#25262B]/[0.06]">
-          <h2 className="text-xl font-black">Productos más vendidos</h2>
+          <h2 className="text-xl font-black">Top 3 productos</h2>
           <div className="mt-5 space-y-3">
             {stats.topProducts.length === 0 ? (
               <p className="rounded-2xl bg-[#F8F3E8] p-4 text-sm font-bold text-[#746f69]">
                 Todavía no hay productos vendidos en este período.
               </p>
             ) : (
-              stats.topProducts.map((product, index) => (
+              stats.topProducts.slice(0, 3).map((product, index) => (
                 <div key={product.product} className="grid gap-3 rounded-2xl bg-[#F8F3E8] p-4 sm:grid-cols-[1fr_auto] sm:items-center">
                   <div>
                     <p className="font-black">#{index + 1} {product.product}</p>
@@ -520,7 +488,7 @@ export function StatsManager() {
                 Todavía no hay clientes registrados.
               </p>
             ) : (
-              stats.topCustomers.map((customer) => (
+              stats.topCustomers.slice(0, 8).map((customer) => (
                 <div key={customer.phone} className="grid gap-3 rounded-2xl bg-[#F8F3E8] p-4 sm:grid-cols-[1fr_auto] sm:items-center">
                   <div>
                     <p className="font-black">{customer.customer}</p>
@@ -536,17 +504,9 @@ export function StatsManager() {
         </section>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-3">
+      <section className="grid gap-5 xl:grid-cols-2">
         <BarList title="Horas pico" subtitle="Pedidos por hora" items={stats.ordersByHour} />
         <BarList title="Días pico" subtitle="Pedidos por día de semana" items={stats.ordersByWeekday} />
-        <section className="rounded-3xl bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.06] ring-1 ring-[#25262B]/[0.06]">
-          <h2 className="text-xl font-black">Entrega</h2>
-          <div className="mt-5 grid gap-3">
-            <MetricCard label="Pedidos con entrega" value={formatNumber(stats.summary.deliveryOrders)} detail={formatUsd(stats.summary.deliveryRevenueUsd)} icon={Bike} />
-            <MetricCard label="Pedidos con retiro" value={formatNumber(stats.summary.pickupOrders)} detail={formatUsd(stats.summary.pickupRevenueUsd)} icon={Package} />
-            <MetricCard label="Costo promedio" value={formatUsd(stats.summary.averageDeliveryUsd)} detail={`Distancia: ${formatKm(stats.summary.averageDistanceKm)}`} icon={CreditCard} />
-          </div>
-        </section>
       </section>
     </div>
   );
