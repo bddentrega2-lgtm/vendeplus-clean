@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Nunito_Sans } from "next/font/google";
+import { PanelAuthProvider } from "@/components/panel/PanelAuthProvider";
 import "./globals.css";
 
 const nunito = Nunito_Sans({
@@ -17,7 +18,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="es" data-scroll-behavior="smooth" suppressHydrationWarning>
       <body className={nunito.variable} suppressHydrationWarning>
-        {children}
+        <PanelAuthProvider>{children}</PanelAuthProvider>
       </body>
     </html>
   );

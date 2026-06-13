@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Loader2, Lock } from "lucide-react";
+import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
 import { savePanelToken } from "@/lib/panel/client-auth";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export function LoginForm() {
   const router = useRouter();
+  const { refreshSession } = usePanelAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -43,6 +45,7 @@ export function LoginForm() {
       }
 
       savePanelToken(accessToken);
+      await refreshSession();
       router.push("/panel");
     } finally {
       setIsLoading(false);

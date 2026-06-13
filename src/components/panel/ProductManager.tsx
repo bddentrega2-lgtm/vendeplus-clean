@@ -14,12 +14,14 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
+import { PanelAccessGate, PanelModuleSkeleton } from "@/components/panel/PanelLoadingState";
 import {
+  getPanelAccessToken,
   getPanelAuthHeaders,
   getSavedPanelPin,
-  getSavedPanelToken,
   hasSavedPanelAuth,
   savePanelPin,
+  shouldShowPanelInitialAccessGate,
 } from "@/lib/panel/client-auth";
 
 type StoreRow = {
@@ -410,8 +412,8 @@ export function ProductManager() {
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [products, setProducts] = useState<ProductRow[]>([]);
-  const [isCheckingAccess, setIsCheckingAccess] = useState(() => hasSavedPanelAuth());
-  const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingAccess, setIsCheckingAccess] = useState(() => shouldShowPanelInitialAccessGate());
+  const [isLoading, setIsLoading] = useState(() => hasSavedPanelAuth());
   const [isUploadingNewImage, setIsUploadingNewImage] = useState(false);
   const [error, setError] = useState("");
   const [newProductMessage, setNewProductMessage] = useState("");
@@ -529,27 +531,37 @@ export function ProductManager() {
   }
 
   useEffect(() => {
-    const savedPin = getSavedPanelPin();
-    const savedToken = getSavedPanelToken();
+    let active = true;
 
-    if (savedPin || savedToken) {
-      setPin(savedPin);
-      loadData(savedPin);
-    } else {
-      setIsCheckingAccess(false);
+    async function bootPanel() {
+      const savedPin = getSavedPanelPin();
+      const savedToken = await getPanelAccessToken();
+
+      if (!active) return;
+
+      if (savedPin || savedToken) {
+        setPin(savedPin);
+        loadData(savedPin);
+      } else {
+        setIsCheckingAccess(false);
+        setIsLoading(false);
+      }
     }
+
+    bootPanel();
+
+    return () => {
+      active = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (isCheckingAccess) {
-    return (
-      <section className="mx-auto max-w-xl rounded-[36px] bg-white p-6 text-center shadow-2xl shadow-[#2E3A79]/[0.08] ring-1 ring-[#25262B]/[0.06]">
-        <Loader2 size={22} className="mx-auto animate-spin text-[#2E3A79]" />
-        <p className="mt-3 text-sm font-black text-[#746f69]">
-          Validando acceso...
-        </p>
-      </section>
-    );
+    return <PanelAccessGate />;
+  }
+
+  if (!isUnlocked && isLoading) {
+    return <PanelModuleSkeleton label="Cargando productos..." />;
   }
 
   if (!isUnlocked) {

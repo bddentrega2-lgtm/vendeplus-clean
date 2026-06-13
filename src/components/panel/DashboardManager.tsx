@@ -9,7 +9,6 @@ import {
   Copy,
   DollarSign,
   ExternalLink,
-  Loader2,
   Lock,
   RefreshCcw,
   ShoppingBag,
@@ -18,12 +17,14 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { formatUsd } from "@/lib/currency";
+import { PanelAccessGate, PanelModuleSkeleton } from "@/components/panel/PanelLoadingState";
 import {
+  getPanelAccessToken,
   getPanelAuthHeaders,
   getSavedPanelPin,
-  getSavedPanelToken,
   hasSavedPanelAuth,
   savePanelPin,
+  shouldShowPanelInitialAccessGate,
 } from "@/lib/panel/client-auth";
 
 async function apiRequest(pin: string) {
@@ -71,8 +72,8 @@ export function DashboardManager() {
   const [pin, setPin] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [stats, setStats] = useState<any>(null);
-  const [isCheckingAccess, setIsCheckingAccess] = useState(() => hasSavedPanelAuth());
-  const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingAccess, setIsCheckingAccess] = useState(() => shouldShowPanelInitialAccessGate());
+  const [isLoading, setIsLoading] = useState(() => hasSavedPanelAuth());
   const [error, setError] = useState("");
   const [shareMessage, setShareMessage] = useState("");
 
@@ -98,26 +99,36 @@ export function DashboardManager() {
   }
 
   useEffect(() => {
-    const savedPin = getSavedPanelPin();
-    const savedToken = getSavedPanelToken();
+    let active = true;
 
-    if (savedPin || savedToken) {
-      setPin(savedPin);
-      loadDashboard(savedPin);
-    } else {
-      setIsCheckingAccess(false);
+    async function bootPanel() {
+      const savedPin = getSavedPanelPin();
+      const savedToken = await getPanelAccessToken();
+
+      if (!active) return;
+
+      if (savedPin || savedToken) {
+        setPin(savedPin);
+        loadDashboard(savedPin);
+      } else {
+        setIsCheckingAccess(false);
+        setIsLoading(false);
+      }
     }
+
+    bootPanel();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   if (isCheckingAccess) {
-    return (
-      <section className="mx-auto max-w-xl rounded-[36px] bg-white p-6 text-center shadow-2xl shadow-[#2E3A79]/[0.08] ring-1 ring-[#25262B]/[0.06]">
-        <Loader2 size={22} className="mx-auto animate-spin text-[#2E3A79]" />
-        <p className="mt-3 text-sm font-black text-[#746f69]">
-          Validando acceso...
-        </p>
-      </section>
-    );
+    return <PanelAccessGate />;
+  }
+
+  if ((!isUnlocked || !stats) && isLoading) {
+    return <PanelModuleSkeleton label="Cargando inicio..." />;
   }
 
   if (!isUnlocked || !stats) {

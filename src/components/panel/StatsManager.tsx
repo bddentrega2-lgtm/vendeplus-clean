@@ -19,12 +19,14 @@ import {
   XCircle,
 } from "lucide-react";
 import { formatUsd } from "@/lib/currency";
+import { PanelAccessGate, PanelModuleSkeleton } from "@/components/panel/PanelLoadingState";
 import {
+  getPanelAccessToken,
   getPanelAuthHeaders,
   getSavedPanelPin,
-  getSavedPanelToken,
   hasSavedPanelAuth,
   savePanelPin,
+  shouldShowPanelInitialAccessGate,
 } from "@/lib/panel/client-auth";
 
 type ChartItem = { label: string; value: number };
@@ -223,8 +225,8 @@ export function StatsManager() {
   const [range, setRange] = useState("last_30_days");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [isCheckingAccess, setIsCheckingAccess] = useState(() => hasSavedPanelAuth());
-  const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingAccess, setIsCheckingAccess] = useState(() => shouldShowPanelInitialAccessGate());
+  const [isLoading, setIsLoading] = useState(() => hasSavedPanelAuth());
   const [error, setError] = useState("");
 
   async function loadStats(currentPin: string, overrides?: Partial<{
@@ -259,14 +261,28 @@ export function StatsManager() {
   }
 
   useEffect(() => {
-    const savedPin = getSavedPanelPin();
-    const savedToken = getSavedPanelToken();
-    if (savedPin || savedToken) {
-      setPin(savedPin);
-      loadStats(savedPin);
-    } else {
-      setIsCheckingAccess(false);
+    let active = true;
+
+    async function bootPanel() {
+      const savedPin = getSavedPanelPin();
+      const savedToken = await getPanelAccessToken();
+
+      if (!active) return;
+
+      if (savedPin || savedToken) {
+        setPin(savedPin);
+        loadStats(savedPin);
+      } else {
+        setIsCheckingAccess(false);
+        setIsLoading(false);
+      }
     }
+
+    bootPanel();
+
+    return () => {
+      active = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -291,14 +307,11 @@ export function StatsManager() {
   }, [stats]);
 
   if (isCheckingAccess) {
-    return (
-      <section className="mx-auto max-w-xl rounded-3xl bg-white p-6 text-center shadow-2xl shadow-[#2E3A79]/[0.08] ring-1 ring-[#25262B]/[0.06]">
-        <Loader2 size={22} className="mx-auto animate-spin text-[#2E3A79]" />
-        <p className="mt-3 text-sm font-black text-[#746f69]">
-          Validando acceso...
-        </p>
-      </section>
-    );
+    return <PanelAccessGate />;
+  }
+
+  if ((!isUnlocked || !stats) && isLoading) {
+    return <PanelModuleSkeleton label="Cargando estadísticas..." />;
   }
 
   if (!isUnlocked || !stats) {
