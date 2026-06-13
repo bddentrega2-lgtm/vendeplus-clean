@@ -45,6 +45,9 @@ export function buildOrderMessage(params: {
   const notes = cleanText(form.notes)
     ? `\n🗒️ ${cleanText(form.notes)}`
     : "";
+  const paymentReference = cleanText(form.paymentReference)
+    ? `\n🔎 Referencia: ${cleanText(form.paymentReference)}`
+    : "";
 
   const deliveryBlock =
     form.deliveryType === "pickup"
@@ -62,6 +65,6 @@ ${itemsText}${orderDetails}
 
 ${deliveryBlock}
 
-💳 ${form.paymentMethod}
+💳 ${form.paymentMethod}${paymentReference}
 💰 Total: ${formatUsd(totals.totalUsd)} / ${formatBs(totals.totalBs)}${notes}`;
 }

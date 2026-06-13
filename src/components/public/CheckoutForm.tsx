@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Copy, Loader2, MessageCircle, Navigation } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Copy, Loader2, MessageCircle, Navigation, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { CheckoutFormData, DeliveryLocation, DeliveryQuote, SavedOrder, Store } from "@/types";
 import { clearCart, getCart, getCartSubtotal } from "@/lib/cart";
-import { formatBs, formatUsd, usdToBs } from "@/lib/currency";
+import { formatBs, formatUsd } from "@/lib/currency";
 import { buildDeliveryQuote, buildMapsUrl, buildRouteUrl, calculateRouteDistanceKm } from "@/lib/delivery";
+import { isCashPaymentMethod } from "@/lib/payments";
+import { buildPaymentInfo } from "@/lib/payment-display";
 import { buildOrderMessage, buildWhatsAppUrl } from "@/lib/whatsapp";
 import { saveOrderToSupabase } from "@/lib/supabase/orders";
 import { LocationPicker } from "@/components/public/LocationPicker";
@@ -17,6 +19,7 @@ const initialForm: CheckoutFormData = {
   customerPhone: "",
   deliveryType: "delivery",
   paymentMethod: "",
+  paymentReference: "",
   deliveryReference: "",
   orderDetails: "",
   notes: "",
@@ -42,6 +45,8 @@ export function CheckoutForm({ store }: { store: Store }) {
   const [isCalculating, setIsCalculating] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [copiedPaymentData, setCopiedPaymentData] = useState(false);
+  const [copiedPaymentLine, setCopiedPaymentLine] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -86,7 +91,17 @@ export function CheckoutForm({ store }: { store: Store }) {
   const subtotalUsd = useMemo(() => getCartSubtotal(items), [items]);
   const deliveryUsd = form.deliveryType === "delivery" ? quote.feeUsd : 0;
   const totalUsd = subtotalUsd + deliveryUsd;
-  const totalBs = usdToBs(totalUsd);
+  const totalBs = totalUsd * (store.usdToBs || 600);
+  const isCashPayment = isCashPaymentMethod(form.paymentMethod);
+  const paymentInfo = form.paymentMethod
+    ? buildPaymentInfo({
+        store,
+        paymentMethod: form.paymentMethod,
+        totals: { subtotalUsd, deliveryUsd, totalUsd, totalBs },
+        customerPaymentNote: form.notes,
+        paymentReference: form.paymentReference,
+      })
+    : null;
 
   const mapsUrl = location ? buildMapsUrl(location.latitude, location.longitude) : null;
   const routeUrl = location
@@ -160,6 +175,19 @@ export function CheckoutForm({ store }: { store: Store }) {
     window.setTimeout(() => setCopied(false), 1800);
   }
 
+  async function copyPaymentData() {
+    if (!paymentInfo) return;
+    await navigator.clipboard.writeText(paymentInfo.copyText);
+    setCopiedPaymentData(true);
+    window.setTimeout(() => setCopiedPaymentData(false), 1800);
+  }
+
+  async function copyPaymentLine(label: string, value: string) {
+    await navigator.clipboard.writeText(value);
+    setCopiedPaymentLine(`${label}-${value}`);
+    window.setTimeout(() => setCopiedPaymentLine(""), 1800);
+  }
+
   async function sendOrder() {
     if (isSubmitting) return;
 
@@ -192,7 +220,7 @@ export function CheckoutForm({ store }: { store: Store }) {
           <Link href={`/${store.slug}/carrito`} className="vp-button-soft px-4 py-3">
             <ArrowLeft size={18} /> Volver al carrito
           </Link>
-          <div className="rounded-full bg-[#2E3A79] px-4 py-3 text-sm font-black text-white">Checkout seguro</div>
+          <div className="rounded-full bg-[#2E3A79] px-4 py-3 text-sm font-black text-white">Finalizar pedido</div>
         </div>
 
         <section className="mb-5 overflow-hidden rounded-[36px] bg-[#2E3A79] text-white shadow-2xl shadow-[#2E3A79]/20">
@@ -201,8 +229,18 @@ export function CheckoutForm({ store }: { store: Store }) {
             <p className="text-sm font-bold text-white/65">{store.name}</p>
             <h1 className="mt-2 max-w-xl text-3xl font-black tracking-tight sm:text-5xl">Confirma tu pedido</h1>
             <p className="mt-3 max-w-xl text-sm font-semibold leading-relaxed text-white/72">
-              Calculamos la entrega por ubicación, armamos el pedido completo y lo dejamos listo para WhatsApp.
+              Revisa el total, elige cómo recibirlo y confirma el pedido por WhatsApp.
             </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/12 px-3 py-2 text-xs font-black text-white">
+                <ShieldCheck size={15} className="text-[#FFB547]" />
+                Total claro antes de pagar
+              </span>
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/12 px-3 py-2 text-xs font-black text-white">
+                <MessageCircle size={15} className="text-[#FFB547]" />
+                Confirmación por WhatsApp
+              </span>
+            </div>
           </div>
         </section>
 
@@ -223,15 +261,15 @@ export function CheckoutForm({ store }: { store: Store }) {
             </section>
 
             <section className="vp-card p-4 sm:p-5">
-              <h2 className="text-xl font-black text-[#25262B]">2. Modalidad</h2>
+              <h2 className="text-xl font-black text-[#25262B]">2. ¿Cómo quieres recibir tu pedido?</h2>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <button type="button" onClick={() => updateField("deliveryType", "delivery")} className={form.deliveryType === "delivery" ? "rounded-[24px] bg-[#2E3A79] p-4 text-left text-white" : "rounded-[24px] bg-[#FFF8F0] p-4 text-left text-[#25262B] ring-1 ring-[#25262B]/[0.07]"}>
-                  <p className="text-lg font-black">Entrega</p>
-                  <p className="mt-1 text-sm font-bold opacity-75">GPS o mapa + tarifa automática</p>
+                  <p className="text-lg font-black">Entrega a domicilio</p>
+                  <p className="mt-1 text-sm font-bold opacity-75">Ubicación por GPS o mapa</p>
                 </button>
                 <button type="button" onClick={() => updateField("deliveryType", "pickup")} className={form.deliveryType === "pickup" ? "rounded-[24px] bg-[#2E3A79] p-4 text-left text-white" : "rounded-[24px] bg-[#FFF8F0] p-4 text-left text-[#25262B] ring-1 ring-[#25262B]/[0.07]"}>
-                  <p className="text-lg font-black">Retiro</p>
-                  <p className="mt-1 text-sm font-bold opacity-75">Retiro en tienda, sin costo de entrega</p>
+                  <p className="text-lg font-black">Retiro en el comercio</p>
+                  <p className="mt-1 text-sm font-bold opacity-75">Sin costo de entrega</p>
                 </button>
               </div>
             </section>
@@ -263,7 +301,7 @@ export function CheckoutForm({ store }: { store: Store }) {
             )}
 
             <section className="vp-card p-4 sm:p-5">
-              <h2 className="text-xl font-black text-[#25262B]">4. Pago y detalles</h2>
+              <h2 className="text-xl font-black text-[#25262B]">4. ¿Cómo vas a pagar?</h2>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <label>
                   <span className="vp-label">Método de pago</span>
@@ -273,21 +311,113 @@ export function CheckoutForm({ store }: { store: Store }) {
                   </select>
                 </label>
                 <label>
-                  <span className="vp-label">Detalle del pedido</span>
+                  <span className="vp-label">Nota del pedido</span>
                   <input className="vp-input" value={form.orderDetails} onChange={(event) => updateField("orderDetails", event.target.value)} placeholder="Ej: sin cebolla, enviar factura..." />
                 </label>
               </div>
               <label className="mt-4 block">
-                <span className="vp-label">Nota adicional</span>
-                <textarea className="vp-input min-h-24 resize-none" value={form.notes} onChange={(event) => updateField("notes", event.target.value)} placeholder="Cualquier instrucción extra para el comercio u operadora." />
+                <span className="vp-label">
+                  {isCashPayment ? "¿Cómo vas a cancelar?" : "Nota adicional"}
+                </span>
+                <textarea
+                  className="vp-input min-h-24 resize-none"
+                  value={form.notes}
+                  onChange={(event) => updateField("notes", event.target.value)}
+                  placeholder={
+                    isCashPayment
+                      ? "Ej: pago en dólares al recibir, pago en Bs al retirar, necesito cambio de $20..."
+                      : "Cualquier instrucción extra para el comercio u operadora."
+                  }
+                />
               </label>
+              {isCashPayment ? (
+                <p className="mt-2 rounded-2xl bg-[#FFF8F0] p-3 text-xs font-black text-[#746f69]">
+                  Esta información llegará al comercio junto con tu pedido.
+                </p>
+              ) : null}
+
+              {paymentInfo ? (
+                <div className="mt-4 rounded-[26px] bg-[#2E3A79] p-4 text-white">
+                  <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-[0.16em] text-[#FFB547]">
+                        Datos para pagar
+                      </p>
+                      <h3 className="mt-1 text-xl font-black">{paymentInfo.title}</h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={copyPaymentData}
+                      className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-4 py-2 text-xs font-black text-[#25262B]"
+                    >
+                      <Copy size={15} />
+                      {copiedPaymentData ? "Copiado" : "Copiar datos"}
+                    </button>
+                  </div>
+
+                  <div className="mt-4 space-y-2">
+                    {paymentInfo.lines.length ? (
+                      paymentInfo.lines
+                        .filter((line) => line.label !== "Referencia")
+                        .map((line) => {
+                          const copiedKey = `${line.label}-${line.value}`;
+
+                          return (
+                            <div
+                              key={`${line.label}-${line.value}`}
+                              className="flex items-center justify-between gap-3 rounded-2xl bg-white/10 p-3 text-sm"
+                            >
+                              <div className="min-w-0">
+                                <span className="block font-bold text-white/70">{line.label}</span>
+                                <span className="block break-words font-black">{line.value}</span>
+                              </div>
+                              {line.copyable ? (
+                                <button
+                                  type="button"
+                                  onClick={() => copyPaymentLine(line.label, line.value)}
+                                  className="shrink-0 rounded-full bg-white px-3 py-2 text-xs font-black text-[#2E3A79]"
+                                >
+                                  {copiedPaymentLine === copiedKey ? "Copiado" : "Copiar"}
+                                </button>
+                              ) : null}
+                            </div>
+                          );
+                        })
+                    ) : (
+                      <p className="rounded-2xl bg-white/10 p-3 text-sm font-bold text-white/75">
+                        El comercio te confirmará los datos de pago por WhatsApp.
+                      </p>
+                    )}
+                  </div>
+
+                  {!paymentInfo.hasConfiguredData ? (
+                    <p className="mt-3 rounded-2xl bg-white/10 p-3 text-xs font-black text-white">
+                      No hay datos de pago guardados para este método. Si ya los cargaste en configuración, aplica la migración de pagos en Supabase y vuelve a guardar.
+                    </p>
+                  ) : null}
+
+                  {!isCashPayment ? (
+                    <label className="mt-4 block">
+                      <span className="text-xs font-black uppercase tracking-[0.14em] text-white/70">
+                        Referencia de pago
+                      </span>
+                      <input
+                        className="mt-1 w-full rounded-2xl border border-white/10 bg-white px-4 py-3 text-sm font-bold text-[#25262B] outline-none"
+                        value={form.paymentReference}
+                        onChange={(event) => updateField("paymentReference", event.target.value)}
+                        placeholder="Ej: 123456 o captura enviada por WhatsApp"
+                      />
+                    </label>
+                  ) : null}
+                </div>
+              ) : null}
             </section>
           </div>
 
           <aside className="lg:sticky lg:top-5 lg:self-start">
             <section className="rounded-[36px] bg-[#25262B] p-3 text-white shadow-2xl shadow-[#25262B]/25">
               <div className="rounded-[30px] bg-white p-5 text-[#25262B]">
-                <h2 className="text-xl font-black">Resumen</h2>
+                <h2 className="text-xl font-black">Revisa tu pedido</h2>
                 <div className="mt-4 space-y-3">
                   {items.map((item, index) => (
                     <div key={`${item.productId}-${index}`} className="flex justify-between gap-3 text-sm">
@@ -301,6 +431,7 @@ export function CheckoutForm({ store }: { store: Store }) {
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between"><span className="font-bold text-[#746f69]">Subtotal</span><span className="font-black">{formatUsd(subtotalUsd)}</span></div>
                   <div className="flex justify-between"><span className="font-bold text-[#746f69]">Entrega</span><span className="font-black">{form.deliveryType === "delivery" ? formatUsd(deliveryUsd) : "Gratis"}</span></div>
+                  <div className="flex justify-between"><span className="font-bold text-[#746f69]">Tasa usada</span><span className="font-black">{formatBs(store.usdToBs || 600)}</span></div>
                   {form.deliveryType === "delivery" ? <p className="rounded-2xl bg-[#FFF8F0] p-3 text-xs font-black text-[#746f69]">{quote.label} {quote.source === "fallback" ? "· estimado aproximado" : ""}</p> : null}
                 </div>
 
@@ -329,7 +460,7 @@ export function CheckoutForm({ store }: { store: Store }) {
               ) : (
                 <MessageCircle size={18} />
               )}
-              {isSubmitting ? "Guardando pedido..." : "Enviar por WhatsApp"}
+              {isSubmitting ? "Guardando pedido..." : "Confirmar pedido por WhatsApp"}
             </button>
                   <button type="button" onClick={copyOrder} className="vp-button-soft w-full"><Copy size={18} /> Copiar pedido</button>
                 </div>

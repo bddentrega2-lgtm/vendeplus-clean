@@ -47,6 +47,21 @@ export function LoginForm() {
       savePanelToken(accessToken);
       await refreshSession();
       router.push("/panel");
+    } catch (error: any) {
+      const message = String(error?.message || error || "");
+
+      if (
+        message.includes("Unexpected token") ||
+        message.includes("<!DOCTYPE") ||
+        message.includes("not valid JSON")
+      ) {
+        setError(
+          "El login recibió una página HTML en vez de una respuesta de Supabase. Revisa NEXT_PUBLIC_SUPABASE_URL y reinicia el servidor local."
+        );
+        return;
+      }
+
+      setError(message || "No se pudo iniciar sesión.");
     } finally {
       setIsLoading(false);
     }

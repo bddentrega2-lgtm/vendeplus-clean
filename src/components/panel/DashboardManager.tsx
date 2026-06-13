@@ -374,6 +374,63 @@ export function DashboardManager() {
         </div>
       </section>
 
+      <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
+        <div className="flex flex-col justify-between gap-3 xl:flex-row xl:items-center">
+          <div>
+            <p className="text-sm font-black uppercase tracking-[0.18em] text-[#746f69]">
+              Control de pagos
+            </p>
+            <h2 className="mt-1 text-2xl font-black text-[#25262B]">
+              Pedidos pendientes de pago
+            </h2>
+            <p className="mt-1 text-sm font-bold text-[#746f69]">
+              Revisa referencias, montos recibidos y pagos incompletos desde pedidos.
+            </p>
+          </div>
+          <Link
+            href="/panel/pedidos"
+            className="inline-flex items-center justify-center rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
+          >
+            Ver pagos
+          </Link>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <div className="rounded-[24px] bg-[#F8F3E8] p-4">
+            <p className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
+              Pendientes
+            </p>
+            <p className="mt-2 text-3xl font-black text-[#25262B]">
+              {summary.pendingPayments || 0}
+            </p>
+          </div>
+          <div className="rounded-[24px] bg-blue-50 p-4">
+            <p className="text-xs font-black uppercase tracking-[0.12em] text-blue-700">
+              En revisión
+            </p>
+            <p className="mt-2 text-3xl font-black text-blue-700">
+              {summary.reviewPayments || 0}
+            </p>
+          </div>
+          <div className="rounded-[24px] bg-green-50 p-4">
+            <p className="text-xs font-black uppercase tracking-[0.12em] text-green-700">
+              Verificados hoy
+            </p>
+            <p className="mt-2 text-3xl font-black text-green-700">
+              {summary.verifiedPaymentsToday || 0}
+            </p>
+          </div>
+          <div className="rounded-[24px] bg-red-50 p-4">
+            <p className="text-xs font-black uppercase tracking-[0.12em] text-red-700">
+              Monto pendiente
+            </p>
+            <p className="mt-2 text-2xl font-black text-red-700">
+              {formatUsd(summary.pendingPaymentUsd || 0)}
+            </p>
+          </div>
+        </div>
+      </section>
+
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {cards.map((card) => (
           <MetricCard key={card.label} {...card} />

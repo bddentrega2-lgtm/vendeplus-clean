@@ -5,6 +5,66 @@ import {
   panelErrorResponse,
   requirePanelAuth,
 } from "@/lib/panel/access";
+import { getInitialPaymentStatus } from "@/lib/payments";
+import { isMissingColumnError } from "@/lib/supabase/schema-compat";
+
+const ordersSelect = `
+  id,
+  public_code,
+  store_id,
+  customer_name,
+  customer_phone,
+  delivery_type,
+  payment_method,
+  payment_status,
+  payment_verified_at,
+  subtotal_usd,
+  delivery_usd,
+  total_usd,
+  total_bs,
+  distance_km,
+  status,
+  created_at,
+  stores (
+    name
+  ),
+  order_items (
+    id,
+    product_name,
+    variant_name,
+    quantity,
+    unit_price_usd,
+    total_usd
+  )
+`;
+
+const baseOrdersSelect = `
+  id,
+  public_code,
+  store_id,
+  customer_name,
+  customer_phone,
+  delivery_type,
+  payment_method,
+  subtotal_usd,
+  delivery_usd,
+  total_usd,
+  total_bs,
+  distance_km,
+  status,
+  created_at,
+  stores (
+    name
+  ),
+  order_items (
+    id,
+    product_name,
+    variant_name,
+    quantity,
+    unit_price_usd,
+    total_usd
+  )
+`;
 
 function toNumber(value: unknown) {
   const parsed = Number(value || 0);
@@ -128,6 +188,15 @@ function groupCount<T>(rows: T[], keyGetter: (row: T) => string) {
     .sort((a, b) => b.value - a.value);
 }
 
+function withPaymentFallback(order: any) {
+  return {
+    ...order,
+    payment_status:
+      order?.payment_status || getInitialPaymentStatus(order?.payment_method),
+    payment_verified_at: order?.payment_verified_at || null,
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const auth = await requirePanelAuth(request);
@@ -153,35 +222,7 @@ export async function GET(request: NextRequest) {
 
     let ordersQuery = supabase
       .from("orders")
-      .select(
-        `
-        id,
-        public_code,
-        store_id,
-        customer_name,
-        customer_phone,
-        delivery_type,
-        payment_method,
-        subtotal_usd,
-        delivery_usd,
-        total_usd,
-        total_bs,
-        distance_km,
-        status,
-        created_at,
-        stores (
-          name
-        ),
-        order_items (
-          id,
-          product_name,
-          variant_name,
-          quantity,
-          unit_price_usd,
-          total_usd
-        )
-      `
-      )
+      .select(ordersSelect)
       .gte("created_at", dateRange.start.toISOString())
       .lte("created_at", dateRange.end.toISOString())
       .order("created_at", { ascending: false });
@@ -203,16 +244,40 @@ export async function GET(request: NextRequest) {
 
     const [
       { data: stores, error: storesError },
-      { data: orders, error: ordersError },
+      ordersResult,
       { data: products, error: productsError },
     ] = await Promise.all([storesQuery, ordersQuery, productsQuery]);
+
+    let orders = ordersResult.data;
+    let ordersError = ordersResult.error;
+
+    if (ordersError && isMissingColumnError(ordersError, ["payment_"])) {
+      let fallbackOrdersQuery = supabase
+        .from("orders")
+        .select(baseOrdersSelect)
+        .gte("created_at", dateRange.start.toISOString())
+        .lte("created_at", dateRange.end.toISOString())
+        .order("created_at", { ascending: false });
+
+      if (auth.storeIds !== null) {
+        fallbackOrdersQuery = fallbackOrdersQuery.in("store_id", auth.storeIds);
+      }
+
+      if (selectedStoreId) {
+        fallbackOrdersQuery = fallbackOrdersQuery.eq("store_id", selectedStoreId);
+      }
+
+      const fallbackResult = await fallbackOrdersQuery;
+      orders = fallbackResult.data?.map(withPaymentFallback) || [];
+      ordersError = fallbackResult.error;
+    }
 
     if (storesError) throw storesError;
     if (ordersError) throw ordersError;
     if (productsError) throw productsError;
 
     const safeStores = stores || [];
-    const safeOrders = orders || [];
+    const safeOrders = (orders || []).map(withPaymentFallback);
     const safeProducts = products || [];
 
     const completedOrders = safeOrders.filter((order: any) => order.status === "completed");
@@ -222,6 +287,16 @@ export async function GET(request: NextRequest) {
     );
     const deliveryOrders = safeOrders.filter((order: any) => order.delivery_type === "delivery");
     const pickupOrders = safeOrders.filter((order: any) => order.delivery_type === "pickup");
+    const pendingPaymentOrders = safeOrders.filter((order: any) =>
+      ["pending", "incomplete"].includes(order.payment_status || "pending")
+    );
+    const reviewPaymentOrders = safeOrders.filter(
+      (order: any) => order.payment_status === "review"
+    );
+    const verifiedPaymentsToday = safeOrders.filter((order: any) => {
+      if (order.payment_status !== "verified" || !order.payment_verified_at) return false;
+      return new Date(order.payment_verified_at) >= startOfDay(new Date());
+    });
 
     const totalRevenueUsd = safeOrders.reduce(
       (sum: number, order: any) => sum + toNumber(order.total_usd),
@@ -258,6 +333,11 @@ export async function GET(request: NextRequest) {
       (sum: number, order: any) => sum + toNumber(order.total_usd),
       0
     );
+    const pendingPaymentUsd = safeOrders
+      .filter((order: any) =>
+        ["pending", "review", "incomplete"].includes(order.payment_status || "pending")
+      )
+      .reduce((sum: number, order: any) => sum + toNumber(order.total_usd), 0);
 
     const allItems = safeOrders.flatMap((order: any) =>
       (order.order_items || []).map((item: any) => ({
@@ -409,6 +489,10 @@ export async function GET(request: NextRequest) {
         pickupRevenueUsd,
         deliveryOrders: deliveryOrders.length,
         pickupOrders: pickupOrders.length,
+        pendingPayments: pendingPaymentOrders.length,
+        reviewPayments: reviewPaymentOrders.length,
+        verifiedPaymentsToday: verifiedPaymentsToday.length,
+        pendingPaymentUsd,
         activeProducts: activeProducts.length,
         inactiveProducts: inactiveProducts.length,
       },

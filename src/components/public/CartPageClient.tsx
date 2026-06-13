@@ -5,7 +5,7 @@ import { ArrowLeft, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { CartItem, Store } from "@/types";
 import { getCart, getCartSubtotal, removeCartItem, updateCartItemQuantity } from "@/lib/cart";
-import { formatBs, formatUsd, usdToBs } from "@/lib/currency";
+import { formatBs, formatUsd } from "@/lib/currency";
 
 export function CartPageClient({ store }: { store: Store }) {
   const [items, setItems] = useState<CartItem[]>([]);
@@ -25,6 +25,8 @@ export function CartPageClient({ store }: { store: Store }) {
   }, [store.slug]);
 
   const subtotal = getCartSubtotal(items);
+  const exchangeRate = store.usdToBs || 600;
+  const subtotalBs = subtotal * exchangeRate;
 
   function setQuantity(index: number, quantity: number) {
     updateCartItemQuantity(store.slug, index, quantity);
@@ -56,7 +58,7 @@ export function CartPageClient({ store }: { store: Store }) {
               </div>
             </div>
             <p className="mt-4 text-sm font-semibold leading-relaxed text-white/72">
-              Revisa cantidades, notas y productos antes de pasar al checkout.
+              Revisa cantidades, notas y productos antes de finalizar el pedido.
             </p>
           </div>
         </section>
@@ -64,7 +66,9 @@ export function CartPageClient({ store }: { store: Store }) {
         <section className="mt-5 space-y-3">
           {items.length === 0 ? (
             <div className="rounded-[32px] bg-white p-8 text-center shadow-sm ring-1 ring-[#25262B]/[0.06]">
-              <div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl bg-[#FFF8F0] text-3xl">🛒</div>
+              <div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl bg-[#FFF8F0] text-[#2E3A79]">
+                <ShoppingBag size={28} />
+              </div>
               <h2 className="mt-4 text-xl font-black text-[#25262B]">Tu carrito está vacío</h2>
               <p className="mt-2 text-sm font-bold text-[#746f69]">Agrega productos del catálogo para continuar.</p>
               <Link href={`/${store.slug}`} className="vp-button-mango mt-5 w-full">Volver al catálogo</Link>
@@ -96,6 +100,7 @@ export function CartPageClient({ store }: { store: Store }) {
                       <div className="text-right">
                         <p className="text-xs font-bold text-[#746f69]">{formatUsd(item.unitPriceUsd)} c/u</p>
                         <p className="text-base font-black text-[#25262B]">{formatUsd(item.unitPriceUsd * item.quantity)}</p>
+                        <p className="text-xs font-black text-[#746f69]">{formatBs(item.unitPriceUsd * item.quantity * exchangeRate)}</p>
                       </div>
                     </div>
                   </div>
@@ -112,10 +117,10 @@ export function CartPageClient({ store }: { store: Store }) {
                 <span className="text-sm font-black text-[#746f69]">Subtotal</span>
                 <div className="text-right">
                   <p className="text-xl font-black">{formatUsd(subtotal)}</p>
-                  <p className="text-xs font-black text-[#746f69]">{formatBs(usdToBs(subtotal))}</p>
+                  <p className="text-xs font-black text-[#746f69]">{formatBs(subtotalBs)}</p>
                 </div>
               </div>
-              <Link href={`/${store.slug}/checkout`} className="vp-button-mango mt-4 w-full">Continuar al checkout</Link>
+              <Link href={`/${store.slug}/checkout`} className="vp-button-mango mt-4 w-full">Finalizar pedido</Link>
             </div>
           </section>
         ) : null}

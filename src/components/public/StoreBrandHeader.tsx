@@ -1,4 +1,5 @@
-﻿import type { Store } from "@/types";
+import { Clock, MessageCircle, ShoppingBag } from "lucide-react";
+import type { Store } from "@/types";
 
 type BrandedStore = Store & {
   logoUrl?: string;
@@ -21,13 +22,9 @@ export function StoreBrandHeader({ store }: { store: BrandedStore }) {
 
   const primaryColor = store.primaryColor || "#2E3A79";
   const accentColor = store.accentColor || "#FFB547";
-
-  const services = [
-    store.acceptsDelivery ? "Entrega" : "",
-    store.acceptsPickup ? "Retiro" : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const whatsappUrl = store.whatsappPhone
+    ? `https://wa.me/${store.whatsappPhone}`
+    : "";
 
   return (
     <section className="mx-auto mb-5 max-w-6xl px-4 pt-4">
@@ -35,10 +32,10 @@ export function StoreBrandHeader({ store }: { store: BrandedStore }) {
         <img
           src={coverImage}
           alt={store.name}
-          className="h-56 w-full object-cover md:h-72"
+          className="h-64 w-full object-cover md:h-72"
         />
 
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/35 to-black/10" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/82 via-black/40 to-black/10" />
 
         <div className="absolute bottom-0 left-0 right-0 p-5 text-white md:p-7">
           <div className="flex items-end gap-4">
@@ -60,18 +57,39 @@ export function StoreBrandHeader({ store }: { store: BrandedStore }) {
               </div>
             )}
 
-            <div>
+            <div className="min-w-0">
               <p className="text-xs font-black uppercase tracking-[0.18em] text-white/70">
                 {store.category || "Comercio aliado"}
               </p>
-              <h1 className="mt-1 text-3xl font-black md:text-5xl">
+              <h1 className="mt-1 text-3xl font-black leading-tight md:text-5xl">
                 {store.name}
               </h1>
               <p className="mt-1 text-sm font-bold text-white/80">
                 {store.openingHours || "Disponible hoy"}
-                {services ? ` · ${services}` : ""}
               </p>
             </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <span className="inline-flex items-center gap-2 rounded-full bg-white/14 px-3 py-2 text-xs font-black backdrop-blur">
+              <ShoppingBag size={15} className="text-[#FFB547]" />
+              Entrega {store.deliveryEstimate || "disponible"}
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full bg-white/14 px-3 py-2 text-xs font-black backdrop-blur">
+              <Clock size={15} className="text-[#FFB547]" />
+              Retiro {store.pickupEstimate || "disponible"}
+            </span>
+            {whatsappUrl ? (
+              <a
+                href={whatsappUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-full bg-[#FFB547] px-3 py-2 text-xs font-black text-[#25262B]"
+              >
+                <MessageCircle size={15} />
+                Consultar por WhatsApp
+              </a>
+            ) : null}
           </div>
         </div>
       </div>

@@ -6,6 +6,7 @@ import {
   panelErrorResponse,
   requirePanelAuth,
 } from "@/lib/panel/access";
+import { isMissingColumnError } from "@/lib/supabase/schema-compat";
 
 function optionalNumber(value: unknown) {
   if (value === "" || value === null || value === undefined) return null;
@@ -28,6 +29,43 @@ function normalizePaymentMethods(value: unknown) {
   return [];
 }
 
+function cleanText(value: unknown) {
+  return String(value || "").trim();
+}
+
+function normalizePaymentDetails(value: unknown) {
+  const source =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, any>)
+      : {};
+
+  return {
+    pagoMovil: {
+      bank: cleanText(source.pagoMovil?.bank),
+      phone: cleanText(source.pagoMovil?.phone),
+      idNumber: cleanText(source.pagoMovil?.idNumber),
+      holder: cleanText(source.pagoMovil?.holder),
+    },
+    transferencia: {
+      bank: cleanText(source.transferencia?.bank),
+      accountNumber: cleanText(source.transferencia?.accountNumber),
+      idNumber: cleanText(source.transferencia?.idNumber),
+      holder: cleanText(source.transferencia?.holder),
+    },
+    zelle: {
+      contact: cleanText(source.zelle?.contact),
+      holder: cleanText(source.zelle?.holder),
+    },
+    binance: {
+      contact: cleanText(source.binance?.contact),
+      holder: cleanText(source.binance?.holder),
+    },
+    efectivo: {
+      note: cleanText(source.efectivo?.note),
+    },
+  };
+}
+
 function normalizeStorePayload(body: any) {
   return {
     name: String(body.name || "").trim(),
@@ -43,6 +81,7 @@ function normalizeStorePayload(body: any) {
     delivery_estimate: body.delivery_estimate ? String(body.delivery_estimate).trim() : "25-40 min",
     pickup_estimate: body.pickup_estimate ? String(body.pickup_estimate).trim() : "15-25 min",
     payment_methods: normalizePaymentMethods(body.payment_methods),
+    payment_details: normalizePaymentDetails(body.payment_details),
     usd_to_bs: Number(body.usd_to_bs || 600),
     whatsapp_message_note: body.whatsapp_message_note ? String(body.whatsapp_message_note).trim() : null,
     primary_color: body.primary_color ? String(body.primary_color).trim() : "#2E3A79",
@@ -70,6 +109,7 @@ const storeSelect = `
   delivery_estimate,
   pickup_estimate,
   payment_methods,
+  payment_details,
   usd_to_bs,
   whatsapp_message_note,
   primary_color,
@@ -80,26 +120,72 @@ const storeSelect = `
   is_active
 `;
 
+const baseStoreSelect = `
+  id,
+  slug,
+  name,
+  description,
+  business_type,
+  whatsapp,
+  address,
+  latitude,
+  longitude,
+  cover_image_url,
+  logo_url,
+  opening_hours,
+  delivery_estimate,
+  pickup_estimate,
+  payment_methods,
+  usd_to_bs,
+  whatsapp_message_note,
+  primary_color,
+  accent_color,
+  button_text_color,
+  accepts_delivery,
+  accepts_pickup,
+  is_active
+`;
+
+function addPaymentDetailsFallback(store: any) {
+  return {
+    ...store,
+    payment_details: store?.payment_details || {},
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const auth = await requirePanelAuth(request);
     const supabase = createSupabaseAdminClient();
 
-    let query = supabase
-      .from("stores")
-      .select(storeSelect)
-      .order("name", { ascending: true });
+    const buildQuery = (selectFields: string) => {
+      let query = supabase
+        .from("stores")
+        .select(selectFields)
+        .order("name", { ascending: true });
 
-    if (auth.storeIds !== null) {
-      query = query.in("id", auth.storeIds);
+      if (auth.storeIds !== null) {
+        query = query.in("id", auth.storeIds);
+      }
+
+      return query;
+    };
+
+    let paymentDetailsAvailable = true;
+    let { data, error } = await buildQuery(storeSelect);
+
+    if (error && isMissingColumnError(error, ["payment_details"])) {
+      paymentDetailsAvailable = false;
+      const fallbackResult = await buildQuery(baseStoreSelect);
+      data = fallbackResult.data?.map(addPaymentDetailsFallback) || [];
+      error = fallbackResult.error;
     }
-
-    const { data, error } = await query;
 
     if (error) throw error;
 
     return NextResponse.json({
       stores: data || [],
+      paymentDetailsAvailable,
       auth: {
         mode: auth.mode,
         email: auth.email || null,
@@ -134,16 +220,39 @@ export async function PATCH(request: NextRequest) {
 
     const supabase = createSupabaseAdminClient();
 
-    const { data, error } = await supabase
+    let paymentDetailsSaved = true;
+    let { data, error } = await supabase
       .from("stores")
       .update(payload)
       .eq("id", body.id)
       .select(storeSelect)
       .single();
 
+    if (error && isMissingColumnError(error, ["payment_details"])) {
+      paymentDetailsSaved = false;
+      const { payment_details: _paymentDetails, ...basePayload } = payload;
+      const fallbackResult = await supabase
+        .from("stores")
+        .update(basePayload)
+        .eq("id", body.id)
+        .select(baseStoreSelect)
+        .single();
+
+      data = fallbackResult.data
+        ? addPaymentDetailsFallback(fallbackResult.data)
+        : null;
+      error = fallbackResult.error;
+    }
+
     if (error) throw error;
 
-    return NextResponse.json({ store: data });
+    return NextResponse.json({
+      store: data,
+      paymentDetailsSaved,
+      warning: paymentDetailsSaved
+        ? null
+        : "La configuración general se guardó, pero los datos de pago NO quedaron guardados porque falta aplicar la migración de pagos en Supabase.",
+    });
   } catch (error: any) {
     return panelErrorResponse(error, "Error actualizando configuración.");
   }

@@ -1,5 +1,7 @@
 ﻿import type { SavedOrder, Store } from "@/types";
+import { getInitialPaymentStatus, getSuggestedPaymentCurrency } from "@/lib/payments";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { isMissingColumnError } from "@/lib/supabase/schema-compat";
 
 function createUuid() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -33,6 +35,8 @@ export async function saveOrderToSupabase(order: SavedOrder, store: Store) {
   }
 
   const orderDbId = createUuid();
+  const paymentReference = String(order.form.paymentReference || "").trim();
+  const initialPaymentStatus = getInitialPaymentStatus(order.form.paymentMethod);
 
   const orderPayload = {
     id: orderDbId,
@@ -44,6 +48,12 @@ export async function saveOrderToSupabase(order: SavedOrder, store: Store) {
 
     delivery_type: order.form.deliveryType,
     payment_method: order.form.paymentMethod,
+    payment_status:
+      paymentReference && initialPaymentStatus !== "cash_on_delivery"
+        ? "review"
+        : initialPaymentStatus,
+    payment_reference: paymentReference || null,
+    payment_currency: getSuggestedPaymentCurrency(order.form.paymentMethod) || null,
 
     subtotal_usd: order.totals.subtotalUsd,
     delivery_usd: order.totals.deliveryUsd,
@@ -73,7 +83,19 @@ export async function saveOrderToSupabase(order: SavedOrder, store: Store) {
     whatsapp_message: order.whatsappMessage,
   };
 
-  const { error: orderError } = await supabase.from("orders").insert(orderPayload);
+  let { error: orderError } = await supabase.from("orders").insert(orderPayload);
+
+  if (orderError && isMissingColumnError(orderError, ["payment_"])) {
+    const {
+      payment_status: _paymentStatus,
+      payment_reference: _paymentReference,
+      payment_currency: _paymentCurrency,
+      ...baseOrderPayload
+    } = orderPayload;
+
+    const fallbackResult = await supabase.from("orders").insert(baseOrderPayload);
+    orderError = fallbackResult.error;
+  }
 
   if (orderError) {
     return {

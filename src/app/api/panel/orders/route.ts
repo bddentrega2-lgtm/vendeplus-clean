@@ -7,6 +7,8 @@ import {
   panelErrorResponse,
   requirePanelAuth,
 } from "@/lib/panel/access";
+import { getInitialPaymentStatus, getSuggestedPaymentCurrency, isPaymentStatus } from "@/lib/payments";
+import { isMissingColumnError } from "@/lib/supabase/schema-compat";
 
 const allowedStatuses = [
   "received",
@@ -17,6 +19,91 @@ const allowedStatuses = [
   "completed",
   "cancelled",
 ];
+
+const ordersSelect = `
+  id,
+  public_code,
+  store_id,
+  customer_name,
+  customer_phone,
+  delivery_type,
+  payment_method,
+  payment_status,
+  payment_reference,
+  payment_currency,
+  amount_paid,
+  payment_verified_at,
+  payment_notes,
+  payment_bank,
+  payment_verified_by,
+  subtotal_usd,
+  delivery_usd,
+  total_usd,
+  total_bs,
+  distance_km,
+  delivery_lat,
+  delivery_lng,
+  delivery_reference,
+  order_details,
+  notes,
+  status,
+  whatsapp_message,
+  created_at,
+  stores (
+    name,
+    latitude,
+    longitude,
+    usd_to_bs,
+    payment_details
+  ),
+  order_items (
+    id,
+    product_name,
+    variant_name,
+    quantity,
+    unit_price_usd,
+    total_usd,
+    notes
+  )
+`;
+
+const baseOrdersSelect = `
+  id,
+  public_code,
+  store_id,
+  customer_name,
+  customer_phone,
+  delivery_type,
+  payment_method,
+  subtotal_usd,
+  delivery_usd,
+  total_usd,
+  total_bs,
+  distance_km,
+  delivery_lat,
+  delivery_lng,
+  delivery_reference,
+  order_details,
+  notes,
+  status,
+  whatsapp_message,
+  created_at,
+  stores (
+    name,
+    latitude,
+    longitude,
+    usd_to_bs
+  ),
+  order_items (
+    id,
+    product_name,
+    variant_name,
+    quantity,
+    unit_price_usd,
+    total_usd,
+    notes
+  )
+`;
 
 function createManualPublicCode() {
   const now = new Date();
@@ -124,6 +211,30 @@ async function attachOrderIntegrations(supabase: any, orders: any[]) {
   }
 }
 
+function withPaymentFallback(order: any) {
+  return {
+    ...order,
+    payment_status:
+      order?.payment_status || getInitialPaymentStatus(order?.payment_method),
+    payment_reference: order?.payment_reference || null,
+    payment_currency:
+      order?.payment_currency ||
+      getSuggestedPaymentCurrency(order?.payment_method) ||
+      null,
+    amount_paid: order?.amount_paid ?? null,
+    payment_verified_at: order?.payment_verified_at || null,
+    payment_notes: order?.payment_notes || null,
+    payment_bank: order?.payment_bank || null,
+    payment_verified_by: order?.payment_verified_by || null,
+    stores: order?.stores
+      ? {
+          ...order.stores,
+          payment_details: order.stores.payment_details || {},
+        }
+      : order?.stores,
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const auth = await requirePanelAuth(request);
@@ -133,78 +244,64 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status");
     const orderId = searchParams.get("orderId");
     const paymentMethod = searchParams.get("paymentMethod");
+    const paymentStatus = searchParams.get("paymentStatus");
     const deliveryType = searchParams.get("deliveryType");
     const date = searchParams.get("date");
 
-    let query = supabase
-      .from("orders")
-      .select(
-        `
-        id,
-        public_code,
-        store_id,
-        customer_name,
-        customer_phone,
-        delivery_type,
-        payment_method,
-        subtotal_usd,
-        delivery_usd,
-        total_usd,
-        total_bs,
-        distance_km,
-        delivery_lat,
-        delivery_lng,
-        delivery_reference,
-        order_details,
-        notes,
-        status,
-        whatsapp_message,
-        created_at,
-        stores (
-          name,
-          latitude,
-          longitude
-        ),
-        order_items (
-          id,
-          product_name,
-          variant_name,
-          quantity,
-          unit_price_usd,
-          total_usd,
-          notes
-        )
-      `
-      )
-      .order("created_at", { ascending: false });
+    const buildQuery = (includePaymentFields: boolean) => {
+      const client = supabase as any;
+      let query = client
+        .from("orders")
+        .select(includePaymentFields ? ordersSelect : baseOrdersSelect)
+        .order("created_at", { ascending: false });
 
-    if (auth.storeIds !== null) {
-      query = query.in("store_id", auth.storeIds);
-    }
+      if (auth.storeIds !== null) {
+        query = query.in("store_id", auth.storeIds);
+      }
+
+      if (status && status !== "all") {
+        query = query.eq("status", status);
+      }
+
+      if (paymentMethod && paymentMethod !== "all") {
+        query = query.eq("payment_method", paymentMethod);
+      }
+
+      if (
+        includePaymentFields &&
+        paymentStatus &&
+        paymentStatus !== "all" &&
+        isPaymentStatus(paymentStatus)
+      ) {
+        query = query.eq("payment_status", paymentStatus);
+      }
+
+      if (deliveryType && deliveryType !== "all") {
+        query = query.eq("delivery_type", deliveryType);
+      }
+
+      return query;
+    };
+
+    let query = buildQuery(true);
 
     if (orderId) {
-      const { data, error } = await query.eq("id", orderId).maybeSingle();
+      let { data, error } = await query.eq("id", orderId).maybeSingle();
+
+      if (error && isMissingColumnError(error, ["payment_", "amount_paid"])) {
+        const fallbackResult = await buildQuery(false).eq("id", orderId).maybeSingle();
+        data = fallbackResult.data ? withPaymentFallback(fallbackResult.data) : null;
+        error = fallbackResult.error;
+      }
 
       if (error) throw error;
 
       const [order] = await attachOrderIntegrations(
         supabase,
-        data ? [data] : []
+        data ? [withPaymentFallback(data)] : []
       );
 
       return NextResponse.json({ order: order || null });
-    }
-
-    if (status && status !== "all") {
-      query = query.eq("status", status);
-    }
-
-    if (paymentMethod && paymentMethod !== "all") {
-      query = query.eq("payment_method", paymentMethod);
-    }
-
-    if (deliveryType && deliveryType !== "all") {
-      query = query.eq("delivery_type", deliveryType);
     }
 
     if (date && date !== "all") {
@@ -230,11 +327,45 @@ export async function GET(request: NextRequest) {
         .lte("created_at", end.toISOString());
     }
 
-    const { data, error } = await query.limit(80);
+    let { data, error } = await query.limit(80);
+
+    if (error && isMissingColumnError(error, ["payment_", "amount_paid"])) {
+      let fallbackQuery = buildQuery(false);
+
+      if (date && date !== "all") {
+        const now = new Date();
+        let start = new Date(now);
+        let end = new Date(now);
+
+        if (date === "today") {
+          start.setHours(0, 0, 0, 0);
+          end.setHours(23, 59, 59, 999);
+        } else if (date === "last_7_days") {
+          start.setDate(start.getDate() - 6);
+          start.setHours(0, 0, 0, 0);
+          end.setHours(23, 59, 59, 999);
+        } else if (date === "last_30_days") {
+          start.setDate(start.getDate() - 29);
+          start.setHours(0, 0, 0, 0);
+          end.setHours(23, 59, 59, 999);
+        }
+
+        fallbackQuery = fallbackQuery
+          .gte("created_at", start.toISOString())
+          .lte("created_at", end.toISOString());
+      }
+
+      const fallbackResult = await fallbackQuery.limit(80);
+      data = (fallbackResult.data || []).map(withPaymentFallback);
+      error = fallbackResult.error;
+    }
 
     if (error) throw error;
 
-    const orders = await attachOrderIntegrations(supabase, data || []);
+    const orders = await attachOrderIntegrations(
+      supabase,
+      (data || []).map(withPaymentFallback)
+    );
 
     return NextResponse.json({
       orders,
@@ -361,6 +492,8 @@ export async function POST(request: NextRequest) {
       customer_phone: customerPhone,
       delivery_type: deliveryType,
       payment_method: paymentMethod,
+      payment_status: getInitialPaymentStatus(paymentMethod),
+      payment_currency: getSuggestedPaymentCurrency(paymentMethod) || null,
       subtotal_usd: subtotalUsd,
       delivery_usd: deliveryUsd,
       total_usd: totalUsd,
@@ -377,11 +510,28 @@ export async function POST(request: NextRequest) {
       whatsapp_message: whatsappMessage,
     };
 
-    const { data: order, error: orderError } = await supabase
+    let { data: order, error: orderError } = await supabase
       .from("orders")
       .insert(orderPayload)
       .select()
       .single();
+
+    if (orderError && isMissingColumnError(orderError, ["payment_"])) {
+      const {
+        payment_status: _paymentStatus,
+        payment_currency: _paymentCurrency,
+        ...baseOrderPayload
+      } = orderPayload;
+
+      const fallbackResult = await supabase
+        .from("orders")
+        .insert(baseOrderPayload)
+        .select()
+        .single();
+
+      order = fallbackResult.data;
+      orderError = fallbackResult.error;
+    }
 
     if (orderError) throw orderError;
 

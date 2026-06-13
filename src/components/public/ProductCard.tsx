@@ -4,10 +4,18 @@ import { Check, Plus, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { Product, ProductVariant } from "@/types";
 import { addToCart } from "@/lib/cart";
-import { formatUsd } from "@/lib/currency";
+import { formatBs, formatUsd } from "@/lib/currency";
 import { QuantityControl } from "@/components/public/QuantityControl";
 
-export function ProductCard({ product, storeSlug }: { product: Product; storeSlug: string }) {
+export function ProductCard({
+  product,
+  storeSlug,
+  usdToBs = 600,
+}: {
+  product: Product;
+  storeSlug: string;
+  usdToBs?: number;
+}) {
   const defaultVariant = product.variants?.find((variant) => variant.isAvailable) || product.variants?.[0] || null;
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(defaultVariant);
   const [quantity, setQuantity] = useState(1);
@@ -17,6 +25,7 @@ export function ProductCard({ product, storeSlug }: { product: Product; storeSlu
   const unitPrice = useMemo(() => {
     return product.priceUsd + (selectedVariant?.priceDeltaUsd || 0);
   }, [product.priceUsd, selectedVariant]);
+  const unitPriceBs = unitPrice * usdToBs;
 
   function handleAdd() {
     addToCart(storeSlug, {
@@ -52,8 +61,9 @@ export function ProductCard({ product, storeSlug }: { product: Product; storeSlu
             <Sparkles size={14} className="text-[#FFB547]" /> Recomendado
           </div>
         ) : null}
-        <div className="absolute bottom-3 right-3 rounded-full bg-[#FFB547] px-3 py-2 text-sm font-black text-[#25262B] shadow-lg">
-          {formatUsd(unitPrice)}
+        <div className="absolute bottom-3 right-3 rounded-2xl bg-[#FFB547] px-3 py-2 text-right text-[#25262B] shadow-lg">
+          <p className="text-sm font-black">{formatUsd(unitPrice)}</p>
+          <p className="text-[11px] font-black opacity-75">{formatBs(unitPriceBs)}</p>
         </div>
       </div>
 
@@ -92,7 +102,9 @@ export function ProductCard({ product, storeSlug }: { product: Product; storeSlu
                     onClick={() => setSelectedVariant(variant)}
                     className={active
                       ? "rounded-full bg-[#2E3A79] px-3 py-2 text-xs font-black text-white"
-                      : "rounded-full border border-[#25262B]/10 bg-[#FFF8F0] px-3 py-2 text-xs font-black text-[#746f69]"
+                      : variant.isAvailable
+                        ? "rounded-full border border-[#25262B]/10 bg-[#FFF8F0] px-3 py-2 text-xs font-black text-[#746f69]"
+                        : "rounded-full border border-[#25262B]/10 bg-[#F5F2EC] px-3 py-2 text-xs font-black text-[#746f69] opacity-50"
                     }
                   >
                     {variant.name}
@@ -108,7 +120,7 @@ export function ProductCard({ product, storeSlug }: { product: Product; storeSlu
           value={notes}
           onChange={(event) => setNotes(event.target.value)}
           className="vp-input min-h-20 resize-none text-sm"
-          placeholder="Nota para este producto (opcional)"
+          placeholder="Nota opcional: talla, color, sin cebolla..."
         />
 
         <div className="flex items-center justify-between gap-3">

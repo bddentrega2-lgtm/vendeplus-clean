@@ -51,9 +51,37 @@ export type Store = {
   categories: Category[];
   products: Product[];
   paymentMethods: string[];
+  usdToBs?: number;
+  paymentDetails?: StorePaymentDetails;
   logoUrl?: string;
   coverImageUrl?: string;
   buttonTextColor?: string;
+};
+
+export type StorePaymentDetails = {
+  pagoMovil?: {
+    bank?: string;
+    phone?: string;
+    idNumber?: string;
+    holder?: string;
+  };
+  transferencia?: {
+    bank?: string;
+    accountNumber?: string;
+    idNumber?: string;
+    holder?: string;
+  };
+  zelle?: {
+    contact?: string;
+    holder?: string;
+  };
+  binance?: {
+    contact?: string;
+    holder?: string;
+  };
+  efectivo?: {
+    note?: string;
+  };
 };
 
 export type CartItem = {
@@ -88,6 +116,7 @@ export type CheckoutFormData = {
   customerPhone: string;
   deliveryType: DeliveryType;
   paymentMethod: string;
+  paymentReference: string;
   deliveryReference: string;
   orderDetails: string;
   notes: string;

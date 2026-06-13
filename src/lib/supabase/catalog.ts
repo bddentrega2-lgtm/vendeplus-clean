@@ -1,6 +1,7 @@
 ﻿import type { Category, Product, ProductVariant, Store } from "@/types";
 import { getStoreBySlug as getFallbackStoreBySlug, stores as fallbackStores } from "@/data/stores";
 import { createSupabasePublicClient } from "@/lib/supabase/server";
+import { isMissingColumnError } from "@/lib/supabase/schema-compat";
 
 type AnyRecord = Record<string, any>;
 
@@ -46,6 +47,12 @@ function toStringArray(value: unknown, fallback: string[]) {
   }
 
   return fallback;
+}
+
+function toRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, any>)
+    : {};
 }
 
 function mapVariant(row: AnyRecord, productPriceUsd: number): ProductVariant {
@@ -122,6 +129,8 @@ function mapStore(row: AnyRecord): Store {
     categories: categories.length ? categories : fallback?.categories || [],
     products: products.length ? products : fallback?.products || [],
     paymentMethods: toStringArray(row.payment_methods, fallback?.paymentMethods || defaultPaymentMethods),
+    usdToBs: toNumber(row.usd_to_bs, 600),
+    paymentDetails: toRecord(row.payment_details),
     logoUrl: row.logo_url || fallback?.logoUrl || "",
     coverImageUrl: row.cover_image_url || fallback?.coverImageUrl || fallback?.heroImageUrl || "",
     primaryColor: row.primary_color || fallback?.primaryColor || "#2E3A79",
@@ -131,6 +140,58 @@ function mapStore(row: AnyRecord): Store {
 }
 
 const storeSelect = `
+  id,
+  slug,
+  name,
+  description,
+  address,
+  latitude,
+  longitude,
+  whatsapp,
+  cover_image_url,
+  logo_url,
+  primary_color,
+  accent_color,
+  button_text_color,
+  business_type,
+  opening_hours,
+  delivery_estimate,
+  pickup_estimate,
+  payment_methods,
+  payment_details,
+  usd_to_bs,
+  whatsapp_message_note,
+  is_active,
+  accepts_delivery,
+  accepts_pickup,
+  categories (
+    id,
+    name,
+    sort_order,
+    is_active
+  ),
+  products (
+    id,
+    store_id,
+    category_id,
+    name,
+    description,
+    price_usd,
+    image_url,
+    is_available,
+    is_featured,
+    sort_order,
+    product_variants (
+      id,
+      name,
+      price_usd,
+      is_available,
+      sort_order
+    )
+  )
+`;
+
+const baseStoreSelect = `
   id,
   slug,
   name,
@@ -181,15 +242,34 @@ const storeSelect = `
   )
 `;
 
+function withPaymentDetailsFallback(row: AnyRecord) {
+  return {
+    ...row,
+    payment_details: row.payment_details || {},
+  };
+}
+
 export async function getPublicStores(): Promise<Store[]> {
   const supabase = createSupabasePublicClient();
 
   if (!supabase) return fallbackStores;
 
-  const { data, error } = await supabase
+  const storesResult = await supabase
     .from("stores")
     .select(storeSelect)
     .eq("is_active", true);
+  let data: any[] | null = storesResult.data as any;
+  let error = storesResult.error;
+
+  if (error && isMissingColumnError(error, ["payment_details"])) {
+    const fallbackResult = await supabase
+      .from("stores")
+      .select(baseStoreSelect)
+      .eq("is_active", true);
+
+    data = fallbackResult.data?.map(withPaymentDetailsFallback) || [];
+    error = fallbackResult.error;
+  }
 
   if (error || !data?.length) {
     console.warn("Using fallback stores. Supabase error:", error?.message);
@@ -204,12 +284,28 @@ export async function getPublicStoreBySlug(slug: string): Promise<Store | null> 
 
   if (!supabase) return getFallbackStoreBySlug(slug) || null;
 
-  const { data, error } = await supabase
+  const storeResult = await supabase
     .from("stores")
     .select(storeSelect)
     .eq("slug", slug)
     .eq("is_active", true)
     .maybeSingle();
+  let data: any | null = storeResult.data as any;
+  let error = storeResult.error;
+
+  if (error && isMissingColumnError(error, ["payment_details"])) {
+    const fallbackResult = await supabase
+      .from("stores")
+      .select(baseStoreSelect)
+      .eq("slug", slug)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    data = fallbackResult.data
+      ? withPaymentDetailsFallback(fallbackResult.data)
+      : null;
+    error = fallbackResult.error;
+  }
 
   if (error || !data) {
     console.warn("Using fallback store. Supabase error:", error?.message);

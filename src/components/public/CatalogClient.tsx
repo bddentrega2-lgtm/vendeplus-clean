@@ -1,7 +1,7 @@
 ﻿"use client";
 import { StoreBrandHeader } from "@/components/public/StoreBrandHeader";
 import type { CSSProperties } from "react";
-import { Search } from "lucide-react";
+import { Clock, MessageCircle, Search, ShieldCheck } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { Store } from "@/types";
 import { CategoryTabs } from "@/components/public/CategoryTabs";
@@ -31,28 +31,31 @@ export function CatalogClient({ store }: { store: Store }) {
   return (
     <main style={getBrandStyle(store)} className="vp-public-store vp-container pb-32 pt-5">
       <StoreBrandHeader store={store} />
-      <section className="hidden vp-old-hero-hidden mb-4 rounded-[30px] bg-white/90 p-4 shadow-xl shadow-[#2E3A79]/[0.08] ring-1 ring-[#25262B]/[0.07]">
+      <section className="mb-4 rounded-[30px] bg-white/90 p-4 shadow-xl shadow-[#2E3A79]/[0.08] ring-1 ring-[#25262B]/[0.07]">
         <div className="flex items-center gap-3 rounded-2xl bg-[#FFF8F0] px-4 py-3 ring-1 ring-[#25262B]/[0.06]">
           <Search size={18} className="text-[#746f69]" />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Buscar productos..."
+            placeholder="Buscar productos"
             className="w-full bg-transparent text-sm font-bold text-[#25262B] outline-none placeholder:text-[#746f69]/70"
           />
         </div>
         <div className="mt-4 grid grid-cols-3 gap-2 text-center">
           <div className="rounded-2xl bg-[#2E3A79] p-3 text-white">
-            <p className="text-[11px] font-bold text-white/70">Pedidos</p>
+            <MessageCircle className="mx-auto mb-1 text-[#FFB547]" size={17} />
+            <p className="text-[11px] font-bold text-white/70">Confirmación</p>
             <p className="text-sm font-black">WhatsApp</p>
           </div>
           <div className="rounded-2xl bg-[#FFB547] p-3 text-[#25262B]">
-            <p className="text-[11px] font-bold text-[#25262B]/65">Tasa</p>
-            <p className="text-sm font-black">$1 = Bs. 600</p>
+            <ShieldCheck className="mx-auto mb-1" size={17} />
+            <p className="text-[11px] font-bold text-[#25262B]/65">Tasa usada</p>
+            <p className="text-sm font-black">$1 = Bs. {store.usdToBs || 600}</p>
           </div>
           <div className="rounded-2xl bg-[#FFF8F0] p-3 text-[#25262B] ring-1 ring-[#25262B]/[0.06]">
+            <Clock className="mx-auto mb-1 text-[#2E3A79]" size={17} />
             <p className="text-[11px] font-bold text-[#746f69]">Entrega</p>
-            <p className="text-sm font-black">GPS / Mapa</p>
+            <p className="text-sm font-black">{store.deliveryEstimate}</p>
           </div>
         </div>
       </section>
@@ -61,15 +64,15 @@ export function CatalogClient({ store }: { store: Store }) {
 
       <div className="mb-5 flex items-end justify-between gap-4">
         <div>
-          <p className="text-sm font-black uppercase tracking-[0.18em] text-[#746f69]">Menú disponible</p>
-          <h2 className="mt-1 text-2xl font-black text-[#25262B]">Elige, revisa y confirma</h2>
+          <p className="text-sm font-black uppercase tracking-[0.18em] text-[#746f69]">Catálogo disponible</p>
+          <h2 className="mt-1 text-2xl font-black text-[#25262B]">Productos disponibles</h2>
         </div>
         <p className="rounded-full bg-white px-3 py-2 text-xs font-black text-[#746f69] shadow-sm">{products.length} productos</p>
       </div>
 
       <div className="grid gap-5 md:grid-cols-2">
         {products.map((product) => (
-          <ProductCard key={product.id} product={product} storeSlug={store.slug} />
+          <ProductCard key={product.id} product={product} storeSlug={store.slug} usdToBs={store.usdToBs || 600} />
         ))}
       </div>
 
@@ -81,7 +84,7 @@ export function CatalogClient({ store }: { store: Store }) {
       ) : null}
 
       <div className="mobile-cart-safe-space h-44 md:h-10" aria-hidden="true" />
-      <CartBar storeSlug={store.slug} />
+      <CartBar storeSlug={store.slug} usdToBs={store.usdToBs || 600} />
     </main>
   );
 }

@@ -23,6 +23,7 @@ import {
   savePanelPin,
   shouldShowPanelInitialAccessGate,
 } from "@/lib/panel/client-auth";
+import type { StorePaymentDetails } from "@/types";
 
 type StoreRow = {
   id: string;
@@ -40,6 +41,7 @@ type StoreRow = {
   delivery_estimate: string | null;
   pickup_estimate: string | null;
   payment_methods: string[] | null;
+  payment_details: StorePaymentDetails | null;
   usd_to_bs: number | string | null;
   whatsapp_message_note: string | null;
   primary_color: string | null;
@@ -59,6 +61,57 @@ const businessTypes = [
   { value: "beauty", label: "Belleza" },
   { value: "general", label: "General / Otro" },
 ];
+
+const emptyPaymentDetails: StorePaymentDetails = {
+  pagoMovil: {
+    bank: "",
+    phone: "",
+    idNumber: "",
+    holder: "",
+  },
+  transferencia: {
+    bank: "",
+    accountNumber: "",
+    idNumber: "",
+    holder: "",
+  },
+  zelle: {
+    contact: "",
+    holder: "",
+  },
+  binance: {
+    contact: "",
+    holder: "",
+  },
+  efectivo: {
+    note: "",
+  },
+};
+
+function mergePaymentDetails(value?: StorePaymentDetails | null): StorePaymentDetails {
+  return {
+    pagoMovil: {
+      ...emptyPaymentDetails.pagoMovil,
+      ...(value?.pagoMovil || {}),
+    },
+    transferencia: {
+      ...emptyPaymentDetails.transferencia,
+      ...(value?.transferencia || {}),
+    },
+    zelle: {
+      ...emptyPaymentDetails.zelle,
+      ...(value?.zelle || {}),
+    },
+    binance: {
+      ...emptyPaymentDetails.binance,
+      ...(value?.binance || {}),
+    },
+    efectivo: {
+      ...emptyPaymentDetails.efectivo,
+      ...(value?.efectivo || {}),
+    },
+  };
+}
 
 async function apiRequest(pin: string, options?: RequestInit) {
   const response = await fetch("/api/panel/settings", {
@@ -108,10 +161,12 @@ async function uploadStoreAsset(
 function StoreSettingsCard({
   store,
   pin,
+  paymentDetailsAvailable,
   onSaved,
 }: {
   store: StoreRow;
   pin: string;
+  paymentDetailsAvailable: boolean;
   onSaved: () => void;
 }) {
   const [draft, setDraft] = useState({
@@ -131,6 +186,7 @@ function StoreSettingsCard({
     payment_methods: Array.isArray(store.payment_methods)
       ? store.payment_methods.join(", ")
       : "Pago móvil, Transferencia, Efectivo, Binance",
+    payment_details: mergePaymentDetails(store.payment_details),
     usd_to_bs: String(store.usd_to_bs || 600),
     whatsapp_message_note: store.whatsapp_message_note || "",
     primary_color: store.primary_color || "#2E3A79",
@@ -153,6 +209,23 @@ function StoreSettingsCard({
     }));
   }
 
+  function updatePaymentDetail(
+    section: keyof StorePaymentDetails,
+    field: string,
+    value: string
+  ) {
+    setDraft((current) => ({
+      ...current,
+      payment_details: {
+        ...current.payment_details,
+        [section]: {
+          ...(current.payment_details?.[section] || {}),
+          [field]: value,
+        },
+      },
+    }));
+  }
+
   async function copyStoreLink() {
     const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
     const url = `${baseUrl}/${store.slug}`;
@@ -166,16 +239,17 @@ function StoreSettingsCard({
     setMessage("");
 
     try {
-      await apiRequest(pin, {
+      const data = await apiRequest(pin, {
         method: "PATCH",
         body: JSON.stringify({
           ...draft,
           payment_methods: draft.payment_methods,
+          payment_details: draft.payment_details,
           usd_to_bs: Number(draft.usd_to_bs || 600),
         }),
       });
 
-      setMessage("Configuración guardada correctamente.");
+      setMessage(data.warning || "Configuración guardada correctamente.");
       onSaved();
     } catch (error: any) {
       setMessage(error.message || "No se pudo guardar.");
@@ -526,6 +600,135 @@ function StoreSettingsCard({
         </label>
       </div>
 
+      <section className="mt-4 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
+        <div className="flex flex-col justify-between gap-2 xl:flex-row xl:items-start">
+          <div>
+            <h3 className="text-xl font-black text-[#25262B]">Datos de pago</h3>
+            <p className="mt-1 text-sm font-bold text-[#746f69]">
+              Agrega tus datos de pago para que tus clientes puedan pagar más rápido.
+            </p>
+          </div>
+          <span className="rounded-full bg-white px-4 py-2 text-xs font-black text-[#2E3A79]">
+            Se muestran después de confirmar el pedido
+          </span>
+        </div>
+
+        {!paymentDetailsAvailable ? (
+          <div className="mt-4 rounded-2xl bg-red-50 p-4 text-sm font-black leading-relaxed text-red-700 ring-1 ring-red-100">
+            Los datos de pago todavía no se pueden guardar porque falta aplicar la migración de pagos en Supabase. Puedes editar otros datos del comercio, pero estos datos seguirán sin aparecer en el checkout hasta aplicar esa migración y volver a guardar.
+          </div>
+        ) : null}
+
+        <div className="mt-4 grid gap-4 xl:grid-cols-2">
+          <div className="rounded-[24px] bg-white p-4">
+            <h4 className="text-lg font-black text-[#25262B]">Pago móvil</h4>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <input
+                value={draft.payment_details.pagoMovil?.bank || ""}
+                onChange={(event) => updatePaymentDetail("pagoMovil", "bank", event.target.value)}
+                placeholder="Banco"
+                className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+              />
+              <input
+                value={draft.payment_details.pagoMovil?.phone || ""}
+                onChange={(event) => updatePaymentDetail("pagoMovil", "phone", event.target.value)}
+                placeholder="Teléfono"
+                className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+              />
+              <input
+                value={draft.payment_details.pagoMovil?.idNumber || ""}
+                onChange={(event) => updatePaymentDetail("pagoMovil", "idNumber", event.target.value)}
+                placeholder="Cédula/RIF"
+                className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+              />
+              <input
+                value={draft.payment_details.pagoMovil?.holder || ""}
+                onChange={(event) => updatePaymentDetail("pagoMovil", "holder", event.target.value)}
+                placeholder="Titular"
+                className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+              />
+            </div>
+          </div>
+
+          <div className="rounded-[24px] bg-white p-4">
+            <h4 className="text-lg font-black text-[#25262B]">Transferencia</h4>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <input
+                value={draft.payment_details.transferencia?.bank || ""}
+                onChange={(event) => updatePaymentDetail("transferencia", "bank", event.target.value)}
+                placeholder="Banco"
+                className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+              />
+              <input
+                value={draft.payment_details.transferencia?.accountNumber || ""}
+                onChange={(event) => updatePaymentDetail("transferencia", "accountNumber", event.target.value)}
+                placeholder="Número de cuenta"
+                className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+              />
+              <input
+                value={draft.payment_details.transferencia?.idNumber || ""}
+                onChange={(event) => updatePaymentDetail("transferencia", "idNumber", event.target.value)}
+                placeholder="Cédula/RIF"
+                className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+              />
+              <input
+                value={draft.payment_details.transferencia?.holder || ""}
+                onChange={(event) => updatePaymentDetail("transferencia", "holder", event.target.value)}
+                placeholder="Titular"
+                className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+              />
+            </div>
+          </div>
+
+          <div className="rounded-[24px] bg-white p-4">
+            <h4 className="text-lg font-black text-[#25262B]">Zelle</h4>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <input
+                value={draft.payment_details.zelle?.contact || ""}
+                onChange={(event) => updatePaymentDetail("zelle", "contact", event.target.value)}
+                placeholder="Correo o teléfono"
+                className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+              />
+              <input
+                value={draft.payment_details.zelle?.holder || ""}
+                onChange={(event) => updatePaymentDetail("zelle", "holder", event.target.value)}
+                placeholder="Titular"
+                className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+              />
+            </div>
+          </div>
+
+          <div className="rounded-[24px] bg-white p-4">
+            <h4 className="text-lg font-black text-[#25262B]">Binance</h4>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <input
+                value={draft.payment_details.binance?.contact || ""}
+                onChange={(event) => updatePaymentDetail("binance", "contact", event.target.value)}
+                placeholder="Binance Pay ID o correo"
+                className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+              />
+              <input
+                value={draft.payment_details.binance?.holder || ""}
+                onChange={(event) => updatePaymentDetail("binance", "holder", event.target.value)}
+                placeholder="Titular"
+                className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+              />
+            </div>
+          </div>
+
+          <div className="rounded-[24px] bg-white p-4 xl:col-span-2">
+            <h4 className="text-lg font-black text-[#25262B]">Efectivo</h4>
+            <textarea
+              value={draft.payment_details.efectivo?.note || ""}
+              onChange={(event) => updatePaymentDetail("efectivo", "note", event.target.value)}
+              rows={2}
+              placeholder="Ej: Paga al retirar o al recibir. Confirmar monto con el comercio."
+              className="mt-3 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+            />
+          </div>
+        </div>
+      </section>
+
       <div className="mt-4">
         <label className="space-y-1">
           <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
@@ -576,7 +779,18 @@ function StoreSettingsCard({
         </button>
       </div>
 
-      {message && <p className="mt-4 text-sm font-black text-[#2E3A79]">{message}</p>}
+      {message && (
+        <p
+          className={[
+            "mt-4 rounded-2xl p-3 text-sm font-black",
+            message.includes("NO quedaron guardados")
+              ? "bg-red-50 text-red-700 ring-1 ring-red-100"
+              : "bg-[#F8F3E8] text-[#2E3A79]",
+          ].join(" ")}
+        >
+          {message}
+        </p>
+      )}
     </section>
   );
 }
@@ -585,6 +799,7 @@ export function ConfigManager() {
   const [pin, setPin] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [stores, setStores] = useState<StoreRow[]>([]);
+  const [paymentDetailsAvailable, setPaymentDetailsAvailable] = useState(true);
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => shouldShowPanelInitialAccessGate());
   const [isLoading, setIsLoading] = useState(() => hasSavedPanelAuth());
   const [error, setError] = useState("");
@@ -596,6 +811,7 @@ export function ConfigManager() {
     try {
       const data = await apiRequest(currentPin);
       setStores(data.stores || []);
+      setPaymentDetailsAvailable(data.paymentDetailsAvailable !== false);
       setIsUnlocked(true);
 
       if (currentPin) {
@@ -697,6 +913,7 @@ export function ConfigManager() {
           key={store.id}
           store={store}
           pin={pin}
+          paymentDetailsAvailable={paymentDetailsAvailable}
           onSaved={() => loadConfig(pin)}
         />
       ))}

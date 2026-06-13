@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
+  CircleDollarSign,
   Clipboard,
   ExternalLink,
   Loader2,
@@ -18,6 +19,12 @@ import {
   X,
 } from "lucide-react";
 import { formatBs, formatUsd } from "@/lib/currency";
+import {
+  getPaymentDetailsKey,
+  getSuggestedPaymentCurrency,
+  paymentStatusLabels,
+  type PaymentStatus,
+} from "@/lib/payments";
 import {
   getPanelAuthHeaders,
   getPanelAccessToken,
@@ -45,6 +52,14 @@ type OrderRow = {
   customer_phone: string;
   delivery_type: "delivery" | "pickup";
   payment_method: string;
+  payment_status: PaymentStatus | string | null;
+  payment_reference: string | null;
+  payment_currency: string | null;
+  amount_paid: number | string | null;
+  payment_verified_at: string | null;
+  payment_notes: string | null;
+  payment_bank: string | null;
+  payment_verified_by: string | null;
   subtotal_usd: number | string;
   delivery_usd: number | string;
   total_usd: number | string;
@@ -62,6 +77,8 @@ type OrderRow = {
     name?: string;
     latitude?: number | string | null;
     longitude?: number | string | null;
+    usd_to_bs?: number | string | null;
+    payment_details?: Record<string, any> | null;
   } | null;
   order_items?: OrderItem[];
   order_integrations?: OrderIntegration[];
@@ -104,6 +121,24 @@ const statusStyles: Record<string, string> = {
   delivering: "bg-purple-100 text-purple-700",
   completed: "bg-green-100 text-green-700",
   cancelled: "bg-red-100 text-red-700",
+};
+
+const paymentStatusOptions = [
+  { value: "all", label: "Todos los pagos" },
+  { value: "pending", label: "Pago pendiente" },
+  { value: "review", label: "En revisión" },
+  { value: "verified", label: "Verificado" },
+  { value: "incomplete", label: "Incompleto" },
+  { value: "cash_on_delivery", label: "Pago al recibir" },
+];
+
+const paymentStatusStyles: Record<string, string> = {
+  pending: "bg-amber-100 text-amber-800",
+  review: "bg-blue-100 text-blue-700",
+  verified: "bg-green-100 text-green-700",
+  incomplete: "bg-red-100 text-red-700",
+  cash_on_delivery: "bg-[#F8F3E8] text-[#2E3A79]",
+  cancelled: "bg-zinc-100 text-zinc-600",
 };
 
 const entrega2StatusLabels: Record<string, string> = {
@@ -172,6 +207,103 @@ function getWhatsappUrl(phone: string) {
   return `https://wa.me/${cleanPhone}`;
 }
 
+function getWhatsappMessageUrl(phone: string, message: string) {
+  const cleanPhone = String(phone || "").replace(/[^0-9]/g, "");
+  if (!cleanPhone) return null;
+  return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+}
+
+function getOrderPaymentStatus(order: OrderRow) {
+  return order.payment_status || "pending";
+}
+
+function getPaymentStatusLabel(status: string | null | undefined) {
+  const key = (status || "pending") as PaymentStatus;
+  return paymentStatusLabels[key] || "Pago pendiente";
+}
+
+function getPaymentDetailsLines(order: OrderRow) {
+  const key = getPaymentDetailsKey(order.payment_method);
+  const details = order.stores?.payment_details || {};
+  const source = key ? details[key] || {} : {};
+
+  if (!key) return [];
+
+  if (key === "pagoMovil") {
+    return [
+      ["Banco", source.bank],
+      ["Teléfono", source.phone],
+      ["Cédula/RIF", source.idNumber],
+      ["Titular", source.holder],
+    ];
+  }
+
+  if (key === "transferencia") {
+    return [
+      ["Banco", source.bank],
+      ["Cuenta", source.accountNumber],
+      ["Cédula/RIF", source.idNumber],
+      ["Titular", source.holder],
+    ];
+  }
+
+  if (key === "zelle") {
+    return [
+      ["Contacto", source.contact],
+      ["Titular", source.holder],
+    ];
+  }
+
+  if (key === "binance") {
+    return [
+      ["Binance", source.contact],
+      ["Titular", source.holder],
+    ];
+  }
+
+  if (key === "efectivo") {
+    return [["Nota", source.note]];
+  }
+
+  return [];
+}
+
+function buildPaymentDataText(order: OrderRow) {
+  const lines = [
+    `Pedido: ${order.public_code}`,
+    `Cliente: ${order.customer_name}`,
+    `Método: ${order.payment_method || "Sin método"}`,
+    `Total USD: ${formatUsd(Number(order.total_usd || 0))}`,
+    `Total Bs: ${formatBs(Number(order.total_bs || 0))}`,
+    "",
+    "Datos de pago:",
+    ...getPaymentDetailsLines(order)
+      .map(([label, value]) => [label, String(value || "").trim()] as const)
+      .filter(([, value]) => Boolean(value))
+      .map(([label, value]) => `${label}: ${value}`),
+  ];
+
+  return lines.filter(Boolean).join("\n");
+}
+
+function getPaymentDifferenceText(order: OrderRow, currency: string, amountPaid: string) {
+  const paid = Number(amountPaid || 0);
+  if (!Number.isFinite(paid) || paid <= 0) return "Sin monto recibido todavía.";
+
+  const normalizedCurrency = String(currency || "").toUpperCase();
+  const expected =
+    normalizedCurrency === "USD" || normalizedCurrency === "USDT"
+      ? Number(order.total_usd || 0)
+      : Number(order.total_bs || 0);
+  const difference = expected - paid;
+
+  if (difference <= 0) return "Monto recibido completo.";
+
+  return normalizedCurrency === "USD" || normalizedCurrency === "USDT"
+    ? `Faltan ${formatUsd(difference)}`
+    : `Faltan ${formatBs(difference)}`;
+}
+
 function getEntrega2Integration(order: OrderRow) {
   return (order.order_integrations || []).find(
     (integration) => integration.provider === "entrega2"
@@ -220,8 +352,36 @@ function OrderDetail({
   const [status, setStatus] = useState(order.status);
   const [isSaving, setIsSaving] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [paymentCopied, setPaymentCopied] = useState(false);
+  const [isSavingPayment, setIsSavingPayment] = useState(false);
+  const [paymentMessage, setPaymentMessage] = useState("");
+  const [paymentDraft, setPaymentDraft] = useState({
+    paymentStatus: getOrderPaymentStatus(order),
+    paymentReference: order.payment_reference || "",
+    paymentCurrency:
+      order.payment_currency || getSuggestedPaymentCurrency(order.payment_method) || "VES",
+    amountPaid: order.amount_paid ? String(order.amount_paid) : "",
+    paymentBank: order.payment_bank || "",
+    paymentNotes: order.payment_notes || "",
+  });
   const gpsUrl = getGpsUrl(order);
   const routeUrl = getRouteUrl(order);
+  const requestReferenceUrl = getWhatsappMessageUrl(
+    order.customer_phone,
+    `Hola, para confirmar tu pedido ${order.public_code}, por favor envíanos la referencia del pago o captura. Gracias.`
+  );
+  const paymentDifference = getPaymentDifferenceText(
+    order,
+    paymentDraft.paymentCurrency,
+    paymentDraft.amountPaid
+  );
+
+  function updatePaymentDraft(field: string, value: string) {
+    setPaymentDraft((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
 
   async function updateStatus(nextStatus: string) {
     setStatus(nextStatus);
@@ -250,6 +410,38 @@ function OrderDetail({
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
+  }
+
+  async function copyPaymentData() {
+    await navigator.clipboard.writeText(buildPaymentDataText(order));
+    setPaymentCopied(true);
+    setTimeout(() => setPaymentCopied(false), 1800);
+  }
+
+  async function savePayment(nextStatus?: string) {
+    setIsSavingPayment(true);
+    setPaymentMessage("");
+
+    const statusToSave = nextStatus || paymentDraft.paymentStatus;
+
+    try {
+      await apiRequest(pin, `/api/panel/orders/${order.id}/payment`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          ...paymentDraft,
+          paymentStatus: statusToSave,
+          amountPaid: paymentDraft.amountPaid ? Number(paymentDraft.amountPaid) : null,
+        }),
+      });
+
+      setPaymentDraft((current) => ({ ...current, paymentStatus: statusToSave }));
+      setPaymentMessage("Control de pago actualizado.");
+      onUpdated();
+    } catch (error: any) {
+      setPaymentMessage(error.message || "No se pudo actualizar el pago.");
+    } finally {
+      setIsSavingPayment(false);
+    }
   }
 
   return (
@@ -357,6 +549,199 @@ function OrderDetail({
             </section>
 
             <section className="rounded-[32px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.06]">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-xl font-black">Control de pago</h3>
+                  <p className="mt-1 text-xs font-bold text-[#746f69]">
+                    {getPaymentStatusLabel(paymentDraft.paymentStatus)}
+                  </p>
+                </div>
+                <span
+                  className={[
+                    "rounded-full px-3 py-1 text-xs font-black",
+                    paymentStatusStyles[paymentDraft.paymentStatus] ||
+                      "bg-[#F8F3E8] text-[#746f69]",
+                  ].join(" ")}
+                >
+                  {getPaymentStatusLabel(paymentDraft.paymentStatus)}
+                </span>
+              </div>
+
+              <div className="mt-4 grid gap-3">
+                <label className="space-y-1">
+                  <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
+                    Estado de pago
+                  </span>
+                  <select
+                    value={paymentDraft.paymentStatus}
+                    onChange={(event) => updatePaymentDraft("paymentStatus", event.target.value)}
+                    className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-black outline-none"
+                  >
+                    {paymentStatusOptions
+                      .filter((item) => item.value !== "all")
+                      .map((item) => (
+                        <option key={item.value} value={item.value}>
+                          {item.label}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="space-y-1">
+                    <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
+                      Referencia
+                    </span>
+                    <input
+                      value={paymentDraft.paymentReference}
+                      onChange={(event) => updatePaymentDraft("paymentReference", event.target.value)}
+                      placeholder="Ej: 123456"
+                      className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none"
+                    />
+                  </label>
+
+                  <label className="space-y-1">
+                    <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
+                      Banco
+                    </span>
+                    <input
+                      value={paymentDraft.paymentBank}
+                      onChange={(event) => updatePaymentDraft("paymentBank", event.target.value)}
+                      placeholder="Ej: Banesco"
+                      className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-[1fr_110px]">
+                  <label className="space-y-1">
+                    <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
+                      Monto recibido
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={paymentDraft.amountPaid}
+                      onChange={(event) => updatePaymentDraft("amountPaid", event.target.value)}
+                      placeholder="0,00"
+                      className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none"
+                    />
+                  </label>
+
+                  <label className="space-y-1">
+                    <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
+                      Moneda
+                    </span>
+                    <select
+                      value={paymentDraft.paymentCurrency}
+                      onChange={(event) => updatePaymentDraft("paymentCurrency", event.target.value)}
+                      className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-black outline-none"
+                    >
+                      <option value="VES">VES</option>
+                      <option value="USD">USD</option>
+                      <option value="USDT">USDT</option>
+                    </select>
+                  </label>
+                </div>
+
+                <p
+                  className={[
+                    "rounded-2xl p-3 text-xs font-black",
+                    paymentDifference.includes("Faltan")
+                      ? "bg-red-50 text-red-700"
+                      : "bg-green-50 text-green-700",
+                  ].join(" ")}
+                >
+                  {paymentDifference}
+                </p>
+
+                <label className="space-y-1">
+                  <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
+                    Notas
+                  </span>
+                  <textarea
+                    value={paymentDraft.paymentNotes}
+                    onChange={(event) => updatePaymentDraft("paymentNotes", event.target.value)}
+                    rows={2}
+                    placeholder="Ej: Pago confirmado por captura."
+                    className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none"
+                  />
+                </label>
+
+                {order.payment_verified_at && (
+                  <p className="text-xs font-bold text-[#746f69]">
+                    Verificado: {formatDate(order.payment_verified_at)}
+                  </p>
+                )}
+
+                <div className="grid gap-2">
+                  <button
+                    type="button"
+                    onClick={() => savePayment()}
+                    disabled={isSavingPayment}
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-4 py-3 text-sm font-black text-white disabled:opacity-60"
+                  >
+                    {isSavingPayment ? <Loader2 size={16} className="animate-spin" /> : <CircleDollarSign size={16} />}
+                    Guardar pago
+                  </button>
+
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <button
+                      type="button"
+                      onClick={() => savePayment("verified")}
+                      disabled={isSavingPayment}
+                      className="rounded-full bg-green-100 px-3 py-2 text-xs font-black text-green-700 disabled:opacity-60"
+                    >
+                      Verificado
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => savePayment("review")}
+                      disabled={isSavingPayment}
+                      className="rounded-full bg-blue-100 px-3 py-2 text-xs font-black text-blue-700 disabled:opacity-60"
+                    >
+                      En revisión
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => savePayment("incomplete")}
+                      disabled={isSavingPayment}
+                      className="rounded-full bg-red-100 px-3 py-2 text-xs font-black text-red-700 disabled:opacity-60"
+                    >
+                      Incompleto
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={copyPaymentData}
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F8F3E8] px-4 py-3 text-sm font-black text-[#2E3A79]"
+                  >
+                    <Clipboard size={16} />
+                    {paymentCopied ? "Datos copiados" : "Copiar datos de pago"}
+                  </button>
+
+                  {requestReferenceUrl && (
+                    <a
+                      href={requestReferenceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center gap-2 rounded-full bg-green-100 px-4 py-3 text-sm font-black text-green-700"
+                    >
+                      <Send size={16} />
+                      Solicitar referencia
+                    </a>
+                  )}
+                </div>
+
+                {paymentMessage && (
+                  <p className="text-xs font-black text-[#2E3A79]">{paymentMessage}</p>
+                )}
+              </div>
+            </section>
+
+            <section className="rounded-[32px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.06]">
               <h3 className="text-xl font-black">Estado</h3>
 
               <select
@@ -431,6 +816,7 @@ export function OrdersManager() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [selectedStatus, setSelectedStatus] = useState("all");
+  const [selectedPaymentStatus, setSelectedPaymentStatus] = useState("all");
   const [selectedDate, setSelectedDate] = useState("all");
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("all");
   const [selectedDeliveryType, setSelectedDeliveryType] = useState("all");
@@ -446,6 +832,7 @@ export function OrdersManager() {
     currentPin: string,
     filters = {
       status: selectedStatus,
+      paymentStatus: selectedPaymentStatus,
       date: selectedDate,
       paymentMethod: selectedPaymentMethod,
       deliveryType: selectedDeliveryType,
@@ -457,6 +844,9 @@ export function OrdersManager() {
     try {
       const params = new URLSearchParams();
       if (filters.status !== "all") params.set("status", filters.status);
+      if (filters.paymentStatus !== "all") {
+        params.set("paymentStatus", filters.paymentStatus);
+      }
       if (filters.date !== "all") params.set("date", filters.date);
       if (filters.paymentMethod !== "all") {
         params.set("paymentMethod", filters.paymentMethod);
@@ -638,7 +1028,7 @@ export function OrdersManager() {
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 xl:grid-cols-[1fr_180px_180px_180px_180px]">
+        <div className="mt-5 grid gap-3 xl:grid-cols-[1fr_170px_170px_170px_170px_170px]">
           <div className="relative">
             <Search
               size={18}
@@ -657,7 +1047,7 @@ export function OrdersManager() {
             onChange={(event) => {
               const value = event.target.value;
               setSelectedStatus(value);
-              loadOrders(pin, { status: value, date: selectedDate, paymentMethod: selectedPaymentMethod, deliveryType: selectedDeliveryType });
+              loadOrders(pin, { status: value, paymentStatus: selectedPaymentStatus, date: selectedDate, paymentMethod: selectedPaymentMethod, deliveryType: selectedDeliveryType });
             }}
             className="rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
           >
@@ -669,11 +1059,27 @@ export function OrdersManager() {
           </select>
 
           <select
+            value={selectedPaymentStatus}
+            onChange={(event) => {
+              const value = event.target.value;
+              setSelectedPaymentStatus(value);
+              loadOrders(pin, { status: selectedStatus, paymentStatus: value, date: selectedDate, paymentMethod: selectedPaymentMethod, deliveryType: selectedDeliveryType });
+            }}
+            className="rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
+          >
+            {paymentStatusOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+
+          <select
             value={selectedDate}
             onChange={(event) => {
               const value = event.target.value;
               setSelectedDate(value);
-              loadOrders(pin, { status: selectedStatus, date: value, paymentMethod: selectedPaymentMethod, deliveryType: selectedDeliveryType });
+              loadOrders(pin, { status: selectedStatus, paymentStatus: selectedPaymentStatus, date: value, paymentMethod: selectedPaymentMethod, deliveryType: selectedDeliveryType });
             }}
             className="rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
           >
@@ -689,7 +1095,7 @@ export function OrdersManager() {
             onChange={(event) => {
               const value = event.target.value;
               setSelectedPaymentMethod(value);
-              loadOrders(pin, { status: selectedStatus, date: selectedDate, paymentMethod: value, deliveryType: selectedDeliveryType });
+              loadOrders(pin, { status: selectedStatus, paymentStatus: selectedPaymentStatus, date: selectedDate, paymentMethod: value, deliveryType: selectedDeliveryType });
             }}
             className="rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
           >
@@ -705,7 +1111,7 @@ export function OrdersManager() {
             onChange={(event) => {
               const value = event.target.value;
               setSelectedDeliveryType(value);
-              loadOrders(pin, { status: selectedStatus, date: selectedDate, paymentMethod: selectedPaymentMethod, deliveryType: value });
+              loadOrders(pin, { status: selectedStatus, paymentStatus: selectedPaymentStatus, date: selectedDate, paymentMethod: selectedPaymentMethod, deliveryType: value });
             }}
             className="rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
           >
@@ -738,6 +1144,7 @@ export function OrdersManager() {
           const showEntrega2Button = canSendToEntrega2(order);
           const isSendingDelivery = sendingDeliveryId === order.id;
           const isNewOrder = order.status === "received";
+          const paymentStatus = getOrderPaymentStatus(order);
 
           return (
             <article
@@ -766,6 +1173,14 @@ export function OrdersManager() {
                     >
                       {statusLabels[order.status] || order.status}
                     </span>
+                    <span
+                      className={[
+                        "rounded-full px-3 py-1 text-xs font-black",
+                        paymentStatusStyles[paymentStatus] || "bg-[#F8F3E8] text-[#746f69]",
+                      ].join(" ")}
+                    >
+                      {getPaymentStatusLabel(paymentStatus)}
+                    </span>
                   </div>
                   <p className="mt-1 text-sm font-bold text-[#746f69]">
                     {order.stores?.name || "Comercio"} · {formatDate(order.created_at)}
@@ -784,6 +1199,13 @@ export function OrdersManager() {
                   <p className="text-xs font-bold text-[#746f69]">
                     {order.delivery_type === "delivery" ? "Entrega" : "Retiro"} · {order.payment_method}
                   </p>
+                  {paymentStatus === "pending" || paymentStatus === "review" ? (
+                    <p className="mt-1 text-xs font-black text-amber-700">
+                      {paymentStatus === "review"
+                        ? "Pago reportado, falta verificar"
+                        : "Este pedido aún no tiene pago verificado"}
+                    </p>
+                  ) : null}
                   {(order.delivery_reference || order.order_details) && (
                     <p className="mt-1 text-xs font-bold text-[#746f69]">
                       {order.delivery_reference || order.order_details}
