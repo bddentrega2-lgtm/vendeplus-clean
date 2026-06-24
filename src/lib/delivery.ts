@@ -110,22 +110,52 @@ export function mapStoreDeliverySettings(row: any): StoreDeliverySettings {
     : [];
   const hasSettings = settingsRows.length > 0;
   const settings = settingsRows[0] || {};
+  const legacyDeliveryEnabled =
+    typeof row?.accepts_delivery === "boolean"
+      ? row.accepts_delivery
+      : fallback.deliveryEnabled;
+  const legacyPickupEnabled =
+    typeof row?.accepts_pickup === "boolean"
+      ? row.accepts_pickup
+      : fallback.pickupEnabled;
+  const settingsDeliveryEnabled =
+    typeof settings.delivery_enabled === "boolean"
+      ? settings.delivery_enabled
+      : legacyDeliveryEnabled;
+  const settingsPickupEnabled =
+    typeof settings.pickup_enabled === "boolean"
+      ? settings.pickup_enabled
+      : legacyPickupEnabled;
+  const settingsDisabledBoth =
+    hasSettings && settingsDeliveryEnabled === false && settingsPickupEnabled === false;
+  const deliveryEnabled = hasSettings
+    ? settingsDisabledBoth && legacyDeliveryEnabled
+      ? true
+      : settingsDeliveryEnabled
+    : legacyDeliveryEnabled;
+  const pickupEnabled = hasSettings
+    ? settingsDisabledBoth && legacyPickupEnabled
+      ? true
+      : settingsPickupEnabled
+    : legacyPickupEnabled;
   const legacyPromoMin = optionalNumber(settings.free_delivery_min_usd);
   const promoEnabled = settings.delivery_promo_enabled ?? (legacyPromoMin !== null && legacyPromoMin > 0);
   const promoMin = optionalNumber(settings.delivery_promo_min_subtotal_usd) ?? legacyPromoMin;
   const promoType = ["free", "amount", "percent"].includes(String(settings.delivery_promo_discount_type))
     ? String(settings.delivery_promo_discount_type)
     : "free";
+  const rawProvider = normalizeProvider(settings.delivery_provider || "own_delivery");
+  const normalizedProvider = deliveryEnabled
+    ? rawProvider === "disabled"
+      ? "own_delivery"
+      : rawProvider
+    : "disabled";
 
   return {
-    deliveryEnabled: hasSettings
-      ? settings.delivery_enabled ?? row?.accepts_delivery ?? fallback.deliveryEnabled
-      : fallback.deliveryEnabled,
-    pickupEnabled: settings.pickup_enabled ?? row?.accepts_pickup ?? fallback.pickupEnabled,
-    deliveryProvider: hasSettings
-      ? normalizeProvider(settings.delivery_provider)
-      : fallback.deliveryProvider,
-    pricingType: normalizePricingType(settings.pricing_type),
+    deliveryEnabled,
+    pickupEnabled,
+    deliveryProvider: normalizedProvider,
+    pricingType: deliveryEnabled ? normalizePricingType(settings.pricing_type) : "manual",
     fixedFeeUsd: Math.max(0, toNumber(settings.fixed_fee_usd, fallback.fixedFeeUsd)),
     freeDeliveryMinUsd: legacyPromoMin,
     deliveryPromoEnabled: Boolean(promoEnabled),
@@ -259,8 +289,8 @@ export function calculateDeliveryQuoteFromSettings(params: {
       discountUsd: promo.discountUsd,
       label:
         promo.discountUsd > 0
-          ? `${zone.name} Â· promo delivery -$${promo.discountUsd.toFixed(2)}`
-          : `${zone.name} Â· delivery $${zone.feeUsd.toFixed(2)}`,
+          ? `${zone.name} - promo delivery -$${promo.discountUsd.toFixed(2)}`
+          : `${zone.name} - delivery $${zone.feeUsd.toFixed(2)}`,
       source: "manual",
       available: true,
       provider: settings.deliveryProvider,
@@ -277,7 +307,7 @@ export function calculateDeliveryQuoteFromSettings(params: {
       return {
         distanceKm: null,
         feeUsd: 0,
-        label: "UbicaciÃ³n pendiente",
+        label: "Ubicacion pendiente",
         source: "pending",
         available: true,
         provider: settings.deliveryProvider,
@@ -308,8 +338,8 @@ export function calculateDeliveryQuoteFromSettings(params: {
       discountUsd: promo.discountUsd,
       label:
         promo.discountUsd > 0
-          ? `${rounded.toFixed(2)} km Â· tarifa plana con promo -$${promo.discountUsd.toFixed(2)}`
-          : `${rounded.toFixed(2)} km Â· tarifa plana $${settings.fixedFeeUsd.toFixed(2)}`,
+          ? `${rounded.toFixed(2)} km - tarifa plana con promo -$${promo.discountUsd.toFixed(2)}`
+          : `${rounded.toFixed(2)} km - tarifa plana $${settings.fixedFeeUsd.toFixed(2)}`,
       source,
       available: true,
       provider: settings.deliveryProvider,
@@ -324,7 +354,7 @@ export function calculateDeliveryQuoteFromSettings(params: {
       return {
         distanceKm: null,
         feeUsd: 0,
-        label: "UbicaciÃ³n pendiente",
+        label: "Ubicacion pendiente",
         source: "pending",
         available: true,
         provider: settings.deliveryProvider,
@@ -380,8 +410,8 @@ export function calculateDeliveryQuoteFromSettings(params: {
       discountUsd: promo.discountUsd,
       label:
         promo.discountUsd > 0
-          ? `${rounded.toFixed(2)} km Â· promo delivery -$${promo.discountUsd.toFixed(2)}`
-          : `${rounded.toFixed(2)} km estimados Â· delivery $${rawFee.toFixed(2)}`,
+          ? `${rounded.toFixed(2)} km - promo delivery -$${promo.discountUsd.toFixed(2)}`
+          : `${rounded.toFixed(2)} km estimados - delivery $${rawFee.toFixed(2)}`,
       source,
       available: true,
       provider: settings.deliveryProvider,

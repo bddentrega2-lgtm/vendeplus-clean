@@ -319,7 +319,7 @@ function DeliveryStoreCard({
           <h2 className="mt-1 text-2xl font-black">{row.store.name}</h2>
           <p className="mt-2 max-w-2xl text-sm font-bold text-[#746f69]">
             Configura retiro, delivery propio, Entrega2, zonas, rangos y promociones
-            de delivery desde un solo mÃ³dulo.
+            de delivery desde un solo modulo.
           </p>
         </div>
         <button
@@ -441,7 +441,7 @@ function DeliveryStoreCard({
                 type="number"
                 value={draft.maxDistanceKm}
                 onChange={(event) => updateDraft("maxDistanceKm", event.target.value)}
-                placeholder="Distancia mÃ¡xima opcional"
+                placeholder="Distancia maxima opcional"
                 className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
               />
               <input
@@ -458,7 +458,7 @@ function DeliveryStoreCard({
 
       <div className="sr-only">
         La promo se aplica sobre la tarifa calculada, zonas o rangos. Dejalo vacio
-        si el comercio no ofrece descuento de delivery por compra mÃ­nima.
+        si el comercio no ofrece descuento de delivery por compra minima.
       </div>
 
       <details open={draft.deliveryPromoEnabled} className="mt-3 rounded-[24px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
@@ -491,7 +491,7 @@ function DeliveryStoreCard({
               type="number"
               value={draft.deliveryPromoMinSubtotalUsd}
               onChange={(event) => updateDraft("deliveryPromoMinSubtotalUsd", event.target.value)}
-              placeholder="Compra mÃ­nima"
+              placeholder="Compra minima"
               className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
             />
             <select
@@ -569,7 +569,7 @@ function DeliveryStoreCard({
               >
                 <div>
                   <p className={zone.isActive ? "" : "text-[#746f69] line-through"}>
-                    {zone.name} Â· {moneyLabel(zone.feeUsd)}
+                    {zone.name} - {moneyLabel(zone.feeUsd)}
                   </p>
                   <p className="text-xs text-[#746f69]">Orden {zone.sortOrder}</p>
                 </div>
@@ -656,7 +656,7 @@ function DeliveryStoreCard({
               >
                 <div>
                   <p className={rate.isActive ? "" : "text-[#746f69] line-through"}>
-                    {rate.minKm}-{rate.maxKm ?? "âˆž"} km Â· {moneyLabel(rate.feeUsd)}
+                    {rate.minKm}-{rate.maxKm ?? "sin limite"} km - {moneyLabel(rate.feeUsd)}
                   </p>
                   <p className="text-xs text-[#746f69]">Orden {rate.sortOrder}</p>
                 </div>
@@ -772,7 +772,7 @@ export function DeliveryManager() {
 
   if (isCheckingAccess) return <PanelAccessGate />;
   if (!isUnlocked && isLoading) {
-    return <PanelModuleSkeleton label="Cargando mÃ³dulo de delivery..." />;
+    return <PanelModuleSkeleton label="Cargando modulo de delivery..." />;
   }
 
   if (!isUnlocked) {
@@ -783,14 +783,14 @@ export function DeliveryManager() {
         </div>
         <h2 className="mt-5 text-3xl font-black">Acceso a delivery</h2>
         <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
-          Inicia sesiÃ³n con tu usuario autorizado para continuar.
+          Inicia sesion con tu usuario autorizado para continuar.
         </p>
         <a
           href="/panel/login"
           className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B]"
         >
           <CheckCircle2 size={18} />
-          Iniciar sesiÃ³n
+          Iniciar sesion
         </a>
         {message ? <p className="mt-3 text-sm font-black text-red-600">{message}</p> : null}
       </section>
@@ -803,7 +803,7 @@ export function DeliveryManager() {
         <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
           <div>
             <p className="text-sm font-black uppercase tracking-[0.18em] text-[#FFB547]">
-              OperaciÃ³n de delivery
+              Operacion de delivery
             </p>
             <h2 className="mt-2 text-3xl font-black">Delivery y retiro</h2>
             <p className="mt-2 max-w-3xl text-sm font-semibold leading-relaxed text-white/70">

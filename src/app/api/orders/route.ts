@@ -122,9 +122,17 @@ async function loadOptionAssignments(
 
 async function loadStoreDeliverySettings(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
-  storeId: string
+  storeId: string,
+  legacy?: {
+    acceptsDelivery?: boolean | null;
+    acceptsPickup?: boolean | null;
+  }
 ) {
-  const row: any = { id: storeId };
+  const row: any = {
+    id: storeId,
+    accepts_delivery: legacy?.acceptsDelivery,
+    accepts_pickup: legacy?.acceptsPickup,
+  };
 
   try {
     const [settingsResult, zonesResult, ratesResult] = await Promise.all([
@@ -398,7 +406,10 @@ export async function POST(request: NextRequest) {
       (sum, item) => sum + item.unitPriceUsd * item.quantity,
       0
     );
-    const deliverySettings = await loadStoreDeliverySettings(supabase, storeId);
+    const deliverySettings = await loadStoreDeliverySettings(supabase, storeId, {
+      acceptsDelivery: (store as any).accepts_delivery,
+      acceptsPickup: (store as any).accepts_pickup,
+    });
 
     const serverDistance =
       order.form.deliveryType === "delivery" && order.location
