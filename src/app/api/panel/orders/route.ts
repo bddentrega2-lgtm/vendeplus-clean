@@ -9,6 +9,9 @@ import {
 } from "@/lib/panel/access";
 import { getInitialPaymentStatus, getSuggestedPaymentCurrency, isPaymentStatus } from "@/lib/payments";
 import { isMissingColumnError } from "@/lib/supabase/schema-compat";
+import { normalizePhone } from "@/lib/customers/normalize-phone";
+import { safeUpsertCustomerFromOrder } from "@/lib/customers/upsert-customer-from-order";
+import { getVenezuelaRelativeRange } from "@/lib/time/venezuela";
 
 const allowedStatuses = [
   "received",
@@ -24,6 +27,7 @@ const ordersSelect = `
   id,
   public_code,
   store_id,
+  customer_id,
   customer_name,
   customer_phone,
   delivery_type,
@@ -38,6 +42,15 @@ const ordersSelect = `
   payment_verified_by,
   subtotal_usd,
   delivery_usd,
+  delivery_provider,
+  delivery_fee_usd,
+  delivery_zone_id,
+  delivery_zone_name,
+  delivery_distance_km,
+  delivery_pricing_type,
+  delivery_status,
+  delivery_notes,
+  delivery_address,
   total_usd,
   total_bs,
   distance_km,
@@ -56,6 +69,11 @@ const ordersSelect = `
     usd_to_bs,
     payment_details
   ),
+  customers (
+    id,
+    orders_count,
+    total_spent_usd
+  ),
   order_items (
     id,
     product_name,
@@ -63,7 +81,14 @@ const ordersSelect = `
     quantity,
     unit_price_usd,
     total_usd,
-    notes
+    notes,
+    order_item_options (
+      id,
+      option_group_name,
+      option_name,
+      price_delta_usd,
+      quantity
+    )
   )
 `;
 
@@ -71,6 +96,7 @@ const baseOrdersSelect = `
   id,
   public_code,
   store_id,
+  customer_id,
   customer_name,
   customer_phone,
   delivery_type,
@@ -107,9 +133,11 @@ const baseOrdersSelect = `
 
 function createManualPublicCode() {
   const now = new Date();
-  const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
-  const suffix = randomUUID().slice(0, 4).toUpperCase();
-  return `VP-${date}-${suffix}`;
+  const dayCode = `${String(now.getMonth() + 1).padStart(2, "0")}${String(
+    now.getDate()
+  ).padStart(2, "0")}`;
+  const suffix = randomUUID().slice(0, 3).toUpperCase();
+  return `VP-${dayCode}-${suffix}`;
 }
 
 function cleanText(value: unknown) {
@@ -161,10 +189,11 @@ function buildManualMessage({
   totalUsd: number;
 }) {
   const lines = [
-    `Pedido manual ${publicCode}`,
+    "Hola, ya está listo mi pedido.",
+    `Código: ${publicCode}`,
     `Cliente: ${customerName}`,
     customerPhone ? `Telefono: ${customerPhone}` : "",
-    `Modalidad: ${deliveryType === "delivery" ? "Entrega" : "Retiro"}`,
+    `Modalidad: ${deliveryType === "delivery" ? "Delivery" : "Retiro (pick up)"}`,
     paymentMethod ? `Pago: ${paymentMethod}` : "",
     deliveryReference ? `Referencia: ${deliveryReference}` : "",
     "",
@@ -226,6 +255,15 @@ function withPaymentFallback(order: any) {
     payment_notes: order?.payment_notes || null,
     payment_bank: order?.payment_bank || null,
     payment_verified_by: order?.payment_verified_by || null,
+    delivery_provider: order?.delivery_provider || null,
+    delivery_fee_usd: order?.delivery_fee_usd ?? order?.delivery_usd ?? null,
+    delivery_zone_id: order?.delivery_zone_id || null,
+    delivery_zone_name: order?.delivery_zone_name || null,
+    delivery_distance_km: order?.delivery_distance_km ?? order?.distance_km ?? null,
+    delivery_pricing_type: order?.delivery_pricing_type || null,
+    delivery_status: order?.delivery_status || null,
+    delivery_notes: order?.delivery_notes || null,
+    delivery_address: order?.delivery_address || order?.delivery_reference || null,
     stores: order?.stores
       ? {
           ...order.stores,
@@ -285,10 +323,23 @@ export async function GET(request: NextRequest) {
 
     let query = buildQuery(true);
 
+    const applyDateFilter = (targetQuery: any) => {
+      if (!date || date === "all") return targetQuery;
+      if (!["today", "last_7_days", "last_30_days"].includes(date)) return targetQuery;
+
+      const range = getVenezuelaRelativeRange(
+        date as "today" | "last_7_days" | "last_30_days"
+      );
+
+      return targetQuery
+        .gte("created_at", range.start.toISOString())
+        .lte("created_at", range.end.toISOString());
+    };
+
     if (orderId) {
       let { data, error } = await query.eq("id", orderId).maybeSingle();
 
-      if (error && isMissingColumnError(error, ["payment_", "amount_paid"])) {
+      if (error) {
         const fallbackResult = await buildQuery(false).eq("id", orderId).maybeSingle();
         data = fallbackResult.data ? withPaymentFallback(fallbackResult.data) : null;
         error = fallbackResult.error;
@@ -304,56 +355,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ order: order || null });
     }
 
-    if (date && date !== "all") {
-      const now = new Date();
-      let start = new Date(now);
-      let end = new Date(now);
-
-      if (date === "today") {
-        start.setHours(0, 0, 0, 0);
-        end.setHours(23, 59, 59, 999);
-      } else if (date === "last_7_days") {
-        start.setDate(start.getDate() - 6);
-        start.setHours(0, 0, 0, 0);
-        end.setHours(23, 59, 59, 999);
-      } else if (date === "last_30_days") {
-        start.setDate(start.getDate() - 29);
-        start.setHours(0, 0, 0, 0);
-        end.setHours(23, 59, 59, 999);
-      }
-
-      query = query
-        .gte("created_at", start.toISOString())
-        .lte("created_at", end.toISOString());
-    }
+    query = applyDateFilter(query);
 
     let { data, error } = await query.limit(80);
 
-    if (error && isMissingColumnError(error, ["payment_", "amount_paid"])) {
+    if (error) {
       let fallbackQuery = buildQuery(false);
 
-      if (date && date !== "all") {
-        const now = new Date();
-        let start = new Date(now);
-        let end = new Date(now);
-
-        if (date === "today") {
-          start.setHours(0, 0, 0, 0);
-          end.setHours(23, 59, 59, 999);
-        } else if (date === "last_7_days") {
-          start.setDate(start.getDate() - 6);
-          start.setHours(0, 0, 0, 0);
-          end.setHours(23, 59, 59, 999);
-        } else if (date === "last_30_days") {
-          start.setDate(start.getDate() - 29);
-          start.setHours(0, 0, 0, 0);
-          end.setHours(23, 59, 59, 999);
-        }
-
-        fallbackQuery = fallbackQuery
-          .gte("created_at", start.toISOString())
-          .lte("created_at", end.toISOString());
-      }
+      fallbackQuery = applyDateFilter(fallbackQuery);
 
       const fallbackResult = await fallbackQuery.limit(80);
       data = (fallbackResult.data || []).map(withPaymentFallback);
@@ -490,12 +499,23 @@ export async function POST(request: NextRequest) {
       store_id: storeId,
       customer_name: customerName,
       customer_phone: customerPhone,
+      customer_phone_normalized: normalizePhone(customerPhone) || null,
       delivery_type: deliveryType,
       payment_method: paymentMethod,
       payment_status: getInitialPaymentStatus(paymentMethod),
       payment_currency: getSuggestedPaymentCurrency(paymentMethod) || null,
       subtotal_usd: subtotalUsd,
-      delivery_usd: deliveryUsd,
+    delivery_usd: deliveryUsd,
+      delivery_provider:
+        deliveryType === "delivery" ? cleanText(body.deliveryProvider) || "own_delivery" : null,
+      delivery_fee_usd: deliveryUsd,
+      delivery_zone_id: null,
+      delivery_zone_name: cleanText(body.deliveryZoneName) || null,
+      delivery_distance_km: null,
+      delivery_pricing_type: deliveryType === "delivery" ? "manual" : null,
+      delivery_status: deliveryType === "delivery" ? "pending" : "pickup",
+      delivery_notes: deliveryType === "delivery" ? "Pedido manual asistido." : null,
+      delivery_address: deliveryType === "delivery" ? deliveryReference || null : null,
       total_usd: totalUsd,
       total_bs: totalBs,
       distance_km: null,
@@ -516,10 +536,20 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
 
-    if (orderError && isMissingColumnError(orderError, ["payment_"])) {
+    if (orderError && isMissingColumnError(orderError, ["payment_", "customer_", "delivery_"])) {
       const {
         payment_status: _paymentStatus,
         payment_currency: _paymentCurrency,
+        customer_phone_normalized: _customerPhoneNormalized,
+        delivery_provider: _deliveryProvider,
+        delivery_fee_usd: _deliveryFeeUsd,
+        delivery_zone_id: _deliveryZoneId,
+        delivery_zone_name: _deliveryZoneName,
+        delivery_distance_km: _deliveryDistanceKm,
+        delivery_pricing_type: _deliveryPricingType,
+        delivery_status: _deliveryStatus,
+        delivery_notes: _deliveryNotes,
+        delivery_address: _deliveryAddress,
         ...baseOrderPayload
       } = orderPayload;
 
@@ -546,6 +576,18 @@ export async function POST(request: NextRequest) {
       await supabase.from("orders").delete().eq("id", orderId);
       throw itemsError;
     }
+
+    await safeUpsertCustomerFromOrder(supabase, {
+      id: orderId,
+      store_id: storeId,
+      customer_name: customerName,
+      customer_phone: customerPhone,
+      delivery_type: deliveryType,
+      payment_method: paymentMethod,
+      delivery_reference: deliveryReference || null,
+      total_usd: totalUsd,
+      created_at: new Date().toISOString(),
+    });
 
     return NextResponse.json({
       order,

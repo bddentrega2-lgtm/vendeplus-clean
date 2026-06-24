@@ -62,6 +62,29 @@ export function clearPanelAuthStorage() {
   sessionStorage.removeItem(PANEL_PIN_KEY);
 }
 
+export function clearBrowserAuthStorage() {
+  clearPanelAuthStorage();
+
+  if (typeof window === "undefined") return;
+
+  for (const storage of [window.localStorage, window.sessionStorage]) {
+    const keys = Array.from({ length: storage.length }, (_, index) =>
+      storage.key(index)
+    ).filter(Boolean) as string[];
+
+    for (const key of keys) {
+      if (
+        key === PANEL_TOKEN_KEY ||
+        key === PANEL_PIN_KEY ||
+        key.startsWith("sb-") ||
+        key.includes("supabase")
+      ) {
+        storage.removeItem(key);
+      }
+    }
+  }
+}
+
 export function shouldShowPanelInitialAccessGate() {
   return !panelSessionBootstrapped && !hasSavedPanelAuth();
 }

@@ -1,13 +1,15 @@
 import Link from "next/link";
-import { Clock, MapPin, Search, Star } from "lucide-react";
+import { Clock, MapPin, ShoppingBag, Star } from "lucide-react";
 import type { Store } from "@/types";
 import { BrandLogo } from "@/components/public/BrandLogo";
 
 export function StoreHeader({ store }: { store: Store }) {
+  const isOpen = store.openState?.isOpen !== false;
+
   return (
     <header className="relative overflow-hidden rounded-b-[38px] bg-[#2E3A79] text-white shadow-2xl shadow-[#2E3A79]/20">
       <div className="absolute inset-0">
-        <img src={store.heroImageUrl} alt={store.name} className="h-full w-full object-cover opacity-22" />
+        <img src={store.heroImageUrl} alt={store.name} className="h-full w-full object-cover opacity-22" decoding="async" fetchPriority="high" />
         <div className="absolute inset-0 bg-gradient-to-b from-[#151B4F]/70 via-[#2E3A79]/88 to-[#2E3A79]" />
       </div>
 
@@ -21,6 +23,9 @@ export function StoreHeader({ store }: { store: Store }) {
           <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/12 px-3 py-2 text-xs font-black backdrop-blur">
             <Star size={14} className="text-[#FFB547]" /> {store.badge}
           </div>
+          <div className={isOpen ? "mb-3 inline-flex rounded-full bg-green-100 px-3 py-2 text-xs font-black text-green-700" : "mb-3 inline-flex rounded-full bg-red-100 px-3 py-2 text-xs font-black text-red-700"}>
+            {isOpen ? "Abierto ahora" : store.openState?.label || "Cerrado"}
+          </div>
           <h1 className="text-4xl font-black tracking-tight sm:text-5xl">{store.name}</h1>
           <p className="mt-3 max-w-xl text-base font-semibold leading-relaxed text-white/82">{store.description}</p>
 
@@ -28,17 +33,17 @@ export function StoreHeader({ store }: { store: Store }) {
             <div className="rounded-2xl bg-white/10 p-3 backdrop-blur">
               <Clock size={18} className="mb-1 text-[#FFB547]" />
               <p className="text-xs font-bold text-white/65">Horario</p>
-              <p className="text-sm font-black">{store.openingHours}</p>
+              <p className="text-sm font-black">{store.openState?.label || store.openingHours}</p>
             </div>
             <div className="rounded-2xl bg-white/10 p-3 backdrop-blur">
               <MapPin size={18} className="mb-1 text-[#FFB547]" />
-              <p className="text-xs font-bold text-white/65">Entrega</p>
+              <p className="text-xs font-bold text-white/65">Delivery</p>
               <p className="text-sm font-black">{store.deliveryEstimate}</p>
             </div>
             <div className="rounded-2xl bg-white/10 p-3 backdrop-blur">
-              <Search size={18} className="mb-1 text-[#FFB547]" />
-              <p className="text-xs font-bold text-white/65">Retiro</p>
-              <p className="text-sm font-black">{store.pickupEstimate}</p>
+              <ShoppingBag size={18} className="mb-1 text-[#FFB547]" />
+              <p className="text-xs font-bold text-white/65">Retiro (pick up)</p>
+              <p className="text-sm font-black">Disponible</p>
             </div>
           </div>
         </div>

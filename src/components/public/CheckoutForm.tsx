@@ -7,7 +7,13 @@ import { useEffect, useMemo, useState } from "react";
 import type { CheckoutFormData, DeliveryLocation, DeliveryQuote, SavedOrder, Store } from "@/types";
 import { clearCart, getCart, getCartSubtotal } from "@/lib/cart";
 import { formatBs, formatUsd } from "@/lib/currency";
-import { buildDeliveryQuote, buildMapsUrl, buildRouteUrl, calculateRouteDistanceKm } from "@/lib/delivery";
+import {
+  buildMapsUrl,
+  buildRouteUrl,
+  calculateDeliveryQuoteFromSettings,
+  calculateRouteDistanceKm,
+  createDefaultDeliverySettings,
+} from "@/lib/delivery";
 import { isCashPaymentMethod } from "@/lib/payments";
 import { buildPaymentInfo } from "@/lib/payment-display";
 import { buildOrderMessage, buildWhatsAppUrl } from "@/lib/whatsapp";
@@ -21,6 +27,7 @@ const initialForm: CheckoutFormData = {
   paymentMethod: "",
   paymentReference: "",
   deliveryReference: "",
+  deliveryZoneId: "",
   orderDetails: "",
   notes: "",
 };
@@ -31,9 +38,29 @@ export function getOrderKey(storeSlug: string) {
 
 function createOrderId() {
   const date = new Date();
-  const part = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
-  const random = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `VP-${part}-${random}`;
+  const dayCode = `${String(date.getMonth() + 1).padStart(2, "0")}${String(
+    date.getDate()
+  ).padStart(2, "0")}`;
+  const random = Math.random().toString(36).slice(2, 5).toUpperCase();
+  return `VP-${dayCode}-${random}`;
+}
+
+function formatCheckoutOptions(item: ReturnType<typeof getCart>[number]) {
+  const groups = new Map<string, string[]>();
+
+  for (const option of item.selectedOptions || []) {
+    const current = groups.get(option.groupName) || [];
+    current.push(
+      option.priceDeltaUsd > 0
+        ? `${option.valueName} (+${formatUsd(option.priceDeltaUsd)})`
+        : option.valueName
+    );
+    groups.set(option.groupName, current);
+  }
+
+  return Array.from(groups.entries())
+    .map(([groupName, values]) => `${groupName}: ${values.join(", ")}`)
+    .join(" · ");
 }
 
 export function CheckoutForm({ store }: { store: Store }) {
@@ -41,7 +68,13 @@ export function CheckoutForm({ store }: { store: Store }) {
   const [items, setItems] = useState<ReturnType<typeof getCart>>([]);
   const [form, setForm] = useState<CheckoutFormData>(initialForm);
   const [location, setLocation] = useState<DeliveryLocation | null>(null);
-  const [quote, setQuote] = useState<DeliveryQuote>(buildDeliveryQuote(null, "pending"));
+  const [quote, setQuote] = useState<DeliveryQuote>({
+    distanceKm: null,
+    feeUsd: 0,
+    label: "Pendiente por calcular",
+    source: "pending",
+    available: true,
+  });
   const [isCalculating, setIsCalculating] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
@@ -52,18 +85,87 @@ export function CheckoutForm({ store }: { store: Store }) {
     setItems(getCart(store.slug));
   }, [store.slug]);
 
+  const subtotalUsd = useMemo(() => getCartSubtotal(items), [items]);
+  const deliverySettings = useMemo(
+    () => store.deliverySettings || createDefaultDeliverySettings(),
+    [store.deliverySettings]
+  );
+  const canShareLocation =
+    form.deliveryType === "delivery" &&
+    deliverySettings.deliveryEnabled &&
+    !["manual_quote", "disabled"].includes(deliverySettings.deliveryProvider) &&
+    deliverySettings.pricingType !== "zones";
+  const needsLocation =
+    canShareLocation &&
+    (deliverySettings.pricingType === "fixed_distance" ||
+      deliverySettings.pricingType === "distance_ranges" ||
+      deliverySettings.deliveryProvider === "entrega2");
+  const needsZone =
+    form.deliveryType === "delivery" &&
+    deliverySettings.deliveryEnabled &&
+    deliverySettings.pricingType === "zones";
+  const activeDeliveryZones = useMemo(
+    () => deliverySettings.zones.filter((zone) => zone.isActive),
+    [deliverySettings.zones]
+  );
+  const deliveryModeCopy = useMemo(() => {
+    if (deliverySettings.deliveryProvider === "entrega2") {
+      return "Comparte tu ubicacion para calcular la tarifa con Entrega2.";
+    }
+    if (deliverySettings.pricingType === "zones") {
+      return "Elige tu zona para sumar el delivery al pedido.";
+    }
+    if (deliverySettings.pricingType === "fixed_distance") {
+      return "Comparte tu ubicacion o toca el mapa para validar la tarifa plana.";
+    }
+    if (deliverySettings.pricingType === "distance_ranges") {
+      return "Comparte tu ubicacion o toca el mapa para calcular el rango de delivery.";
+    }
+    return "Indica una referencia clara para facilitar la entrega.";
+  }, [deliverySettings.deliveryProvider, deliverySettings.pricingType]);
+
+  useEffect(() => {
+    setForm((current) => {
+      if (!deliverySettings.deliveryEnabled && deliverySettings.pickupEnabled) {
+        return { ...current, deliveryType: "pickup" };
+      }
+      if (deliverySettings.deliveryEnabled && !deliverySettings.pickupEnabled) {
+        return { ...current, deliveryType: "delivery" };
+      }
+      return current;
+    });
+  }, [deliverySettings.deliveryEnabled, deliverySettings.pickupEnabled]);
+
   useEffect(() => {
     let active = true;
 
     async function calculate() {
-      if (form.deliveryType === "pickup") {
-        setQuote({ distanceKm: 0, feeUsd: 0, label: "Retiro en tienda", source: "pickup" });
+      if (form.deliveryType === "pickup" || !needsLocation) {
+        setQuote(
+          calculateDeliveryQuoteFromSettings({
+            settings: deliverySettings,
+            deliveryType: form.deliveryType,
+            subtotalUsd,
+            distanceKm: null,
+            zoneId: form.deliveryZoneId || null,
+            source: form.deliveryType === "pickup" ? "pickup" : "manual",
+          })
+        );
         setIsCalculating(false);
         return;
       }
 
       if (!location) {
-        setQuote(buildDeliveryQuote(null, "pending"));
+        setQuote(
+          calculateDeliveryQuoteFromSettings({
+            settings: deliverySettings,
+            deliveryType: "delivery",
+            subtotalUsd,
+            distanceKm: null,
+            zoneId: form.deliveryZoneId || null,
+            source: "pending",
+          })
+        );
         setIsCalculating(false);
         return;
       }
@@ -77,7 +179,16 @@ export function CheckoutForm({ store }: { store: Store }) {
       });
 
       if (!active) return;
-      setQuote(buildDeliveryQuote(result.distanceKm, result.source));
+      setQuote(
+        calculateDeliveryQuoteFromSettings({
+          settings: deliverySettings,
+          deliveryType: "delivery",
+          subtotalUsd,
+          distanceKm: result.distanceKm,
+          zoneId: form.deliveryZoneId || null,
+          source: result.source,
+        })
+      );
       setIsCalculating(false);
     }
 
@@ -85,10 +196,26 @@ export function CheckoutForm({ store }: { store: Store }) {
     return () => {
       active = false;
     };
-  }, [form.deliveryType, location, store.latitude, store.longitude]);
+  }, [
+    deliverySettings,
+    form.deliveryType,
+    form.deliveryZoneId,
+    location,
+    needsLocation,
+    store.latitude,
+    store.longitude,
+    subtotalUsd,
+  ]);
 
-  const subtotalUsd = useMemo(() => getCartSubtotal(items), [items]);
   const deliveryUsd = form.deliveryType === "delivery" ? quote.feeUsd : 0;
+  const deliveryAmountLabel =
+    form.deliveryType === "pickup"
+      ? "Sin delivery"
+      : quote.source === "pending"
+        ? "Por calcular"
+        : quote.source === "manual" && deliveryUsd === 0
+          ? "Por confirmar"
+          : formatUsd(quote.originalFeeUsd ?? deliveryUsd);
   const totalUsd = subtotalUsd + deliveryUsd;
   const totalBs = totalUsd * (store.usdToBs || 600);
   const isCashPayment = isCashPaymentMethod(form.paymentMethod);
@@ -118,10 +245,17 @@ export function CheckoutForm({ store }: { store: Store }) {
 
   function validate() {
     if (items.length === 0) return "Tu carrito está vacío.";
+    if (store.openState && !store.openState.isOpen) {
+      return `${store.openState.label}. El comercio no está recibiendo pedidos en este momento.`;
+    }
     if (!form.customerName.trim()) return "Escribe el nombre del cliente.";
     if (!form.customerPhone.trim()) return "Escribe el teléfono del cliente.";
     if (!form.paymentMethod.trim()) return "Selecciona un método de pago.";
-    if (form.deliveryType === "delivery" && !location) return "Selecciona la ubicación de entrega usando GPS o tocando el mapa.";
+    if (form.deliveryType === "delivery" && quote.available === false) {
+      return quote.message || quote.label || "Delivery no disponible.";
+    }
+    if (needsZone && activeDeliveryZones.length > 0 && !form.deliveryZoneId) return "Selecciona tu zona de entrega.";
+    if (needsLocation && !location) return "Selecciona la ubicación de entrega usando GPS o tocando el mapa.";
     return "";
   }
 
@@ -189,20 +323,23 @@ export function CheckoutForm({ store }: { store: Store }) {
     setIsSubmitting(true);
     setError("");
 
-    void saveOrderToSupabase(order, store)
-      .then((saveResult) => {
-        if (!saveResult.ok) {
-          console.warn("No se pudo guardar el pedido en Supabase:", saveResult.error);
-        }
-      })
-      .catch((error) => {
-        console.warn("Error inesperado guardando el pedido:", error);
-      });
+    try {
+      const saveResult = await saveOrderToSupabase(order, store);
 
-    localStorage.setItem(getOrderKey(store.slug), JSON.stringify(order));
-    clearCart(store.slug);
-    window.open(order.whatsappUrl, "_blank", "noopener,noreferrer");
-    router.push(`/${store.slug}/confirmacion`);
+      if (!saveResult.ok || !saveResult.order) {
+        setError(saveResult.error || "No se pudo guardar el pedido.");
+        return;
+      }
+
+      localStorage.setItem(getOrderKey(store.slug), JSON.stringify(saveResult.order));
+      clearCart(store.slug);
+      window.open(saveResult.order.whatsappUrl, "_blank", "noopener,noreferrer");
+      router.push(`/${store.slug}/confirmacion`);
+    } catch (error: any) {
+      setError(error.message || "No se pudo guardar el pedido.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -253,41 +390,110 @@ export function CheckoutForm({ store }: { store: Store }) {
             </section>
 
             <section className="vp-card p-4 sm:p-5">
-              <h2 className="text-xl font-black text-[#25262B]">2. ¿Cómo quieres recibir tu pedido?</h2>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <button type="button" onClick={() => updateField("deliveryType", "delivery")} className={form.deliveryType === "delivery" ? "rounded-[24px] bg-[#2E3A79] p-4 text-left text-white" : "rounded-[24px] bg-[#FFF8F0] p-4 text-left text-[#25262B] ring-1 ring-[#25262B]/[0.07]"}>
-                  <p className="text-lg font-black">Entrega a domicilio</p>
-                  <p className="mt-1 text-sm font-bold opacity-75">Ubicación por GPS o mapa</p>
-                </button>
-                <button type="button" onClick={() => updateField("deliveryType", "pickup")} className={form.deliveryType === "pickup" ? "rounded-[24px] bg-[#2E3A79] p-4 text-left text-white" : "rounded-[24px] bg-[#FFF8F0] p-4 text-left text-[#25262B] ring-1 ring-[#25262B]/[0.07]"}>
-                  <p className="text-lg font-black">Retiro en el comercio</p>
-                  <p className="mt-1 text-sm font-bold opacity-75">Sin costo de entrega</p>
-                </button>
+              <span className="vp-label">2. ¿Cómo deseas recibir tu pedido?</span>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {deliverySettings.deliveryEnabled ? (
+                  <button
+                    type="button"
+                    onClick={() => updateField("deliveryType", "delivery")}
+                    className={[
+                      "rounded-2xl px-4 py-3 text-sm font-black ring-1",
+                      form.deliveryType === "delivery"
+                        ? "bg-[#2E3A79] text-white ring-[#2E3A79]"
+                        : "bg-white text-[#746f69] ring-[#25262B]/10",
+                    ].join(" ")}
+                  >
+                    Delivery
+                  </button>
+                ) : null}
+                {deliverySettings.pickupEnabled ? (
+                  <button
+                    type="button"
+                    onClick={() => updateField("deliveryType", "pickup")}
+                    className={[
+                      "rounded-2xl px-4 py-3 text-sm font-black ring-1",
+                      form.deliveryType === "pickup"
+                        ? "bg-[#2E3A79] text-white ring-[#2E3A79]"
+                        : "bg-white text-[#746f69] ring-[#25262B]/10",
+                    ].join(" ")}
+                  >
+                    Retiro (pick up)
+                  </button>
+                ) : null}
               </div>
+              <p className="mt-3 rounded-2xl bg-[#FFF8F0] p-3 text-sm font-bold text-[#746f69]">
+                {form.deliveryType === "delivery"
+                  ? quote.message || deliveryModeCopy
+                  : "Retiras directamente en el comercio."}
+              </p>
             </section>
 
             {form.deliveryType === "delivery" ? (
               <section className="vp-card p-4 sm:p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h2 className="text-xl font-black text-[#25262B]">3. Ubicación de entrega</h2>
-                    <p className="mt-1 text-sm font-bold text-[#746f69]">Usa tu ubicación actual o toca el punto exacto en el mapa.</p>
+                    <h2 className="text-xl font-black text-[#25262B]">3. Ubicación para Delivery</h2>
+                    <p className="mt-1 text-sm font-bold text-[#746f69]">{deliveryModeCopy}</p>
                   </div>
                   {isCalculating ? <Loader2 className="animate-spin text-[#2E3A79]" /> : <Navigation className="text-[#FFB547]" />}
                 </div>
-                <div className="mt-4">
-                  <LocationPicker storeLatitude={store.latitude} storeLongitude={store.longitude} value={location} onChange={setLocation} />
-                </div>
+                {needsZone && activeDeliveryZones.length > 0 ? (
+                  <label className="mt-4 block">
+                    <span className="vp-label">Zona de entrega</span>
+                    <select
+                      className="vp-input"
+                      value={form.deliveryZoneId}
+                      onChange={(event) => updateField("deliveryZoneId", event.target.value)}
+                    >
+                      <option value="">Seleccionar zona</option>
+                      {activeDeliveryZones.map((zone) => (
+                          <option key={zone.id} value={zone.id}>
+                            {zone.name} · {formatUsd(zone.feeUsd)}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                ) : null}
+                {needsZone && activeDeliveryZones.length === 0 ? (
+                  <p className="mt-4 rounded-2xl bg-[#FFF8F0] p-3 text-sm font-black text-[#746f69]">
+                    El comercio no tiene zonas activas. Confirma el delivery por WhatsApp.
+                  </p>
+                ) : null}
+                {canShareLocation ? (
+                  <div className="mt-4">
+                    <LocationPicker
+                      storeLatitude={store.latitude}
+                      storeLongitude={store.longitude}
+                      storeName={store.name}
+                      value={location}
+                      onChange={setLocation}
+                    />
+                    {!needsLocation ? (
+                      <p className="mt-2 rounded-2xl bg-[#FFF8F0] p-3 text-xs font-black text-[#746f69]">
+                        Compartir ubicación es opcional, pero ayuda al comercio y al repartidor a llegar más rápido.
+                      </p>
+                    ) : location ? (
+                      <p className="mt-2 rounded-2xl bg-green-50 p-3 text-xs font-black text-green-700">
+                        Ubicacion recibida. {isCalculating ? "Calculando delivery..." : quote.label}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
                 <label className="mt-4 block">
-                  <span className="vp-label">Referencia opcional</span>
+                  <span className="vp-label">Dirección o referencia</span>
                   <textarea className="vp-input min-h-24 resize-none" value={form.deliveryReference} onChange={(event) => updateField("deliveryReference", event.target.value)} placeholder="Ej: casa azul, portón negro, frente a la panadería..." />
                 </label>
+                {quote.available === false ? (
+                  <p className="mt-3 rounded-2xl bg-red-50 p-3 text-sm font-black text-red-700">
+                    {quote.message || quote.label}
+                  </p>
+                ) : null}
               </section>
             ) : (
               <section className="vp-card p-4 sm:p-5">
-                <h2 className="text-xl font-black text-[#25262B]">3. Retiro en tienda</h2>
+                <h2 className="text-xl font-black text-[#25262B]">3. Retiro (pick up)</h2>
                 <p className="mt-2 rounded-[24px] bg-[#FFF8F0] p-4 text-sm font-bold leading-relaxed text-[#746f69]">
-                  El cliente retirará en {store.name}. Dirección: {store.address}. Tiempo estimado: {store.pickupEstimate}.
+                  Retiras directamente en {store.name}. Dirección: {store.address || "por confirmar"}.
                 </p>
               </section>
             )}
@@ -401,7 +607,14 @@ export function CheckoutForm({ store }: { store: Store }) {
                 <div className="mt-4 space-y-3">
                   {items.map((item, index) => (
                     <div key={`${item.productId}-${index}`} className="flex justify-between gap-3 text-sm">
-                      <span className="font-bold text-[#746f69]">{item.quantity}x {item.productName}</span>
+                      <span className="min-w-0 font-bold text-[#746f69]">
+                        {item.quantity}x {item.productName}
+                        {item.selectedOptions?.length ? (
+                          <span className="mt-1 block text-xs font-semibold">
+                            {formatCheckoutOptions(item)}
+                          </span>
+                        ) : null}
+                      </span>
                       <span className="font-black">{formatUsd(item.unitPriceUsd * item.quantity)}</span>
                     </div>
                   ))}
@@ -410,9 +623,26 @@ export function CheckoutForm({ store }: { store: Store }) {
                 <div className="my-4 h-px bg-[#25262B]/10" />
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between"><span className="font-bold text-[#746f69]">Subtotal</span><span className="font-black">{formatUsd(subtotalUsd)}</span></div>
-                  <div className="flex justify-between"><span className="font-bold text-[#746f69]">Entrega</span><span className="font-black">{form.deliveryType === "delivery" ? formatUsd(deliveryUsd) : "Gratis"}</span></div>
+                  <div className="flex justify-between">
+                    <span className="font-bold text-[#746f69]">
+                      {form.deliveryType === "delivery" ? "Delivery" : "Retiro (pick up)"}
+                    </span>
+                    <span className="font-black">
+                      {deliveryAmountLabel}
+                    </span>
+                  </div>
+                  {form.deliveryType === "delivery" && Number(quote.discountUsd || 0) > 0 ? (
+                    <div className="flex justify-between text-green-700">
+                      <span className="font-bold">Promo delivery</span>
+                      <span className="font-black">-{formatUsd(quote.discountUsd || 0)}</span>
+                    </div>
+                  ) : null}
                   <div className="flex justify-between"><span className="font-bold text-[#746f69]">Tasa usada</span><span className="font-black">{formatBs(store.usdToBs || 600)}</span></div>
-                  {form.deliveryType === "delivery" ? <p className="rounded-2xl bg-[#FFF8F0] p-3 text-xs font-black text-[#746f69]">{quote.label} {quote.source === "fallback" ? "· estimado aproximado" : ""}</p> : null}
+                  {form.deliveryType === "delivery" ? (
+                    <p className="rounded-2xl bg-[#FFF8F0] p-3 text-xs font-black text-[#746f69]">
+                      {quote.message || quote.label} {quote.source === "fallback" ? "· estimado aproximado" : ""}
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="mt-4 rounded-[24px] bg-[#2E3A79] p-4 text-white">

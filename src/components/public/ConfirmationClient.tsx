@@ -93,7 +93,7 @@ export function ConfirmationClient({ store }: { store: Store }) {
               <div className="flex justify-between gap-4 rounded-2xl bg-[#FFF8F0] p-3 text-sm">
                 <span className="font-bold text-[#746f69]">Modalidad</span>
                 <span className="font-black text-[#25262B]">
-                  {order.form.deliveryType === "delivery" ? "Entrega" : "Retiro"}
+                  {order.form.deliveryType === "delivery" ? "Delivery" : "Retiro (pick up)"}
                 </span>
               </div>
               <div className="flex justify-between gap-4 rounded-2xl bg-[#FFF8F0] p-3 text-sm">
@@ -108,11 +108,15 @@ export function ConfirmationClient({ store }: { store: Store }) {
                   {order.form.paymentMethod || "Por confirmar"}
                 </span>
               </div>
-              {order.quote.distanceKm !== null && order.form.deliveryType === "delivery" ? (
+              {order.form.deliveryType === "delivery" ? (
                 <div className="flex justify-between gap-4 rounded-2xl bg-[#FFF8F0] p-3 text-sm">
-                  <span className="font-bold text-[#746f69]">Distancia</span>
+                  <span className="font-bold text-[#746f69]">Entrega</span>
                   <span className="font-black text-[#25262B]">
-                    {order.quote.distanceKm.toFixed(2)} km
+                    {order.quote.zoneName ||
+                      order.quote.message ||
+                      (order.quote.distanceKm !== null
+                        ? `${order.quote.distanceKm.toFixed(2)} km`
+                        : order.quote.label)}
                   </span>
                 </div>
               ) : null}

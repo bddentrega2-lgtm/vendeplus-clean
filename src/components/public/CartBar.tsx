@@ -35,7 +35,7 @@ export function CartBar({
   if (count === 0) return null;
 
   return (
-    <div className="vp-safe-bottom fixed inset-x-0 bottom-0 z-50 px-4 pb-4">
+    <div className="vp-safe-bottom fixed inset-x-0 bottom-0 z-40 px-4 pb-4">
       <div className="mx-auto max-w-[480px] rounded-[28px] bg-[#25262B] p-2 shadow-2xl shadow-[#25262B]/30">
         <Link href={`/${storeSlug}/carrito`} className="flex items-center justify-between gap-3 rounded-[24px] bg-[#2E3A79] p-3 text-white">
           <div className="flex items-center gap-3">

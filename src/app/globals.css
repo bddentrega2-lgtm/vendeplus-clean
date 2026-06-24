@@ -159,23 +159,48 @@ img {
   border: 0;
 }
 
-.vendeplus-store-marker div,
-.vendeplus-destination-marker div {
-  display: grid;
-  width: 38px;
-  height: 38px;
+.vp-map-pin {
+  display: inline-grid;
+  min-width: 96px;
+  height: 36px;
   place-items: center;
   border-radius: 999px;
   border: 3px solid white;
   box-shadow: 0 12px 28px rgba(37, 38, 43, 0.24);
-  font-size: 20px;
+  font-size: 12px;
+  font-weight: 1000;
+  line-height: 1;
+  padding: 0 12px;
+  position: relative;
+  white-space: nowrap;
 }
 
-.vendeplus-store-marker div {
+.vp-map-pin::after {
+  bottom: -8px;
+  content: "";
+  height: 14px;
+  left: 50%;
+  position: absolute;
+  transform: translateX(-50%) rotate(45deg);
+  width: 14px;
+  z-index: -1;
+}
+
+.vp-map-pin-store {
+  background: var(--vp-blue);
+  color: white;
+}
+
+.vp-map-pin-store::after {
   background: var(--vp-blue);
 }
 
-.vendeplus-destination-marker div {
+.vp-map-pin-delivery {
+  background: var(--vp-mango);
+  color: var(--vp-ink);
+}
+
+.vp-map-pin-delivery::after {
   background: var(--vp-mango);
 }
 

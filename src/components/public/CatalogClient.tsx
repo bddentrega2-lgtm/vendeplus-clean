@@ -1,12 +1,13 @@
 ﻿"use client";
 import { StoreBrandHeader } from "@/components/public/StoreBrandHeader";
 import type { CSSProperties } from "react";
-import { Clock, MessageCircle, Search, ShieldCheck } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Clock, Grid2X2, LayoutList, MessageCircle, Search, ShieldCheck } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import type { Store } from "@/types";
 import { CategoryTabs } from "@/components/public/CategoryTabs";
-import { ProductCard } from "@/components/public/ProductCard";
+import { ProductCard, ProductListItem } from "@/components/public/ProductCard";
 import { CartBar } from "@/components/public/CartBar";
+import { getCart } from "@/lib/cart";
 
 function getBrandStyle(store: any): CSSProperties {
   return {
@@ -18,6 +19,8 @@ function getBrandStyle(store: any): CSSProperties {
 export function CatalogClient({ store }: { store: Store }) {
   const [selectedCategoryId, setSelectedCategoryId] = useState("all");
   const [query, setQuery] = useState("");
+  const [viewMode, setViewMode] = useState<"visual" | "list">("list");
+  const [cartItems, setCartItems] = useState<ReturnType<typeof getCart>>([]);
 
   const products = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -41,9 +44,46 @@ export function CatalogClient({ store }: { store: Store }) {
     ? products.filter((product) => !product.isFeatured)
     : products;
 
+  const cartQuantityByProduct = useMemo(() => {
+    return cartItems.reduce<Record<string, number>>((acc, item) => {
+      acc[item.productId] = (acc[item.productId] || 0) + item.quantity;
+      return acc;
+    }, {});
+  }, [cartItems]);
+
+  useEffect(() => {
+    const savedView = localStorage.getItem("vendeplus_public_catalog_view");
+    if (savedView === "visual" || savedView === "list") {
+      setViewMode(savedView);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("vendeplus_public_catalog_view", viewMode);
+  }, [viewMode]);
+
+  useEffect(() => {
+    function syncCart() {
+      setCartItems(getCart(store.slug));
+    }
+
+    syncCart();
+    window.addEventListener("vendeplus-cart-change", syncCart);
+    window.addEventListener("storage", syncCart);
+    return () => {
+      window.removeEventListener("vendeplus-cart-change", syncCart);
+      window.removeEventListener("storage", syncCart);
+    };
+  }, [store.slug]);
+
   return (
     <main style={getBrandStyle(store)} className="vp-public-store vp-container pb-32 pt-5">
       <StoreBrandHeader store={store} />
+      {store.openState && !store.openState.isOpen ? (
+        <section className="mb-4 rounded-[24px] bg-red-50 p-4 text-sm font-black text-red-700 ring-1 ring-red-100">
+          {store.openState.label}. Puedes revisar el catálogo, pero el comercio no está recibiendo pedidos ahora.
+        </section>
+      ) : null}
       <section className="mb-4 rounded-[30px] bg-white/90 p-4 shadow-xl shadow-[#2E3A79]/[0.08] ring-1 ring-[#25262B]/[0.07]">
         <div className="flex items-center gap-3 rounded-2xl bg-[#FFF8F0] px-4 py-3 ring-1 ring-[#25262B]/[0.06]">
           <Search size={18} className="text-[#746f69]" />
@@ -67,7 +107,7 @@ export function CatalogClient({ store }: { store: Store }) {
           </div>
           <div className="rounded-2xl bg-[#FFF8F0] p-3 text-[#25262B] ring-1 ring-[#25262B]/[0.06]">
             <Clock className="mx-auto mb-1 text-[#2E3A79]" size={17} />
-            <p className="text-[11px] font-bold text-[#746f69]">Entrega</p>
+            <p className="text-[11px] font-bold text-[#746f69]">Delivery</p>
             <p className="text-sm font-black">{store.deliveryEstimate}</p>
           </div>
         </div>
@@ -91,17 +131,57 @@ export function CatalogClient({ store }: { store: Store }) {
         </section>
       ) : null}
 
-      <div className="mb-4 flex items-end justify-between gap-4">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm font-black uppercase tracking-[0.18em] text-[#746f69]">Catálogo disponible</p>
           <h2 className="mt-1 text-xl font-black text-[#25262B]">Menú completo</h2>
         </div>
-        <p className="rounded-full bg-white px-3 py-2 text-xs font-black text-[#746f69] shadow-sm">{menuProducts.length} productos</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="grid grid-cols-2 gap-1 rounded-2xl bg-white p-1 shadow-sm ring-1 ring-[#25262B]/[0.06]">
+            <button
+              type="button"
+              onClick={() => setViewMode("visual")}
+              className={[
+                "inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-black",
+                viewMode === "visual"
+                  ? "bg-[#2E3A79] text-white"
+                  : "text-[#746f69]",
+              ].join(" ")}
+            >
+              <Grid2X2 size={15} />
+              Vista visual
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("list")}
+              className={[
+                "inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-black",
+                viewMode === "list"
+                  ? "bg-[#2E3A79] text-white"
+                  : "text-[#746f69]",
+              ].join(" ")}
+            >
+              <LayoutList size={15} />
+              Vista lista
+            </button>
+          </div>
+          <p className="rounded-full bg-white px-3 py-2 text-xs font-black text-[#746f69] shadow-sm">{menuProducts.length} productos</p>
+        </div>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className={viewMode === "visual" ? "grid gap-3 md:grid-cols-2 xl:grid-cols-3" : "grid gap-2"}>
         {menuProducts.map((product) => (
-          <ProductCard key={product.id} product={product} storeSlug={store.slug} usdToBs={store.usdToBs || 600} />
+          viewMode === "visual" ? (
+            <ProductCard key={product.id} product={product} storeSlug={store.slug} usdToBs={store.usdToBs || 600} />
+          ) : (
+            <ProductListItem
+              key={product.id}
+              product={product}
+              storeSlug={store.slug}
+              usdToBs={store.usdToBs || 600}
+              cartQuantity={cartQuantityByProduct[product.id] || 0}
+            />
+          )
         ))}
       </div>
 

@@ -9,18 +9,12 @@ import {
 } from "@/lib/panel/access";
 
 const BUCKET_NAME = "product-images";
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_FILE_SIZE = 2 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 function getExtension(file: File) {
-  const fromName = file.name.split(".").pop()?.toLowerCase();
-
-  if (fromName && /^[a-z0-9]+$/.test(fromName)) {
-    return fromName;
-  }
-
   if (file.type === "image/png") return "png";
   if (file.type === "image/webp") return "webp";
-  if (file.type === "image/gif") return "gif";
 
   return "jpg";
 }
@@ -32,6 +26,14 @@ function safePathSegment(value: string, fallback: string) {
 
 export async function POST(request: NextRequest) {
   try {
+    const contentLength = Number(request.headers.get("content-length") || 0);
+    if (contentLength > MAX_FILE_SIZE + 120_000) {
+      return NextResponse.json(
+        { error: "La imagen es demasiado pesada para subirla." },
+        { status: 413 }
+      );
+    }
+
     const auth = await requirePanelAuth(request);
     const formData = await request.formData();
 
@@ -53,12 +55,12 @@ export async function POST(request: NextRequest) {
       return badRequest("Selecciona una imagen válida.");
     }
 
-    if (!file.type.startsWith("image/")) {
-      return badRequest("Solo se permiten archivos de imagen.");
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      return badRequest("Solo se permiten imágenes JPG, PNG o WebP.");
     }
 
     if (file.size > MAX_FILE_SIZE) {
-      return badRequest("La imagen no debe pesar más de 5 MB.");
+      return badRequest("La imagen no debe pesar más de 2 MB. Intenta con una imagen más liviana.");
     }
 
     const supabase = createSupabaseAdminClient();

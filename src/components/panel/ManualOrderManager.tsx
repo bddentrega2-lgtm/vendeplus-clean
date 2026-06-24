@@ -12,6 +12,7 @@ import {
   Plus,
   Save,
   Search,
+  Sparkles,
   ShoppingCart,
   Trash2,
 } from "lucide-react";
@@ -95,6 +96,7 @@ export function ManualOrderManager() {
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => shouldShowPanelInitialAccessGate());
   const [isLoading, setIsLoading] = useState(() => hasSavedPanelAuth());
   const [isSaving, setIsSaving] = useState(false);
+  const [isInterpreting, setIsInterpreting] = useState(false);
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [products, setProducts] = useState<ProductRow[]>([]);
@@ -212,7 +214,6 @@ export function ManualOrderManager() {
     return () => {
       active = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -259,6 +260,76 @@ export function ManualOrderManager() {
 
   function removeProduct(productId: string) {
     setItems((current) => current.filter((item) => item.productId !== productId));
+  }
+
+  async function interpretMessage() {
+    setError("");
+    setSuccess("");
+
+    if (!selectedStoreId) {
+      setError("Selecciona un comercio.");
+      return;
+    }
+
+    if (!originalMessage.trim()) {
+      setError("Pega primero el mensaje recibido.");
+      return;
+    }
+
+    setIsInterpreting(true);
+
+    try {
+      const data = await panelRequest(pin, "/api/panel/orders/interpret", {
+        method: "POST",
+        body: JSON.stringify({
+          storeId: selectedStoreId,
+          message: originalMessage,
+        }),
+      });
+      const interpretation = data.interpretation || {};
+      const nextItems = Array.isArray(interpretation.items)
+        ? interpretation.items
+            .filter((item: any) =>
+              products.some(
+                (product) =>
+                  product.id === item.productId && product.store_id === selectedStoreId
+              )
+            )
+            .map((item: any) => ({
+              productId: String(item.productId),
+              quantity: Math.max(1, Math.floor(Number(item.quantity || 1))),
+              notes: String(item.notes || ""),
+            }))
+        : [];
+
+      if (interpretation.customerName) setCustomerName(interpretation.customerName);
+      if (interpretation.customerPhone) setCustomerPhone(interpretation.customerPhone);
+      if (interpretation.deliveryReference) {
+        setDeliveryReference(interpretation.deliveryReference);
+      }
+      if (interpretation.orderDetails) setOrderDetails(interpretation.orderDetails);
+      if (interpretation.deliveryType === "pickup" || interpretation.deliveryType === "delivery") {
+        setDeliveryType(interpretation.deliveryType);
+      }
+      if (interpretation.paymentMethod) setPaymentMethod(interpretation.paymentMethod);
+      if (Number(interpretation.deliveryUsd) > 0) {
+        setDeliveryUsd(String(interpretation.deliveryUsd));
+      }
+      if (nextItems.length) setItems(nextItems);
+
+      const warnings = Array.isArray(interpretation.warnings)
+        ? interpretation.warnings.filter(Boolean)
+        : [];
+      setSuccess(
+        data.mode === "ai"
+          ? "Pedido interpretado con IA. Revisa antes de guardar."
+          : `Pedido interpretado en modo básico. ${warnings[0] || "Revisa antes de guardar."}`
+      );
+    } catch (error: any) {
+      setError(error.message || "No se pudo interpretar el mensaje.");
+    } finally {
+      setIsInterpreting(false);
+    }
   }
 
   async function saveManualOrder() {
@@ -407,7 +478,27 @@ export function ManualOrderManager() {
         </section>
 
         <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
-          <h2 className="text-xl font-black">Mensaje recibido</h2>
+          <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+            <div>
+              <h2 className="text-xl font-black">Mensaje recibido</h2>
+              <p className="mt-1 text-sm font-bold text-[#746f69]">
+                Pega el chat y Vende+ intentará llenar el pedido.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={interpretMessage}
+              disabled={isInterpreting || !originalMessage.trim()}
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-5 py-3 text-sm font-black text-white disabled:opacity-60"
+            >
+              {isInterpreting ? (
+                <Loader2 size={17} className="animate-spin" />
+              ) : (
+                <Sparkles size={17} />
+              )}
+              Interpretar
+            </button>
+          </div>
           <textarea
             value={originalMessage}
             onChange={(event) => setOriginalMessage(event.target.value)}

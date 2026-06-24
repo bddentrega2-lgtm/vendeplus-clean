@@ -83,7 +83,7 @@ export function normalizeAdminStorePayload(body: any) {
     primary_color: cleanText(body.primary_color) || "#2E3A79",
     accent_color: cleanText(body.accent_color) || "#FFB547",
     button_text_color: cleanText(body.button_text_color) || "#25262B",
-    accepts_delivery: body.accepts_delivery !== false,
+    accepts_delivery: body.accepts_delivery === true,
     accepts_pickup: body.accepts_pickup !== false,
     is_active: body.is_active !== false,
   };

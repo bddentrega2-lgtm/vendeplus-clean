@@ -7,6 +7,11 @@ import {
 } from "@/lib/panel/access";
 import { getInitialPaymentStatus } from "@/lib/payments";
 import { isMissingColumnError } from "@/lib/supabase/schema-compat";
+import {
+  getVenezuelaDateKey,
+  getVenezuelaDayRange,
+  getVenezuelaRelativeRange,
+} from "@/lib/time/venezuela";
 
 const ordersSelect = `
   id,
@@ -72,60 +77,59 @@ function toNumber(value: unknown) {
 }
 
 function toDateKey(value: string) {
-  return new Date(value).toISOString().slice(0, 10);
+  return getVenezuelaDateKey(value);
 }
 
 function toMonthKey(value: string) {
-  return new Date(value).toISOString().slice(0, 7);
+  return getVenezuelaDateKey(value).slice(0, 7);
 }
 
 function toHourKey(value: string) {
-  return String(new Date(value).getHours()).padStart(2, "0") + ":00";
-}
-
-function startOfDay(date: Date) {
-  const next = new Date(date);
-  next.setHours(0, 0, 0, 0);
-  return next;
-}
-
-function endOfDay(date: Date) {
-  const next = new Date(date);
-  next.setHours(23, 59, 59, 999);
-  return next;
-}
-
-function addDays(date: Date, days: number) {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
+  return new Intl.DateTimeFormat("es-VE", {
+    timeZone: "America/Caracas",
+    hour: "2-digit",
+    hour12: false,
+  }).format(new Date(value)) + ":00";
 }
 
 function getDateRange(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const range = searchParams.get("range") || "last_30_days";
+  const range = searchParams.get("range") || "last_7_days";
   const now = new Date();
 
   if (range === "today") {
-    return { start: startOfDay(now), end: endOfDay(now), range };
+    return { ...getVenezuelaRelativeRange("today", now), range };
   }
 
   if (range === "last_7_days") {
-    return { start: startOfDay(addDays(now, -6)), end: endOfDay(now), range };
+    return { ...getVenezuelaRelativeRange("last_7_days", now), range };
   }
 
   if (range === "this_month") {
+    const [year, month] = getVenezuelaDateKey(now).split("-").map(Number);
+    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+
     return {
-      start: new Date(now.getFullYear(), now.getMonth(), 1),
-      end: endOfDay(now),
+      start: getVenezuelaDayRange(`${year}-${String(month).padStart(2, "0")}-01`).start,
+      end: getVenezuelaDayRange(
+        `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`
+      ).end,
       range,
     };
   }
 
   if (range === "previous_month") {
+    const [currentYear, currentMonth] = getVenezuelaDateKey(now).split("-").map(Number);
+    const previousMonthDate = new Date(Date.UTC(currentYear, currentMonth - 2, 1));
+    const year = previousMonthDate.getUTCFullYear();
+    const month = previousMonthDate.getUTCMonth() + 1;
+    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+
     return {
-      start: new Date(now.getFullYear(), now.getMonth() - 1, 1),
-      end: endOfDay(new Date(now.getFullYear(), now.getMonth(), 0)),
+      start: getVenezuelaDayRange(`${year}-${String(month).padStart(2, "0")}-01`).start,
+      end: getVenezuelaDayRange(
+        `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`
+      ).end,
       range,
     };
   }
@@ -133,20 +137,18 @@ function getDateRange(request: NextRequest) {
   if (range === "custom") {
     const startParam = searchParams.get("start");
     const endParam = searchParams.get("end");
-    const start = startParam ? startOfDay(new Date(startParam)) : startOfDay(addDays(now, -29));
-    const end = endParam ? endOfDay(new Date(endParam)) : endOfDay(now);
+    const fallback = getVenezuelaRelativeRange("last_30_days", now);
+    const start = startParam ? getVenezuelaDayRange(startParam).start : fallback.start;
+    const end = endParam ? getVenezuelaDayRange(endParam).end : fallback.end;
 
     return { start, end, range };
   }
 
-  return { start: startOfDay(addDays(now, -29)), end: endOfDay(now), range: "last_30_days" };
+  return { ...getVenezuelaRelativeRange("last_7_days", now), range: "last_7_days" };
 }
 
 function countDays(start: Date, end: Date) {
-  return Math.max(
-    1,
-    Math.ceil((Number(endOfDay(end)) - Number(startOfDay(start))) / 86400000)
-  );
+  return Math.max(1, Math.ceil((Number(end) - Number(start) + 1) / 86400000));
 }
 
 function getWeekKey(value: string) {
@@ -206,6 +208,10 @@ export async function GET(request: NextRequest) {
     const selectedStoreId =
       requestedStoreId && requestedStoreId !== "all" ? requestedStoreId : null;
     const dateRange = getDateRange(request);
+    const ordersLimit = Math.min(
+      1000,
+      Math.max(100, Number(searchParams.get("limit") || 500))
+    );
 
     if (selectedStoreId) {
       assertStoreAccess(
@@ -225,7 +231,8 @@ export async function GET(request: NextRequest) {
       .select(ordersSelect)
       .gte("created_at", dateRange.start.toISOString())
       .lte("created_at", dateRange.end.toISOString())
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(ordersLimit);
 
     let productsQuery = supabase
       .from("products")
@@ -257,7 +264,8 @@ export async function GET(request: NextRequest) {
         .select(baseOrdersSelect)
         .gte("created_at", dateRange.start.toISOString())
         .lte("created_at", dateRange.end.toISOString())
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .limit(ordersLimit);
 
       if (auth.storeIds !== null) {
         fallbackOrdersQuery = fallbackOrdersQuery.in("store_id", auth.storeIds);
@@ -279,6 +287,52 @@ export async function GET(request: NextRequest) {
     const safeStores = stores || [];
     const safeOrders = (orders || []).map(withPaymentFallback);
     const safeProducts = products || [];
+    let customerSummary = {
+      total: 0,
+      frequent: 0,
+      contact: 0,
+    };
+
+    try {
+      let customersQuery = supabase
+        .from("customers")
+        .select("orders_count, last_order_at");
+
+      if (auth.storeIds !== null) {
+        customersQuery = customersQuery.in("store_id", auth.storeIds);
+      }
+
+      if (selectedStoreId) {
+        customersQuery = customersQuery.eq("store_id", selectedStoreId);
+      }
+
+      const { data: customers } = await customersQuery;
+      const now = Date.now();
+      const safeCustomers = customers || [];
+
+      customerSummary = {
+        total: safeCustomers.length,
+        frequent: safeCustomers.filter(
+          (customer: any) => toNumber(customer.orders_count) >= 3
+        ).length,
+        contact: safeCustomers.filter((customer: any) => {
+          if (toNumber(customer.orders_count) < 2 || !customer.last_order_at) {
+            return false;
+          }
+
+          const days = Math.floor(
+            (now - new Date(customer.last_order_at).getTime()) / 86400000
+          );
+          return days >= 21;
+        }).length,
+      };
+    } catch {
+      customerSummary = {
+        total: 0,
+        frequent: 0,
+        contact: 0,
+      };
+    }
 
     const completedOrders = safeOrders.filter((order: any) => order.status === "completed");
     const cancelledOrders = safeOrders.filter((order: any) => order.status === "cancelled");
@@ -293,9 +347,11 @@ export async function GET(request: NextRequest) {
     const reviewPaymentOrders = safeOrders.filter(
       (order: any) => order.payment_status === "review"
     );
+    const todayRange = getVenezuelaRelativeRange("today");
     const verifiedPaymentsToday = safeOrders.filter((order: any) => {
       if (order.payment_status !== "verified" || !order.payment_verified_at) return false;
-      return new Date(order.payment_verified_at) >= startOfDay(new Date());
+      const verifiedAt = new Date(order.payment_verified_at);
+      return verifiedAt >= todayRange.start && verifiedAt <= todayRange.end;
     });
 
     const totalRevenueUsd = safeOrders.reduce(
@@ -473,6 +529,7 @@ export async function GET(request: NextRequest) {
         start: dateRange.start.toISOString(),
         end: dateRange.end.toISOString(),
         days: countDays(dateRange.start, dateRange.end),
+        capped: safeOrders.length === ordersLimit,
       },
       summary: {
         totalOrders: safeOrders.length,
@@ -498,6 +555,7 @@ export async function GET(request: NextRequest) {
       },
       topProducts,
       topCustomers,
+      customers: customerSummary,
       salesByDay,
       ordersByDay,
       salesByWeek,

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LogoutButton } from "@/components/panel/LogoutButton";
+import { PwaInstallButton } from "@/components/pwa/PwaInstallButton";
 import {
   Building2,
   Home,
@@ -79,6 +80,10 @@ export function AdminShell({
             </p>
           </div>
 
+          <div className="mt-4">
+            <PwaInstallButton compact />
+          </div>
+
           <Link
             href="/"
             className="mt-4 flex items-center gap-2 rounded-3xl bg-[#F8F3E8] px-4 py-3 text-sm font-black text-[#2E3A79]"
@@ -113,6 +118,9 @@ export function AdminShell({
               >
                 Ir al panel
               </Link>
+              <div className="md:hidden">
+                <PwaInstallButton compact />
+              </div>
             </div>
           </header>
 

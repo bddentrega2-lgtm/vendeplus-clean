@@ -7,6 +7,42 @@ import {
   requirePanelAuth,
 } from "@/lib/panel/access";
 
+const productsSelect = `
+  id,
+  store_id,
+  category_id,
+  name,
+  description,
+  price_usd,
+  image_url,
+  is_available,
+  is_featured,
+  sort_order,
+  stores(name),
+  categories(name),
+  product_option_group_products (
+    product_option_groups (
+      id,
+      name
+    )
+  )
+`;
+
+const legacyProductsSelect = `
+  id,
+  store_id,
+  category_id,
+  name,
+  description,
+  price_usd,
+  image_url,
+  is_available,
+  is_featured,
+  sort_order,
+  stores(name),
+  categories(name)
+`;
+
 function normalizeProductPayload(body: any) {
   return {
     store_id: body.store_id,
@@ -25,6 +61,13 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requirePanelAuth(request);
     const supabase = createSupabaseAdminClient();
+    const { searchParams } = new URL(request.url);
+    const search = String(searchParams.get("search") || "").trim();
+    const limit = Math.min(
+      250,
+      Math.max(25, Number(searchParams.get("limit") || 120))
+    );
+    const offset = Math.max(0, Number(searchParams.get("offset") || 0));
 
     let storesQuery = supabase
       .from("stores")
@@ -38,28 +81,18 @@ export async function GET(request: NextRequest) {
 
     let productsQuery = supabase
       .from("products")
-      .select(
-        `
-        id,
-        store_id,
-        category_id,
-        name,
-        description,
-        price_usd,
-        image_url,
-        is_available,
-        is_featured,
-        sort_order,
-        stores(name),
-        categories(name)
-      `
-      )
-      .order("sort_order", { ascending: true });
+      .select(productsSelect)
+      .order("sort_order", { ascending: true })
+      .range(offset, offset + limit - 1);
 
     if (auth.storeIds !== null) {
       storesQuery = storesQuery.in("id", auth.storeIds);
       categoriesQuery = categoriesQuery.in("store_id", auth.storeIds);
       productsQuery = productsQuery.in("store_id", auth.storeIds);
+    }
+
+    if (search) {
+      productsQuery = productsQuery.ilike("name", `%${search}%`);
     }
 
     const [storesResult, categoriesResult, productsResult] = await Promise.all([
@@ -70,12 +103,40 @@ export async function GET(request: NextRequest) {
 
     if (storesResult.error) throw storesResult.error;
     if (categoriesResult.error) throw categoriesResult.error;
-    if (productsResult.error) throw productsResult.error;
+    let products: any[] = productsResult.data || [];
+    let productsError = productsResult.error;
+
+    if (productsError) {
+      let fallbackProductsQuery = supabase
+        .from("products")
+        .select(legacyProductsSelect)
+        .order("sort_order", { ascending: true })
+        .range(offset, offset + limit - 1);
+
+      if (auth.storeIds !== null) {
+        fallbackProductsQuery = fallbackProductsQuery.in("store_id", auth.storeIds);
+      }
+
+      if (search) {
+        fallbackProductsQuery = fallbackProductsQuery.ilike("name", `%${search}%`);
+      }
+
+      const fallbackResult = await fallbackProductsQuery;
+      products = fallbackResult.data || [];
+      productsError = fallbackResult.error;
+    }
+
+    if (productsError) throw productsError;
 
     return NextResponse.json({
       stores: storesResult.data || [],
       categories: categoriesResult.data || [],
-      products: productsResult.data || [],
+      products,
+      page: {
+        limit,
+        offset,
+        hasMore: products.length === limit,
+      },
       auth: {
         mode: auth.mode,
         email: auth.email || null,

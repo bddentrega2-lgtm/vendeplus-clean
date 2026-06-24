@@ -33,6 +33,8 @@ export function StoreBrandHeader({ store }: { store: BrandedStore }) {
           src={coverImage}
           alt={store.name}
           className="h-64 w-full object-cover md:h-72"
+          decoding="async"
+          fetchPriority="high"
         />
 
         <div className="absolute inset-0 bg-gradient-to-t from-black/82 via-black/40 to-black/10" />
@@ -44,6 +46,7 @@ export function StoreBrandHeader({ store }: { store: BrandedStore }) {
                 src={store.logoUrl}
                 alt={`${store.name} logo`}
                 className="h-20 w-20 rounded-3xl border-4 border-white bg-white object-cover shadow-xl"
+                decoding="async"
               />
             ) : (
               <div
@@ -73,11 +76,11 @@ export function StoreBrandHeader({ store }: { store: BrandedStore }) {
           <div className="mt-4 flex flex-wrap gap-2">
             <span className="inline-flex items-center gap-2 rounded-full bg-white/14 px-3 py-2 text-xs font-black backdrop-blur">
               <ShoppingBag size={15} className="text-[#FFB547]" />
-              Entrega {store.deliveryEstimate || "disponible"}
+              Delivery {store.deliveryEstimate || "disponible"}
             </span>
             <span className="inline-flex items-center gap-2 rounded-full bg-white/14 px-3 py-2 text-xs font-black backdrop-blur">
               <Clock size={15} className="text-[#FFB547]" />
-              Retiro {store.pickupEstimate || "disponible"}
+              Retiro (pick up) disponible
             </span>
             {whatsappUrl ? (
               <a

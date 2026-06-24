@@ -1,0 +1,52 @@
+{
+  "name": "Vende+",
+  "short_name": "Vende+",
+  "id": "/",
+  "description": "Marketplace local para comprar en comercios aliados y gestionar ventas con Vende+.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F8F3E8",
+  "theme_color": "#2E3A79",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Inicio",
+      "short_name": "Inicio",
+      "url": "/",
+      "description": "Ver negocios disponibles"
+    },
+    {
+      "name": "Panel",
+      "short_name": "Panel",
+      "url": "/panel",
+      "description": "Abrir panel de comercio"
+    },
+    {
+      "name": "Iniciar sesión",
+      "short_name": "Login",
+      "url": "/panel/login",
+      "description": "Entrar como comercio"
+    }
+  ]
+}

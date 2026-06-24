@@ -7,6 +7,25 @@ import type { CartItem, Store } from "@/types";
 import { getCart, getCartSubtotal, removeCartItem, updateCartItemQuantity } from "@/lib/cart";
 import { formatBs, formatUsd } from "@/lib/currency";
 
+function formatSelectedOptions(item: CartItem) {
+  const groups = new Map<string, string[]>();
+
+  for (const option of item.selectedOptions || []) {
+    const current = groups.get(option.groupName) || [];
+    current.push(
+      option.priceDeltaUsd > 0
+        ? `${option.valueName} (+${formatUsd(option.priceDeltaUsd)})`
+        : option.valueName
+    );
+    groups.set(option.groupName, current);
+  }
+
+  return Array.from(groups.entries()).map(([groupName, values]) => ({
+    groupName,
+    values,
+  }));
+}
+
 export function CartPageClient({ store }: { store: Store }) {
   const [items, setItems] = useState<CartItem[]>([]);
 
@@ -77,12 +96,24 @@ export function CartPageClient({ store }: { store: Store }) {
             items.map((item, index) => (
               <article key={`${item.productId}-${item.variantId || "base"}-${index}`} className="rounded-[28px] bg-white p-3 shadow-sm ring-1 ring-[#25262B]/[0.07]">
                 <div className="flex gap-3">
-                  <img src={item.productImageUrl} alt={item.productName} className="h-24 w-24 rounded-[22px] object-cover" />
+                  <img src={item.productImageUrl} alt={item.productName} className="h-24 w-24 rounded-[22px] object-cover" decoding="async" loading="lazy" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <h2 className="font-black leading-tight text-[#25262B]">{item.productName}</h2>
                         {item.variantName ? <p className="mt-1 text-xs font-black text-[#746f69]">{item.variantName}</p> : null}
+                        {item.selectedOptions?.length ? (
+                          <div className="mt-2 space-y-1">
+                            {formatSelectedOptions(item).map((option) => (
+                              <p
+                                key={option.groupName}
+                                className="text-xs font-bold text-[#746f69]"
+                              >
+                                {option.groupName}: {option.values.join(", ")}
+                              </p>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
                       <button type="button" onClick={() => remove(index)} className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-red-50 text-red-600">
                         <Trash2 size={16} />

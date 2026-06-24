@@ -1,22 +1,31 @@
 ﻿import Link from "next/link";
 import { LogoutButton } from "@/components/panel/LogoutButton";
+import { OnboardingTour } from "@/components/panel/OnboardingTour";
+import { PanelStoreIdentity } from "@/components/panel/PanelStoreIdentity";
+import { PwaInstallButton } from "@/components/pwa/PwaInstallButton";
 import {
   BarChart3,
   Boxes,
   ClipboardList,
+  ContactRound,
   Home,
   LayoutDashboard,
+  ListPlus,
   PlusCircle,
   Settings,
   Sparkles,
   Tags,
+  Truck,
 } from "lucide-react";
 
 const navItems = [
   { href: "/panel", label: "Inicio", icon: LayoutDashboard },
   { href: "/panel/pedidos", label: "Pedidos", icon: ClipboardList },
   { href: "/panel/pedidos/nuevo", label: "Crear pedido", icon: PlusCircle },
+  { href: "/panel/clientes", label: "Clientes", icon: ContactRound },
   { href: "/panel/productos", label: "Productos", icon: Boxes },
+  { href: "/panel/opciones", label: "Opciones y extras", icon: ListPlus },
+  { href: "/panel/delivery", label: "Delivery", icon: Truck },
   { href: "/panel/catalogo", label: "Catálogo", icon: Tags },
   { href: "/panel/estadisticas", label: "Estadísticas", icon: BarChart3 },
   { href: "/panel/configuracion", label: "Configuración", icon: Settings },
@@ -74,12 +83,7 @@ export function PanelShell({
             })}
           </nav>
 
-          <div className="mt-8 rounded-[32px] bg-[#25262B] p-5 text-white">
-            <p className="text-sm font-black text-[#FFB547]">Panel de ventas</p>
-            <p className="mt-2 text-sm font-semibold leading-relaxed text-white/75">
-              Gestiona productos, pedidos, ventas y configuración de tu negocio en un solo lugar.
-            </p>
-          </div>
+          <PanelStoreIdentity />
 
           <Link
             href="/"
@@ -88,7 +92,14 @@ export function PanelShell({
             <Home size={17} />
             Ver catálogo público
           </Link>
-                  <div className="mt-4"><LogoutButton /></div>
+
+          <div className="mt-4">
+            <PwaInstallButton compact />
+          </div>
+
+          <div className="mt-4">
+            <LogoutButton />
+          </div>
         </aside>
 
         <section className="flex-1 px-4 py-5 sm:px-6 lg:px-8">
@@ -106,8 +117,13 @@ export function PanelShell({
                 </p>
               </div>
 
-              <div className="rounded-3xl bg-white/10 px-4 py-3 text-sm font-black backdrop-blur">
-                Datos guardados automáticamente
+              <div className="flex flex-col gap-3 sm:flex-row md:items-center">
+                <div className="rounded-3xl bg-white/10 px-4 py-3 text-sm font-black backdrop-blur">
+                  Datos guardados automáticamente
+                </div>
+                <div className="md:hidden">
+                  <PwaInstallButton compact />
+                </div>
               </div>
             </div>
           </header>
@@ -139,6 +155,7 @@ export function PanelShell({
           <div className="mt-6">{children}</div>
         </section>
       </div>
+      <OnboardingTour />
     </main>
   );
 }

@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
+  AlertTriangle,
   CheckCircle2,
   ExternalLink,
   Loader2,
   Lock,
   Save,
+  Trash2,
 } from "lucide-react";
 import {
   getPanelAuthHeaders,
@@ -39,6 +41,9 @@ type StoreDraft = {
   accepts_delivery: boolean;
   accepts_pickup: boolean;
   is_active: boolean;
+  access_email: string;
+  access_password: string;
+  access_role: string;
 };
 
 const initialDraft: StoreDraft = {
@@ -61,9 +66,12 @@ const initialDraft: StoreDraft = {
   button_text_color: "#25262B",
   logo_url: "",
   cover_image_url: "",
-  accepts_delivery: true,
+  accepts_delivery: false,
   accepts_pickup: true,
   is_active: true,
+  access_email: "",
+  access_password: "",
+  access_role: "owner",
 };
 
 const businessTypes = [
@@ -108,9 +116,12 @@ function mapStoreToDraft(store: any): StoreDraft {
     button_text_color: store.button_text_color || "#25262B",
     logo_url: store.logo_url || "",
     cover_image_url: store.cover_image_url || "",
-    accepts_delivery: store.accepts_delivery !== false,
+    accepts_delivery: store.accepts_delivery === true,
     accepts_pickup: store.accepts_pickup !== false,
     is_active: store.is_active !== false,
+    access_email: "",
+    access_password: "",
+    access_role: "owner",
   };
 }
 
@@ -138,9 +149,11 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => hasSavedPanelAuth());
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [createdStoreId, setCreatedStoreId] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState("");
 
   function updateField(field: keyof StoreDraft, value: string | boolean) {
     setDraft((current) => {
@@ -158,7 +171,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
     });
   }
 
-  async function unlock() {
+  const unlock = useCallback(async () => {
     setIsLoading(true);
     setError("");
 
@@ -178,7 +191,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
       setIsLoading(false);
       setIsCheckingAccess(false);
     }
-  }
+  }, [isEditing, storeId]);
 
   async function saveStore() {
     setIsSaving(true);
@@ -192,11 +205,14 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
         method,
         body: JSON.stringify({
           ...draft,
+          access_email: isEditing ? "" : draft.access_email,
+          access_password: isEditing ? "" : draft.access_password,
+          access_role: isEditing ? "owner" : draft.access_role,
           usd_to_bs: Number(draft.usd_to_bs || 600),
         }),
       });
 
-      setMessage(isEditing ? "Comercio actualizado." : "Comercio creado.");
+      setMessage(data.message || (isEditing ? "Comercio actualizado." : "Comercio creado."));
 
       if (!isEditing && data.store?.id) {
         setCreatedStoreId(data.store.id);
@@ -209,6 +225,31 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
     }
   }
 
+  async function deleteStore() {
+    if (!isEditing || !storeId || deleteConfirm.trim() !== draft.slug) {
+      setError("Para eliminar, escribe exactamente el slug del comercio.");
+      return;
+    }
+
+    setIsDeleting(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const data = await adminRequest(`/api/admin/stores/${storeId}`, "", {
+        method: "DELETE",
+        body: JSON.stringify({ confirmSlug: deleteConfirm.trim() }),
+      });
+
+      setMessage(data.message || "Comercio eliminado.");
+      router.push("/admin/comercios");
+    } catch (error: any) {
+      setError(error.message || "No se pudo eliminar el comercio.");
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
   useEffect(() => {
     const savedToken = getSavedPanelToken();
 
@@ -217,7 +258,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
     } else {
       setIsCheckingAccess(false);
     }
-  }, []);
+  }, [unlock]);
 
   if (isCheckingAccess) {
     return (
@@ -310,6 +351,65 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
           />
         </label>
       </div>
+
+      {!isEditing ? (
+        <section className="mt-5 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
+          <div className="flex flex-col justify-between gap-2 md:flex-row md:items-start">
+            <div>
+              <h3 className="text-lg font-black">Acceso del comercio</h3>
+              <p className="mt-1 text-sm font-bold text-[#746f69]">
+                Crea el usuario que entrara al panel privado de este negocio.
+              </p>
+            </div>
+            <span className="w-fit rounded-full bg-white px-3 py-2 text-xs font-black text-[#2E3A79]">
+              /panel/login
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-4 xl:grid-cols-3">
+            <label className="space-y-1">
+              <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
+                Correo de acceso
+              </span>
+              <input
+                value={draft.access_email}
+                onChange={(event) => updateField("access_email", event.target.value)}
+                type="email"
+                placeholder="dueno@comercio.com"
+                className="w-full rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#25262B]"
+              />
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
+                Clave inicial
+              </span>
+              <input
+                value={draft.access_password}
+                onChange={(event) => updateField("access_password", event.target.value)}
+                type="password"
+                placeholder="Minimo 6 caracteres"
+                className="w-full rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#25262B]"
+              />
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
+                Rol
+              </span>
+              <select
+                value={draft.access_role}
+                onChange={(event) => updateField("access_role", event.target.value)}
+                className="w-full rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#25262B]"
+              >
+                <option value="owner">Dueno</option>
+                <option value="admin">Administrador</option>
+                <option value="operator">Operador</option>
+              </select>
+            </label>
+          </div>
+        </section>
+      ) : null}
 
       <div className="mt-4 grid gap-4 xl:grid-cols-3">
         <label className="space-y-1">
@@ -457,29 +557,6 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
             </label>
           ))}
         </div>
-
-        <div className="mt-4 grid gap-4 xl:grid-cols-2">
-          <label className="space-y-1">
-            <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-              Logo URL
-            </span>
-            <input
-              value={draft.logo_url}
-              onChange={(event) => updateField("logo_url", event.target.value)}
-              className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#25262B]"
-            />
-          </label>
-          <label className="space-y-1">
-            <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-              Portada URL
-            </span>
-            <input
-              value={draft.cover_image_url}
-              onChange={(event) => updateField("cover_image_url", event.target.value)}
-              className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#25262B]"
-            />
-          </label>
-        </div>
       </section>
 
       <div className="mt-5 flex flex-wrap gap-2">
@@ -494,13 +571,58 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
             ].join(" ")}
           >
             {field === "accepts_delivery"
-              ? draft[field] ? "Entrega activa" : "Entrega inactiva"
+              ? draft[field] ? "Delivery activo" : "Delivery inactivo"
               : field === "accepts_pickup"
-                ? draft[field] ? "Retiro activo" : "Retiro inactivo"
+                ? draft[field] ? "Retiro (pick up) activo" : "Retiro (pick up) inactivo"
                 : draft[field] ? "Comercio activo" : "Comercio oculto"}
           </button>
         ))}
       </div>
+
+      {isEditing ? (
+        <section className="mt-6 rounded-[28px] border border-red-200 bg-red-50 p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h3 className="flex items-center gap-2 text-lg font-black text-red-700">
+                <AlertTriangle size={19} />
+                Eliminar comercio
+              </h3>
+              <p className="mt-1 max-w-2xl text-sm font-bold leading-relaxed text-red-700/80">
+                Esta acci&oacute;n elimina el comercio, productos, categor&iacute;as,
+                pedidos, clientes, configuraci&oacute;n de delivery y asignaciones.
+                Los usuarios de acceso no se borran de Auth.
+              </p>
+            </div>
+            <span className="rounded-full bg-white px-3 py-2 text-xs font-black text-red-700">
+              Permanente
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_auto]">
+            <label className="space-y-1">
+              <span className="text-xs font-black uppercase tracking-[0.14em] text-red-700">
+                Escribe el slug para confirmar: {draft.slug}
+              </span>
+              <input
+                value={deleteConfirm}
+                onChange={(event) => setDeleteConfirm(event.target.value)}
+                className="w-full rounded-2xl border border-red-200 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-red-500"
+                placeholder={draft.slug}
+              />
+            </label>
+
+            <button
+              type="button"
+              onClick={deleteStore}
+              disabled={isDeleting || deleteConfirm.trim() !== draft.slug}
+              className="inline-flex items-center justify-center gap-2 self-end rounded-full bg-red-600 px-5 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              {isDeleting ? <Loader2 size={17} className="animate-spin" /> : <Trash2 size={17} />}
+              Eliminar definitivamente
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       {message && (
         <p className="mt-4 text-sm font-black text-green-700">

@@ -7,6 +7,7 @@ import {
   requirePanelAuth,
 } from "@/lib/panel/access";
 import { isMissingColumnError } from "@/lib/supabase/schema-compat";
+import { extractCoordinatesFromUrl } from "@/lib/location-link";
 
 function optionalNumber(value: unknown) {
   if (value === "" || value === null || value === undefined) return null;
@@ -67,14 +68,20 @@ function normalizePaymentDetails(value: unknown) {
 }
 
 function normalizeStorePayload(body: any) {
+  const locationLink = body.location_link ? String(body.location_link).trim() : null;
+  const coordinates = locationLink ? extractCoordinatesFromUrl(locationLink) : null;
+  const baseCurrency =
+    String(body.base_currency || "USD").toUpperCase() === "EUR" ? "EUR" : "USD";
+
   return {
     name: String(body.name || "").trim(),
     description: body.description ? String(body.description).trim() : null,
     business_type: String(body.business_type || "general").trim(),
     whatsapp: body.whatsapp ? String(body.whatsapp).replace(/[^0-9]/g, "") : null,
     address: body.address ? String(body.address).trim() : null,
-    latitude: optionalNumber(body.latitude),
-    longitude: optionalNumber(body.longitude),
+    latitude: coordinates?.latitude ?? optionalNumber(body.latitude),
+    longitude: coordinates?.longitude ?? optionalNumber(body.longitude),
+    location_link: locationLink,
     cover_image_url: body.cover_image_url ? String(body.cover_image_url).trim() : null,
     logo_url: body.logo_url ? String(body.logo_url).trim() : null,
     opening_hours: body.opening_hours ? String(body.opening_hours).trim() : "Disponible hoy",
@@ -83,6 +90,21 @@ function normalizeStorePayload(body: any) {
     payment_methods: normalizePaymentMethods(body.payment_methods),
     payment_details: normalizePaymentDetails(body.payment_details),
     usd_to_bs: Number(body.usd_to_bs || 600),
+    base_currency: baseCurrency,
+    business_hours:
+      body.business_hours && typeof body.business_hours === "object" && !Array.isArray(body.business_hours)
+        ? body.business_hours
+        : {},
+    manual_open_status: ["auto", "open", "closed"].includes(cleanText(body.manual_open_status))
+      ? cleanText(body.manual_open_status)
+      : "auto",
+    manual_open_note: cleanText(body.manual_open_note) || null,
+    exchange_rate_source: body.exchange_rate_source
+      ? String(body.exchange_rate_source).trim()
+      : null,
+    exchange_rate_updated_at: body.exchange_rate_updated_at
+      ? String(body.exchange_rate_updated_at)
+      : null,
     whatsapp_message_note: body.whatsapp_message_note ? String(body.whatsapp_message_note).trim() : null,
     primary_color: body.primary_color ? String(body.primary_color).trim() : "#2E3A79",
     accent_color: body.accent_color ? String(body.accent_color).trim() : "#FFB547",
@@ -103,6 +125,7 @@ const storeSelect = `
   address,
   latitude,
   longitude,
+  location_link,
   cover_image_url,
   logo_url,
   opening_hours,
@@ -111,6 +134,12 @@ const storeSelect = `
   payment_methods,
   payment_details,
   usd_to_bs,
+  base_currency,
+  business_hours,
+  manual_open_status,
+  manual_open_note,
+  exchange_rate_source,
+  exchange_rate_updated_at,
   whatsapp_message_note,
   primary_color,
   accent_color,
@@ -174,7 +203,19 @@ export async function GET(request: NextRequest) {
     let paymentDetailsAvailable = true;
     let { data, error } = await buildQuery(storeSelect);
 
-    if (error && isMissingColumnError(error, ["payment_details"])) {
+    if (
+      error &&
+      isMissingColumnError(error, [
+      "payment_details",
+      "location_link",
+      "base_currency",
+      "business_hours",
+      "manual_open_status",
+      "manual_open_note",
+      "exchange_rate_source",
+        "exchange_rate_updated_at",
+      ])
+    ) {
       paymentDetailsAvailable = false;
       const fallbackResult = await buildQuery(baseStoreSelect);
       data = fallbackResult.data?.map(addPaymentDetailsFallback) || [];
@@ -228,9 +269,25 @@ export async function PATCH(request: NextRequest) {
       .select(storeSelect)
       .single();
 
-    if (error && isMissingColumnError(error, ["payment_details"])) {
+    if (
+      error &&
+      isMissingColumnError(error, [
+        "payment_details",
+        "location_link",
+        "base_currency",
+        "exchange_rate_source",
+        "exchange_rate_updated_at",
+      ])
+    ) {
       paymentDetailsSaved = false;
-      const { payment_details: _paymentDetails, ...basePayload } = payload;
+      const {
+        payment_details: _paymentDetails,
+        location_link: _locationLink,
+        base_currency: _baseCurrency,
+        exchange_rate_source: _exchangeRateSource,
+        exchange_rate_updated_at: _exchangeRateUpdatedAt,
+        ...basePayload
+      } = payload;
       const fallbackResult = await supabase
         .from("stores")
         .update(basePayload)

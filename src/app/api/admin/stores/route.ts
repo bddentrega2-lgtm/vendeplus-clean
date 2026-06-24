@@ -4,6 +4,7 @@ import {
   adminStoreSelect,
   normalizeAdminStorePayload,
 } from "@/lib/admin/stores";
+import { ensureStoreAccessUser, normalizeAccessEmail } from "@/lib/admin/store-access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 function badRequest(message: string) {
@@ -44,9 +45,9 @@ export async function GET(request: NextRequest) {
     const [storesResult, productsResult, ordersResult, usersResult] =
       await Promise.all([
         supabase.from("stores").select(adminStoreSelect).order("name", { ascending: true }),
-        supabase.from("products").select("id, store_id"),
-        supabase.from("orders").select("id, store_id"),
-        supabase.from("store_users").select("id, store_id"),
+        supabase.from("products").select("id, store_id").limit(5000),
+        supabase.from("orders").select("id, store_id").limit(5000),
+        supabase.from("store_users").select("id, store_id").limit(5000),
       ]);
 
     if (storesResult.error) throw storesResult.error;
@@ -72,6 +73,9 @@ export async function POST(request: NextRequest) {
     await requireAdminAuth(request);
     const body = await request.json();
     const payload = normalizeAdminStorePayload(body);
+    const accessEmail = normalizeAccessEmail(body.access_email);
+    const accessPassword = String(body.access_password || "").trim();
+    const accessRole = String(body.access_role || "owner").trim();
 
     if (!payload.name) {
       return badRequest("El nombre del comercio es obligatorio.");
@@ -79,6 +83,10 @@ export async function POST(request: NextRequest) {
 
     if (!payload.slug) {
       return badRequest("El slug del comercio es obligatorio.");
+    }
+
+    if (accessEmail && accessPassword.length < 6) {
+      return badRequest("La clave de acceso debe tener al menos 6 caracteres.");
     }
 
     const supabase = createSupabaseAdminClient();
@@ -100,6 +108,37 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) throw error;
+
+    if (accessEmail) {
+      try {
+        const access = await ensureStoreAccessUser({
+          supabase,
+          storeId: data.id,
+          storeName: data.name,
+          email: accessEmail,
+          password: accessPassword,
+          role: accessRole,
+        });
+
+        return NextResponse.json(
+          {
+            store: data,
+            access: {
+              email: access.user.email,
+              role: access.assignment.role,
+              createdUser: access.createdUser,
+            },
+            message: access.createdUser
+              ? "Comercio creado con acceso de usuario."
+              : "Comercio creado y usuario existente asignado.",
+          },
+          { status: 201 }
+        );
+      } catch (accessError) {
+        await supabase.from("stores").delete().eq("id", data.id);
+        throw accessError;
+      }
+    }
 
     return NextResponse.json({ store: data }, { status: 201 });
   } catch (error) {

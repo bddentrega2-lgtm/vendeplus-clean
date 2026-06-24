@@ -27,10 +27,15 @@ export function buildOrderMessage(params: {
     .map((item, index) => {
       const variant = item.variantName ? ` (${item.variantName})` : "";
       const note = cleanText(item.notes) ? `\n   Nota: ${cleanText(item.notes)}` : "";
+      const options = item.selectedOptions?.length
+        ? `\n${item.selectedOptions
+            .map((option) => `   ${option.groupName}: ${option.valueName}`)
+            .join("\n")}`
+        : "";
 
       return `${index + 1}) ${item.quantity}x ${item.productName}${variant} — ${formatUsd(
         item.unitPriceUsd * item.quantity
-      )}${note}`;
+      )}${options}${note}`;
     })
     .join("\n");
 
@@ -48,17 +53,30 @@ export function buildOrderMessage(params: {
   const paymentReference = cleanText(form.paymentReference)
     ? `\n🔎 Referencia: ${cleanText(form.paymentReference)}`
     : "";
+  const deliveryPriceText =
+    quote.source === "manual" && totals.deliveryUsd === 0
+      ? "por confirmar"
+      : quote.source === "pending"
+        ? "por calcular"
+        : formatUsd(totals.deliveryUsd);
 
   const deliveryBlock =
     form.deliveryType === "pickup"
-      ? `🛍️ Retiro`
-      : `🚚 Entrega: ${formatUsd(totals.deliveryUsd)} | ${
-          quote.distanceKm !== null ? `${quote.distanceKm.toFixed(2)} km` : "distancia pendiente"
+      ? `🛍️ Retiro (pick up)`
+      : `🚚 Delivery: ${deliveryPriceText} | ${
+          quote.zoneName ||
+          quote.message ||
+          (quote.distanceKm !== null
+            ? `${quote.distanceKm.toFixed(2)} km`
+            : quote.label || "por confirmar")
         }\n📍 ${mapsUrl || "Ubicación pendiente"}${reference}`;
 
-  return `🟠 ${orderId} | ${store.name}
+  return `Hola, ya está listo mi pedido.
 
-👤 ${form.customerName} | ${form.customerPhone}
+Código: ${orderId}
+Comercio: ${store.name}
+
+Cliente: ${form.customerName} | ${form.customerPhone}
 
 📦 Pedido:
 ${itemsText}${orderDetails}

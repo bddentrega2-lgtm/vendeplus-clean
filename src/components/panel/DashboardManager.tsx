@@ -10,10 +10,10 @@ import {
   DollarSign,
   ExternalLink,
   Lock,
-  RefreshCcw,
   ShoppingBag,
   Store,
   TrendingUp,
+  UsersRound,
 } from "lucide-react";
 import Link from "next/link";
 import { formatUsd } from "@/lib/currency";
@@ -76,6 +76,7 @@ export function DashboardManager() {
   const [isLoading, setIsLoading] = useState(() => hasSavedPanelAuth());
   const [error, setError] = useState("");
   const [shareMessage, setShareMessage] = useState("");
+  const [catalogShared, setCatalogShared] = useState(false);
 
   async function loadDashboard(currentPin: string) {
     setIsLoading(true);
@@ -173,6 +174,7 @@ export function DashboardManager() {
 
     try {
       await navigator.clipboard.writeText(publicCatalogUrl);
+      setCatalogShared(true);
       setShareMessage("Link del catálogo copiado.");
     } catch {
       setShareMessage("No se pudo copiar el link. Abre el catálogo y copia la URL.");
@@ -206,7 +208,7 @@ export function DashboardManager() {
       label: "Comparte tu catálogo con clientes",
       detail: publicCatalogUrl || "Disponible cuando tu comercio tenga slug.",
       action: "Compartir catálogo",
-      done: false,
+      done: catalogShared,
       onClick: copyCatalogLink,
     },
     {
@@ -363,14 +365,6 @@ export function DashboardManager() {
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => loadDashboard(pin)}
-            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
-          >
-            <RefreshCcw size={16} />
-            Actualizar
-          </button>
         </div>
       </section>
 
@@ -426,6 +420,56 @@ export function DashboardManager() {
             </p>
             <p className="mt-2 text-2xl font-black text-red-700">
               {formatUsd(summary.pendingPaymentUsd || 0)}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
+        <div className="flex flex-col justify-between gap-3 xl:flex-row xl:items-center">
+          <div>
+            <p className="text-sm font-black uppercase tracking-[0.18em] text-[#746f69]">
+              Clientes y recompra
+            </p>
+            <h2 className="mt-1 text-2xl font-black text-[#25262B]">
+              Vuelve a venderle a quien ya compró
+            </h2>
+            <p className="mt-1 text-sm font-bold text-[#746f69]">
+              Revisa clientes frecuentes y personas a las que conviene escribir por WhatsApp.
+            </p>
+          </div>
+          <Link
+            href="/panel/clientes"
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-5 py-3 text-sm font-black text-white"
+          >
+            <UsersRound size={17} />
+            Ver clientes
+          </Link>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <div className="rounded-[24px] bg-[#F8F3E8] p-4">
+            <p className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
+              Clientes totales
+            </p>
+            <p className="mt-2 text-3xl font-black text-[#25262B]">
+              {stats.customers?.total || 0}
+            </p>
+          </div>
+          <div className="rounded-[24px] bg-green-50 p-4">
+            <p className="text-xs font-black uppercase tracking-[0.12em] text-green-700">
+              Frecuentes
+            </p>
+            <p className="mt-2 text-3xl font-black text-green-700">
+              {stats.customers?.frequent || 0}
+            </p>
+          </div>
+          <div className="rounded-[24px] bg-amber-50 p-4">
+            <p className="text-xs font-black uppercase tracking-[0.12em] text-amber-800">
+              Por contactar
+            </p>
+            <p className="mt-2 text-3xl font-black text-amber-800">
+              {stats.customers?.contact || 0}
             </p>
           </div>
         </div>

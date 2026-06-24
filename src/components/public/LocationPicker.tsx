@@ -8,60 +8,88 @@ import type { Map as LeafletMap, Marker } from "leaflet";
 type Props = {
   storeLatitude: number;
   storeLongitude: number;
+  storeName?: string;
   value: DeliveryLocation | null;
   onChange: (location: DeliveryLocation) => void;
+  mode?: "delivery" | "store";
 };
 
-export function LocationPicker({ storeLatitude, storeLongitude, value, onChange }: Props) {
+export function LocationPicker({
+  storeLatitude,
+  storeLongitude,
+  storeName = "Comercio",
+  value,
+  onChange,
+  mode = "delivery",
+}: Props) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const leafletMapRef = useRef<LeafletMap | null>(null);
   const destinationMarkerRef = useRef<Marker | null>(null);
+  const [showMap, setShowMap] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [message, setMessage] = useState("");
-  const [messageType, setMessageType] = useState<"info" | "success" | "error">("info");
+  const [messageType, setMessageType] = useState<"info" | "success" | "error">(
+    "info"
+  );
 
-  const placeDestinationMarker = useCallback(async (latitude: number, longitude: number, label: string, source: DeliveryLocation["source"], accuracyMeters?: number) => {
-    const leaflet = await import("leaflet");
-    const latLng: [number, number] = [latitude, longitude];
-    const icon = leaflet.divIcon({
-      className: "vendeplus-destination-marker",
-      html: "<div>📍</div>",
-      iconSize: [38, 38],
-      iconAnchor: [19, 38],
-    });
+  const updateDestinationMarker = useCallback(
+    async (latitude: number, longitude: number) => {
+      if (!leafletMapRef.current) return;
 
-    if (leafletMapRef.current) {
+      const leaflet = await import("leaflet");
+      const latLng: [number, number] = [latitude, longitude];
+      const icon = leaflet.divIcon({
+        className: "vendeplus-destination-marker",
+        html:
+          mode === "store"
+            ? '<div class="vp-map-pin vp-map-pin-store"><span>Comercio</span></div>'
+            : '<div class="vp-map-pin vp-map-pin-delivery"><span>Recibir aqui</span></div>',
+        iconSize: [118, 42],
+        iconAnchor: [59, 42],
+      });
+
       if (destinationMarkerRef.current) {
         destinationMarkerRef.current.setLatLng(latLng);
       } else {
-        destinationMarkerRef.current = leaflet.marker(latLng, { icon }).addTo(leafletMapRef.current);
+        destinationMarkerRef.current = leaflet
+          .marker(latLng, { icon })
+          .addTo(leafletMapRef.current);
       }
-      leafletMapRef.current.setView(latLng, 16);
-    }
 
-    onChange({ latitude, longitude, label, source, accuracyMeters });
-  }, [onChange]);
+      leafletMapRef.current.setView(latLng, 16);
+    },
+    [mode]
+  );
+
+  const selectDestination = useCallback(
+    async (
+      latitude: number,
+      longitude: number,
+      label: string,
+      source: DeliveryLocation["source"],
+      accuracyMeters?: number
+    ) => {
+      await updateDestinationMarker(latitude, longitude);
+      onChange({ latitude, longitude, label, source, accuracyMeters });
+    },
+    [onChange, updateDestinationMarker]
+  );
 
   useEffect(() => {
     let mounted = true;
 
     async function init() {
-      if (!mapRef.current || leafletMapRef.current) return;
+      if (!showMap || !mapRef.current || leafletMapRef.current) return;
+
       const leaflet = await import("leaflet");
       if (!mounted || !mapRef.current) return;
 
       const storeIcon = leaflet.divIcon({
         className: "vendeplus-store-marker",
-        html: "<div>🏪</div>",
-        iconSize: [38, 38],
-        iconAnchor: [19, 19],
-      });
-      const destinationIcon = leaflet.divIcon({
-        className: "vendeplus-destination-marker",
-        html: "<div>📍</div>",
-        iconSize: [38, 38],
-        iconAnchor: [19, 38],
+        html: '<div class="vp-map-pin vp-map-pin-store"><span>Retiro aqui</span></div>',
+        iconSize: [104, 42],
+        iconAnchor: [52, 42],
       });
 
       const map = leaflet.map(mapRef.current, {
@@ -73,27 +101,31 @@ export function LocationPicker({ storeLatitude, storeLongitude, value, onChange 
       leaflet
         .tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
           maxZoom: 19,
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+          attribution:
+            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         })
         .addTo(map);
 
-      leaflet.marker([storeLatitude, storeLongitude], { icon: storeIcon }).addTo(map).bindPopup("Punto de retiro del comercio");
+      if (mode !== "store") {
+        leaflet
+          .marker([storeLatitude, storeLongitude], { icon: storeIcon })
+          .addTo(map)
+          .bindPopup(`Punto de retiro: ${storeName}`);
+      }
 
       map.on("click", (event) => {
-        if (destinationMarkerRef.current) {
-          destinationMarkerRef.current.setLatLng(event.latlng);
-        } else {
-          destinationMarkerRef.current = leaflet.marker(event.latlng, { icon: destinationIcon }).addTo(map);
-        }
-
-        onChange({
-          latitude: event.latlng.lat,
-          longitude: event.latlng.lng,
-          label: "Punto elegido en el mapa",
-          source: "map",
-        });
+        void selectDestination(
+          event.latlng.lat,
+          event.latlng.lng,
+          mode === "store" ? "Ubicacion del negocio" : "Punto elegido en el mapa",
+          "map"
+        );
         setMessageType("success");
-        setMessage("Punto seleccionado correctamente. Puedes moverlo tocando otra zona del mapa.");
+        setMessage(
+          mode === "store"
+            ? "Ubicacion del negocio seleccionada. Puedes moverla tocando otra zona del mapa."
+            : "Punto seleccionado correctamente. Puedes moverlo tocando otra zona del mapa."
+        );
       });
 
       leafletMapRef.current = map;
@@ -107,102 +139,156 @@ export function LocationPicker({ storeLatitude, storeLongitude, value, onChange 
       if (leafletMapRef.current) {
         leafletMapRef.current.remove();
         leafletMapRef.current = null;
+        destinationMarkerRef.current = null;
       }
     };
-  }, [onChange, storeLatitude, storeLongitude]);
+  }, [mode, selectDestination, showMap, storeLatitude, storeLongitude, storeName]);
 
   useEffect(() => {
-    if (!value) return;
-    placeDestinationMarker(value.latitude, value.longitude, value.label, value.source, value.accuracyMeters);
-  }, [placeDestinationMarker, value?.latitude, value?.longitude]);
+    if (!value || !showMap || !isReady) return;
+
+    void updateDestinationMarker(value.latitude, value.longitude);
+  }, [isReady, showMap, updateDestinationMarker, value]);
 
   async function useCurrentLocation() {
     setMessage("");
 
     if (!navigator.geolocation) {
       setMessageType("error");
-      setMessage("Este navegador no permite tomar ubicación actual. Toca el mapa para elegir el punto de entrega.");
+      setMessage(
+        "Este navegador no permite tomar ubicacion actual. Carga el mapa o escribe una referencia clara."
+      );
       return;
     }
 
     try {
       if (navigator.permissions?.query) {
-        const permission = await navigator.permissions.query({ name: "geolocation" as PermissionName });
+        const permission = await navigator.permissions.query({
+          name: "geolocation" as PermissionName,
+        });
         if (permission.state === "denied") {
           setMessageType("error");
-          setMessage("La ubicación está bloqueada en el navegador. Puedes activarla en el candado de la barra o elegir el punto tocando el mapa.");
+          setMessage(
+            "La ubicacion esta bloqueada en el navegador. Puedes activarla o cargar el mapa para elegir el punto."
+          );
           return;
         }
       }
     } catch {
-      // Algunos navegadores no soportan consultar permisos. Igual intentamos obtener la ubicación.
+      // Some browsers cannot query permissions. Trying geolocation is still safe.
     }
 
     setIsLocating(true);
     setMessageType("info");
-    setMessage("Buscando tu ubicación actual...");
+    setMessage("Buscando tu ubicacion actual...");
 
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         setIsLocating(false);
-        await placeDestinationMarker(
+        await selectDestination(
           position.coords.latitude,
           position.coords.longitude,
-          "Ubicación actual confirmada",
+          mode === "store" ? "Ubicacion actual del negocio" : "Ubicacion actual confirmada",
           "current",
-          position.coords.accuracy,
+          position.coords.accuracy
         );
         setMessageType("success");
-        setMessage(`Ubicación tomada correctamente. Precisión aproximada: ${Math.round(position.coords.accuracy || 0)} metros.`);
+        setMessage(
+          `${mode === "store" ? "Ubicacion del negocio tomada" : "Ubicacion tomada"} correctamente. Precision aproximada: ${Math.round(
+            position.coords.accuracy || 0
+          )} metros.`
+        );
       },
       (error) => {
         setIsLocating(false);
         setMessageType("error");
         if (error.code === error.PERMISSION_DENIED) {
-          setMessage("Permiso rechazado. Actívalo desde el candado de Chrome o elige el punto tocando el mapa.");
+          setMessage(
+            "Permiso rechazado. Activalo desde el navegador o carga el mapa para elegir el punto."
+          );
         } else if (error.code === error.TIMEOUT) {
-          setMessage("La ubicación tardó demasiado. Puedes intentar otra vez o elegir el punto en el mapa.");
+          setMessage(
+            "La ubicacion tardo demasiado. Puedes intentar otra vez o cargar el mapa."
+          );
         } else {
-          setMessage("No pudimos tomar la ubicación actual. Elige el punto tocando el mapa.");
+          setMessage(
+            "No pudimos tomar la ubicacion actual. Carga el mapa o escribe una referencia clara."
+          );
         }
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60_000 }
     );
   }
 
   return (
     <div className="space-y-3">
       <div className="grid gap-2 sm:grid-cols-2">
-        <button type="button" onClick={useCurrentLocation} className="vp-button-primary w-full">
-          <LocateFixed size={18} /> {isLocating ? "Buscando..." : "Usar ubicación actual"}
+        <button
+          type="button"
+          onClick={useCurrentLocation}
+          className="vp-button-primary w-full"
+        >
+          <LocateFixed size={18} />{" "}
+          {isLocating
+            ? "Buscando..."
+            : mode === "store"
+              ? "Usar ubicacion del negocio"
+              : "Usar ubicacion actual"}
         </button>
-        <div className="vp-button-soft w-full text-center">
-          <MapPin size={18} /> Toca el mapa para elegir
+        <button
+          type="button"
+          onClick={() => {
+            setShowMap(true);
+            if (!leafletMapRef.current) {
+              setIsReady(false);
+            }
+          }}
+          className="vp-button-soft w-full"
+        >
+          <MapPin size={18} /> {showMap ? "Toca el mapa" : "Elegir en mapa"}
+        </button>
+      </div>
+
+      {showMap ? (
+        <div className="overflow-hidden rounded-[28px] border border-[#25262B]/10 bg-white shadow-sm">
+          <div ref={mapRef} className="h-[340px] w-full" />
         </div>
-      </div>
+      ) : (
+        <div className="rounded-[28px] border border-[#25262B]/10 bg-white p-4 text-sm font-bold leading-relaxed text-[#746f69] shadow-sm">
+          Para conexiones lentas, primero intenta con GPS. Si no queda bien,
+          carga el mapa y toca el punto exacto.
+        </div>
+      )}
 
-      <div className="overflow-hidden rounded-[28px] border border-[#25262B]/10 bg-white shadow-sm">
-        <div ref={mapRef} className="h-[340px] w-full" />
-      </div>
-
-      {!isReady ? <p className="rounded-2xl bg-white p-3 text-xs font-black text-[#746f69]">Cargando mapa...</p> : null}
+      {showMap && !isReady ? (
+        <p className="rounded-2xl bg-white p-3 text-xs font-black text-[#746f69]">
+          Cargando mapa...
+        </p>
+      ) : null}
 
       {message ? (
-        <div className={
-          messageType === "success"
-            ? "flex gap-2 rounded-2xl bg-green-50 p-3 text-sm font-bold text-green-700"
-            : messageType === "error"
-              ? "flex gap-2 rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700"
-              : "flex gap-2 rounded-2xl bg-[#FFF8F0] p-3 text-sm font-bold text-[#746f69]"
-        }>
-          {messageType === "success" ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+        <div
+          className={
+            messageType === "success"
+              ? "flex gap-2 rounded-2xl bg-green-50 p-3 text-sm font-bold text-green-700"
+              : messageType === "error"
+                ? "flex gap-2 rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700"
+                : "flex gap-2 rounded-2xl bg-[#FFF8F0] p-3 text-sm font-bold text-[#746f69]"
+          }
+        >
+          {messageType === "success" ? (
+            <CheckCircle2 size={18} />
+          ) : (
+            <AlertCircle size={18} />
+          )}
           <span>{message}</span>
         </div>
       ) : null}
 
       {value ? (
         <div className="rounded-2xl bg-white p-3 text-xs font-black text-[#746f69] ring-1 ring-[#25262B]/[0.07]">
-          Coordenadas seleccionadas: {value.latitude.toFixed(6)}, {value.longitude.toFixed(6)}
+          Coordenadas seleccionadas: {value.latitude.toFixed(6)},{" "}
+          {value.longitude.toFixed(6)}
         </div>
       ) : null}
     </div>

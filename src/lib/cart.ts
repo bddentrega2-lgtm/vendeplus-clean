@@ -42,11 +42,18 @@ export function getCartSubtotal(items: CartItem[]) {
 
 export function addToCart(storeSlug: string, item: CartItem) {
   const current = getCart(storeSlug);
+  const nextOptionsKey = JSON.stringify(item.selectedOptions || []);
   const existingIndex = current.findIndex(
-    (cartItem) =>
-      cartItem.productId === item.productId &&
-      cartItem.variantId === item.variantId &&
-      (cartItem.notes || "") === (item.notes || ""),
+    (cartItem) => {
+      const currentOptionsKey = JSON.stringify(cartItem.selectedOptions || []);
+
+      return (
+        cartItem.productId === item.productId &&
+        cartItem.variantId === item.variantId &&
+        currentOptionsKey === nextOptionsKey &&
+        (cartItem.notes || "") === (item.notes || "")
+      );
+    },
   );
 
   if (existingIndex >= 0) {

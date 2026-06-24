@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth, adminErrorResponse } from "@/lib/admin/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import {
+  ensureStoreAccessUser,
+  findUserByEmail,
+  normalizeAccessRole,
+} from "@/lib/admin/store-access";
 
 const validRoles = new Set(["owner", "admin", "operator"]);
 
@@ -10,32 +15,6 @@ function cleanText(value: unknown) {
 
 function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
-}
-
-async function findUserByEmail(supabase: any, email: string) {
-  const needle = email.trim().toLowerCase();
-  let page = 1;
-
-  while (page <= 20) {
-    const { data, error } = await supabase.auth.admin.listUsers({
-      page,
-      perPage: 1000,
-    });
-
-    if (error) throw error;
-
-    const users = data?.users || [];
-    const user = users.find(
-      (item: any) => String(item.email || "").toLowerCase() === needle
-    );
-
-    if (user) return user;
-    if (users.length < 1000) return null;
-
-    page += 1;
-  }
-
-  return null;
 }
 
 async function getUsersById(supabase: any, userIds: string[]) {
@@ -105,6 +84,8 @@ export async function POST(request: NextRequest) {
     const email = cleanText(body.email).toLowerCase();
     const storeId = cleanText(body.store_id);
     const role = cleanText(body.role) || "operator";
+    const password = cleanText(body.password);
+    const shouldCreateUser = Boolean(body.create_user || password);
 
     if (!email) return badRequest("Ingresa el email del usuario.");
     if (!storeId) return badRequest("Selecciona un comercio.");
@@ -119,6 +100,28 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (storeError) throw storeError;
+
+    if (shouldCreateUser) {
+      const result = await ensureStoreAccessUser({
+        supabase,
+        storeId,
+        storeName: store.name,
+        email,
+        password,
+        role,
+      });
+
+      return NextResponse.json({
+        assignment: result.assignment,
+        user: {
+          id: result.user.id,
+          email: result.user.email,
+        },
+        message: result.createdUser
+          ? `Acceso creado y asignado a ${store.name}.`
+          : `El usuario ya existía y fue asignado a ${store.name}.`,
+      });
+    }
 
     const user = await findUserByEmail(supabase, email);
 
@@ -140,7 +143,7 @@ export async function POST(request: NextRequest) {
     if (existingAssignment) {
       const { data, error } = await supabase
         .from("store_users")
-        .update({ role })
+        .update({ role: normalizeAccessRole(role) })
         .eq("id", existingAssignment.id)
         .select()
         .single();
@@ -158,7 +161,7 @@ export async function POST(request: NextRequest) {
       .insert({
         store_id: storeId,
         user_id: user.id,
-        role,
+        role: normalizeAccessRole(role),
       })
       .select()
       .single();

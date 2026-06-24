@@ -1,18 +1,23 @@
 ﻿"use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   Eye,
   EyeOff,
+  Grid2X2,
   ImageIcon,
+  LayoutList,
   Loader2,
   Lock,
   Plus,
   Save,
+  Search,
   Sparkles,
   Trash2,
   Upload,
+  X,
 } from "lucide-react";
 import { PanelAccessGate, PanelModuleSkeleton } from "@/components/panel/PanelLoadingState";
 import {
@@ -23,6 +28,7 @@ import {
   savePanelPin,
   shouldShowPanelInitialAccessGate,
 } from "@/lib/panel/client-auth";
+import { compressImageForUpload } from "@/lib/images/client-compress";
 
 type StoreRow = {
   id: string;
@@ -51,14 +57,28 @@ type ProductRow = {
   sort_order: number;
   stores?: { name?: string } | null;
   categories?: { name?: string } | null;
+  product_option_group_products?: Array<{
+    product_option_groups?: {
+      id: string;
+      name: string;
+    } | null;
+  }>;
 };
 
-async function apiRequest(pin: string, options?: RequestInit) {
-  const response = await fetch("/api/panel/products", {
-    ...options,
+function getProductOptionGroups(product: ProductRow) {
+  return (product.product_option_group_products || [])
+    .map((assignment) => assignment.product_option_groups)
+    .filter(Boolean) as Array<{ id: string; name: string }>;
+}
+
+async function apiRequest(pin: string, options?: RequestInit & { url?: string }) {
+  const { url = "/api/panel/products", ...requestOptions } = options || {};
+  const response = await fetch(url, {
+    ...requestOptions,
     headers: {
       "Content-Type": "application/json",
       ...(await getPanelAuthHeaders(pin)),
+      ...(requestOptions.headers || {}),
     },
   });
 
@@ -77,8 +97,9 @@ async function uploadProductImage(
   productId?: string,
   pin?: string
 ) {
+  const uploadFile = await compressImageForUpload(file);
   const formData = new FormData();
-  formData.append("file", file);
+  formData.append("file", uploadFile);
   formData.append("store_id", storeId);
   formData.append("product_id", productId || "new-product");
 
@@ -131,6 +152,7 @@ function ProductEditor({
   const filteredCategories = categories.filter(
     (category) => category.store_id === draft.store_id
   );
+  const optionGroups = getProductOptionGroups(product);
 
   async function saveProduct() {
     setIsSaving(true);
@@ -201,16 +223,16 @@ function ProductEditor({
 
   return (
     <article className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-[#25262B]/[0.06]">
-      <div className="grid gap-3 xl:grid-cols-[120px_1fr]">
-        <div className="overflow-hidden rounded-2xl bg-[#F8F3E8]">
+      <div className="grid gap-3 xl:grid-cols-[124px_1fr]">
+        <div className="aspect-square overflow-hidden rounded-2xl bg-[#F8F3E8]">
           {draft.image_url ? (
             <img
               src={draft.image_url}
               alt={draft.name}
-              className="h-28 w-full object-cover xl:h-full"
+              className="h-full w-full object-cover"
             />
           ) : (
-            <div className="grid h-28 place-items-center text-[#746f69]">
+            <div className="grid h-full place-items-center text-[#746f69]">
               <ImageIcon size={26} />
             </div>
           )}
@@ -255,7 +277,7 @@ function ProductEditor({
             className="w-full rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
           />
 
-          <div className="grid gap-3 md:grid-cols-[auto_1fr] md:items-center">
+          <div className="flex flex-wrap gap-3">
             <input
               ref={fileInputRef}
               type="file"
@@ -276,18 +298,20 @@ function ProductEditor({
               )}
               Subir imagen
             </button>
-
-            <input
-              value={draft.image_url}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  image_url: event.target.value,
-                }))
-              }
-              placeholder="URL de imagen opcional"
-              className="w-full rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-            />
+            {draft.image_url && (
+              <button
+                type="button"
+                onClick={() =>
+                  setDraft((current) => ({
+                    ...current,
+                    image_url: "",
+                  }))
+                }
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F8F3E8] px-5 py-3 text-sm font-black text-[#2E3A79]"
+              >
+                Quitar imagen
+              </button>
+            )}
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">
@@ -340,6 +364,23 @@ function ProductEditor({
             placeholder="Orden en catálogo"
             className="w-full rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
           />
+
+          <div className="flex flex-col gap-3 rounded-2xl bg-[#F8F3E8] p-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-black">Opciones y extras</p>
+              <p className="text-xs font-bold text-[#746f69]">
+                {optionGroups.length
+                  ? `Opciones: ${optionGroups.map((group) => group.name).join(", ")}`
+                  : "Este producto todavía no tiene opciones aplicadas."}
+              </p>
+            </div>
+            <Link
+              href="/panel/opciones"
+              className="inline-flex items-center justify-center rounded-full bg-white px-4 py-2 text-xs font-black text-[#2E3A79]"
+            >
+              Gestionar opciones
+            </Link>
+          </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap gap-2">
@@ -426,9 +467,15 @@ export function ProductManager() {
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [products, setProducts] = useState<ProductRow[]>([]);
+  const [page, setPage] = useState({ limit: 120, offset: 0, hasMore: false });
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => shouldShowPanelInitialAccessGate());
   const [isLoading, setIsLoading] = useState(() => hasSavedPanelAuth());
   const [isUploadingNewImage, setIsUploadingNewImage] = useState(false);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [productQuery, setProductQuery] = useState("");
+  const [productView, setProductView] = useState<"comfortable" | "compact">(
+    "compact"
+  );
   const [error, setError] = useState("");
   const [newProductMessage, setNewProductMessage] = useState("");
   const newProductFileInputRef = useRef<HTMLInputElement>(null);
@@ -451,16 +498,41 @@ export function ProductManager() {
     [categories, newProduct.store_id]
   );
 
-  async function loadData(currentPin: string) {
+  const filteredProducts = useMemo(() => {
+    const normalizedQuery = productQuery.trim().toLowerCase();
+
+    if (!normalizedQuery) return products;
+
+    return products.filter((product) => {
+      const haystack = [
+        product.name,
+        product.description || "",
+        product.categories?.name || "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(normalizedQuery);
+    });
+  }, [productQuery, products]);
+
+  async function loadData(currentPin: string, nextOffset = 0) {
     setIsLoading(true);
     setError("");
 
     try {
-      const data = await apiRequest(currentPin);
+      const params = new URLSearchParams({
+        limit: String(page.limit),
+        offset: String(nextOffset),
+      });
+      const data = await apiRequest(currentPin, { url: `/api/panel/products?${params}` });
 
       setStores(data.stores || []);
       setCategories(data.categories || []);
-      setProducts(data.products || []);
+      setProducts((current) =>
+        nextOffset > 0 ? [...current, ...(data.products || [])] : data.products || []
+      );
+      setPage(data.page || { limit: page.limit, offset: nextOffset, hasMore: false });
 
       if (!newProduct.store_id && data.stores?.[0]?.id) {
         setNewProduct((current) => ({
@@ -505,6 +577,7 @@ export function ProductManager() {
         is_featured: false,
       }));
       setNewProductMessage("");
+      setIsCreateOpen(false);
 
       await loadData(pin);
     } catch (error: any) {
@@ -571,6 +644,17 @@ export function ProductManager() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const savedView = localStorage.getItem("vendeplus_panel_products_view");
+    if (savedView === "comfortable" || savedView === "compact") {
+      setProductView(savedView);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("vendeplus_panel_products_view", productView);
+  }, [productView]);
+
   if (isCheckingAccess) {
     return <PanelAccessGate />;
   }
@@ -608,26 +692,24 @@ export function ProductManager() {
       <section className="rounded-2xl bg-white p-4 shadow-lg shadow-[#2E3A79]/[0.05] ring-1 ring-[#25262B]/[0.06]">
         <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
           <div>
-            <h2 className="text-xl font-black">Crear producto</h2>
+            <h2 className="text-xl font-black">Productos</h2>
             <p className="text-sm font-bold text-[#746f69]">
-              Crea un producto y aparecerá en el catálogo público del comercio.
+              Gestiona tu inventario sin abrir formularios hasta que los necesites.
             </p>
           </div>
           <button
             type="button"
-            onClick={createProduct}
+            onClick={() => setIsCreateOpen((current) => !current)}
             disabled={isLoading}
             className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B] disabled:opacity-60"
           >
-            {isLoading ? (
-              <Loader2 size={17} className="animate-spin" />
-            ) : (
-              <Plus size={17} />
-            )}
-            Crear producto
+            {isCreateOpen ? <X size={17} /> : <Plus size={17} />}
+            {isCreateOpen ? "Cancelar" : "Crear producto"}
           </button>
         </div>
 
+        {isCreateOpen ? (
+          <>
         <div className="mt-4 grid gap-3 lg:grid-cols-5">
           <select
             value={newProduct.store_id}
@@ -705,7 +787,7 @@ export function ProductManager() {
           />
         </div>
 
-        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <div className="mt-3">
           <input
             value={newProduct.description}
             onChange={(event) =>
@@ -715,33 +797,21 @@ export function ProductManager() {
               }))
             }
             placeholder="Descripción"
-            className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-          />
-
-          <input
-            value={newProduct.image_url}
-            onChange={(event) =>
-              setNewProduct((current) => ({
-                ...current,
-                image_url: event.target.value,
-              }))
-            }
-            placeholder="URL de imagen opcional"
-            className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+            className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
           />
         </div>
 
         <div className="mt-3 rounded-2xl bg-[#F8F3E8] p-3 ring-1 ring-[#25262B]/[0.06]">
-          <div className="grid gap-4 md:grid-cols-[160px_1fr] md:items-center">
-            <div className="overflow-hidden rounded-2xl bg-white">
+          <div className="grid gap-4 md:grid-cols-[144px_1fr] md:items-center">
+            <div className="aspect-square w-36 overflow-hidden rounded-2xl bg-white">
               {newProduct.image_url ? (
                 <img
                   src={newProduct.image_url}
                   alt={newProduct.name || "Imagen del producto"}
-                  className="h-36 w-full object-cover"
+                  className="h-full w-full object-cover"
                 />
               ) : (
-                <div className="grid h-36 place-items-center text-[#746f69]">
+                <div className="grid h-full place-items-center text-[#746f69]">
                   <ImageIcon size={34} />
                 </div>
               )}
@@ -750,7 +820,7 @@ export function ProductManager() {
             <div>
               <h3 className="text-base font-black">Imagen del producto</h3>
               <p className="mt-1 text-xs font-bold text-[#746f69]">
-                Sube una foto desde tu equipo o pega una URL de imagen arriba.
+                Sube una foto cuadrada desde tu equipo para que se vea bien en todas las vistas.
               </p>
 
               <div className="mt-4 flex flex-wrap gap-2">
@@ -802,7 +872,32 @@ export function ProductManager() {
           </p>
         )}
 
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={() => setIsCreateOpen(false)}
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F8F3E8] px-5 py-3 text-sm font-black text-[#2E3A79]"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={createProduct}
+            disabled={isLoading}
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-5 py-3 text-sm font-black text-white disabled:opacity-60"
+          >
+            {isLoading ? (
+              <Loader2 size={17} className="animate-spin" />
+            ) : (
+              <Save size={17} />
+            )}
+            Guardar producto
+          </button>
+        </div>
+
         {error && <p className="mt-3 text-sm font-black text-red-600">{error}</p>}
+          </>
+        ) : null}
       </section>
 
       <section className="space-y-4">
@@ -810,30 +905,166 @@ export function ProductManager() {
           <div>
             <h2 className="text-2xl font-black">Productos editables</h2>
             <p className="text-sm font-bold text-[#746f69]">
-              {products.length} productos en tus catálogos.
+              {filteredProducts.length} de {products.length} productos en tus catálogos.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => loadData(pin)}
-            disabled={isLoading}
-            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-5 py-3 text-sm font-black text-white disabled:opacity-60"
-          >
-            {isLoading ? <Loader2 size={16} className="animate-spin" /> : null}
-            Actualizar lista
-          </button>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button
+              type="button"
+              onClick={() => loadData(pin)}
+              disabled={isLoading}
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-5 py-3 text-sm font-black text-white disabled:opacity-60"
+            >
+              {isLoading ? <Loader2 size={16} className="animate-spin" /> : null}
+              Actualizar lista
+            </button>
+          </div>
         </div>
 
-        {products.map((product) => (
-          <ProductEditor
-            key={product.id}
-            product={product}
-            stores={stores}
-            categories={categories}
-            pin={pin}
-            onSaved={() => loadData(pin)}
-          />
-        ))}
+        <div className="grid gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-[#25262B]/[0.06] lg:grid-cols-[1fr_auto]">
+          <label className="flex items-center gap-3 rounded-2xl bg-[#F8F3E8] px-4 py-3">
+            <Search size={18} className="text-[#746f69]" />
+            <input
+              value={productQuery}
+              onChange={(event) => setProductQuery(event.target.value)}
+              placeholder="Buscar producto..."
+              className="w-full bg-transparent text-sm font-bold outline-none placeholder:text-[#746f69]/70"
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-2 rounded-2xl bg-[#F8F3E8] p-1">
+            <button
+              type="button"
+              onClick={() => setProductView("comfortable")}
+              className={[
+                "inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-black",
+                productView === "comfortable"
+                  ? "bg-white text-[#2E3A79] shadow-sm"
+                  : "text-[#746f69]",
+              ].join(" ")}
+            >
+              <Grid2X2 size={15} />
+              Vista completa
+            </button>
+            <button
+              type="button"
+              onClick={() => setProductView("compact")}
+              className={[
+                "inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-black",
+                productView === "compact"
+                  ? "bg-white text-[#2E3A79] shadow-sm"
+                  : "text-[#746f69]",
+              ].join(" ")}
+            >
+              <LayoutList size={15} />
+              Vista compacta
+            </button>
+          </div>
+        </div>
+
+        {filteredProducts.length ? (
+          productView === "compact" ? (
+            <div className="space-y-2">
+              {filteredProducts.map((product) => (
+                <article
+                  key={product.id}
+                  className="relative rounded-xl bg-white px-3 py-2 shadow-sm ring-1 ring-[#25262B]/[0.06]"
+                >
+                  <div className="grid gap-3 sm:grid-cols-[56px_1fr_150px_auto] sm:items-center">
+                    <div className="h-14 w-14 overflow-hidden rounded-xl bg-[#F8F3E8]">
+                      {product.image_url ? (
+                        <img
+                          src={product.image_url}
+                          alt={product.name}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="grid h-full place-items-center text-[#746f69]">
+                          <ImageIcon size={22} />
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-black text-[#25262B]">
+                        {product.name}
+                      </h3>
+                      <p className="mt-1 truncate text-xs font-bold text-[#746f69]">
+                        ${Number(product.price_usd || 0).toFixed(2)} ·{" "}
+                        {product.categories?.name || "Sin categoría"}
+                      </p>
+                    </div>
+                    <div className="min-w-0 text-left sm:text-right">
+                      <span
+                        className={[
+                          "inline-flex rounded-full px-2.5 py-1 text-[11px] font-black",
+                          product.is_available
+                            ? "bg-green-100 text-green-700"
+                            : "bg-red-100 text-red-700",
+                        ].join(" ")}
+                      >
+                        {product.is_available ? "Disponible" : "No disponible"}
+                      </span>
+                      {getProductOptionGroups(product).length ? (
+                        <p className="mt-1 truncate text-[11px] font-black text-[#2E3A79]">
+                          Opciones:{" "}
+                          {getProductOptionGroups(product)
+                            .map((group) => group.name)
+                            .join(", ")}
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-[11px] font-bold text-[#746f69]">
+                          Sin opciones aplicadas
+                        </p>
+                      )}
+                    </div>
+                    <details className="sm:min-w-[260px]">
+                      <summary className="inline-flex cursor-pointer list-none items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-4 py-2 text-xs font-black text-white">
+                        Editar
+                      </summary>
+                      <div className="mt-3">
+                        <ProductEditor
+                          product={product}
+                          stores={stores}
+                          categories={categories}
+                          pin={pin}
+                          onSaved={() => loadData(pin)}
+                        />
+                      </div>
+                    </details>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="grid gap-3 2xl:grid-cols-2">
+              {filteredProducts.map((product) => (
+                <ProductEditor
+                  key={product.id}
+                  product={product}
+                  stores={stores}
+                  categories={categories}
+                  pin={pin}
+                  onSaved={() => loadData(pin)}
+                />
+              ))}
+            </div>
+          )
+        ) : (
+          <div className="rounded-[28px] bg-white p-6 text-center text-sm font-bold text-[#746f69] ring-1 ring-[#25262B]/[0.06]">
+            No encontramos productos con esa búsqueda.
+          </div>
+        )}
+
+        {page.hasMore ? (
+          <button
+            type="button"
+            onClick={() => loadData(pin, products.length)}
+            disabled={isLoading}
+            className="mx-auto inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-5 py-3 text-sm font-black text-white disabled:opacity-60"
+          >
+            {isLoading ? <Loader2 size={16} className="animate-spin" /> : null}
+            Cargar más productos
+          </button>
+        ) : null}
       </section>
     </div>
   );

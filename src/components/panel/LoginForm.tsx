@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Loader2, Lock } from "lucide-react";
 import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
@@ -125,6 +126,13 @@ export function LoginForm() {
         </button>
 
         {error && <p className="mt-3 text-sm font-black text-red-600">{error}</p>}
+
+        <p className="mt-5 text-xs font-bold text-[#746f69]">
+          ¿Aún no tienes comercio?{" "}
+          <Link href="/registro" className="font-black text-[#2E3A79]">
+            Empieza gratis
+          </Link>
+        </p>
       </section>
     </main>
   );

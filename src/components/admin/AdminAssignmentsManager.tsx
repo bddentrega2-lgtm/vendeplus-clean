@@ -50,6 +50,8 @@ export function AdminAssignmentsManager() {
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [createUser, setCreateUser] = useState(false);
   const [storeId, setStoreId] = useState("");
   const [role, setRole] = useState("operator");
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -92,11 +94,15 @@ export function AdminAssignmentsManager() {
           email,
           store_id: storeId,
           role,
+          password,
+          create_user: createUser,
         }),
       });
 
       setMessage(data.message || "Usuario asignado.");
       setEmail("");
+      setPassword("");
+      setCreateUser(false);
       await loadAssignments();
     } catch (error: any) {
       setError(error.message || "No se pudo asignar usuario.");
@@ -170,6 +176,32 @@ export function AdminAssignmentsManager() {
               className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#25262B]"
             />
           </label>
+
+          <button
+            type="button"
+            onClick={() => setCreateUser((current) => !current)}
+            className={[
+              "w-full rounded-2xl px-4 py-3 text-left text-sm font-black",
+              createUser ? "bg-[#2E3A79] text-white" : "bg-[#F8F3E8] text-[#2E3A79]",
+            ].join(" ")}
+          >
+            {createUser ? "Crear usuario nuevo" : "Asignar usuario existente"}
+          </button>
+
+          {createUser ? (
+            <label className="block space-y-1">
+              <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
+                Clave inicial
+              </span>
+              <input
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                type="password"
+                placeholder="Minimo 6 caracteres"
+                className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#25262B]"
+              />
+            </label>
+          ) : null}
 
           <label className="block space-y-1">
             <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">

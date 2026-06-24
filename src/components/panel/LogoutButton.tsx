@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
-import { clearPanelAuthStorage } from "@/lib/panel/client-auth";
+import { clearBrowserAuthStorage } from "@/lib/panel/client-auth";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export function LogoutButton() {
@@ -13,15 +13,20 @@ export function LogoutButton() {
   async function logout() {
     try {
       const supabase = createSupabaseBrowserClient();
-      await supabase?.auth.signOut();
+      await supabase?.auth.signOut({ scope: "global" });
     } catch {
       // Si Supabase no responde, igual limpiamos sesión local.
     }
 
-    clearPanelAuthStorage();
+    clearBrowserAuthStorage();
     clearSession();
 
-    router.push("/panel/login");
+    if (typeof window !== "undefined") {
+      window.location.replace("/panel/login");
+      return;
+    }
+
+    router.replace("/panel/login");
     router.refresh();
   }
 

@@ -220,7 +220,7 @@ export function StatsManager() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [stats, setStats] = useState<StatsData | null>(null);
   const [selectedStoreId, setSelectedStoreId] = useState("");
-  const [range, setRange] = useState("last_30_days");
+  const [range, setRange] = useState("last_7_days");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => shouldShowPanelInitialAccessGate());

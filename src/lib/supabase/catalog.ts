@@ -2,6 +2,9 @@
 import { getStoreBySlug as getFallbackStoreBySlug, stores as fallbackStores } from "@/data/stores";
 import { createSupabasePublicClient } from "@/lib/supabase/server";
 import { isMissingColumnError } from "@/lib/supabase/schema-compat";
+import type { ProductOptionGroup } from "@/types";
+import { mapStoreDeliverySettings } from "@/lib/delivery";
+import { getStoreOpenState } from "@/lib/business-hours";
 
 type AnyRecord = Record<string, any>;
 
@@ -12,6 +15,13 @@ const fallbackHeroImages: Record<string, string> = {
   "china-twon": "https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&w=1400&q=80",
   "bizcochos-ascoli": "https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=1400&q=80",
 };
+
+function allowDemoFallbacks() {
+  return (
+    process.env.NODE_ENV !== "production" ||
+    process.env.NEXT_PUBLIC_ALLOW_DEMO_FALLBACKS === "true"
+  );
+}
 
 function slugify(value: string) {
   return value
@@ -66,6 +76,50 @@ function mapVariant(row: AnyRecord, productPriceUsd: number): ProductVariant {
   };
 }
 
+function mapOptionGroups(product: AnyRecord): ProductOptionGroup[] {
+  const assignmentsRaw: AnyRecord[] = Array.isArray(product.product_option_group_products)
+    ? product.product_option_group_products
+    : [];
+
+  return assignmentsRaw
+    .sort((a, b) => toNumber(a.sort_order) - toNumber(b.sort_order))
+    .map((assignment) => assignment.product_option_groups)
+    .filter((group) => group && group.is_active !== false)
+    .sort((a, b) => toNumber(a.sort_order) - toNumber(b.sort_order))
+    .map((group) => {
+      const valuesRaw: AnyRecord[] = Array.isArray(group.product_option_values)
+        ? group.product_option_values
+        : [];
+      const selectionType: ProductOptionGroup["selectionType"] =
+        group.selection_type === "multiple" ? "multiple" : "single";
+
+      return {
+        id: String(group.id),
+        name: group.name || "Opciones",
+        description: group.description || "",
+        selectionType,
+        required: Boolean(group.required),
+        minSelect: Math.max(0, toNumber(group.min_select, group.required ? 1 : 0)),
+        maxSelect: Math.max(
+          0,
+          toNumber(group.max_select, selectionType === "single" ? 1 : 0)
+        ),
+        isActive: group.is_active !== false,
+        values: valuesRaw
+          .filter((value) => value.is_active !== false)
+          .sort((a, b) => toNumber(a.sort_order) - toNumber(b.sort_order))
+          .map((value) => ({
+            id: String(value.id),
+            name: value.name || "Opción",
+            description: value.description || "",
+            priceDeltaUsd: toNumber(value.price_delta_usd, 0),
+            isActive: value.is_active !== false,
+          })),
+      };
+    })
+    .filter((group) => group.values.length > 0);
+}
+
 function mapStore(row: AnyRecord): Store {
   const categoriesRaw: AnyRecord[] = Array.isArray(row.categories) ? row.categories : [];
   const productsRaw: AnyRecord[] = Array.isArray(row.products) ? row.products : [];
@@ -106,6 +160,7 @@ function mapStore(row: AnyRecord): Store {
           .filter((variant) => variant.is_available !== false)
           .sort((a, b) => toNumber(a.sort_order) - toNumber(b.sort_order))
           .map((variant) => mapVariant(variant, priceUsd)),
+        optionGroups: mapOptionGroups(product),
       };
     });
 
@@ -136,6 +191,16 @@ function mapStore(row: AnyRecord): Store {
     primaryColor: row.primary_color || fallback?.primaryColor || "#2E3A79",
     accentColor: row.accent_color || fallback?.accentColor || "#FFB547",
     buttonTextColor: row.button_text_color || fallback?.buttonTextColor || "#25262B",
+    deliverySettings: mapStoreDeliverySettings(row),
+    businessHours: toRecord(row.business_hours),
+    manualOpenStatus: row.manual_open_status || "auto",
+    manualOpenNote: row.manual_open_note || "",
+    openState: getStoreOpenState({
+      manualOpenStatus: row.manual_open_status,
+      manualOpenNote: row.manual_open_note,
+      businessHours: toRecord(row.business_hours),
+      openingHoursText: row.opening_hours,
+    }),
   };
 }
 
@@ -155,10 +220,106 @@ const storeSelect = `
   button_text_color,
   business_type,
   opening_hours,
+  business_hours,
+  manual_open_status,
+  manual_open_note,
   delivery_estimate,
   pickup_estimate,
   payment_methods,
   payment_details,
+  usd_to_bs,
+  whatsapp_message_note,
+  is_active,
+  accepts_delivery,
+  accepts_pickup,
+  store_delivery_settings (
+    *
+  ),
+  store_delivery_zones (
+    id,
+    name,
+    description,
+    fee_usd,
+    is_active,
+    sort_order
+  ),
+  store_delivery_distance_rates (
+    id,
+    min_km,
+    max_km,
+    fee_usd,
+    is_active,
+    sort_order
+  ),
+  categories (
+    id,
+    name,
+    sort_order,
+    is_active
+  ),
+  products (
+    id,
+    store_id,
+    category_id,
+    name,
+    description,
+    price_usd,
+    image_url,
+    is_available,
+    is_featured,
+    sort_order,
+    product_variants (
+      id,
+      name,
+      price_usd,
+      is_available,
+      sort_order
+    ),
+    product_option_group_products (
+      id,
+      sort_order,
+      product_option_groups (
+        id,
+        name,
+        description,
+        selection_type,
+        required,
+        min_select,
+        max_select,
+        is_active,
+        sort_order,
+        product_option_values (
+          id,
+          name,
+          description,
+          price_delta_usd,
+          is_active,
+          sort_order
+        )
+      )
+    )
+  )
+`;
+
+const baseStoreSelect = `
+  id,
+  slug,
+  name,
+  description,
+  address,
+  latitude,
+  longitude,
+  whatsapp,
+  cover_image_url,
+  logo_url,
+  primary_color,
+  accent_color,
+  button_text_color,
+  business_type,
+  opening_hours,
+  delivery_estimate,
+  pickup_estimate,
+  payment_methods,
   usd_to_bs,
   whatsapp_message_note,
   is_active,
@@ -187,11 +348,34 @@ const storeSelect = `
       price_usd,
       is_available,
       sort_order
+    ),
+    product_option_group_products (
+      id,
+      sort_order,
+      product_option_groups (
+        id,
+        name,
+        description,
+        selection_type,
+        required,
+        min_select,
+        max_select,
+        is_active,
+        sort_order,
+        product_option_values (
+          id,
+          name,
+          description,
+          price_delta_usd,
+          is_active,
+          sort_order
+        )
+      )
     )
   )
 `;
 
-const baseStoreSelect = `
+const legacyStoreSelect = `
   id,
   slug,
   name,
@@ -252,7 +436,7 @@ function withPaymentDetailsFallback(row: AnyRecord) {
 export async function getPublicStores(): Promise<Store[]> {
   const supabase = createSupabasePublicClient();
 
-  if (!supabase) return fallbackStores;
+  if (!supabase) return allowDemoFallbacks() ? fallbackStores : [];
 
   const storesResult = await supabase
     .from("stores")
@@ -261,10 +445,10 @@ export async function getPublicStores(): Promise<Store[]> {
   let data: any[] | null = storesResult.data as any;
   let error = storesResult.error;
 
-  if (error && isMissingColumnError(error, ["payment_details"])) {
+  if (error) {
     const fallbackResult = await supabase
       .from("stores")
-      .select(baseStoreSelect)
+      .select(legacyStoreSelect)
       .eq("is_active", true);
 
     data = fallbackResult.data?.map(withPaymentDetailsFallback) || [];
@@ -273,7 +457,7 @@ export async function getPublicStores(): Promise<Store[]> {
 
   if (error || !data?.length) {
     console.warn("Using fallback stores. Supabase error:", error?.message);
-    return fallbackStores;
+    return allowDemoFallbacks() ? fallbackStores : [];
   }
 
   return data.map(mapStore);
@@ -282,7 +466,9 @@ export async function getPublicStores(): Promise<Store[]> {
 export async function getPublicStoreBySlug(slug: string): Promise<Store | null> {
   const supabase = createSupabasePublicClient();
 
-  if (!supabase) return getFallbackStoreBySlug(slug) || null;
+  if (!supabase) {
+    return allowDemoFallbacks() ? getFallbackStoreBySlug(slug) || null : null;
+  }
 
   const storeResult = await supabase
     .from("stores")
@@ -293,10 +479,10 @@ export async function getPublicStoreBySlug(slug: string): Promise<Store | null> 
   let data: any | null = storeResult.data as any;
   let error = storeResult.error;
 
-  if (error && isMissingColumnError(error, ["payment_details"])) {
+  if (error) {
     const fallbackResult = await supabase
       .from("stores")
-      .select(baseStoreSelect)
+      .select(legacyStoreSelect)
       .eq("slug", slug)
       .eq("is_active", true)
       .maybeSingle();
@@ -309,7 +495,7 @@ export async function getPublicStoreBySlug(slug: string): Promise<Store | null> 
 
   if (error || !data) {
     console.warn("Using fallback store. Supabase error:", error?.message);
-    return getFallbackStoreBySlug(slug) || null;
+    return allowDemoFallbacks() ? getFallbackStoreBySlug(slug) || null : null;
   }
 
   return mapStore(data);

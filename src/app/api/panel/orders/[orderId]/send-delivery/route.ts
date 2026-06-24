@@ -98,6 +98,7 @@ export async function POST(
         customer_name,
         customer_phone,
         delivery_type,
+        delivery_provider,
         payment_method,
         subtotal_usd,
         delivery_usd,
@@ -141,6 +142,10 @@ export async function POST(
 
     if (order.delivery_type !== "delivery") {
       return badRequest("Solo los pedidos delivery se pueden enviar a Entrega2.");
+    }
+
+    if (order.delivery_provider !== "entrega2") {
+      return badRequest("Este pedido no está configurado para Entrega2.");
     }
 
     if (!cleanText(order.customer_name) || !cleanText(order.customer_phone)) {

@@ -5,16 +5,16 @@ import {
   CheckCircle2,
   Loader2,
   Lock,
+  MapPin,
   RefreshCcw,
   Copy,
   ExternalLink,
   ImageIcon,
   Save,
-  Settings,
-  Store,
   Upload,
 } from "lucide-react";
 import { PanelAccessGate, PanelModuleSkeleton } from "@/components/panel/PanelLoadingState";
+import { LocationPicker } from "@/components/public/LocationPicker";
 import {
   getPanelAccessToken,
   getPanelAuthHeaders,
@@ -23,7 +23,14 @@ import {
   savePanelPin,
   shouldShowPanelInitialAccessGate,
 } from "@/lib/panel/client-auth";
-import type { StorePaymentDetails } from "@/types";
+import { compressImageForUpload } from "@/lib/images/client-compress";
+import type {
+  BusinessDayKey,
+  BusinessHours,
+  DeliveryLocation,
+  ManualOpenStatus,
+  StorePaymentDetails,
+} from "@/types";
 
 type StoreRow = {
   id: string;
@@ -35,6 +42,7 @@ type StoreRow = {
   address: string | null;
   latitude: number | string | null;
   longitude: number | string | null;
+  location_link?: string | null;
   cover_image_url: string | null;
   logo_url: string | null;
   opening_hours: string | null;
@@ -43,6 +51,12 @@ type StoreRow = {
   payment_methods: string[] | null;
   payment_details: StorePaymentDetails | null;
   usd_to_bs: number | string | null;
+  base_currency?: "USD" | "EUR" | string | null;
+  business_hours?: BusinessHours | null;
+  manual_open_status?: ManualOpenStatus | string | null;
+  manual_open_note?: string | null;
+  exchange_rate_source?: string | null;
+  exchange_rate_updated_at?: string | null;
   whatsapp_message_note: string | null;
   primary_color: string | null;
   accent_color: string | null;
@@ -50,6 +64,14 @@ type StoreRow = {
   accepts_delivery: boolean;
   accepts_pickup: boolean;
   is_active: boolean;
+};
+
+type GeocodeResult = {
+  label: string;
+  latitude: number;
+  longitude: number;
+  source: string;
+  locationLink: string;
 };
 
 const businessTypes = [
@@ -61,6 +83,30 @@ const businessTypes = [
   { value: "beauty", label: "Belleza" },
   { value: "general", label: "General / Otro" },
 ];
+
+const businessDayOptions: Array<{ key: BusinessDayKey; label: string }> = [
+  { key: "mon", label: "Lun" },
+  { key: "tue", label: "Mar" },
+  { key: "wed", label: "Mié" },
+  { key: "thu", label: "Jue" },
+  { key: "fri", label: "Vie" },
+  { key: "sat", label: "Sáb" },
+  { key: "sun", label: "Dom" },
+];
+
+function normalizeBusinessHours(value: unknown): BusinessHours {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as BusinessHours;
+}
+
+function getBusinessDayRange(hours: BusinessHours, day: BusinessDayKey) {
+  const range = hours[day]?.[0];
+  return {
+    enabled: range?.enabled === true,
+    open: range?.open || "09:00",
+    close: range?.close || "18:00",
+  };
+}
 
 const defaultPaymentMethodOptions = [
   "Pago móvil",
@@ -146,8 +192,9 @@ async function uploadStoreAsset(
   assetName: string,
   pin: string
 ) {
+  const uploadFile = await compressImageForUpload(file);
   const formData = new FormData();
-  formData.append("file", file);
+  formData.append("file", uploadFile);
   formData.append("store_id", storeId);
   formData.append("product_id", assetName);
 
@@ -196,11 +243,22 @@ function StoreSettingsCard({
       : ["Pago móvil", "Transferencia", "Efectivo", "Binance"],
     payment_details: mergePaymentDetails(store.payment_details),
     usd_to_bs: String(store.usd_to_bs || 600),
+    base_currency:
+      String(store.base_currency || "USD").toUpperCase() === "EUR" ? "EUR" : "USD",
+    business_hours: normalizeBusinessHours(store.business_hours),
+    manual_open_status:
+      store.manual_open_status === "open" || store.manual_open_status === "closed"
+        ? store.manual_open_status
+        : "auto",
+    manual_open_note: store.manual_open_note || "",
+    exchange_rate_source: store.exchange_rate_source || "",
+    exchange_rate_updated_at: store.exchange_rate_updated_at || "",
+    location_link: store.location_link || "",
     whatsapp_message_note: store.whatsapp_message_note || "",
     primary_color: store.primary_color || "#2E3A79",
     accent_color: store.accent_color || "#FFB547",
     button_text_color: store.button_text_color || "#25262B",
-    accepts_delivery: store.accepts_delivery !== false,
+    accepts_delivery: store.accepts_delivery === true,
     accepts_pickup: store.accepts_pickup !== false,
     is_active: store.is_active !== false,
   });
@@ -208,7 +266,11 @@ function StoreSettingsCard({
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isUploadingCover, setIsUploadingCover] = useState(false);
+  const [isFetchingRate, setIsFetchingRate] = useState(false);
+  const [isSearchingAddress, setIsSearchingAddress] = useState(false);
+  const [addressResults, setAddressResults] = useState<GeocodeResult[]>([]);
   const [message, setMessage] = useState("");
+  const [customPaymentMethod, setCustomPaymentMethod] = useState("");
   const logoInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
 
@@ -217,6 +279,21 @@ function StoreSettingsCard({
       ...current,
       [field]: value,
     }));
+  }
+
+  function updateBusinessDay(day: BusinessDayKey, patch: Partial<{ enabled: boolean; open: string; close: string }>) {
+    setDraft((current) => {
+      const existing = getBusinessDayRange(current.business_hours, day);
+      const next = { ...existing, ...patch };
+
+      return {
+        ...current,
+        business_hours: {
+          ...current.business_hours,
+          [day]: next.enabled ? [next] : [],
+        },
+      };
+    });
   }
 
   function updatePaymentDetail(
@@ -248,6 +325,26 @@ function StoreSettingsCard({
     });
   }
 
+  function addCustomPaymentMethod() {
+    const method = customPaymentMethod.trim();
+    if (!method) return;
+
+    setDraft((current) => ({
+      ...current,
+      payment_methods: current.payment_methods.includes(method)
+        ? current.payment_methods
+        : [...current.payment_methods, method],
+    }));
+    setCustomPaymentMethod("");
+  }
+
+  function removePaymentMethod(method: string) {
+    setDraft((current) => ({
+      ...current,
+      payment_methods: current.payment_methods.filter((item) => item !== method),
+    }));
+  }
+
   async function copyStoreLink() {
     const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
     const url = `${baseUrl}/${store.slug}`;
@@ -265,9 +362,16 @@ function StoreSettingsCard({
         method: "PATCH",
         body: JSON.stringify({
           ...draft,
+          primary_color: "#2E3A79",
+          accent_color: "#FFB547",
+          button_text_color: "#25262B",
           payment_methods: draft.payment_methods,
           payment_details: draft.payment_details,
           usd_to_bs: Number(draft.usd_to_bs || 600),
+          base_currency: draft.base_currency,
+          exchange_rate_source: draft.exchange_rate_source,
+          exchange_rate_updated_at: draft.exchange_rate_updated_at,
+          location_link: draft.location_link,
         }),
       });
 
@@ -298,6 +402,82 @@ function StoreSettingsCard({
     }
   }
 
+  async function refreshExchangeRate() {
+    setIsFetchingRate(true);
+    setMessage("Consultando tasa automática...");
+
+    try {
+      const response = await fetch(
+        `/api/panel/exchange-rate?currency=${draft.base_currency}`,
+        { headers: await getPanelAuthHeaders(pin) }
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "No se pudo consultar la tasa.");
+      }
+
+      setDraft((current) => ({
+        ...current,
+        usd_to_bs: String(Number(data.rate || current.usd_to_bs).toFixed(2)),
+        exchange_rate_source: data.source || "api",
+        exchange_rate_updated_at: data.updatedAt || new Date().toISOString(),
+      }));
+      setMessage("Tasa actualizada. Presiona Guardar cambios para aplicarla.");
+    } catch (error: any) {
+      setMessage(error.message || "No se pudo actualizar la tasa.");
+    } finally {
+      setIsFetchingRate(false);
+    }
+  }
+
+  async function searchAddress() {
+    const query = draft.address.trim();
+
+    if (query.length < 3) {
+      setMessage("Escribe al menos 3 caracteres para buscar una dirección.");
+      return;
+    }
+
+    setIsSearchingAddress(true);
+    setMessage("Buscando direcciones...");
+
+    try {
+      const response = await fetch(
+        `/api/panel/geocode?q=${encodeURIComponent(query)}`,
+        { headers: await getPanelAuthHeaders(pin) }
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "No se pudo buscar la dirección.");
+      }
+
+      setAddressResults(data.results || []);
+      setMessage(
+        data.results?.length
+          ? "Elige una ubicación sugerida para llenar el mapa."
+          : "No encontré sugerencias. Puedes pegar un link de Maps o colocar coordenadas."
+      );
+    } catch (error: any) {
+      setMessage(error.message || "No se pudo buscar la dirección.");
+    } finally {
+      setIsSearchingAddress(false);
+    }
+  }
+
+  function applyAddressResult(result: GeocodeResult) {
+    setDraft((current) => ({
+      ...current,
+      address: result.label,
+      latitude: String(result.latitude),
+      longitude: String(result.longitude),
+      location_link: result.locationLink,
+    }));
+    setAddressResults([]);
+    setMessage("Ubicación aplicada. Presiona Guardar cambios para dejarla activa.");
+  }
+
   async function uploadCover(file?: File) {
     if (!file) return;
 
@@ -314,6 +494,37 @@ function StoreSettingsCard({
       setIsUploadingCover(false);
       if (coverInputRef.current) coverInputRef.current.value = "";
     }
+  }
+
+  const parsedLatitude = Number(draft.latitude);
+  const parsedLongitude = Number(draft.longitude);
+  const hasStoreLocation =
+    Number.isFinite(parsedLatitude) && Number.isFinite(parsedLongitude);
+  const mapLatitude = hasStoreLocation ? parsedLatitude : 10.4806;
+  const mapLongitude = hasStoreLocation ? parsedLongitude : -66.9036;
+  const selectedStoreLocation: DeliveryLocation | null = hasStoreLocation
+    ? {
+        latitude: parsedLatitude,
+        longitude: parsedLongitude,
+        label: draft.address || "Ubicacion del negocio",
+        source: "map",
+      }
+    : null;
+  const activeBusinessDaysCount = businessDayOptions.filter(
+    (day) => getBusinessDayRange(draft.business_hours, day.key).enabled
+  ).length;
+
+  function applyStoreLocation(location: DeliveryLocation) {
+    const mapsLink = `https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`;
+
+    setDraft((current) => ({
+      ...current,
+      latitude: String(location.latitude),
+      longitude: String(location.longitude),
+      address: current.address || location.label,
+      location_link: mapsLink,
+    }));
+    setMessage("Ubicacion del negocio aplicada. Presiona Guardar cambios para dejarla activa.");
   }
 
   return (
@@ -389,55 +600,7 @@ function StoreSettingsCard({
             ))}
           </select>
         </label>
-      </div>      <section className="mt-6 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h3 className="text-xl font-black text-[#25262B]">Identidad visual</h3>
-            <p className="mt-1 text-sm font-bold text-[#746f69]">
-              Personaliza cómo se ve el catálogo público de este comercio.
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-4 grid gap-4 xl:grid-cols-3">
-          <label className="space-y-1">
-            <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-              Color primario
-            </span>
-            <input
-              type="color"
-              value={draft.primary_color}
-              onChange={(event) => updateField("primary_color", event.target.value)}
-              className="h-12 w-full rounded-2xl border border-[#25262B]/10 bg-white px-2 py-2 outline-none"
-            />
-          </label>
-
-          <label className="space-y-1">
-            <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-              Color de botón
-            </span>
-            <input
-              type="color"
-              value={draft.accent_color}
-              onChange={(event) => updateField("accent_color", event.target.value)}
-              className="h-12 w-full rounded-2xl border border-[#25262B]/10 bg-white px-2 py-2 outline-none"
-            />
-          </label>
-
-          <label className="space-y-1">
-            <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-              Texto del botón
-            </span>
-            <input
-              type="color"
-              value={draft.button_text_color}
-              onChange={(event) => updateField("button_text_color", event.target.value)}
-              className="h-12 w-full rounded-2xl border border-[#25262B]/10 bg-white px-2 py-2 outline-none"
-            />
-          </label>
-        </div>
-      </section>
-
+      </div>
 
       <div className="mt-4">
         <label className="space-y-1">
@@ -476,19 +639,90 @@ function StoreSettingsCard({
             placeholder="Lunes a sábado, 10am - 8pm"
             className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
           />
+          <span className="block text-[11px] font-bold text-[#746f69]">
+            Este texto se muestra al cliente. El cierre automatico por horario requiere el modulo de horarios.
+          </span>
         </label>
 
-        <label className="space-y-1">
+        <div className="rounded-2xl border border-[#25262B]/10 p-3">
           <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-            Tasa USD a Bs
+            Estado del negocio
           </span>
+          <div className="mt-2 grid gap-2 sm:grid-cols-3">
+            {[
+              ["auto", "Según horario"],
+              ["open", "Forzar abierto"],
+              ["closed", "Cerrar ahora"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => updateField("manual_open_status", value)}
+                className={[
+                  "rounded-full px-3 py-2 text-xs font-black",
+                  draft.manual_open_status === value
+                    ? "bg-[#2E3A79] text-white"
+                    : "bg-[#F8F3E8] text-[#746f69]",
+                ].join(" ")}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <input
-            type="number"
-            value={draft.usd_to_bs}
-            onChange={(event) => updateField("usd_to_bs", event.target.value)}
-            className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+            value={draft.manual_open_note}
+            onChange={(event) => updateField("manual_open_note", event.target.value)}
+            placeholder="Nota visible: Cerramos por lluvia, volvemos a las 5pm..."
+            className="mt-3 w-full rounded-xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold outline-none focus:border-[#2E3A79]"
           />
-        </label>
+        </div>
+
+        <div className="rounded-2xl border border-[#25262B]/10 p-3">
+          <div className="grid gap-2 sm:grid-cols-[110px_1fr]">
+            <label className="space-y-1">
+              <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
+                Moneda
+              </span>
+              <select
+                value={draft.base_currency}
+                onChange={(event) => updateField("base_currency", event.target.value)}
+                className="w-full rounded-xl border border-[#25262B]/10 px-3 py-2 text-sm font-black outline-none focus:border-[#2E3A79]"
+              >
+                <option value="USD">Dólar</option>
+                <option value="EUR">Euro</option>
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
+                Tasa a Bs
+              </span>
+              <input
+                type="number"
+                value={draft.usd_to_bs}
+                onChange={(event) => updateField("usd_to_bs", event.target.value)}
+                className="w-full rounded-xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold outline-none focus:border-[#2E3A79]"
+              />
+            </label>
+          </div>
+          <button
+            type="button"
+            onClick={refreshExchangeRate}
+            disabled={isFetchingRate}
+            className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-4 py-2 text-xs font-black text-white disabled:opacity-60"
+          >
+            {isFetchingRate ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <RefreshCcw size={14} />
+            )}
+            Actualizar tasa BCV
+          </button>
+          {draft.exchange_rate_updated_at ? (
+            <p className="mt-2 truncate text-[11px] font-bold text-[#746f69]">
+              Fuente API: {draft.exchange_rate_source || "configurada"}
+            </p>
+          ) : null}
+        </div>
       </div>
 
       <section className="mt-4 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
@@ -498,7 +732,7 @@ function StoreSettingsCard({
               <img
                 src={draft.logo_url}
                 alt={`Logo de ${draft.name}`}
-                className="h-full w-full object-contain p-3"
+                className="h-full w-full object-cover"
               />
             ) : (
               <ImageIcon size={30} className="text-[#746f69]" />
@@ -550,15 +784,49 @@ function StoreSettingsCard({
           <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
             Dirección
           </span>
-          <input
-            value={draft.address}
-            onChange={(event) => updateField("address", event.target.value)}
-            className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-          />
+          <div className="grid gap-2 md:grid-cols-[1fr_auto]">
+            <input
+              value={draft.address}
+              onChange={(event) => updateField("address", event.target.value)}
+              placeholder="Ej: C.C. Las Américas, Maracay"
+              className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+            />
+            <button
+              type="button"
+              onClick={searchAddress}
+              disabled={isSearchingAddress}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#2E3A79] px-5 py-3 text-sm font-black text-white disabled:opacity-60"
+            >
+              {isSearchingAddress ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <MapPin size={16} />
+              )}
+              Buscar
+            </button>
+          </div>
         </label>
+
+        {addressResults.length > 0 ? (
+          <div className="mt-3 grid gap-2">
+            {addressResults.map((result) => (
+              <button
+                key={`${result.latitude}-${result.longitude}-${result.label}`}
+                type="button"
+                onClick={() => applyAddressResult(result)}
+                className="rounded-2xl bg-[#F8F3E8] p-3 text-left text-sm font-bold leading-relaxed text-[#25262B] ring-1 ring-[#25262B]/[0.06] transition hover:bg-white"
+              >
+                <span className="block font-black">{result.label}</span>
+                <span className="text-xs text-[#746f69]">
+                  {result.latitude.toFixed(6)}, {result.longitude.toFixed(6)}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-4">
+      <div className="mt-4 grid gap-4 xl:grid-cols-3">
         <label className="space-y-1">
           <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
             Latitud
@@ -583,7 +851,7 @@ function StoreSettingsCard({
 
         <label className="space-y-1">
           <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-            Tiempo de entrega
+            Tiempo de Delivery
           </span>
           <input
             value={draft.delivery_estimate}
@@ -592,17 +860,95 @@ function StoreSettingsCard({
           />
         </label>
 
-        <label className="space-y-1">
-          <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-            Tiempo de retiro
-          </span>
-          <input
-            value={draft.pickup_estimate}
-            onChange={(event) => updateField("pickup_estimate", event.target.value)}
-            className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-          />
-        </label>
       </div>
+
+      <details className="group mt-4 rounded-[28px] bg-white p-4 ring-1 ring-[#25262B]/10">
+        <summary className="flex cursor-pointer list-none flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-lg font-black text-[#25262B]">Horario automático</h3>
+            <p className="text-sm font-bold text-[#746f69]">
+              {activeBusinessDaysCount
+                ? `${activeBusinessDaysCount} día${activeBusinessDaysCount === 1 ? "" : "s"} activo${activeBusinessDaysCount === 1 ? "" : "s"}`
+                : "Sin horario automático configurado"}
+            </p>
+          </div>
+          <span className="inline-flex items-center justify-center rounded-full bg-[#F8F3E8] px-4 py-2 text-xs font-black text-[#2E3A79]">
+            Configurar horario
+          </span>
+        </summary>
+        <div className="mt-4 border-t border-[#25262B]/10 pt-4">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-bold text-[#746f69]">
+              Activa solo los días donde el negocio debe recibir pedidos.
+            </p>
+            <span className="rounded-full bg-[#F8F3E8] px-3 py-1 text-xs font-black text-[#746f69]">
+              Hora Venezuela
+            </span>
+          </div>
+          <div className="mt-3 grid gap-2">
+            {businessDayOptions.map((day) => {
+              const range = getBusinessDayRange(draft.business_hours, day.key);
+              return (
+                <div
+                  key={day.key}
+                  className="grid gap-2 rounded-2xl bg-[#F8F3E8] p-3 sm:grid-cols-[74px_1fr_1fr_auto] sm:items-center"
+                >
+                  <span className="text-sm font-black text-[#25262B]">{day.label}</span>
+                  <input
+                    type="time"
+                    value={range.open}
+                    onChange={(event) => updateBusinessDay(day.key, { open: event.target.value, enabled: true })}
+                    className="rounded-xl border border-[#25262B]/10 bg-white px-3 py-2 text-sm font-black outline-none"
+                  />
+                  <input
+                    type="time"
+                    value={range.close}
+                    onChange={(event) => updateBusinessDay(day.key, { close: event.target.value, enabled: true })}
+                    className="rounded-xl border border-[#25262B]/10 bg-white px-3 py-2 text-sm font-black outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => updateBusinessDay(day.key, { enabled: !range.enabled })}
+                    className={[
+                      "rounded-full px-4 py-2 text-xs font-black",
+                      range.enabled
+                        ? "bg-green-100 text-green-700"
+                        : "bg-white text-[#746f69]",
+                    ].join(" ")}
+                  >
+                    {range.enabled ? "Activo" : "Inactivo"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </details>
+
+      <section className="mt-4 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h3 className="text-lg font-black text-[#25262B]">Ubicacion en mapa</h3>
+            <p className="text-sm font-bold text-[#746f69]">
+              Usa GPS o toca el punto exacto del negocio para calcular rutas y delivery.
+            </p>
+          </div>
+          {hasStoreLocation ? (
+            <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-[#2E3A79]">
+              {parsedLatitude.toFixed(5)}, {parsedLongitude.toFixed(5)}
+            </span>
+          ) : null}
+        </div>
+        <div className="mt-3">
+          <LocationPicker
+            mode="store"
+            storeLatitude={mapLatitude}
+            storeLongitude={mapLongitude}
+            value={selectedStoreLocation}
+            onChange={applyStoreLocation}
+          />
+        </div>
+      </section>
 
       <section className="mt-4 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
         <h3 className="text-lg font-black text-[#25262B]">Métodos de pago activos</h3>
@@ -620,11 +966,46 @@ function StoreSettingsCard({
                 ].join(" ")}
               >
                 {active ? "Activo · " : "Agregar · "}
-                {method}
-              </button>
-            );
-          })}
+              {method}
+            </button>
+          );
+        })}
         </div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto]">
+          <input
+            value={customPaymentMethod}
+            onChange={(event) => setCustomPaymentMethod(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                addCustomPaymentMethod();
+              }
+            }}
+            placeholder="Agregar otro método: Reserve, punto de venta, PayPal..."
+            className="rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+          />
+          <button
+            type="button"
+            onClick={addCustomPaymentMethod}
+            className="rounded-2xl bg-[#2E3A79] px-5 py-3 text-sm font-black text-white"
+          >
+            Agregar método
+          </button>
+        </div>
+        {draft.payment_methods.length ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {draft.payment_methods.map((method) => (
+              <button
+                key={method}
+                type="button"
+                onClick={() => removePaymentMethod(method)}
+                className="rounded-full bg-white px-3 py-1.5 text-xs font-black text-[#746f69]"
+              >
+                Quitar · {method}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </section>
 
       <section className="mt-4 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
@@ -645,7 +1026,7 @@ function StoreSettingsCard({
           <div>
             <h3 className="text-lg font-black text-[#25262B]">Imagen de portada</h3>
             <p className="mt-1 text-sm font-bold text-[#746f69]">
-              Sube una portada o pega una URL para el catálogo público.
+              Sube una portada desde tu equipo para el catálogo público.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <input
@@ -674,28 +1055,25 @@ function StoreSettingsCard({
                 </button>
               )}
             </div>
-            <input
-              value={draft.cover_image_url}
-              onChange={(event) => updateField("cover_image_url", event.target.value)}
-              placeholder="URL de portada opcional"
-              className="mt-3 w-full rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-            />
           </div>
         </div>
       </section>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-2">
+      <div className="mt-4">
         <label className="space-y-1">
           <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-            Logo URL
+            Link de ubicación
           </span>
           <input
-            value={draft.logo_url}
-            onChange={(event) => updateField("logo_url", event.target.value)}
-            placeholder="https://..."
+            value={draft.location_link}
+            onChange={(event) => updateField("location_link", event.target.value)}
+            placeholder="Pega aquí un enlace de Google Maps con el punto del comercio"
             className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
           />
         </label>
+        <p className="mt-2 text-xs font-bold text-[#746f69]">
+          Al guardar, si el enlace trae coordenadas, Vende+ actualizará latitud y longitud automáticamente.
+        </p>
       </div>
 
       <section className="mt-4 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
@@ -851,7 +1229,7 @@ function StoreSettingsCard({
             draft.accepts_delivery ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700",
           ].join(" ")}
         >
-          {draft.accepts_delivery ? "Entrega activa" : "Entrega inactiva"}
+          {draft.accepts_delivery ? "Delivery activo" : "Delivery inactivo"}
         </button>
 
         <button
@@ -862,7 +1240,7 @@ function StoreSettingsCard({
             draft.accepts_pickup ? "bg-blue-100 text-blue-700" : "bg-red-100 text-red-700",
           ].join(" ")}
         >
-          {draft.accepts_pickup ? "Retiro activo" : "Retiro inactivo"}
+          {draft.accepts_pickup ? "Retiro (pick up) activo" : "Retiro (pick up) inactivo"}
         </button>
 
         <button
@@ -873,7 +1251,19 @@ function StoreSettingsCard({
             draft.is_active ? "bg-[#FFB547] text-[#25262B]" : "bg-red-100 text-red-700",
           ].join(" ")}
         >
-          {draft.is_active ? "Comercio activo" : "Comercio oculto"}
+          {draft.is_active ? "Visible en la web" : "Oculto en la web"}
+        </button>
+      </div>
+
+      <div className="mt-5 flex justify-end">
+        <button
+          type="button"
+          onClick={saveSettings}
+          disabled={isSaving}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B] disabled:opacity-60 sm:w-auto"
+        >
+          {isSaving ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />}
+          Guardar cambios
         </button>
       </div>
 
@@ -989,20 +1379,11 @@ export function ConfigManager() {
             <p className="text-sm font-black uppercase tracking-[0.18em] text-[#FFB547]">
               Configuración del negocio
             </p>
-            <h2 className="mt-2 text-3xl font-black">Tus negocios</h2>
+            <h2 className="mt-2 text-3xl font-black">Configuración</h2>
             <p className="mt-2 text-sm font-semibold leading-relaxed text-white/70">
-              Edita datos comerciales, tipo de negocio, métodos de pago, tiempos y operación.
+              Edita datos comerciales, ubicación, métodos de pago y operación.
             </p>
           </div>
-
-          <button
-            type="button"
-            onClick={() => loadConfig(pin)}
-            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
-          >
-            <RefreshCcw size={16} />
-            Actualizar
-          </button>
         </div>
       </section>
 

@@ -236,3 +236,54 @@ export async function PATCH(request: NextRequest) {
     return panelErrorResponse(error, "Error actualizando catálogo.");
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const auth = await requirePanelAuth(request);
+    const body = await request.json();
+    const resource = String(body.resource || "");
+
+    if (!body.id) {
+      return badRequest("Falta el ID del recurso.");
+    }
+
+    const supabase = createSupabaseAdminClient();
+
+    if (resource === "category") {
+      const { data: existingCategory, error: existingError } = await supabase
+        .from("categories")
+        .select("id, store_id")
+        .eq("id", body.id)
+        .single();
+
+      if (existingError) throw existingError;
+
+      assertStoreAccess(
+        auth,
+        existingCategory.store_id,
+        "No tienes permiso para eliminar esta categoría."
+      );
+
+      const { error: productsError } = await supabase
+        .from("products")
+        .update({ category_id: null })
+        .eq("category_id", body.id)
+        .eq("store_id", existingCategory.store_id);
+
+      if (productsError) throw productsError;
+
+      const { error } = await supabase
+        .from("categories")
+        .delete()
+        .eq("id", body.id);
+
+      if (error) throw error;
+
+      return NextResponse.json({ ok: true });
+    }
+
+    return badRequest("Recurso no soportado.");
+  } catch (error: any) {
+    return panelErrorResponse(error, "Error eliminando catálogo.");
+  }
+}
