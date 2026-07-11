@@ -28,59 +28,19 @@ import {
 } from "@/lib/distance-ranges";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { getTransportAgencyConfigIssues, getTransportAgencyRateFromRelation } from "@/lib/transport";
-
-type Agency = {
-  id: string;
-  name: string;
-  status: string;
-  pricing_type: string;
-  modality: string;
-  rates_visibility?: "public" | "private" | string | null;
-  logo_url?: string;
-  legal_name?: string;
-  rif?: string;
-  contact_name?: string;
-  city?: string;
-  state?: string;
-  contact_email?: string;
-  contact_phone?: string;
-  whatsapp_phone?: string;
-  coverage_notes?: string;
-  capacity_dimensions_cm?: string;
-  capacity_weight_kg?: number | string | null;
-  max_wait_time_minutes?: number | string | null;
-  charges_cash_return?: boolean;
-  cash_return_fee_usd?: number | string | null;
-  billing_currency?: "USD" | "EUR" | string | null;
-  payment_terms?: string;
-  credit_terms?: string;
-  additional_conditions?: string;
-  transport_agency_rates?: any[] | any;
-  transport_agency_zones?: any[];
-  transport_agency_distance_rates?: any[];
-};
-
-type PricingType = "flat" | "distance_ranges" | "zones" | "manual";
-
-type PanelCache = {
-  agencies: Agency[];
-  requests: any[];
-  connections: any[];
-  billing: any;
-  hasSession: boolean;
-};
+import {
+  connectionEnded,
+  connectionPendingExit,
+  formatDateTime,
+  panelNavItems,
+  relationshipModeLabel,
+  transportStatusLabels,
+  type Agency,
+  type PanelCache,
+  type PricingType,
+} from "@/components/transport/transport-panel-helpers";
 
 let transportPanelCache: PanelCache | null = null;
-
-const panelNavItems = [
-  { key: "resumen", label: "Resumen", href: "/transporte/panel" },
-  { key: "pedidos", label: "Pedidos", href: "/transporte/panel/pedidos" },
-  { key: "tarifas", label: "Tarifas", href: "/transporte/panel/tarifas" },
-  { key: "configuracion", label: "Configuracion", href: "/transporte/panel/configuracion" },
-  { key: "solicitudes", label: "Solicitudes", href: "/transporte/panel/solicitudes" },
-  { key: "comercios", label: "Comercios", href: "/transporte/panel/comercios" },
-  { key: "facturacion", label: "Facturacion", href: "/transporte/panel/facturacion" },
-];
 
 export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: string }) {
   const [pin, setPin] = useState("");
@@ -140,49 +100,8 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       })
     : [];
 
-  const transportStatusLabels: Record<string, string> = {
-    pending_agency: "Pendiente por empresa delivery",
-    sent_to_agency: "Enviado a empresa delivery",
-    agency_received: "Recibido por empresa delivery",
-    agency_accepted: "Aceptado",
-    agency_rejected: "Rechazado",
-    driver_assigned: "Repartidor asignado",
-    pickup_pending: "Pendiente por retirar",
-    picked_up: "Retirado",
-    on_the_way: "En camino",
-    delivered: "Entregado",
-    delivery_failed: "Fallido",
-    issue_reported: "Novedad",
-    cancelled: "Cancelado",
-  };
-
-  function formatDateTime(value?: string | null) {
-    if (!value) return "";
-    return new Intl.DateTimeFormat("es-VE", {
-      dateStyle: "short",
-      timeStyle: "short",
-    }).format(new Date(value));
-  }
-
-  function connectionEnded(connection: any) {
-    return Boolean(
-        connection?.disengagement_confirmed_at &&
-        connection?.disengagement_effective_at &&
-        nowMs > 0 &&
-        new Date(connection.disengagement_effective_at).getTime() <= nowMs
-    );
-  }
-
-  function connectionPendingExit(connection: any) {
-    return Boolean(connection?.disengagement_requested_at && !connectionEnded(connection));
-  }
-
-  function relationshipModeLabel(isExclusive: boolean) {
-    return isExclusive ? "Exclusiva" : "Mixta";
-  }
-
   const activeConnectionsCount = connections.filter(
-    (entry) => entry.status === "active" && !connectionEnded(entry)
+    (entry) => entry.status === "active" && !connectionEnded(entry, nowMs)
   ).length;
 
   async function authHeaders() {
@@ -1641,8 +1560,8 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
           empty="Aun no hay comercios conectados."
           items={connections}
           render={(entry) => {
-            const isEnded = connectionEnded(entry);
-            const isPendingExit = connectionPendingExit(entry);
+            const isEnded = connectionEnded(entry, nowMs);
+            const isPendingExit = connectionPendingExit(entry, nowMs);
 
             return (
               <div className="rounded-3xl bg-white p-4">
