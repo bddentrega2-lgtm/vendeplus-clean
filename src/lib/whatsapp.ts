@@ -1,5 +1,5 @@
 ﻿import type { CartItem, CheckoutFormData, DeliveryLocation, DeliveryQuote, OrderTotals, Store } from "@/types";
-import { formatBs, formatUsd } from "@/lib/currency";
+import { formatBaseCurrency, formatBs } from "@/lib/currency";
 
 export function buildWhatsAppUrl(phone: string, message: string) {
   const cleanPhone = phone.replace(/[^0-9]/g, "");
@@ -22,6 +22,7 @@ export function buildOrderMessage(params: {
   routeUrl: string | null;
 }) {
   const { orderId, store, items, form, quote, totals, mapsUrl } = params;
+  const baseCurrency = store.baseCurrency || "USD";
 
   const itemsText = items
     .map((item, index) => {
@@ -33,9 +34,9 @@ export function buildOrderMessage(params: {
             .join("\n")}`
         : "";
 
-      return `${index + 1}) ${item.quantity}x ${item.productName}${variant} — ${formatUsd(
+      return `${index + 1}) ${item.quantity}x ${item.productName}${variant} — ${formatBaseCurrency(
         item.unitPriceUsd * item.quantity
-      )}${options}${note}`;
+      , baseCurrency)}${options}${note}`;
     })
     .join("\n");
 
@@ -58,7 +59,7 @@ export function buildOrderMessage(params: {
       ? "por confirmar"
       : quote.source === "pending"
         ? "por calcular"
-        : formatUsd(totals.deliveryUsd);
+        : formatBaseCurrency(totals.deliveryUsd, baseCurrency);
 
   const deliveryBlock =
     form.deliveryType === "pickup"
@@ -71,7 +72,7 @@ export function buildOrderMessage(params: {
             : quote.label || "por confirmar")
         }\n📍 ${mapsUrl || "Ubicación pendiente"}${reference}`;
 
-  return `Hola, ya está listo mi pedido.
+  return `Hola, ya realicé mi pedido y sería lo siguiente:
 
 Código: ${orderId}
 Comercio: ${store.name}
@@ -84,5 +85,5 @@ ${itemsText}${orderDetails}
 ${deliveryBlock}
 
 💳 ${form.paymentMethod}${paymentReference}
-💰 Total: ${formatUsd(totals.totalUsd)} / ${formatBs(totals.totalBs)}${notes}`;
+💰 Total: ${formatBaseCurrency(totals.totalUsd, baseCurrency)} / ${formatBs(totals.totalBs)}${notes}`;
 }

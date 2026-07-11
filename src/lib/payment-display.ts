@@ -1,5 +1,5 @@
 import type { OrderTotals, Store } from "@/types";
-import { formatBs, formatUsd } from "@/lib/currency";
+import { formatBaseCurrency, formatBs } from "@/lib/currency";
 import { getPaymentDetailsKey } from "@/lib/payments";
 
 export type PaymentDisplayLine = {
@@ -62,6 +62,7 @@ export function buildPaymentInfo({
   const details = (store.paymentDetails || {}) as Record<string, any>;
   const exchangeRate =
     store.usdToBs || totals.totalBs / Math.max(totals.totalUsd, 1);
+  const baseCurrency = store.baseCurrency || "USD";
   const lines: PaymentDisplayLine[] = [];
   let help = "Después de pagar, envía la referencia o captura al comercio por WhatsApp.";
 
@@ -85,17 +86,17 @@ export function buildPaymentInfo({
     const data = details.zelle || {};
     addLine(lines, "Correo", firstValue(data, ["contact", "email", "correo", "phone", "telefono"]), true);
     addLine(lines, "Titular", firstValue(data, ["holder", "titular", "name", "nombre"]), true);
-    addLine(lines, "Monto", formatUsd(totals.totalUsd), true);
+    addLine(lines, "Monto", formatBaseCurrency(totals.totalUsd, baseCurrency), true);
   } else if (key === "binance") {
     const data = details.binance || {};
     addLine(lines, "Correo", firstValue(data, ["contact", "email", "correo", "binancePayId", "payId", "id", "binance"]), true);
     addLine(lines, "Titular", firstValue(data, ["holder", "titular", "name", "nombre"]), true);
-    addLine(lines, "Monto", formatUsd(totals.totalUsd), true);
+    addLine(lines, "Monto", formatBaseCurrency(totals.totalUsd, baseCurrency), true);
   } else if (key === "efectivo") {
     const data = details.efectivo || {};
     addLine(lines, "Nota", firstValue(data, ["note", "nota"]));
     addLine(lines, "Como va a cancelar", customerPaymentNote);
-    addLine(lines, "Total", `${formatUsd(totals.totalUsd)} / ${formatBs(totals.totalBs)}`);
+    addLine(lines, "Total", `${formatBaseCurrency(totals.totalUsd, baseCurrency)} / ${formatBs(totals.totalBs)}`);
     help = "Pago en efectivo al retirar o recibir.";
   }
 

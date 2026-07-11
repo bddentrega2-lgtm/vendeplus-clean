@@ -70,7 +70,7 @@ function optionalNumber(value: unknown) {
 }
 
 function normalizeProvider(value: unknown): DeliveryProvider {
-  return ["own_delivery", "entrega2", "manual_quote", "disabled"].includes(String(value))
+  return ["own_delivery", "entrega2", "manual_quote", "transport_agency", "disabled"].includes(String(value))
     ? (String(value) as DeliveryProvider)
     : "own_delivery";
 }
@@ -150,12 +150,48 @@ export function mapStoreDeliverySettings(row: any): StoreDeliverySettings {
       ? "own_delivery"
       : rawProvider
     : "disabled";
+  const zones = (Array.isArray(row?.store_delivery_zones) ? row.store_delivery_zones : [])
+    .map((zone: any) => ({
+      id: String(zone.id),
+      name: String(zone.name || "Zona"),
+      description: String(zone.description || ""),
+      feeUsd: Math.max(0, toNumber(zone.fee_usd, 0)),
+      isActive: zone.is_active !== false,
+      sortOrder: toNumber(zone.sort_order, 0),
+    }))
+    .sort((a: any, b: any) => a.sortOrder - b.sortOrder);
+  const distanceRates = (Array.isArray(row?.store_delivery_distance_rates)
+    ? row.store_delivery_distance_rates
+    : []
+  )
+    .map((rate: any) => ({
+      id: String(rate.id),
+      minKm: Math.max(0, toNumber(rate.min_km, 0)),
+      maxKm: optionalNumber(rate.max_km),
+      feeUsd: Math.max(0, toNumber(rate.fee_usd, 0)),
+      isActive: rate.is_active !== false,
+      sortOrder: toNumber(rate.sort_order, 0),
+    }))
+    .sort((a: any, b: any) => a.sortOrder - b.sortOrder);
+  const normalizedPricingType = normalizePricingType(settings.pricing_type);
+  const inferredPricingType =
+    normalizedProvider === "manual_quote" || normalizedProvider === "disabled"
+      ? "manual"
+      : normalizedPricingType === "manual" || normalizedPricingType === "free_over_amount"
+        ? zones.some((zone: any) => zone.isActive)
+          ? "zones"
+          : distanceRates.some((rate: any) => rate.isActive)
+            ? "distance_ranges"
+            : optionalNumber(settings.fixed_fee_usd) !== null && toNumber(settings.fixed_fee_usd, 0) > 0
+              ? "fixed_distance"
+              : normalizedPricingType
+        : normalizedPricingType;
 
   return {
     deliveryEnabled,
     pickupEnabled,
     deliveryProvider: normalizedProvider,
-    pricingType: deliveryEnabled ? normalizePricingType(settings.pricing_type) : "manual",
+    pricingType: deliveryEnabled ? inferredPricingType : "manual",
     fixedFeeUsd: Math.max(0, toNumber(settings.fixed_fee_usd, fallback.fixedFeeUsd)),
     freeDeliveryMinUsd: legacyPromoMin,
     deliveryPromoEnabled: Boolean(promoEnabled),
@@ -163,33 +199,39 @@ export function mapStoreDeliverySettings(row: any): StoreDeliverySettings {
     deliveryPromoDiscountType: promoType as StoreDeliverySettings["deliveryPromoDiscountType"],
     deliveryPromoDiscountValue: Math.max(0, toNumber(settings.delivery_promo_discount_value, 0)),
     maxDistanceKm: optionalNumber(settings.max_distance_km),
-    distanceFactor: optionalNumber(settings.distance_factor),
+    distanceFactor: null,
     manualQuoteMessage:
       String(settings.manual_quote_message || "").trim() ||
       DEFAULT_MANUAL_DELIVERY_MESSAGE,
-    zones: (Array.isArray(row?.store_delivery_zones) ? row.store_delivery_zones : [])
-      .map((zone: any) => ({
-        id: String(zone.id),
-        name: String(zone.name || "Zona"),
-        description: String(zone.description || ""),
-        feeUsd: Math.max(0, toNumber(zone.fee_usd, 0)),
-        isActive: zone.is_active !== false,
-        sortOrder: toNumber(zone.sort_order, 0),
-      }))
-      .sort((a: any, b: any) => a.sortOrder - b.sortOrder),
-    distanceRates: (Array.isArray(row?.store_delivery_distance_rates)
-      ? row.store_delivery_distance_rates
-      : []
-    )
-      .map((rate: any) => ({
-        id: String(rate.id),
-        minKm: Math.max(0, toNumber(rate.min_km, 0)),
-        maxKm: optionalNumber(rate.max_km),
-        feeUsd: Math.max(0, toNumber(rate.fee_usd, 0)),
-        isActive: rate.is_active !== false,
-        sortOrder: toNumber(rate.sort_order, 0),
-      }))
-      .sort((a: any, b: any) => a.sortOrder - b.sortOrder),
+    zones,
+    distanceRates,
+    transportAgencyConnectionId: settings.transport_agency_connection_id || null,
+    transportAgencyId: settings.transport_agency_id || null,
+  };
+}
+
+export function disableUnavailableTransportAgencySettings(
+  settings: StoreDeliverySettings
+): StoreDeliverySettings {
+  if (settings.deliveryProvider !== "transport_agency") return settings;
+
+  return {
+    ...settings,
+    deliveryEnabled: false,
+    deliveryProvider: "disabled",
+    pricingType: "manual",
+    fixedFeeUsd: 0,
+    freeDeliveryMinUsd: null,
+    deliveryPromoEnabled: false,
+    deliveryPromoMinSubtotalUsd: null,
+    deliveryPromoDiscountValue: 0,
+    maxDistanceKm: null,
+    distanceFactor: null,
+    zones: [],
+    distanceRates: [],
+    transportAgencyConnectionId: null,
+    transportAgencyId: null,
+    transportAgencyName: null,
   };
 }
 
@@ -235,6 +277,8 @@ export function calculateDeliveryQuoteFromSettings(params: {
       available: settings.pickupEnabled,
       provider: settings.deliveryProvider,
       pricingType: settings.pricingType,
+      transportAgencyId: settings.transportAgencyId || null,
+      transportAgencyName: settings.transportAgencyName || null,
     };
   }
 
@@ -247,6 +291,8 @@ export function calculateDeliveryQuoteFromSettings(params: {
       available: false,
       provider: settings.deliveryProvider,
       pricingType: settings.pricingType,
+      transportAgencyId: settings.transportAgencyId || null,
+      transportAgencyName: settings.transportAgencyName || null,
       message: "Este comercio no tiene delivery activo en este momento.",
     };
   }
@@ -260,6 +306,8 @@ export function calculateDeliveryQuoteFromSettings(params: {
       available: true,
       provider: settings.deliveryProvider,
       pricingType: settings.pricingType,
+      transportAgencyId: settings.transportAgencyId || null,
+      transportAgencyName: settings.transportAgencyName || null,
       message: settings.manualQuoteMessage,
     };
   }
@@ -272,12 +320,16 @@ export function calculateDeliveryQuoteFromSettings(params: {
       return {
         distanceKm: params.distanceKm ?? null,
         feeUsd: 0,
-        label: activeZones.length ? "Selecciona tu zona" : "Delivery por confirmar",
+        label: activeZones.length ? "Selecciona tu zona" : "Zonas no configuradas",
         source: "pending",
-        available: true,
+        available: activeZones.length > 0,
         provider: settings.deliveryProvider,
         pricingType: settings.pricingType,
-        message: activeZones.length ? undefined : settings.manualQuoteMessage,
+        transportAgencyId: settings.transportAgencyId || null,
+        transportAgencyName: settings.transportAgencyName || null,
+        message: activeZones.length
+          ? undefined
+          : "Este comercio aún no tiene zonas activas para calcular el delivery.",
       };
     }
 
@@ -297,6 +349,8 @@ export function calculateDeliveryQuoteFromSettings(params: {
       pricingType: settings.pricingType,
       zoneId: zone.id,
       zoneName: zone.name,
+      transportAgencyId: settings.transportAgencyId || null,
+      transportAgencyName: settings.transportAgencyName || null,
     };
   }
 
@@ -312,6 +366,8 @@ export function calculateDeliveryQuoteFromSettings(params: {
         available: true,
         provider: settings.deliveryProvider,
         pricingType: settings.pricingType,
+        transportAgencyId: settings.transportAgencyId || null,
+        transportAgencyName: settings.transportAgencyName || null,
         message: "Comparte tu ubicacion para calcular el delivery.",
       };
     }
@@ -321,12 +377,14 @@ export function calculateDeliveryQuoteFromSettings(params: {
       return {
         distanceKm: rounded,
         feeUsd: 0,
-        label: "Delivery por confirmar",
-        source: "manual",
-        available: true,
+        label: "Fuera del radio de delivery",
+        source: "pending",
+        available: false,
         provider: settings.deliveryProvider,
         pricingType: settings.pricingType,
-        message: settings.manualQuoteMessage || DEFAULT_MANUAL_DELIVERY_MESSAGE,
+        transportAgencyId: settings.transportAgencyId || null,
+        transportAgencyName: settings.transportAgencyName || null,
+        message: `La ubicacion supera el radio configurado de ${settings.maxDistanceKm} km.`,
       };
     }
 
@@ -344,6 +402,8 @@ export function calculateDeliveryQuoteFromSettings(params: {
       available: true,
       provider: settings.deliveryProvider,
       pricingType: settings.pricingType,
+      transportAgencyId: settings.transportAgencyId || null,
+      transportAgencyName: settings.transportAgencyName || null,
     };
   }
 
@@ -359,6 +419,8 @@ export function calculateDeliveryQuoteFromSettings(params: {
         available: true,
         provider: settings.deliveryProvider,
         pricingType: settings.pricingType,
+        transportAgencyId: settings.transportAgencyId || null,
+        transportAgencyName: settings.transportAgencyName || null,
         message: "Comparte tu ubicacion para calcular el delivery por km.",
       };
     }
@@ -368,12 +430,14 @@ export function calculateDeliveryQuoteFromSettings(params: {
       return {
         distanceKm: rounded,
         feeUsd: 0,
-        label: "Delivery por confirmar",
-        source: "manual",
-        available: true,
+        label: "Fuera del radio de delivery",
+        source: "pending",
+        available: false,
         provider: settings.deliveryProvider,
         pricingType: settings.pricingType,
-        message: settings.manualQuoteMessage || DEFAULT_MANUAL_DELIVERY_MESSAGE,
+        transportAgencyId: settings.transportAgencyId || null,
+        transportAgencyName: settings.transportAgencyName || null,
+        message: `La ubicacion supera el radio configurado de ${settings.maxDistanceKm} km.`,
       };
     }
 
@@ -384,20 +448,20 @@ export function calculateDeliveryQuoteFromSettings(params: {
           rounded >= entry.minKm &&
           (entry.maxKm === null || rounded <= entry.maxKm)
       );
-    const baseFee =
-      rate?.feeUsd ??
-      (settings.distanceFactor !== null ? rounded * settings.distanceFactor : null);
+    const baseFee = rate?.feeUsd ?? null;
 
     if (baseFee === null) {
       return {
         distanceKm: rounded,
         feeUsd: 0,
-        label: "Tarifa por confirmar",
-        source: "manual",
-        available: true,
+        label: "Tarifa no configurada",
+        source: "pending",
+        available: false,
         provider: settings.deliveryProvider,
         pricingType: settings.pricingType,
-        message: settings.manualQuoteMessage,
+        transportAgencyId: settings.transportAgencyId || null,
+        transportAgencyName: settings.transportAgencyName || null,
+        message: "El comercio debe configurar rangos activos para cobrar este delivery.",
       };
     }
 
@@ -416,6 +480,8 @@ export function calculateDeliveryQuoteFromSettings(params: {
       available: true,
       provider: settings.deliveryProvider,
       pricingType: settings.pricingType,
+      transportAgencyId: settings.transportAgencyId || null,
+      transportAgencyName: settings.transportAgencyName || null,
     };
   }
 
@@ -427,6 +493,8 @@ export function calculateDeliveryQuoteFromSettings(params: {
     available: true,
     provider: settings.deliveryProvider,
     pricingType: settings.pricingType,
+    transportAgencyId: settings.transportAgencyId || null,
+    transportAgencyName: settings.transportAgencyName || null,
     message: settings.manualQuoteMessage || DEFAULT_MANUAL_DELIVERY_MESSAGE,
   };
 }

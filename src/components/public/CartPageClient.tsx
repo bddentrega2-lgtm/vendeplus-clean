@@ -5,16 +5,16 @@ import { ArrowLeft, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { CartItem, Store } from "@/types";
 import { getCart, getCartSubtotal, removeCartItem, updateCartItemQuantity } from "@/lib/cart";
-import { formatBs, formatUsd } from "@/lib/currency";
+import { formatBaseCurrency, formatBs } from "@/lib/currency";
 
-function formatSelectedOptions(item: CartItem) {
+function formatSelectedOptions(item: CartItem, baseCurrency: "USD" | "EUR" | string) {
   const groups = new Map<string, string[]>();
 
   for (const option of item.selectedOptions || []) {
     const current = groups.get(option.groupName) || [];
     current.push(
       option.priceDeltaUsd > 0
-        ? `${option.valueName} (+${formatUsd(option.priceDeltaUsd)})`
+        ? `${option.valueName} (+${formatBaseCurrency(option.priceDeltaUsd, baseCurrency)})`
         : option.valueName
     );
     groups.set(option.groupName, current);
@@ -45,6 +45,8 @@ export function CartPageClient({ store }: { store: Store }) {
 
   const subtotal = getCartSubtotal(items);
   const exchangeRate = store.usdToBs || 600;
+  const baseCurrency = store.baseCurrency || "USD";
+  const showPricesInBs = store.showPricesInBs !== false;
   const subtotalBs = subtotal * exchangeRate;
 
   function setQuantity(index: number, quantity: number) {
@@ -104,7 +106,7 @@ export function CartPageClient({ store }: { store: Store }) {
                         {item.variantName ? <p className="mt-1 text-xs font-black text-[#746f69]">{item.variantName}</p> : null}
                         {item.selectedOptions?.length ? (
                           <div className="mt-2 space-y-1">
-                            {formatSelectedOptions(item).map((option) => (
+                            {formatSelectedOptions(item, baseCurrency).map((option) => (
                               <p
                                 key={option.groupName}
                                 className="text-xs font-bold text-[#746f69]"
@@ -129,9 +131,11 @@ export function CartPageClient({ store }: { store: Store }) {
                         <button type="button" onClick={() => setQuantity(index, item.quantity + 1)} className="grid h-8 w-8 place-items-center rounded-full bg-[#FFB547]"><Plus size={14} /></button>
                       </div>
                       <div className="text-right">
-                        <p className="text-xs font-bold text-[#746f69]">{formatUsd(item.unitPriceUsd)} c/u</p>
-                        <p className="text-base font-black text-[#25262B]">{formatUsd(item.unitPriceUsd * item.quantity)}</p>
-                        <p className="text-xs font-black text-[#746f69]">{formatBs(item.unitPriceUsd * item.quantity * exchangeRate)}</p>
+                        <p className="text-xs font-bold text-[#746f69]">{formatBaseCurrency(item.unitPriceUsd, baseCurrency)} c/u</p>
+                        <p className="text-base font-black text-[#25262B]">{formatBaseCurrency(item.unitPriceUsd * item.quantity, baseCurrency)}</p>
+                        {showPricesInBs ? (
+                          <p className="text-xs font-black text-[#746f69]">{formatBs(item.unitPriceUsd * item.quantity * exchangeRate)}</p>
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -147,8 +151,10 @@ export function CartPageClient({ store }: { store: Store }) {
               <div className="flex items-center justify-between">
                 <span className="text-sm font-black text-[#746f69]">Subtotal</span>
                 <div className="text-right">
-                  <p className="text-xl font-black">{formatUsd(subtotal)}</p>
-                  <p className="text-xs font-black text-[#746f69]">{formatBs(subtotalBs)}</p>
+                  <p className="text-xl font-black">{formatBaseCurrency(subtotal, baseCurrency)}</p>
+                  {showPricesInBs ? (
+                    <p className="text-xs font-black text-[#746f69]">{formatBs(subtotalBs)}</p>
+                  ) : null}
                 </div>
               </div>
               <Link href={`/${store.slug}/checkout`} className="vp-button-mango mt-4 w-full">Finalizar pedido</Link>

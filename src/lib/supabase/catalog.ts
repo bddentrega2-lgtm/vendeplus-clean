@@ -1,10 +1,15 @@
 ﻿import type { Category, Product, ProductVariant, Store } from "@/types";
 import { getStoreBySlug as getFallbackStoreBySlug, stores as fallbackStores } from "@/data/stores";
 import { createSupabasePublicClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isMissingColumnError } from "@/lib/supabase/schema-compat";
 import type { ProductOptionGroup } from "@/types";
-import { mapStoreDeliverySettings } from "@/lib/delivery";
+import {
+  disableUnavailableTransportAgencySettings,
+  mapStoreDeliverySettings,
+} from "@/lib/delivery";
 import { getStoreOpenState } from "@/lib/business-hours";
+import { loadTransportAgencyDeliverySettings } from "@/lib/transport";
 
 type AnyRecord = Record<string, any>;
 
@@ -65,6 +70,18 @@ function toRecord(value: unknown) {
     : {};
 }
 
+function isStoreSubscriptionPastDue(row: AnyRecord) {
+  const status = String(row.subscription_status || "").toLowerCase();
+  if (["past_due", "expired", "paused", "cancelled"].includes(status)) return true;
+
+  const dueAt =
+    row.next_payment_due_at || row.subscription_ends_at || row.trial_ends_at || null;
+  if (!dueAt) return false;
+
+  const dueTime = new Date(dueAt).getTime();
+  return Number.isFinite(dueTime) && dueTime < Date.now();
+}
+
 function mapVariant(row: AnyRecord, productPriceUsd: number): ProductVariant {
   const variantPrice = toNumber(row.price_usd, productPriceUsd);
 
@@ -108,19 +125,40 @@ function mapOptionGroups(product: AnyRecord): ProductOptionGroup[] {
         values: valuesRaw
           .filter((value) => value.is_active !== false)
           .sort((a, b) => toNumber(a.sort_order) - toNumber(b.sort_order))
-          .map((value) => ({
-            id: String(value.id),
-            name: value.name || "Opción",
-            description: value.description || "",
-            priceDeltaUsd: toNumber(value.price_delta_usd, 0),
-            isActive: value.is_active !== false,
-          })),
+          .map((value) => {
+            const variantPricesRaw: AnyRecord[] = Array.isArray(
+              value.product_option_value_variant_prices
+            )
+              ? value.product_option_value_variant_prices
+              : [];
+            const variantPriceDeltas = Object.fromEntries(
+              variantPricesRaw
+                .map((price) => [
+                  String(price.variant_id || ""),
+                  toNumber(price.price_delta_usd, toNumber(value.price_delta_usd, 0)),
+                ])
+                .filter(([variantId]) => variantId)
+            );
+
+            return {
+              id: String(value.id),
+              name: value.name || "Opción",
+              description: value.description || "",
+              priceDeltaUsd: toNumber(value.price_delta_usd, 0),
+              variantPriceDeltas,
+              isActive: value.is_active !== false,
+            };
+          }),
       };
     })
     .filter((group) => group.values.length > 0);
 }
 
-function mapStore(row: AnyRecord): Store {
+function mapStore(
+  row: AnyRecord,
+  options: { includeFallbackCatalog?: boolean } = {}
+): Store {
+  const includeFallbackCatalog = options.includeFallbackCatalog !== false;
   const categoriesRaw: AnyRecord[] = Array.isArray(row.categories) ? row.categories : [];
   const productsRaw: AnyRecord[] = Array.isArray(row.products) ? row.products : [];
 
@@ -148,7 +186,7 @@ function mapStore(row: AnyRecord): Store {
         categoryId: product.category_id ? String(product.category_id) : categories[0]?.id || "general",
         name: product.name || "Producto",
         slug: `${slugify(product.name || "producto")}-${String(product.id).slice(0, 6)}`,
-        description: product.description || "Producto disponible para pedir desde Vende+.",
+        description: product.description || "Producto disponible para pedir desde VendeMas.",
         priceUsd,
         imageUrl: product.image_url || row.cover_image_url || fallbackHeroImages[row.slug] || fallbackHeroImages["don-aniello"],
         imageAlt: product.name || "Producto",
@@ -171,7 +209,7 @@ function mapStore(row: AnyRecord): Store {
     name: row.name || fallback?.name || "Comercio",
     slug: row.slug,
     category: row.business_type || fallback?.category || row.description || "Comercio aliado",
-    description: row.description || fallback?.description || "Catálogo disponible en Vende+.",
+    description: row.description || fallback?.description || "Catalogo disponible en VendeMas.",
     whatsappPhone: row.whatsapp || fallback?.whatsappPhone || "584245666025",
     address: row.address || fallback?.address || "Maracay, Aragua",
     latitude: toNumber(row.latitude, fallback?.latitude || 0),
@@ -179,12 +217,14 @@ function mapStore(row: AnyRecord): Store {
     openingHours: row.opening_hours || fallback?.openingHours || "Disponible hoy",
     deliveryEstimate: row.delivery_estimate || fallback?.deliveryEstimate || "25-40 min",
     pickupEstimate: row.pickup_estimate || fallback?.pickupEstimate || "15-25 min",
-    badge: fallback?.badge || "Aliado Vende+",
+    badge: fallback?.badge || "Aliado VendeMas",
     heroImageUrl: row.cover_image_url || fallback?.heroImageUrl || fallbackHeroImages[row.slug] || fallbackHeroImages["don-aniello"],
-    categories: categories.length ? categories : fallback?.categories || [],
-    products: products.length ? products : fallback?.products || [],
+    categories: categories.length ? categories : includeFallbackCatalog ? fallback?.categories || [] : [],
+    products: products.length ? products : includeFallbackCatalog ? fallback?.products || [] : [],
     paymentMethods: toStringArray(row.payment_methods, fallback?.paymentMethods || defaultPaymentMethods),
     usdToBs: toNumber(row.usd_to_bs, 600),
+    baseCurrency: String(row.base_currency || "USD").toUpperCase() === "EUR" ? "EUR" : "USD",
+    showPricesInBs: row.show_prices_in_bs !== false,
     paymentDetails: toRecord(row.payment_details),
     logoUrl: row.logo_url || fallback?.logoUrl || "",
     coverImageUrl: row.cover_image_url || fallback?.coverImageUrl || fallback?.heroImageUrl || "",
@@ -228,12 +268,30 @@ const storeSelect = `
   payment_methods,
   payment_details,
   usd_to_bs,
+  base_currency,
+  show_prices_in_bs,
   whatsapp_message_note,
   is_active,
+  subscription_status,
+  trial_ends_at,
+  subscription_ends_at,
+  next_payment_due_at,
   accepts_delivery,
   accepts_pickup,
   store_delivery_settings (
-    *
+    delivery_enabled,
+    pickup_enabled,
+    delivery_provider,
+    pricing_type,
+    fixed_fee_usd,
+    free_delivery_min_usd,
+    delivery_promo_enabled,
+    delivery_promo_min_subtotal_usd,
+    delivery_promo_discount_type,
+    delivery_promo_discount_value,
+    max_distance_km,
+    distance_factor,
+    manual_quote_message
   ),
   store_delivery_zones (
     id,
@@ -294,7 +352,11 @@ const storeSelect = `
           description,
           price_delta_usd,
           is_active,
-          sort_order
+          sort_order,
+          product_option_value_variant_prices (
+            variant_id,
+            price_delta_usd
+          )
         )
       )
     )
@@ -321,8 +383,14 @@ const baseStoreSelect = `
   pickup_estimate,
   payment_methods,
   usd_to_bs,
+  base_currency,
+  show_prices_in_bs,
   whatsapp_message_note,
   is_active,
+  subscription_status,
+  trial_ends_at,
+  subscription_ends_at,
+  next_payment_due_at,
   accepts_delivery,
   accepts_pickup,
   categories (
@@ -368,7 +436,260 @@ const baseStoreSelect = `
           description,
           price_delta_usd,
           is_active,
-          sort_order
+          sort_order,
+          product_option_value_variant_prices (
+            variant_id,
+            price_delta_usd
+          )
+        )
+      )
+    )
+  )
+`;
+
+const storeShellSelect = `
+  id,
+  slug,
+  name,
+  description,
+  address,
+  latitude,
+  longitude,
+  whatsapp,
+  cover_image_url,
+  logo_url,
+  primary_color,
+  accent_color,
+  button_text_color,
+  business_type,
+  opening_hours,
+  business_hours,
+  manual_open_status,
+  manual_open_note,
+  delivery_estimate,
+  pickup_estimate,
+  payment_methods,
+  payment_details,
+  usd_to_bs,
+  base_currency,
+  show_prices_in_bs,
+  whatsapp_message_note,
+  is_active,
+  subscription_status,
+  trial_ends_at,
+  subscription_ends_at,
+  next_payment_due_at,
+  accepts_delivery,
+  accepts_pickup,
+  store_delivery_settings (
+    delivery_enabled,
+    pickup_enabled,
+    delivery_provider,
+    pricing_type,
+    fixed_fee_usd,
+    free_delivery_min_usd,
+    delivery_promo_enabled,
+    delivery_promo_min_subtotal_usd,
+    delivery_promo_discount_type,
+    delivery_promo_discount_value,
+    max_distance_km,
+    distance_factor,
+    manual_quote_message
+  ),
+  store_delivery_zones (
+    id,
+    name,
+    description,
+    fee_usd,
+    is_active,
+    sort_order
+  ),
+  store_delivery_distance_rates (
+    id,
+    min_km,
+    max_km,
+    fee_usd,
+    is_active,
+    sort_order
+  )
+`;
+
+const storeShellCompatibleSelect = `
+  id,
+  slug,
+  name,
+  description,
+  address,
+  latitude,
+  longitude,
+  whatsapp,
+  cover_image_url,
+  logo_url,
+  primary_color,
+  accent_color,
+  button_text_color,
+  business_type,
+  opening_hours,
+  business_hours,
+  manual_open_status,
+  manual_open_note,
+  delivery_estimate,
+  pickup_estimate,
+  payment_methods,
+  payment_details,
+  usd_to_bs,
+  whatsapp_message_note,
+  is_active,
+  subscription_status,
+  trial_ends_at,
+  subscription_ends_at,
+  next_payment_due_at,
+  accepts_delivery,
+  accepts_pickup,
+  store_delivery_settings (
+    delivery_enabled,
+    pickup_enabled,
+    delivery_provider,
+    pricing_type,
+    fixed_fee_usd,
+    free_delivery_min_usd,
+    delivery_promo_enabled,
+    delivery_promo_min_subtotal_usd,
+    delivery_promo_discount_type,
+    delivery_promo_discount_value,
+    max_distance_km,
+    distance_factor,
+    manual_quote_message
+  ),
+  store_delivery_zones (
+    id,
+    name,
+    description,
+    fee_usd,
+    is_active,
+    sort_order
+  ),
+  store_delivery_distance_rates (
+    id,
+    min_km,
+    max_km,
+    fee_usd,
+    is_active,
+    sort_order
+  )
+`;
+
+const deliveryCompatibleStoreSelect = `
+  id,
+  slug,
+  name,
+  description,
+  address,
+  latitude,
+  longitude,
+  whatsapp,
+  cover_image_url,
+  logo_url,
+  primary_color,
+  accent_color,
+  button_text_color,
+  business_type,
+  opening_hours,
+  business_hours,
+  manual_open_status,
+  manual_open_note,
+  delivery_estimate,
+  pickup_estimate,
+  payment_methods,
+  payment_details,
+  usd_to_bs,
+  whatsapp_message_note,
+  is_active,
+  subscription_status,
+  trial_ends_at,
+  subscription_ends_at,
+  next_payment_due_at,
+  accepts_delivery,
+  accepts_pickup,
+  store_delivery_settings (
+    delivery_enabled,
+    pickup_enabled,
+    delivery_provider,
+    pricing_type,
+    fixed_fee_usd,
+    free_delivery_min_usd,
+    delivery_promo_enabled,
+    delivery_promo_min_subtotal_usd,
+    delivery_promo_discount_type,
+    delivery_promo_discount_value,
+    max_distance_km,
+    distance_factor,
+    manual_quote_message
+  ),
+  store_delivery_zones (
+    id,
+    name,
+    description,
+    fee_usd,
+    is_active,
+    sort_order
+  ),
+  store_delivery_distance_rates (
+    id,
+    min_km,
+    max_km,
+    fee_usd,
+    is_active,
+    sort_order
+  ),
+  categories (
+    id,
+    name,
+    sort_order,
+    is_active
+  ),
+  products (
+    id,
+    store_id,
+    category_id,
+    name,
+    description,
+    price_usd,
+    image_url,
+    is_available,
+    is_featured,
+    sort_order,
+    product_variants (
+      id,
+      name,
+      price_usd,
+      is_available,
+      sort_order
+    ),
+    product_option_group_products (
+      id,
+      sort_order,
+      product_option_groups (
+        id,
+        name,
+        description,
+        selection_type,
+        required,
+        min_select,
+        max_select,
+        is_active,
+        sort_order,
+        product_option_values (
+          id,
+          name,
+          description,
+          price_delta_usd,
+          is_active,
+          sort_order,
+          product_option_value_variant_prices (
+            variant_id,
+            price_delta_usd
+          )
         )
       )
     )
@@ -433,6 +754,32 @@ function withPaymentDetailsFallback(row: AnyRecord) {
   };
 }
 
+async function applyTransportDeliverySettings(store: Store) {
+  try {
+    const supabase = createSupabaseAdminClient();
+    const transport = await loadTransportAgencyDeliverySettings(
+      supabase,
+      store.id,
+      store.deliverySettings?.pickupEnabled !== false
+    );
+    if (transport) {
+      return {
+        ...store,
+        deliverySettings: transport.settings,
+      };
+    }
+  } catch {
+    return store;
+  }
+
+  if (!store.deliverySettings) return store;
+
+  return {
+    ...store,
+    deliverySettings: disableUnavailableTransportAgencySettings(store.deliverySettings),
+  };
+}
+
 export async function getPublicStores(): Promise<Store[]> {
   const supabase = createSupabasePublicClient();
 
@@ -440,19 +787,32 @@ export async function getPublicStores(): Promise<Store[]> {
 
   const storesResult = await supabase
     .from("stores")
-    .select(storeSelect)
-    .eq("is_active", true);
+    .select(storeShellSelect)
+    .eq("is_active", true)
+    .order("name", { ascending: true });
   let data: any[] | null = storesResult.data as any;
   let error = storesResult.error;
 
   if (error) {
-    const fallbackResult = await supabase
+    const deliveryFallbackResult = await supabase
       .from("stores")
-      .select(legacyStoreSelect)
-      .eq("is_active", true);
+      .select(storeShellCompatibleSelect)
+      .eq("is_active", true)
+      .order("name", { ascending: true });
 
-    data = fallbackResult.data?.map(withPaymentDetailsFallback) || [];
-    error = fallbackResult.error;
+    if (!deliveryFallbackResult.error) {
+      data = deliveryFallbackResult.data?.map(withPaymentDetailsFallback) || [];
+      error = null;
+    } else {
+      const fallbackResult = await supabase
+        .from("stores")
+        .select(legacyStoreSelect)
+        .eq("is_active", true)
+        .order("name", { ascending: true });
+
+      data = fallbackResult.data?.map(withPaymentDetailsFallback) || [];
+      error = fallbackResult.error;
+    }
   }
 
   if (error || !data?.length) {
@@ -460,7 +820,77 @@ export async function getPublicStores(): Promise<Store[]> {
     return allowDemoFallbacks() ? fallbackStores : [];
   }
 
-  return data.map(mapStore);
+  return data
+    .filter((row) => !isStoreSubscriptionPastDue(row))
+    .map((row) => mapStore(row, { includeFallbackCatalog: false }));
+}
+
+export async function getPublicStoreShellBySlug(slug: string): Promise<Store | null> {
+  const supabase = createSupabasePublicClient();
+
+  if (!supabase) {
+    const fallback = allowDemoFallbacks() ? getFallbackStoreBySlug(slug) || null : null;
+    return fallback
+      ? {
+          ...fallback,
+          categories: [],
+          products: [],
+        }
+      : null;
+  }
+
+  const storeResult = await supabase
+    .from("stores")
+    .select(storeShellSelect)
+    .eq("slug", slug)
+    .eq("is_active", true)
+    .maybeSingle();
+  let data: any | null = storeResult.data as any;
+  let error = storeResult.error;
+
+  if (error) {
+    const deliveryFallbackResult = await supabase
+      .from("stores")
+      .select(storeShellCompatibleSelect)
+      .eq("slug", slug)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (!deliveryFallbackResult.error) {
+      data = deliveryFallbackResult.data
+        ? withPaymentDetailsFallback(deliveryFallbackResult.data)
+        : null;
+      error = null;
+    } else {
+      const fallbackResult = await supabase
+        .from("stores")
+        .select(baseStoreSelect)
+        .eq("slug", slug)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      data = fallbackResult.data
+        ? withPaymentDetailsFallback(fallbackResult.data)
+        : null;
+      error = fallbackResult.error;
+    }
+  }
+
+  if (error || !data) {
+    console.warn("Using fallback store shell. Supabase error:", error?.message);
+    const fallback = allowDemoFallbacks() ? getFallbackStoreBySlug(slug) || null : null;
+    return fallback
+      ? {
+          ...fallback,
+          categories: [],
+          products: [],
+        }
+      : null;
+  }
+
+  if (isStoreSubscriptionPastDue(data)) return null;
+
+  return applyTransportDeliverySettings(mapStore(data, { includeFallbackCatalog: false }));
 }
 
 export async function getPublicStoreBySlug(slug: string): Promise<Store | null> {
@@ -480,17 +910,31 @@ export async function getPublicStoreBySlug(slug: string): Promise<Store | null> 
   let error = storeResult.error;
 
   if (error) {
-    const fallbackResult = await supabase
+    const deliveryFallbackResult = await supabase
       .from("stores")
-      .select(legacyStoreSelect)
+      .select(deliveryCompatibleStoreSelect)
       .eq("slug", slug)
       .eq("is_active", true)
       .maybeSingle();
 
-    data = fallbackResult.data
-      ? withPaymentDetailsFallback(fallbackResult.data)
-      : null;
-    error = fallbackResult.error;
+    if (!deliveryFallbackResult.error) {
+      data = deliveryFallbackResult.data
+        ? withPaymentDetailsFallback(deliveryFallbackResult.data)
+        : null;
+      error = null;
+    } else {
+      const fallbackResult = await supabase
+        .from("stores")
+        .select(legacyStoreSelect)
+        .eq("slug", slug)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      data = fallbackResult.data
+        ? withPaymentDetailsFallback(fallbackResult.data)
+        : null;
+      error = fallbackResult.error;
+    }
   }
 
   if (error || !data) {
@@ -498,7 +942,32 @@ export async function getPublicStoreBySlug(slug: string): Promise<Store | null> 
     return allowDemoFallbacks() ? getFallbackStoreBySlug(slug) || null : null;
   }
 
-  return mapStore(data);
+  if (isStoreSubscriptionPastDue(data)) return null;
+
+  return applyTransportDeliverySettings(mapStore(data));
+}
+
+export async function getUnavailableStoreContactBySlug(slug: string) {
+  const supabase = createSupabasePublicClient();
+  if (!supabase) return null;
+
+  const { data } = await supabase
+    .from("stores")
+    .select("slug, name, whatsapp, is_active, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
+    .eq("slug", slug)
+    .maybeSingle();
+
+  if (!data) return null;
+
+  const unavailable =
+    (data as any).is_active === false || isStoreSubscriptionPastDue(data as AnyRecord);
+
+  return unavailable
+    ? {
+        name: (data as any).name || "la tienda",
+        whatsapp: String((data as any).whatsapp || "").replace(/[^0-9]/g, ""),
+      }
+    : null;
 }
 
 export async function getPublicStoreSlugs() {

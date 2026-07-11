@@ -1,12 +1,13 @@
 ﻿"use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, CheckCircle2, Copy, Loader2, MessageCircle, Navigation, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { CheckoutFormData, DeliveryLocation, DeliveryQuote, SavedOrder, Store } from "@/types";
 import { clearCart, getCart, getCartSubtotal } from "@/lib/cart";
-import { formatBs, formatUsd } from "@/lib/currency";
+import { formatBaseCurrency, formatBs } from "@/lib/currency";
 import {
   buildMapsUrl,
   buildRouteUrl,
@@ -18,7 +19,18 @@ import { isCashPaymentMethod } from "@/lib/payments";
 import { buildPaymentInfo } from "@/lib/payment-display";
 import { buildOrderMessage, buildWhatsAppUrl } from "@/lib/whatsapp";
 import { saveOrderToSupabase } from "@/lib/supabase/orders";
-import { LocationPicker } from "@/components/public/LocationPicker";
+
+const LocationPicker = dynamic(
+  () => import("@/components/public/LocationPicker").then((mod) => mod.LocationPicker),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="rounded-2xl border border-[#EFE6D6] bg-[#F8F3E8] p-4 text-sm font-black text-[#746f69]">
+        Cargando mapa...
+      </div>
+    ),
+  }
+);
 
 const initialForm: CheckoutFormData = {
   customerName: "",
@@ -45,14 +57,23 @@ function createOrderId() {
   return `VP-${dayCode}-${random}`;
 }
 
-function formatCheckoutOptions(item: ReturnType<typeof getCart>[number]) {
+function localizeQuoteText(text: string | undefined, baseCurrency: "USD" | "EUR" | string) {
+  if (!text) return "";
+  const symbol = String(baseCurrency || "USD").toUpperCase() === "EUR" ? "€" : "$";
+  return text.replace(/\$/g, symbol);
+}
+
+function formatCheckoutOptions(
+  item: ReturnType<typeof getCart>[number],
+  baseCurrency: "USD" | "EUR" | string
+) {
   const groups = new Map<string, string[]>();
 
   for (const option of item.selectedOptions || []) {
     const current = groups.get(option.groupName) || [];
     current.push(
       option.priceDeltaUsd > 0
-        ? `${option.valueName} (+${formatUsd(option.priceDeltaUsd)})`
+        ? `${option.valueName} (+${formatBaseCurrency(option.priceDeltaUsd, baseCurrency)})`
         : option.valueName
     );
     groups.set(option.groupName, current);
@@ -93,11 +114,11 @@ export function CheckoutForm({ store }: { store: Store }) {
   const canShareLocation =
     form.deliveryType === "delivery" &&
     deliverySettings.deliveryEnabled &&
-    !["manual_quote", "disabled"].includes(deliverySettings.deliveryProvider) &&
-    deliverySettings.pricingType !== "zones";
+    !["manual_quote", "disabled"].includes(deliverySettings.deliveryProvider);
   const needsLocation =
     canShareLocation &&
-    (deliverySettings.pricingType === "fixed_distance" ||
+    (deliverySettings.pricingType === "zones" ||
+      deliverySettings.pricingType === "fixed_distance" ||
       deliverySettings.pricingType === "distance_ranges" ||
       deliverySettings.deliveryProvider === "entrega2");
   const needsZone =
@@ -110,16 +131,16 @@ export function CheckoutForm({ store }: { store: Store }) {
   );
   const deliveryModeCopy = useMemo(() => {
     if (deliverySettings.deliveryProvider === "entrega2") {
-      return "Comparte tu ubicacion para calcular la tarifa con Entrega2.";
+      return "Comparte tu ubicación para coordinar el delivery.";
     }
     if (deliverySettings.pricingType === "zones") {
-      return "Elige tu zona para sumar el delivery al pedido.";
+      return "Selecciona tu zona y carga tu ubicación GPS para el repartidor.";
     }
     if (deliverySettings.pricingType === "fixed_distance") {
-      return "Comparte tu ubicacion o toca el mapa para validar la tarifa plana.";
+      return "Comparte tu ubicación o toca el mapa.";
     }
     if (deliverySettings.pricingType === "distance_ranges") {
-      return "Comparte tu ubicacion o toca el mapa para calcular el rango de delivery.";
+      return "Comparte tu ubicación o toca el mapa.";
     }
     return "Indica una referencia clara para facilitar la entrega.";
   }, [deliverySettings.deliveryProvider, deliverySettings.pricingType]);
@@ -208,14 +229,20 @@ export function CheckoutForm({ store }: { store: Store }) {
   ]);
 
   const deliveryUsd = form.deliveryType === "delivery" ? quote.feeUsd : 0;
+  const showPricesInBs = store.showPricesInBs !== false;
+  const baseCurrency = store.baseCurrency || "USD";
+  const isManualQuoteDelivery =
+    form.deliveryType === "delivery" &&
+    (deliverySettings.deliveryProvider === "manual_quote" ||
+      deliverySettings.pricingType === "manual");
   const deliveryAmountLabel =
     form.deliveryType === "pickup"
       ? "Sin delivery"
       : quote.source === "pending"
         ? "Por calcular"
-        : quote.source === "manual" && deliveryUsd === 0
+        : isManualQuoteDelivery && deliveryUsd === 0
           ? "Por confirmar"
-          : formatUsd(quote.originalFeeUsd ?? deliveryUsd);
+          : formatBaseCurrency(quote.originalFeeUsd ?? deliveryUsd, baseCurrency);
   const totalUsd = subtotalUsd + deliveryUsd;
   const totalBs = totalUsd * (store.usdToBs || 600);
   const isCashPayment = isCashPaymentMethod(form.paymentMethod);
@@ -230,6 +257,8 @@ export function CheckoutForm({ store }: { store: Store }) {
     : null;
 
   const mapsUrl = location ? buildMapsUrl(location.latitude, location.longitude) : null;
+  const quoteLabel = localizeQuoteText(quote.label, baseCurrency);
+  const quoteMessage = localizeQuoteText(quote.message, baseCurrency);
   const routeUrl = location
     ? buildRouteUrl({
         originLat: store.latitude,
@@ -333,6 +362,7 @@ export function CheckoutForm({ store }: { store: Store }) {
 
       localStorage.setItem(getOrderKey(store.slug), JSON.stringify(saveResult.order));
       clearCart(store.slug);
+      setItems([]);
       window.open(saveResult.order.whatsappUrl, "_blank", "noopener,noreferrer");
       router.push(`/${store.slug}/confirmacion`);
     } catch (error: any) {
@@ -354,11 +384,11 @@ export function CheckoutForm({ store }: { store: Store }) {
 
         <section className="mb-5 overflow-hidden rounded-[36px] bg-[#2E3A79] text-white shadow-2xl shadow-[#2E3A79]/20">
           <div className="relative p-5 sm:p-7">
-            <div className="absolute right-5 top-5 rounded-full bg-[#FFB547] px-4 py-2 text-sm font-black text-[#25262B]">Vende+</div>
+            <div className="absolute right-5 top-5 rounded-full bg-[#FFB547] px-4 py-2 text-sm font-black text-[#25262B]">VendeMas</div>
             <p className="text-sm font-bold text-white/65">{store.name}</p>
             <h1 className="mt-2 max-w-xl text-3xl font-black tracking-tight sm:text-5xl">Confirma tu pedido</h1>
             <p className="mt-3 max-w-xl text-sm font-semibold leading-relaxed text-white/72">
-              Revisa el total, elige cómo recibirlo y confirma el pedido por WhatsApp.
+              Revisa el total, agrega como recibirlo y confirma el pedido por WhatsApp.
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
               <span className="inline-flex items-center gap-2 rounded-full bg-white/12 px-3 py-2 text-xs font-black text-white">
@@ -403,7 +433,12 @@ export function CheckoutForm({ store }: { store: Store }) {
                         : "bg-white text-[#746f69] ring-[#25262B]/10",
                     ].join(" ")}
                   >
-                    Delivery
+                    <span className="block">Delivery</span>
+                    {deliverySettings.transportAgencyName ? (
+                      <span className="mt-0.5 block text-[10px] font-bold opacity-75">
+                        {deliverySettings.transportAgencyName}
+                      </span>
+                    ) : null}
                   </button>
                 ) : null}
                 {deliverySettings.pickupEnabled ? (
@@ -423,7 +458,7 @@ export function CheckoutForm({ store }: { store: Store }) {
               </div>
               <p className="mt-3 rounded-2xl bg-[#FFF8F0] p-3 text-sm font-bold text-[#746f69]">
                 {form.deliveryType === "delivery"
-                  ? quote.message || deliveryModeCopy
+                  ? deliveryModeCopy
                   : "Retiras directamente en el comercio."}
               </p>
             </section>
@@ -433,7 +468,7 @@ export function CheckoutForm({ store }: { store: Store }) {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <h2 className="text-xl font-black text-[#25262B]">3. Ubicación para Delivery</h2>
-                    <p className="mt-1 text-sm font-bold text-[#746f69]">{deliveryModeCopy}</p>
+                    <p className="mt-1 text-sm font-bold text-[#746f69]">Carga la ubicación donde quieres recibir el pedido.</p>
                   </div>
                   {isCalculating ? <Loader2 className="animate-spin text-[#2E3A79]" /> : <Navigation className="text-[#FFB547]" />}
                 </div>
@@ -448,7 +483,7 @@ export function CheckoutForm({ store }: { store: Store }) {
                       <option value="">Seleccionar zona</option>
                       {activeDeliveryZones.map((zone) => (
                           <option key={zone.id} value={zone.id}>
-                            {zone.name} · {formatUsd(zone.feeUsd)}
+                            {zone.name} · {formatBaseCurrency(zone.feeUsd, baseCurrency)}
                           </option>
                         ))}
                     </select>
@@ -472,11 +507,11 @@ export function CheckoutForm({ store }: { store: Store }) {
                       <p className="mt-2 rounded-2xl bg-[#FFF8F0] p-3 text-xs font-black text-[#746f69]">
                         Compartir ubicación es opcional, pero ayuda al comercio y al repartidor a llegar más rápido.
                       </p>
-                    ) : location ? (
-                      <p className="mt-2 rounded-2xl bg-green-50 p-3 text-xs font-black text-green-700">
-                        Ubicacion recibida. {isCalculating ? "Calculando delivery..." : quote.label}
+                    ) : location ? null : (
+                      <p className="mt-2 rounded-2xl bg-[#FFF8F0] p-3 text-xs font-black text-[#746f69]">
+                        Comparte tu ubicación para que el repartidor llegue sin perderse.
                       </p>
-                    ) : null}
+                    )}
                   </div>
                 ) : null}
                 <label className="mt-4 block">
@@ -485,7 +520,7 @@ export function CheckoutForm({ store }: { store: Store }) {
                 </label>
                 {quote.available === false ? (
                   <p className="mt-3 rounded-2xl bg-red-50 p-3 text-sm font-black text-red-700">
-                    {quote.message || quote.label}
+                    {quoteMessage || quoteLabel}
                   </p>
                 ) : null}
               </section>
@@ -578,7 +613,7 @@ export function CheckoutForm({ store }: { store: Store }) {
 
                   {!paymentInfo.hasConfiguredData ? (
                     <p className="mt-3 rounded-2xl bg-white/10 p-3 text-xs font-black text-white">
-                      No hay datos de pago guardados para este método. Si ya los cargaste en configuración, aplica la migración de pagos en Supabase y vuelve a guardar.
+                      No hay datos de pago guardados para este método. Confírmalos por WhatsApp con el comercio.
                     </p>
                   ) : null}
 
@@ -611,18 +646,18 @@ export function CheckoutForm({ store }: { store: Store }) {
                         {item.quantity}x {item.productName}
                         {item.selectedOptions?.length ? (
                           <span className="mt-1 block text-xs font-semibold">
-                            {formatCheckoutOptions(item)}
+                            {formatCheckoutOptions(item, baseCurrency)}
                           </span>
                         ) : null}
                       </span>
-                      <span className="font-black">{formatUsd(item.unitPriceUsd * item.quantity)}</span>
+                      <span className="font-black">{formatBaseCurrency(item.unitPriceUsd * item.quantity, baseCurrency)}</span>
                     </div>
                   ))}
                 </div>
 
                 <div className="my-4 h-px bg-[#25262B]/10" />
                 <div className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="font-bold text-[#746f69]">Subtotal</span><span className="font-black">{formatUsd(subtotalUsd)}</span></div>
+                  <div className="flex justify-between"><span className="font-bold text-[#746f69]">Subtotal</span><span className="font-black">{formatBaseCurrency(subtotalUsd, baseCurrency)}</span></div>
                   <div className="flex justify-between">
                     <span className="font-bold text-[#746f69]">
                       {form.deliveryType === "delivery" ? "Delivery" : "Retiro (pick up)"}
@@ -634,13 +669,15 @@ export function CheckoutForm({ store }: { store: Store }) {
                   {form.deliveryType === "delivery" && Number(quote.discountUsd || 0) > 0 ? (
                     <div className="flex justify-between text-green-700">
                       <span className="font-bold">Promo delivery</span>
-                      <span className="font-black">-{formatUsd(quote.discountUsd || 0)}</span>
+                      <span className="font-black">-{formatBaseCurrency(quote.discountUsd || 0, baseCurrency)}</span>
                     </div>
                   ) : null}
-                  <div className="flex justify-between"><span className="font-bold text-[#746f69]">Tasa usada</span><span className="font-black">{formatBs(store.usdToBs || 600)}</span></div>
+                  {showPricesInBs ? (
+                    <div className="flex justify-between"><span className="font-bold text-[#746f69]">Tasa usada</span><span className="font-black">{formatBs(store.usdToBs || 600)}</span></div>
+                  ) : null}
                   {form.deliveryType === "delivery" ? (
                     <p className="rounded-2xl bg-[#FFF8F0] p-3 text-xs font-black text-[#746f69]">
-                      {quote.message || quote.label} {quote.source === "fallback" ? "· estimado aproximado" : ""}
+                      {quoteMessage || quoteLabel} {quote.source === "fallback" ? "· estimado aproximado" : ""}
                     </p>
                   ) : null}
                 </div>
@@ -649,8 +686,10 @@ export function CheckoutForm({ store }: { store: Store }) {
                   <div className="flex items-end justify-between gap-3">
                     <span className="font-bold text-white/70">Total</span>
                     <div className="text-right">
-                      <p className="text-3xl font-black">{formatUsd(totalUsd)}</p>
-                      <p className="text-sm font-black text-[#FFB547]">{formatBs(totalBs)}</p>
+                      <p className="text-3xl font-black">{formatBaseCurrency(totalUsd, baseCurrency)}</p>
+                      {showPricesInBs ? (
+                        <p className="text-sm font-black text-[#FFB547]">{formatBs(totalBs)}</p>
+                      ) : null}
                     </div>
                   </div>
                 </div>

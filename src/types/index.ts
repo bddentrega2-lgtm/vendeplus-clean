@@ -1,6 +1,11 @@
 ﻿export type DeliveryType = "delivery" | "pickup";
 export type DeliverySource = "none" | "current" | "map";
-export type DeliveryProvider = "own_delivery" | "entrega2" | "manual_quote" | "disabled";
+export type DeliveryProvider =
+  | "own_delivery"
+  | "entrega2"
+  | "manual_quote"
+  | "transport_agency"
+  | "disabled";
 export type DeliveryPricingType =
   | "fixed"
   | "fixed_distance"
@@ -46,6 +51,7 @@ export type ProductOptionValue = {
   name: string;
   description?: string;
   priceDeltaUsd: number;
+  variantPriceDeltas?: Record<string, number>;
   isActive: boolean;
 };
 
@@ -108,6 +114,8 @@ export type Store = {
   products: Product[];
   paymentMethods: string[];
   usdToBs?: number;
+  baseCurrency?: "USD" | "EUR";
+  showPricesInBs?: boolean;
   paymentDetails?: StorePaymentDetails;
   logoUrl?: string;
   coverImageUrl?: string;
@@ -153,6 +161,9 @@ export type StoreDeliverySettings = {
   manualQuoteMessage: string;
   zones: StoreDeliveryZone[];
   distanceRates: StoreDeliveryDistanceRate[];
+  transportAgencyConnectionId?: string | null;
+  transportAgencyId?: string | null;
+  transportAgencyName?: string | null;
 };
 
 export type StorePaymentDetails = {
@@ -214,6 +225,8 @@ export type DeliveryQuote = {
   pricingType?: DeliveryPricingType;
   zoneId?: string | null;
   zoneName?: string | null;
+  transportAgencyId?: string | null;
+  transportAgencyName?: string | null;
   message?: string;
 };
 

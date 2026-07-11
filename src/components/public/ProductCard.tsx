@@ -1,15 +1,30 @@
 "use client";
 
-import { Check, Plus, Sparkles, X } from "lucide-react";
+import { Check, Plus, X } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { Product, ProductVariant, SelectedCartOption } from "@/types";
+import type { Product, ProductOptionValue, ProductVariant, SelectedCartOption } from "@/types";
 import { addToCart } from "@/lib/cart";
-import { formatBs, formatUsd } from "@/lib/currency";
-import { QuantityControl } from "@/components/public/QuantityControl";
+import { formatBaseCurrency, formatBs } from "@/lib/currency";
 
 type SelectionMap = Record<string, string[]>;
 
-function buildSelectedOptions(product: Product, selections: SelectionMap) {
+function getOptionPriceDelta(value: ProductOptionValue, selectedVariant: ProductVariant | null) {
+  if (
+    selectedVariant?.id &&
+    value.variantPriceDeltas &&
+    Object.prototype.hasOwnProperty.call(value.variantPriceDeltas, selectedVariant.id)
+  ) {
+    return Number(value.variantPriceDeltas[selectedVariant.id] || 0);
+  }
+
+  return Number(value.priceDeltaUsd || 0);
+}
+
+function buildSelectedOptions(
+  product: Product,
+  selections: SelectionMap,
+  selectedVariant: ProductVariant | null
+) {
   return (product.optionGroups || []).flatMap((group) => {
     const selectedIds = selections[group.id] || [];
 
@@ -23,7 +38,7 @@ function buildSelectedOptions(product: Product, selections: SelectionMap) {
           groupName: group.name,
           valueId: value.id,
           valueName: value.name,
-          priceDeltaUsd: value.priceDeltaUsd,
+          priceDeltaUsd: getOptionPriceDelta(value, selectedVariant),
         } satisfies SelectedCartOption;
       })
       .filter(Boolean) as SelectedCartOption[];
@@ -34,6 +49,8 @@ function ProductOptionsSheet({
   product,
   storeSlug,
   usdToBs,
+  baseCurrency,
+  showPricesInBs,
   quantity,
   selectedVariant,
   baseUnitPrice,
@@ -43,6 +60,8 @@ function ProductOptionsSheet({
   product: Product;
   storeSlug: string;
   usdToBs: number;
+  baseCurrency: "USD" | "EUR" | string;
+  showPricesInBs: boolean;
   quantity: number;
   selectedVariant: ProductVariant | null;
   baseUnitPrice: number;
@@ -56,8 +75,8 @@ function ProductOptionsSheet({
   const [message, setMessage] = useState("");
 
   const selectedOptions = useMemo(
-    () => buildSelectedOptions(product, selections),
-    [product, selections]
+    () => buildSelectedOptions(product, selections, selectedVariant),
+    [product, selections, selectedVariant]
   );
   const extrasUsd = selectedOptions.reduce(
     (sum, option) => sum + option.priceDeltaUsd,
@@ -85,7 +104,7 @@ function ProductOptionsSheet({
       const maxSelect = group.maxSelect > 0 ? group.maxSelect : group.values.length;
 
       if (!isSelected && nextIds.length > maxSelect) {
-        setMessage(`Puedes elegir hasta ${maxSelect} opciones en ${group.name}.`);
+        setMessage(`Puedes seleccionar hasta ${maxSelect} opciones en ${group.name}.`);
         return current;
       }
 
@@ -139,13 +158,13 @@ function ProductOptionsSheet({
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-              Personaliza tu producto
+              Añade tu producto
             </p>
             <h2 className="mt-1 text-2xl font-black text-[#25262B]">
               {product.name}
             </h2>
             <p className="mt-1 text-sm font-bold text-[#746f69]">
-              Base: {formatUsd(baseUnitPrice)}
+              Base: {formatBaseCurrency(baseUnitPrice, baseCurrency)}
             </p>
           </div>
           <button
@@ -166,8 +185,8 @@ function ProductOptionsSheet({
               group.selectionType === "single"
                 ? group.required
                   ? "Selecciona 1 opción"
-                  : "Puedes elegir 1 opción"
-                : `Puedes elegir hasta ${maxSelect}`;
+                  : "Puedes seleccionar 1 opción"
+                : `Puedes seleccionar hasta ${maxSelect}`;
 
             return (
               <fieldset key={group.id} className="rounded-2xl bg-[#FFF8F0] p-3">
@@ -193,6 +212,7 @@ function ProductOptionsSheet({
                 <div className="mt-3 grid gap-2">
                   {group.values.map((value) => {
                     const active = selectedIds.includes(value.id);
+                    const priceDeltaUsd = getOptionPriceDelta(value, selectedVariant);
                     const controlType =
                       group.selectionType === "single" ? "radio" : "checkbox";
 
@@ -217,9 +237,9 @@ function ProductOptionsSheet({
                           <span className="truncate">{value.name}</span>
                         </span>
                         <span className={active ? "text-white" : "text-[#746f69]"}>
-                          {value.priceDeltaUsd > 0
-                            ? `+${formatUsd(value.priceDeltaUsd)}`
-                            : "+$0.00"}
+                          {priceDeltaUsd > 0
+                            ? `+${formatBaseCurrency(priceDeltaUsd, baseCurrency)}`
+                            : `+${formatBaseCurrency(0, baseCurrency)}`}
                         </span>
                       </label>
                     );
@@ -241,11 +261,13 @@ function ProductOptionsSheet({
             <span className="text-sm font-bold text-[#746f69]">Total</span>
             <div className="text-right">
               <p className="text-xl font-black text-[#25262B]">
-                {formatUsd(totalUsd)}
+                {formatBaseCurrency(totalUsd, baseCurrency)}
               </p>
-              <p className="text-xs font-black text-[#746f69]">
-                {formatBs(totalUsd * usdToBs)}
-              </p>
+              {showPricesInBs ? (
+                <p className="text-xs font-black text-[#746f69]">
+                  {formatBs(totalUsd * usdToBs)}
+                </p>
+              ) : null}
             </div>
           </div>
           <button
@@ -254,7 +276,7 @@ function ProductOptionsSheet({
             className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B]"
           >
             <Plus size={18} />
-            Agregar al carrito
+            Añadir al carrito
           </button>
         </div>
       </section>
@@ -262,206 +284,36 @@ function ProductOptionsSheet({
   );
 }
 
-export function ProductCard({
-  product,
-  storeSlug,
-  usdToBs = 600,
-}: {
-  product: Product;
-  storeSlug: string;
-  usdToBs?: number;
-}) {
-  const defaultVariant =
-    product.variants?.find((variant) => variant.isAvailable) ||
-    product.variants?.[0] ||
-    null;
-  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(
-    defaultVariant
-  );
-  const [quantity, setQuantity] = useState(1);
-  const [added, setAdded] = useState(false);
-  const [isCustomizing, setIsCustomizing] = useState(false);
-
-  const unitPrice = useMemo(() => {
-    return product.priceUsd + (selectedVariant?.priceDeltaUsd || 0);
-  }, [product.priceUsd, selectedVariant]);
-  const unitPriceBs = unitPrice * usdToBs;
-
-  function handleAdd() {
-    if (product.optionGroups?.length) {
-      setIsCustomizing(true);
-      return;
-    }
-
-    addToCart(storeSlug, {
-      productId: product.id,
-      productName: product.name,
-      productSlug: product.slug,
-      productImageUrl: product.imageUrl,
-      variantId: selectedVariant?.id,
-      variantName: selectedVariant?.name,
-      quantity,
-      unitPriceUsd: unitPrice,
-    });
-
-    setAdded(true);
-    setQuantity(1);
-    window.setTimeout(() => setAdded(false), 1400);
-  }
-
-  function markAdded() {
-    setAdded(true);
-    setQuantity(1);
-    window.setTimeout(() => setAdded(false), 1400);
-  }
-
-  return (
-    <article className="group overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-[#25262B]/[0.07]">
-      <div className="relative h-40 overflow-hidden bg-[#F8F3E8] sm:h-44">
-        <img
-          src={product.imageUrl}
-          alt={product.imageAlt}
-          className="h-full w-full object-cover transition duration-700 group-hover:scale-105"
-          decoding="async"
-          loading="lazy"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#25262B]/45 via-transparent to-transparent" />
-        {product.isFeatured ? (
-          <div className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-white/95 px-3 py-1.5 text-xs font-black text-[#2E3A79] shadow-lg">
-            <Sparkles size={13} className="text-[#FFB547]" /> Recomendado
-          </div>
-        ) : null}
-        <div className="absolute bottom-3 right-3 rounded-2xl bg-white/95 px-3 py-2 text-right text-[#25262B] shadow-lg">
-          <p className="text-sm font-black">{formatUsd(unitPrice)}</p>
-          <p className="text-[11px] font-black opacity-75">{formatBs(unitPriceBs)}</p>
-        </div>
-      </div>
-
-      <div className="space-y-3 p-3">
-        <div>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="text-base font-black leading-tight text-[#25262B]">
-                {product.name}
-              </h3>
-              <p className="mt-1 line-clamp-2 text-xs font-semibold leading-relaxed text-[#746f69]">
-                {product.description}
-              </p>
-            </div>
-            {product.imageEmoji ? (
-              <span className="text-xl">{product.imageEmoji}</span>
-            ) : null}
-          </div>
-
-          {product.tags?.length ? (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {product.tags.slice(0, 2).map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded-full bg-[#FFF8F0] px-2.5 py-1 text-[11px] font-black text-[#746f69]"
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          ) : null}
-        </div>
-
-        {product.variants?.length ? (
-          <div>
-            <p className="mb-2 text-[11px] font-black uppercase text-[#746f69]">
-              Presentacion
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {product.variants.map((variant) => {
-                const active = selectedVariant?.id === variant.id;
-                return (
-                  <button
-                    key={variant.id}
-                    type="button"
-                    disabled={!variant.isAvailable}
-                    onClick={() => setSelectedVariant(variant)}
-                    className={
-                      active
-                        ? "rounded-full bg-[#2E3A79] px-3 py-2 text-xs font-black text-white"
-                        : variant.isAvailable
-                          ? "rounded-full border border-[#25262B]/10 bg-[#FFF8F0] px-3 py-2 text-xs font-black text-[#746f69]"
-                          : "rounded-full border border-[#25262B]/10 bg-[#F5F2EC] px-3 py-2 text-xs font-black text-[#746f69] opacity-50"
-                    }
-                  >
-                    {variant.name}
-                    {variant.priceDeltaUsd > 0
-                      ? ` +${formatUsd(variant.priceDeltaUsd)}`
-                      : ""}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
-
-        <div className="flex items-center justify-between gap-3">
-          <QuantityControl value={quantity} onChange={setQuantity} />
-          <button
-            type="button"
-            onClick={handleAdd}
-            className={
-              added
-                ? "inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-[#6FA64F] px-4 py-3 text-sm font-black text-white"
-                : "inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-[#FFB547] px-4 py-3 text-sm font-black text-[#25262B] shadow-lg shadow-[#FFB547]/25"
-            }
-          >
-          {added ? <Check size={18} /> : <Plus size={18} />}
-            {added
-              ? "Agregado"
-              : product.optionGroups?.length
-                ? "Personalizar"
-                : "Agregar"}
-          </button>
-        </div>
-      </div>
-      {isCustomizing ? (
-        <ProductOptionsSheet
-          product={product}
-          storeSlug={storeSlug}
-          usdToBs={usdToBs}
-          quantity={quantity}
-          selectedVariant={selectedVariant}
-          baseUnitPrice={unitPrice}
-          onClose={() => setIsCustomizing(false)}
-          onAdded={markAdded}
-        />
-      ) : null}
-    </article>
-  );
-}
-
 export function ProductListItem({
   product,
   storeSlug,
   usdToBs = 600,
+  baseCurrency = "USD",
+  showPricesInBs = true,
   cartQuantity = 0,
 }: {
   product: Product;
   storeSlug: string;
   usdToBs?: number;
+  baseCurrency?: "USD" | "EUR" | string;
+  showPricesInBs?: boolean;
   cartQuantity?: number;
 }) {
-  const defaultVariant =
-    product.variants?.find((variant) => variant.isAvailable) ||
-    product.variants?.[0] ||
-    null;
-  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(
-    defaultVariant
-  );
+  const hasVariants = Boolean(product.variants?.length);
+  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const [added, setAdded] = useState(false);
   const [isCustomizing, setIsCustomizing] = useState(false);
 
   const unitPrice = useMemo(() => {
     return product.priceUsd + (selectedVariant?.priceDeltaUsd || 0);
   }, [product.priceUsd, selectedVariant]);
+  const canAdd = !hasVariants || Boolean(selectedVariant);
 
   function handleAdd() {
+    if (!canAdd) {
+      return;
+    }
+
     if (product.optionGroups?.length) {
       setIsCustomizing(true);
       return;
@@ -488,82 +340,95 @@ export function ProductListItem({
   }
 
   return (
-    <article className="rounded-2xl bg-white p-2.5 shadow-sm ring-1 ring-[#25262B]/[0.07]">
-      <div className="grid grid-cols-[72px_1fr_auto] gap-3">
+    <article
+      className={[
+        "min-h-[128px] rounded-2xl p-2 shadow-sm ring-1",
+        product.isFeatured
+          ? "bg-[#FFF8F0] ring-[#FFB547]/55 shadow-[#FFB547]/10"
+          : "bg-white ring-[#25262B]/[0.07]",
+      ].join(" ")}
+    >
+      <div
+        className={[
+          "grid min-h-[112px] grid-cols-[76px_minmax(0,1fr)] gap-2.5",
+        ].join(" ")}
+      >
         <img
           src={product.imageUrl}
           alt={product.imageAlt}
-          className="h-[72px] w-[72px] rounded-2xl bg-[#F8F3E8] object-cover"
+          className="h-[112px] w-[76px] rounded-xl bg-[#F8F3E8] object-cover"
           decoding="async"
           loading="lazy"
         />
-        <div className="min-w-0">
-          <div className="flex items-start gap-2">
-            <div className="min-w-0 flex-1">
-              <h3 className="truncate text-sm font-black leading-tight text-[#25262B]">
-                {product.name}
-              </h3>
-              <p className="mt-1 line-clamp-1 text-xs font-semibold text-[#746f69]">
-                {product.description}
-              </p>
+        <div className="flex min-w-0 flex-col">
+          <div className="flex min-w-0 items-start justify-between gap-2">
+            <div className="min-w-0">
+              <h3 className="truncate text-sm font-black leading-tight text-[#25262B]">{product.name}</h3>
+            </div>
+            {cartQuantity > 0 ? (
+              <span className="shrink-0 rounded-full bg-[#2E3A79] px-2 py-1 text-[11px] font-black text-white">
+                {cartQuantity}
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-0.5 line-clamp-2 text-[11px] font-semibold leading-snug text-[#746f69]">
+            {product.description}
+          </p>
+
+          <div className="mt-auto pt-1.5">
+            {product.variants?.length ? (
+              <select
+                value={selectedVariant?.id || ""}
+                onChange={(event) => {
+                  setSelectedVariant(
+                    product.variants?.find(
+                      (variant) => variant.id === event.target.value
+                    ) || null
+                  );
+                }}
+                className="mb-1.5 h-8 w-full rounded-lg border border-[#25262B]/10 bg-[#FFF8F0] px-2.5 text-[11px] font-black text-[#746f69] outline-none"
+              >
+                <option value="">Elige el tamaño</option>
+                {product.variants.map((variant) => (
+                  <option
+                    key={variant.id}
+                    value={variant.id}
+                    disabled={!variant.isAvailable}
+                  >
+                    {variant.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            <div className="flex items-end justify-between gap-2">
+              <div className="min-w-0 leading-tight">
+                <p className="text-sm font-black text-[#25262B]">
+                  {formatBaseCurrency(unitPrice, baseCurrency)}
+                </p>
+                {showPricesInBs ? (
+                  <p className="text-[11px] font-black text-[#746f69]">
+                    {formatBs(unitPrice * usdToBs)}
+                  </p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={handleAdd}
+                disabled={!canAdd}
+                className={[
+                  "inline-flex min-h-8 shrink-0 items-center justify-center gap-1 rounded-full px-2.5 text-center text-[11px] font-black leading-tight",
+                  added
+                    ? "bg-[#6FA64F] text-white"
+                    : !canAdd
+                      ? "bg-[#F8F3E8] text-[#746f69]"
+                    : "bg-[#FFB547] text-[#25262B]",
+                ].join(" ")}
+              >
+                {added ? <Check size={15} /> : <Plus size={15} />}
+                {added ? "Listo" : "Añadir"}
+              </button>
             </div>
           </div>
-
-          {product.variants?.length ? (
-            <select
-              value={selectedVariant?.id || ""}
-              onChange={(event) =>
-                setSelectedVariant(
-                  product.variants?.find(
-                    (variant) => variant.id === event.target.value
-                  ) || null
-                )
-              }
-              className="mt-2 w-full rounded-xl border border-[#25262B]/10 bg-[#FFF8F0] px-3 py-2 text-xs font-black text-[#746f69] outline-none"
-            >
-              {product.variants.map((variant) => (
-                <option
-                  key={variant.id}
-                  value={variant.id}
-                  disabled={!variant.isAvailable}
-                >
-                  {variant.name}
-                  {variant.priceDeltaUsd > 0
-                    ? ` +${formatUsd(variant.priceDeltaUsd)}`
-                    : ""}
-                </option>
-              ))}
-            </select>
-          ) : null}
-        </div>
-
-        <div className="flex w-28 flex-col items-end justify-between gap-2">
-          {cartQuantity > 0 ? (
-            <span className="rounded-full bg-[#2E3A79] px-2 py-1 text-[11px] font-black text-white">
-              {cartQuantity}
-            </span>
-          ) : (
-            <span />
-          )}
-          <div className="text-right">
-            <p className="text-sm font-black text-[#25262B]">{formatUsd(unitPrice)}</p>
-            <p className="text-[11px] font-black text-[#746f69]">
-              {formatBs(unitPrice * usdToBs)}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={handleAdd}
-            className={[
-              "inline-flex min-h-9 w-full items-center justify-center gap-1.5 rounded-full px-3 text-xs font-black",
-              added
-                ? "bg-[#6FA64F] text-white"
-                : "bg-[#FFB547] text-[#25262B]",
-            ].join(" ")}
-          >
-            {added ? <Check size={15} /> : <Plus size={15} />}
-            {added ? "Listo" : product.optionGroups?.length ? "Elegir" : "Sumar"}
-          </button>
         </div>
       </div>
       {isCustomizing ? (
@@ -571,6 +436,8 @@ export function ProductListItem({
           product={product}
           storeSlug={storeSlug}
           usdToBs={usdToBs}
+          baseCurrency={baseCurrency}
+          showPricesInBs={showPricesInBs}
           quantity={1}
           selectedVariant={selectedVariant}
           baseUnitPrice={unitPrice}

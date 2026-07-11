@@ -1,9 +1,9 @@
 ﻿import { notFound } from "next/navigation";
 import { CartPageClient } from "@/components/public/CartPageClient";
-import { getPublicStoreBySlug } from "@/lib/supabase/catalog";
+import { getPublicStoreShellBySlug } from "@/lib/supabase/catalog";
 
+export const revalidate = 30;
 export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
 export default async function CartPage({
   params,
@@ -11,7 +11,7 @@ export default async function CartPage({
   params: Promise<{ storeSlug: string }>;
 }) {
   const { storeSlug } = await params;
-  const store = await getPublicStoreBySlug(storeSlug);
+  const store = await getPublicStoreShellBySlug(storeSlug);
 
   if (!store) notFound();
 

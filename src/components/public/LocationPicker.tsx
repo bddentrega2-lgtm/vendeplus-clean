@@ -169,7 +169,7 @@ export function LocationPicker({
         if (permission.state === "denied") {
           setMessageType("error");
           setMessage(
-            "La ubicacion esta bloqueada en el navegador. Puedes activarla o cargar el mapa para elegir el punto."
+            "La ubicacion esta bloqueada en el navegador. Puedes activarla o cargar el mapa para seleccionar el punto."
           );
           return;
         }
@@ -194,9 +194,7 @@ export function LocationPicker({
         );
         setMessageType("success");
         setMessage(
-          `${mode === "store" ? "Ubicacion del negocio tomada" : "Ubicacion tomada"} correctamente. Precision aproximada: ${Math.round(
-            position.coords.accuracy || 0
-          )} metros.`
+          `${mode === "store" ? "Ubicacion del negocio tomada" : "Ubicacion tomada"} correctamente.`
         );
       },
       (error) => {
@@ -204,7 +202,7 @@ export function LocationPicker({
         setMessageType("error");
         if (error.code === error.PERMISSION_DENIED) {
           setMessage(
-            "Permiso rechazado. Activalo desde el navegador o carga el mapa para elegir el punto."
+            "Permiso rechazado. Activalo desde el navegador o carga el mapa para seleccionar el punto."
           );
         } else if (error.code === error.TIMEOUT) {
           setMessage(
@@ -245,7 +243,7 @@ export function LocationPicker({
           }}
           className="vp-button-soft w-full"
         >
-          <MapPin size={18} /> {showMap ? "Toca el mapa" : "Elegir en mapa"}
+          <MapPin size={18} /> {showMap ? "Toca el mapa" : "Usar mapa"}
         </button>
       </div>
 
@@ -253,12 +251,7 @@ export function LocationPicker({
         <div className="overflow-hidden rounded-[28px] border border-[#25262B]/10 bg-white shadow-sm">
           <div ref={mapRef} className="h-[340px] w-full" />
         </div>
-      ) : (
-        <div className="rounded-[28px] border border-[#25262B]/10 bg-white p-4 text-sm font-bold leading-relaxed text-[#746f69] shadow-sm">
-          Para conexiones lentas, primero intenta con GPS. Si no queda bien,
-          carga el mapa y toca el punto exacto.
-        </div>
-      )}
+      ) : null}
 
       {showMap && !isReady ? (
         <p className="rounded-2xl bg-white p-3 text-xs font-black text-[#746f69]">
@@ -285,12 +278,6 @@ export function LocationPicker({
         </div>
       ) : null}
 
-      {value ? (
-        <div className="rounded-2xl bg-white p-3 text-xs font-black text-[#746f69] ring-1 ring-[#25262B]/[0.07]">
-          Coordenadas seleccionadas: {value.latitude.toFixed(6)},{" "}
-          {value.longitude.toFixed(6)}
-        </div>
-      ) : null}
     </div>
   );
 }

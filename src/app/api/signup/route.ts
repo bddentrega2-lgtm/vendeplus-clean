@@ -1,10 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createSupabasePublicClient } from "@/lib/supabase/server";
 import { findUserByEmail, normalizeAccessEmail } from "@/lib/admin/store-access";
 import { slugifyStore } from "@/lib/admin/stores";
 import { isMissingColumnError } from "@/lib/supabase/schema-compat";
-import { checkRateLimit, getClientIp } from "@/lib/server/rate-limit";
-import { TRIAL_DAYS, getPlan } from "@/lib/plans";
+import {
+  checkDistributedRateLimit,
+  getClientIp,
+  rateLimitHeaders,
+} from "@/lib/server/rate-limit";
+import {
+  attachApiResponseHeaders,
+  createApiRequestContext,
+  logApiError,
+  logApiEvent,
+} from "@/lib/server/observability";
+import { buildPublicSiteUrl } from "@/lib/server/site-url";
+import { TRIAL_DAYS } from "@/lib/plans";
+
+const MAX_SIGNUP_BODY_BYTES = 20_000;
+const SIGNUP_IP_LIMIT = 5;
+const SIGNUP_RATE_WINDOW_MS = 60 * 60 * 1000;
 
 function cleanText(value: unknown) {
   return String(value || "").trim();
@@ -16,6 +32,28 @@ function badRequest(message: string) {
 
 function conflict(message: string) {
   return NextResponse.json({ error: message }, { status: 409 });
+}
+
+function authSignupError(message: string) {
+  const normalizedMessage = message.toLowerCase();
+
+  if (normalizedMessage.includes("captcha")) {
+    return badRequest("Completa la verificacion de seguridad e intenta de nuevo.");
+  }
+
+  if (
+    normalizedMessage.includes("already") ||
+    normalizedMessage.includes("registered") ||
+    normalizedMessage.includes("exists")
+  ) {
+    return conflict("Ya existe una cuenta con ese email. Inicia sesion o usa otro correo.");
+  }
+
+  if (normalizedMessage.includes("password")) {
+    return badRequest("La contrasena debe tener al menos 8 caracteres.");
+  }
+
+  return badRequest("No se pudo crear el acceso. Revisa los datos e intenta de nuevo.");
 }
 
 function addDays(date: Date, days: number) {
@@ -77,17 +115,36 @@ async function insertStore(supabase: any, payload: Record<string, any>) {
 }
 
 export async function POST(request: NextRequest) {
+  const apiContext = createApiRequestContext(request, "signup");
+  const observed = (response: NextResponse) =>
+    attachApiResponseHeaders(response, apiContext, "signup");
+
+  const contentLength = Number(request.headers.get("content-length") || 0);
+  if (contentLength > MAX_SIGNUP_BODY_BYTES) {
+    return observed(
+      NextResponse.json(
+        { error: "La solicitud es demasiado grande." },
+        { status: 413 }
+      )
+    );
+  }
+
   const ip = getClientIp(request);
-  const rateLimit = checkRateLimit({
+  const rateLimit = await checkDistributedRateLimit({
     key: `signup:${ip}`,
-    limit: 5,
-    windowMs: 60 * 60 * 1000,
+    limit: SIGNUP_IP_LIMIT,
+    windowMs: SIGNUP_RATE_WINDOW_MS,
   });
 
   if (!rateLimit.allowed) {
-    return NextResponse.json(
-      { error: "Demasiados intentos. Prueba de nuevo más tarde." },
-      { status: 429 }
+    return observed(
+      NextResponse.json(
+        { error: "Demasiados intentos. Prueba de nuevo mas tarde." },
+        {
+          status: 429,
+          headers: rateLimitHeaders(rateLimit, SIGNUP_IP_LIMIT),
+        }
+      )
     );
   }
 
@@ -101,36 +158,51 @@ export async function POST(request: NextRequest) {
     const password = cleanText(body.password);
     const whatsapp = cleanText(body.whatsapp).replace(/[^0-9]/g, "");
     const businessType = cleanText(body.businessType) || "general";
-    const selectedPlan = getPlan(cleanText(body.planId));
+    const captchaToken = cleanText(body.captchaToken);
 
-    if (!storeName) return badRequest("El nombre del comercio es obligatorio.");
-    if (!email || !email.includes("@")) return badRequest("Ingresa un email válido.");
-    if (password.length < 8) return badRequest("La contraseña debe tener al menos 8 caracteres.");
-    if (!whatsapp || whatsapp.length < 10) return badRequest("Ingresa un WhatsApp válido.");
+    if (!storeName) return observed(badRequest("El nombre del comercio es obligatorio."));
+    if (!email || !email.includes("@")) return observed(badRequest("Ingresa un email valido."));
+    if (password.length < 8) {
+      return observed(badRequest("La contrasena debe tener al menos 8 caracteres."));
+    }
+    if (!whatsapp || whatsapp.length < 10) {
+      return observed(badRequest("Ingresa un WhatsApp valido."));
+    }
 
     const supabase = createSupabaseAdminClient();
     const existingUser = await findUserByEmail(supabase, email);
 
     if (existingUser) {
-      return conflict("Ya existe una cuenta con ese email. Inicia sesión o usa otro correo.");
+      return observed(conflict("Ya existe una cuenta con ese email. Inicia sesion o usa otro correo."));
     }
 
     const now = new Date();
     const trialEndsAt = addDays(now, TRIAL_DAYS);
     const slug = await buildUniqueSlug(supabase, storeName);
+    const publicAuth = createSupabasePublicClient();
 
-    const userResult = await supabase.auth.admin.createUser({
+    if (!publicAuth) {
+      throw new Error("Faltan variables publicas de Supabase.");
+    }
+
+    const userResult = await publicAuth.auth.signUp({
       email,
       password,
-      email_confirm: true,
-      user_metadata: {
-        name: storeName,
-        source: "vendeplus_signup",
-        selected_plan: selectedPlan.id,
+      options: {
+        emailRedirectTo: buildPublicSiteUrl(request, "/panel/login"),
+        captchaToken: captchaToken || undefined,
+        data: {
+          name: storeName,
+          source: "vendeplus_signup",
+          selected_plan: "trial",
+        },
       },
     });
 
-    if (userResult.error) throw userResult.error;
+    if (userResult.error) {
+      return observed(authSignupError(userResult.error.message || ""));
+    }
+
     createdUserId = userResult.data.user?.id || "";
 
     if (!createdUserId) {
@@ -140,7 +212,7 @@ export async function POST(request: NextRequest) {
     const storePayload = {
       slug,
       name: storeName,
-      description: "Catálogo creado en Vende+.",
+      description: "Catalogo creado en VendeMas",
       business_type: businessType,
       whatsapp,
       address: null,
@@ -151,7 +223,7 @@ export async function POST(request: NextRequest) {
       opening_hours: "Disponible hoy",
       delivery_estimate: "25-40 min",
       pickup_estimate: "15-25 min",
-      payment_methods: ["Pago móvil", "Transferencia", "Efectivo"],
+      payment_methods: ["Pago movil", "Transferencia", "Efectivo"],
       usd_to_bs: 600,
       base_currency: "USD",
       whatsapp_message_note: null,
@@ -164,6 +236,8 @@ export async function POST(request: NextRequest) {
       plan_type: "trial",
       trial_started_at: now.toISOString(),
       trial_ends_at: trialEndsAt.toISOString(),
+      subscription_status: "trial",
+      monthly_price_usd: 0,
     };
 
     const storeResult = await insertStore(supabase, storePayload);
@@ -179,16 +253,31 @@ export async function POST(request: NextRequest) {
 
     if (assignmentError) throw assignmentError;
 
-    return NextResponse.json(
-      {
-        store: storeResult.data,
-        trialEndsAt: trialEndsAt.toISOString(),
-        selectedPlan: selectedPlan.id,
-        message: "Cuenta creada. Ya puedes entrar al panel.",
-      },
-      { status: 201 }
+    logApiEvent(apiContext, "signup_created", {
+      storeId: createdStoreId,
+      requiresEmailConfirmation: !userResult.data.session,
+    });
+
+    return observed(
+      NextResponse.json(
+        {
+          store: storeResult.data,
+          trialEndsAt: trialEndsAt.toISOString(),
+          selectedPlan: "trial",
+          requiresEmailConfirmation: !userResult.data.session,
+          message: userResult.data.session
+            ? "Cuenta creada. Ya puedes entrar al panel."
+            : "Cuenta creada. Revisa tu correo para confirmar el acceso antes de entrar al panel.",
+        },
+        { status: 201 }
+      )
     );
-  } catch (error: any) {
+  } catch (error) {
+    logApiError(apiContext, "signup_failed", error, {
+      cleanupStore: Boolean(createdStoreId),
+      cleanupUser: Boolean(createdUserId),
+    });
+
     try {
       const supabase = createSupabaseAdminClient();
       if (createdStoreId) await supabase.from("stores").delete().eq("id", createdStoreId);
@@ -197,9 +286,11 @@ export async function POST(request: NextRequest) {
       // Best-effort cleanup only.
     }
 
-    return NextResponse.json(
-      { error: error.message || "No se pudo crear la cuenta." },
-      { status: 500 }
+    return observed(
+      NextResponse.json(
+        { error: "No se pudo crear la cuenta. Revisa los datos e intenta de nuevo." },
+        { status: 500 }
+      )
     );
   }
 }

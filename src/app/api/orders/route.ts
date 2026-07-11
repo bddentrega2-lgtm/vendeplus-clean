@@ -10,17 +10,53 @@ import { safeUpsertCustomerFromOrder } from "@/lib/customers/upsert-customer-fro
 import {
   calculateDeliveryQuoteFromSettings,
   calculateRouteDistanceKm,
+  disableUnavailableTransportAgencySettings,
   mapStoreDeliverySettings,
 } from "@/lib/delivery";
+import { loadTransportAgencyDeliverySettings } from "@/lib/transport";
 import { getStoreOpenState } from "@/lib/business-hours";
-import { checkRateLimit, getClientIp } from "@/lib/server/rate-limit";
+import {
+  checkDistributedRateLimit,
+  getClientIp,
+  rateLimitHeaders,
+} from "@/lib/server/rate-limit";
+import {
+  attachApiResponseHeaders,
+  createApiRequestContext,
+  logApiError,
+  logApiEvent,
+} from "@/lib/server/observability";
 
 const MAX_ORDER_BODY_BYTES = 180_000;
 const MAX_ORDER_ITEMS = 80;
 const MAX_ITEM_QUANTITY = 99;
+const ORDER_IP_LIMIT = 60;
+const ORDER_STORE_IP_LIMIT = 24;
+const ORDER_RATE_WINDOW_MS = 10 * 60 * 1000;
 
 function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
+}
+
+function orderErrorResponse(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  const publicPrefixes = [
+    "El producto ",
+    "La presentación ",
+    "Selecciona ",
+    "Seleccionaste ",
+    "Solo puedes ",
+    "Una opción ",
+  ];
+
+  if (publicPrefixes.some((prefix) => message.startsWith(prefix))) {
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+
+  return NextResponse.json(
+    { error: "No se pudo guardar el pedido. Revisa los datos e intenta de nuevo." },
+    { status: 500 }
+  );
 }
 
 function cleanText(value: unknown, maxLength = 500) {
@@ -99,7 +135,11 @@ async function loadOptionAssignments(
           description,
           price_delta_usd,
           is_active,
-          sort_order
+          sort_order,
+          product_option_value_variant_prices (
+            variant_id,
+            price_delta_usd
+          )
         )
       )
     `
@@ -170,27 +210,39 @@ async function loadStoreDeliverySettings(
 }
 
 export async function POST(request: NextRequest) {
+  const apiContext = createApiRequestContext(request, "orders-create");
+  const withApiHeaders = (response: NextResponse) =>
+    attachApiResponseHeaders(response, apiContext, "orders-create");
+  const requestBadRequest = (message: string) => withApiHeaders(badRequest(message));
+
   try {
     const contentLength = Number(request.headers.get("content-length") || 0);
 
     if (contentLength > MAX_ORDER_BODY_BYTES) {
-      return NextResponse.json(
-        { error: "El pedido es demasiado grande. Reduce productos o notas." },
-        { status: 413 }
+      return withApiHeaders(
+        NextResponse.json(
+          { error: "El pedido es demasiado grande. Reduce productos o notas." },
+          { status: 413 }
+        )
       );
     }
 
     const clientIp = getClientIp(request);
-    const globalLimit = checkRateLimit({
+    const globalLimit = await checkDistributedRateLimit({
       key: `orders:ip:${clientIp}`,
-      limit: 60,
-      windowMs: 10 * 60 * 1000,
+      limit: ORDER_IP_LIMIT,
+      windowMs: ORDER_RATE_WINDOW_MS,
     });
 
     if (!globalLimit.allowed) {
-      return NextResponse.json(
-        { error: "Demasiados intentos. Espera unos minutos y vuelve a intentar." },
-        { status: 429 }
+      return withApiHeaders(
+        NextResponse.json(
+          { error: "Demasiados intentos. Espera unos minutos y vuelve a intentar." },
+          {
+            status: 429,
+            headers: rateLimitHeaders(globalLimit, ORDER_IP_LIMIT),
+          }
+        )
       );
     }
 
@@ -198,37 +250,42 @@ export async function POST(request: NextRequest) {
     const order = body.order as SavedOrder | undefined;
     const storeId = cleanText(body.storeId);
 
-    if (!order || !storeId) return badRequest("Pedido inválido.");
+    if (!order || !storeId) return requestBadRequest("Pedido inválido.");
 
-    const storeLimit = checkRateLimit({
+    const storeLimit = await checkDistributedRateLimit({
       key: `orders:store:${storeId}:ip:${clientIp}`,
-      limit: 24,
-      windowMs: 10 * 60 * 1000,
+      limit: ORDER_STORE_IP_LIMIT,
+      windowMs: ORDER_RATE_WINDOW_MS,
     });
 
     if (!storeLimit.allowed) {
-      return NextResponse.json(
-        { error: "Demasiados pedidos para este comercio desde esta conexión. Intenta de nuevo en unos minutos." },
-        { status: 429 }
+      return withApiHeaders(
+        NextResponse.json(
+          { error: "Demasiados pedidos para este comercio desde esta conexión. Intenta de nuevo en unos minutos." },
+          {
+            status: 429,
+            headers: rateLimitHeaders(storeLimit, ORDER_STORE_IP_LIMIT),
+          }
+        )
       );
     }
 
     const items = normalizeItems(order.items);
-    if (!items.length) return badRequest("Tu carrito está vacío.");
+    if (!items.length) return requestBadRequest("Tu carrito está vacío.");
     if (!cleanText(order.form?.customerName)) {
-      return badRequest("Escribe el nombre del cliente.");
+      return requestBadRequest("Escribe el nombre del cliente.");
     }
     if (!cleanText(order.form?.customerPhone)) {
-      return badRequest("Escribe el teléfono del cliente.");
+      return requestBadRequest("Escribe el teléfono del cliente.");
     }
     if (!cleanText(order.form?.paymentMethod)) {
-      return badRequest("Selecciona un método de pago.");
+      return requestBadRequest("Selecciona un método de pago.");
     }
 
     const supabase = createSupabaseAdminClient();
     let storeResult = await supabase
       .from("stores")
-      .select("id, slug, name, whatsapp, usd_to_bs, is_active, latitude, longitude, opening_hours, business_hours, manual_open_status, manual_open_note, accepts_delivery, accepts_pickup")
+      .select("id, slug, name, whatsapp, usd_to_bs, base_currency, is_active, latitude, longitude, opening_hours, business_hours, manual_open_status, manual_open_note, accepts_delivery, accepts_pickup")
       .eq("id", storeId)
       .single();
 
@@ -238,6 +295,7 @@ export async function POST(request: NextRequest) {
         "business_hours",
         "manual_open_status",
         "manual_open_note",
+        "base_currency",
       ])
     ) {
       storeResult = await supabase
@@ -251,7 +309,7 @@ export async function POST(request: NextRequest) {
 
     if (storeError) throw storeError;
     if (!store || (store as any).is_active === false) {
-      return badRequest("El comercio no está disponible.");
+      return requestBadRequest("El comercio no está disponible.");
     }
 
     const openState = getStoreOpenState({
@@ -262,7 +320,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!openState.isOpen) {
-      return badRequest(`${openState.label}. El comercio no está recibiendo pedidos en este momento.`);
+      return requestBadRequest(`${openState.label}. El comercio no está recibiendo pedidos en este momento.`);
     }
 
     const productIds = Array.from(new Set(items.map((item) => item.productId)));
@@ -279,7 +337,7 @@ export async function POST(request: NextRequest) {
     );
 
     if (productMap.size !== productIds.length) {
-      return badRequest("Uno o más productos no pertenecen al comercio.");
+      return requestBadRequest("Uno o más productos no pertenecen al comercio.");
     }
 
     const variantIds = Array.from(
@@ -363,7 +421,7 @@ export async function POST(request: NextRequest) {
           throw new Error(`Seleccionaste demasiadas opciones en ${group.name}.`);
         }
         if (group.selection_type === "single" && selectedValueIds.length > 1) {
-          throw new Error(`Solo puedes elegir una opción en ${group.name}.`);
+          throw new Error(`Solo puedes seleccionar una opción en ${group.name}.`);
         }
 
         return selectedValueIds.map((valueId) => {
@@ -371,13 +429,20 @@ export async function POST(request: NextRequest) {
           if (!value) {
             throw new Error(`Una opción de ${group.name} ya no está disponible.`);
           }
+          const variantPrice = Array.isArray(value.product_option_value_variant_prices)
+            ? value.product_option_value_variant_prices.find(
+                (price: any) => String(price.variant_id) === item.variantId
+              )
+            : null;
 
           return {
             groupId: String(group.id),
             groupName: group.name || "Opciones",
             valueId: String(value.id),
             valueName: value.name || "Opción",
-            priceDeltaUsd: toSafeNumber(value.price_delta_usd, 0),
+            priceDeltaUsd: variantPrice
+              ? toSafeNumber(variantPrice.price_delta_usd, 0)
+              : toSafeNumber(value.price_delta_usd, 0),
           };
         });
       });
@@ -406,10 +471,26 @@ export async function POST(request: NextRequest) {
       (sum, item) => sum + item.unitPriceUsd * item.quantity,
       0
     );
-    const deliverySettings = await loadStoreDeliverySettings(supabase, storeId, {
+    let deliverySettings = await loadStoreDeliverySettings(supabase, storeId, {
       acceptsDelivery: (store as any).accepts_delivery,
       acceptsPickup: (store as any).accepts_pickup,
     });
+    const transportSettings = await loadTransportAgencyDeliverySettings(
+      supabase,
+      storeId,
+      deliverySettings.pickupEnabled
+    );
+    if (transportSettings) deliverySettings = transportSettings.settings;
+    else deliverySettings = disableUnavailableTransportAgencySettings(deliverySettings);
+
+    if (
+      order.form.deliveryType === "delivery" &&
+      deliverySettings.pricingType === "zones" &&
+      !["manual_quote", "disabled"].includes(deliverySettings.deliveryProvider) &&
+      !order.location
+    ) {
+      return requestBadRequest("Carga la ubicación GPS para que el repartidor pueda llegar.");
+    }
 
     const serverDistance =
       order.form.deliveryType === "delivery" && order.location
@@ -431,10 +512,10 @@ export async function POST(request: NextRequest) {
     });
 
     if (serverQuote.available === false) {
-      return badRequest(serverQuote.message || serverQuote.label || "La modalidad de entrega no está disponible.");
+      return requestBadRequest(serverQuote.message || serverQuote.label || "La modalidad de entrega no está disponible.");
     }
     if (order.form.deliveryType === "delivery" && serverQuote.source === "pending") {
-      return badRequest(serverQuote.label || "Completa los datos de entrega.");
+      return requestBadRequest(serverQuote.label || "Completa los datos de entrega.");
     }
 
     const deliveryUsd = order.form.deliveryType === "delivery" ? serverQuote.feeUsd : 0;
@@ -444,6 +525,7 @@ export async function POST(request: NextRequest) {
     const publicCode = cleanText(order.id) || `VP-${randomUUID().slice(0, 3).toUpperCase()}`;
     const storeForMessage = {
       name: (store as any).name || order.storeName || "Comercio",
+      baseCurrency: String((store as any).base_currency || "USD").toUpperCase() === "EUR" ? "EUR" : "USD",
     } as Store;
     const whatsappMessage = buildOrderMessage({
       orderId: publicCode,
@@ -502,10 +584,32 @@ export async function POST(request: NextRequest) {
         order.form.deliveryType === "delivery"
           ? serverQuote.provider === "entrega2"
             ? "pending_entrega2"
+            : serverQuote.provider === "transport_agency"
+              ? "pending_agency"
             : "pending"
           : "pickup",
       delivery_notes: serverQuote.message || null,
       delivery_address: order.form.deliveryReference || null,
+      transport_agency_id:
+        order.form.deliveryType === "delivery" ? serverQuote.transportAgencyId || null : null,
+      transport_agency_name:
+        order.form.deliveryType === "delivery" ? serverQuote.transportAgencyName || null : null,
+      transport_agency_fee_usd:
+        order.form.deliveryType === "delivery" && serverQuote.provider === "transport_agency"
+          ? serverQuote.originalFeeUsd ?? deliveryUsd
+          : null,
+      transport_agency_pricing_type:
+        order.form.deliveryType === "delivery" && serverQuote.provider === "transport_agency"
+          ? serverQuote.pricingType || null
+          : null,
+      transport_agency_zone_name:
+        order.form.deliveryType === "delivery" && serverQuote.provider === "transport_agency"
+          ? serverQuote.zoneName || null
+          : null,
+      transport_agency_status:
+        order.form.deliveryType === "delivery" && serverQuote.provider === "transport_agency"
+          ? "pending"
+          : null,
       order_details: order.form.orderDetails || null,
       notes: order.form.notes || null,
       status: "received",
@@ -529,6 +633,12 @@ export async function POST(request: NextRequest) {
         delivery_status: _deliveryStatus,
         delivery_notes: _deliveryNotes,
         delivery_address: _deliveryAddress,
+        transport_agency_id: _transportAgencyId,
+        transport_agency_name: _transportAgencyName,
+        transport_agency_fee_usd: _transportAgencyFeeUsd,
+        transport_agency_pricing_type: _transportAgencyPricingType,
+        transport_agency_zone_name: _transportAgencyZoneName,
+        transport_agency_status: _transportAgencyStatus,
         ...baseOrderPayload
       } = orderPayload;
       const fallbackResult = await supabase.from("orders").insert(baseOrderPayload);
@@ -605,14 +715,21 @@ export async function POST(request: NextRequest) {
       whatsappUrl,
     };
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       orderId: orderDbId,
       order: savedOrder,
     });
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || "No se pudo guardar el pedido." },
-      { status: 500 }
-    );
+    logApiEvent(apiContext, "order_created", {
+      orderId: orderDbId,
+      storeId,
+      itemCount: validatedItems.length,
+      deliveryType: order.form.deliveryType,
+      deliveryProvider: serverQuote.provider || null,
+    });
+    return withApiHeaders(response);
+  } catch (error) {
+    logApiError(apiContext, "order_create_failed", error);
+    const response = orderErrorResponse(error);
+    return withApiHeaders(response);
   }
 }

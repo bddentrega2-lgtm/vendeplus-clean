@@ -4,7 +4,7 @@ import Link from "next/link";
 import { CheckCircle2, Copy, Home, MessageCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { SavedOrder, Store } from "@/types";
-import { formatBs, formatUsd } from "@/lib/currency";
+import { formatBaseCurrency, formatBs } from "@/lib/currency";
 import { buildPaymentInfo } from "@/lib/payment-display";
 import { getOrderKey } from "@/components/public/CheckoutForm";
 
@@ -15,6 +15,8 @@ export function ConfirmationClient({ store }: { store: Store }) {
   const [copiedPaymentLine, setCopiedPaymentLine] = useState("");
   const [paymentCopyPreview, setPaymentCopyPreview] = useState("");
   const [paymentCopyError, setPaymentCopyError] = useState("");
+  const showPricesInBs = store.showPricesInBs !== false;
+  const baseCurrency = store.baseCurrency || "USD";
 
   useEffect(() => {
     try {
@@ -74,7 +76,7 @@ export function ConfirmationClient({ store }: { store: Store }) {
             </div>
             <h1 className="mt-5 text-3xl font-black">Pedido listo</h1>
             <p className="mt-2 text-sm font-semibold leading-relaxed text-white/72">
-              Tu pedido fue registrado. El comercio lo revisará y te confirmará por WhatsApp.
+              Tu pedido fue registrado. El comercio lo revisara y te confirmara por WhatsApp.
             </p>
           </div>
         </section>
@@ -88,7 +90,7 @@ export function ConfirmationClient({ store }: { store: Store }) {
 
             <div className="mt-5 space-y-3">
               <div className="rounded-2xl bg-green-50 p-3 text-sm font-black leading-relaxed text-green-700">
-                Siguiente paso: revisa los datos de pago y envía la referencia o captura por WhatsApp si ya pagaste.
+                Siguiente paso: revisa los datos de pago y envia la referencia o captura por WhatsApp si ya pagaste.
               </div>
               <div className="flex justify-between gap-4 rounded-2xl bg-[#FFF8F0] p-3 text-sm">
                 <span className="font-bold text-[#746f69]">Modalidad</span>
@@ -99,7 +101,8 @@ export function ConfirmationClient({ store }: { store: Store }) {
               <div className="flex justify-between gap-4 rounded-2xl bg-[#FFF8F0] p-3 text-sm">
                 <span className="font-bold text-[#746f69]">Total</span>
                 <span className="font-black text-[#25262B]">
-                  {formatUsd(order.totals.totalUsd)} / {formatBs(order.totals.totalBs)}
+                  {formatBaseCurrency(order.totals.totalUsd, baseCurrency)}
+                  {showPricesInBs ? ` / ${formatBs(order.totals.totalBs)}` : ""}
                 </span>
               </div>
               <div className="flex justify-between gap-4 rounded-2xl bg-[#FFF8F0] p-3 text-sm">
@@ -168,7 +171,7 @@ export function ConfirmationClient({ store }: { store: Store }) {
 
                 {!paymentInfo.hasConfiguredData ? (
                   <p className="mt-3 rounded-2xl bg-white/10 p-3 text-xs font-black text-white">
-                    No hay datos de pago guardados para este método. Si ya los cargaste en configuración, aplica la migración de pagos en Supabase y vuelve a guardar.
+                    No hay datos de pago guardados para este metodo. Confirmalos por WhatsApp con el comercio.
                   </p>
                 ) : null}
 

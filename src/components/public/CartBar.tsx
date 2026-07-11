@@ -3,15 +3,19 @@
 import Link from "next/link";
 import { ShoppingBag } from "lucide-react";
 import { useEffect, useState } from "react";
-import { formatBs, formatUsd } from "@/lib/currency";
+import { formatBaseCurrency, formatBs } from "@/lib/currency";
 import { getCart, getCartCount, getCartSubtotal } from "@/lib/cart";
 
 export function CartBar({
   storeSlug,
   usdToBs = 600,
+  baseCurrency = "USD",
+  showPricesInBs = true,
 }: {
   storeSlug: string;
   usdToBs?: number;
+  baseCurrency?: "USD" | "EUR" | string;
+  showPricesInBs?: boolean;
 }) {
   const [count, setCount] = useState(0);
   const [subtotal, setSubtotal] = useState(0);
@@ -45,8 +49,10 @@ export function CartBar({
             </div>
             <div>
               <p className="text-xs font-bold text-white/70">Tu carrito</p>
-              <p className="text-base font-black">{formatUsd(subtotal)}</p>
-              <p className="text-[11px] font-black text-white/60">{formatBs(subtotal * usdToBs)}</p>
+              <p className="text-base font-black">{formatBaseCurrency(subtotal, baseCurrency)}</p>
+              {showPricesInBs ? (
+                <p className="text-[11px] font-black text-white/60">{formatBs(subtotal * usdToBs)}</p>
+              ) : null}
             </div>
           </div>
           <span className="rounded-full bg-[#FFB547] px-4 py-3 text-sm font-black text-[#25262B]">Ver carrito</span>

@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import { ArrowRight, Check, Loader2, Lock, Store } from "lucide-react";
-import { plans, type PlanId } from "@/lib/plans";
+import { plans } from "@/lib/plans";
+import { AuthCaptcha } from "@/components/shared/AuthCaptcha";
 
 const businessTypes = [
   { value: "fashion", label: "Ropa / Moda" },
@@ -14,18 +15,30 @@ const businessTypes = [
   { value: "general", label: "General" },
 ];
 
+function planCapacityLabel(plan: (typeof plans)[number]) {
+  if (plan.id === "custom") return "Adaptado a tu necesidad";
+  return `${plan.productLimit} productos · ${plan.storeLimit} comercio${plan.storeLimit > 1 ? "s" : ""}`;
+}
+
+function planPriceLabel(plan: (typeof plans)[number]) {
+  if (plan.id === "custom") return "Por confirmar";
+  return `$${plan.priceUsd}`;
+}
+
 export function SignupForm() {
   const [storeName, setStoreName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [businessType, setBusinessType] = useState("fashion");
-  const [planId, setPlanId] = useState<PlanId>("trial");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
+  const [captchaToken, setCaptchaToken] = useState("");
   const [success, setSuccess] = useState<{
     slug: string;
     trialEndsAt: string;
+    message: string;
+    requiresEmailConfirmation: boolean;
   } | null>(null);
 
   async function createAccount() {
@@ -43,7 +56,7 @@ export function SignupForm() {
           password,
           whatsapp,
           businessType,
-          planId,
+          captchaToken,
         }),
       });
       const data = await response.json();
@@ -55,8 +68,11 @@ export function SignupForm() {
       setSuccess({
         slug: data.store?.slug || "",
         trialEndsAt: data.trialEndsAt,
+        message: data.message || "Cuenta creada.",
+        requiresEmailConfirmation: Boolean(data.requiresEmailConfirmation),
       });
       setPassword("");
+      setCaptchaToken("");
     } catch (error: any) {
       setError(error.message || "No se pudo crear la cuenta.");
     } finally {
@@ -71,16 +87,19 @@ export function SignupForm() {
           <div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl bg-[#2E3A79] text-[#FFB547]">
             <Check size={28} />
           </div>
-          <h1 className="mt-5 text-3xl font-black">Tu comercio está listo</h1>
+          <h1 className="mt-5 text-3xl font-black">
+            {success.requiresEmailConfirmation ? "Confirma tu correo" : "Tu comercio está listo"}
+          </h1>
           <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
-            Tienes 15 días de prueba. Entra al panel para configurar portada, pagos, productos y delivery.
+            {success.message} Tienes 15 días de prueba para configurar portada, pagos,
+            productos y delivery.
           </p>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <Link
               href="/panel/login"
               className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B]"
             >
-              Entrar al panel
+              {success.requiresEmailConfirmation ? "Ir al login" : "Entrar al panel"}
               <ArrowRight size={17} />
             </Link>
             {success.slug ? (
@@ -108,33 +127,31 @@ export function SignupForm() {
           <p className="mt-3 text-sm font-bold leading-relaxed text-white/70">
             Crea tu comercio, publica productos, recibe pedidos por WhatsApp y ajusta el delivery antes de pagar.
           </p>
+          <p className="mt-3 rounded-2xl bg-white/10 p-3 text-sm font-black text-[#FFB547] ring-1 ring-white/10">
+            Todos empiezan en Prueba gratis por 15 días. Al vencer, el comercio elige cómo pagar.
+          </p>
 
           <div className="mt-6 grid gap-3">
             {plans.map((plan) => (
-              <button
+              <div
                 key={plan.id}
-                type="button"
-                onClick={() => setPlanId(plan.id)}
-                className={[
-                  "rounded-[24px] p-4 text-left ring-1 transition",
-                  planId === plan.id
-                    ? "bg-white text-[#25262B] ring-white"
-                    : "bg-white/8 text-white ring-white/10",
-                ].join(" ")}
+                className="rounded-[24px] bg-white/8 p-4 text-left text-white ring-1 ring-white/10"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-black">{plan.name}</p>
                     <p className="mt-1 text-xs font-bold opacity-70">
-                      {plan.productLimit} productos · {plan.storeLimit} comercio{plan.storeLimit > 1 ? "s" : ""}
+                      {planCapacityLabel(plan)}
                     </p>
                   </div>
                   <p className="text-xl font-black">
-                    ${plan.priceUsd}
-                    <span className="text-xs font-bold opacity-70"> {plan.billingLabel}</span>
+                    {planPriceLabel(plan)}
+                    {plan.id !== "custom" ? (
+                      <span className="text-xs font-bold opacity-70"> {plan.billingLabel}</span>
+                    ) : null}
                   </p>
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         </section>
@@ -226,6 +243,8 @@ export function SignupForm() {
               {error}
             </p>
           ) : null}
+
+          <AuthCaptcha action="commerce_signup" onToken={setCaptchaToken} />
 
           <button
             type="button"
