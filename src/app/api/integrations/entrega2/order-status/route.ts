@@ -6,6 +6,8 @@ import {
 } from "@/lib/integrations/entrega2";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
+const MAX_WEBHOOK_BODY_BYTES = 80_000;
+
 function cleanText(value: unknown) {
   return String(value || "").trim();
 }
@@ -59,6 +61,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
   }
 
+  const contentLength = Number(request.headers.get("content-length") || 0);
+  if (contentLength > MAX_WEBHOOK_BODY_BYTES) {
+    return NextResponse.json(
+      { error: "Payload demasiado grande." },
+      { status: 413 }
+    );
+  }
+
   try {
     const payload = await request.json();
     const externalId = getPayloadExternalId(payload);
@@ -109,9 +119,9 @@ export async function POST(request: NextRequest) {
       orderId: integration.order_id,
       mappedStatus: vendeplusStatus,
     });
-  } catch (error: any) {
+  } catch {
     return NextResponse.json(
-      { error: error.message || "Error procesando webhook de Entrega2." },
+      { error: "Error procesando webhook de Entrega2." },
       { status: 500 }
     );
   }

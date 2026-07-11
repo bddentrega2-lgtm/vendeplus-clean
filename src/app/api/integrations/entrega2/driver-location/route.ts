@@ -5,6 +5,8 @@ import {
 } from "@/lib/integrations/entrega2";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
+const MAX_WEBHOOK_BODY_BYTES = 80_000;
+
 function cleanText(value: unknown) {
   return String(value || "").trim();
 }
@@ -49,6 +51,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
   }
 
+  const contentLength = Number(request.headers.get("content-length") || 0);
+  if (contentLength > MAX_WEBHOOK_BODY_BYTES) {
+    return NextResponse.json(
+      { error: "Payload demasiado grande." },
+      { status: 413 }
+    );
+  }
+
   try {
     const payload = await request.json();
     const externalId = getPayloadExternalId(payload);
@@ -65,7 +75,7 @@ export async function POST(request: NextRequest) {
 
     if (!integration) {
       return NextResponse.json(
-        { error: "No se encontró la integración del pedido." },
+        { error: "No se encontro la integracion del pedido." },
         { status: 404 }
       );
     }
@@ -84,9 +94,9 @@ export async function POST(request: NextRequest) {
       ok: true,
       orderId: integration.order_id,
     });
-  } catch (error: any) {
+  } catch {
     return NextResponse.json(
-      { error: error.message || "Error procesando ubicación de Entrega2." },
+      { error: "Error procesando ubicacion de Entrega2." },
       { status: 500 }
     );
   }
