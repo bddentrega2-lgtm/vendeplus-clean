@@ -723,6 +723,19 @@ export async function PATCH(request: NextRequest) {
       "No tienes permiso para operar este pedido."
     );
 
+    const { data: activeTransportOrder, error: activeTransportError } = await supabase
+      .from("transport_orders")
+      .select("id, status")
+      .eq("order_id", id)
+      .not("status", "in", "(agency_rejected,cancelled,delivery_failed)")
+      .maybeSingle();
+
+    if (activeTransportError) throw activeTransportError;
+
+    if (activeTransportOrder?.id) {
+      return badRequest("La empresa delivery ya recibio este pedido. El estado operativo lo actualiza la empresa delivery.");
+    }
+
     if (
       status === "cancelled" &&
       (await isOrderDeliveredByExternalDelivery(supabase, existingOrder))

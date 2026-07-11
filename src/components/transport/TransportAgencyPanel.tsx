@@ -609,8 +609,24 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "No se pudo actualizar el estado.");
+      setTransportOrders((current) =>
+        current.map((order) =>
+          order.id === orderId
+            ? {
+                ...order,
+                ...(data.order || {}),
+                status,
+              }
+            : order
+        )
+      );
       setMessage("Estado actualizado.");
-      await loadTransportOrders();
+      if (transportOrderStatusFilter !== "all" && transportOrderStatusFilter !== status) {
+        setTransportOrderStatusFilter("all");
+        await loadTransportOrders({ status: "all" });
+      } else {
+        await loadTransportOrders();
+      }
       await load();
     } catch (error: any) {
       setMessage(error.message || "No se pudo actualizar el estado.");

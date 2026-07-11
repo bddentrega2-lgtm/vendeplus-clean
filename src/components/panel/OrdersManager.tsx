@@ -50,6 +50,7 @@ import {
   getWhatsappMessageUrl,
   getWhatsappUrl,
   groupOrderItemOptions,
+  hasActiveTransportAgencyHandoff,
   isDeliveryAlreadyDelivered,
   paymentStatusOptions,
   paymentStatusStyles,
@@ -91,6 +92,7 @@ function OrderDetail({
     `Hola, para confirmar tu pedido ${order.public_code}, por favor envíanos la referencia del pago o captura. Gracias.`
   );
   const currentTransportOrder = getCurrentTransportOrder(order);
+  const hasAgencyHandoff = hasActiveTransportAgencyHandoff(order);
   const agencyWhatsappUrl = currentTransportOrder?.agency_whatsapp_snapshot
     ? `https://wa.me/${String(currentTransportOrder.agency_whatsapp_snapshot).replace(/[^0-9]/g, "")}`
     : null;
@@ -405,6 +407,7 @@ function OrderDetail({
               <select
                 value={status}
                 onChange={(event) => updateStatus(event.target.value)}
+                disabled={hasAgencyHandoff || isSaving}
                 className="mt-4 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-black outline-none"
               >
                 {getStatusOptionsForOrder(order).map((item) => (
@@ -413,6 +416,12 @@ function OrderDetail({
                     </option>
                   ))}
               </select>
+
+              {hasAgencyHandoff ? (
+                <p className="mt-2 rounded-2xl bg-indigo-50 p-3 text-xs font-black text-indigo-700">
+                  La empresa delivery ya recibió este pedido. Desde ahora el estado operativo lo actualiza la empresa delivery.
+                </p>
+              ) : null}
 
               {isDeliveryAlreadyDelivered(order) ? (
                 <p className="mt-2 rounded-2xl bg-green-50 p-3 text-xs font-black text-green-700">
@@ -489,6 +498,7 @@ export function OrdersManager() {
   const [isLoading, setIsLoading] = useState(() => hasSavedPanelAuth());
   const [savingPaymentId, setSavingPaymentId] = useState<string | null>(null);
   const [sendingDeliveryId, setSendingDeliveryId] = useState<string | null>(null);
+  const [savingStatusOrderId, setSavingStatusOrderId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => Date.now());
   const [realtimeStoreIds, setRealtimeStoreIds] = useState<string[]>([]);
@@ -586,6 +596,34 @@ export function OrdersManager() {
       setError(error.message || "No se pudo enviar el pedido a delivery.");
     } finally {
       setSendingDeliveryId(null);
+    }
+  }
+
+  async function changeOrderStatus(order: OrderRow, nextStatus: string) {
+    setSavingStatusOrderId(order.id);
+    setError("");
+
+    try {
+      await apiRequest(pin, "/api/panel/orders", {
+        method: "PATCH",
+        body: JSON.stringify({
+          id: order.id,
+          status: nextStatus,
+        }),
+      });
+
+      setOrders((currentOrders) =>
+        currentOrders.map((currentOrder) =>
+          currentOrder.id === order.id ? { ...currentOrder, status: nextStatus } : currentOrder
+        )
+      );
+      setSelectedOrder((currentOrder) =>
+        currentOrder?.id === order.id ? { ...currentOrder, status: nextStatus } : currentOrder
+      );
+    } catch (error: any) {
+      setError(error.message || "No se pudo actualizar el estado.");
+    } finally {
+      setSavingStatusOrderId(null);
     }
   }
 
@@ -910,8 +948,15 @@ export function OrdersManager() {
             currentTransportOrder?.status ||
             transportAgencyIntegration?.status ||
             "";
+          const hasAgencyHandoff = hasActiveTransportAgencyHandoff(order);
           const showEntrega2Button = canSendToEntrega2(order);
           const showTransportAgencyButton = canSendToTransportAgency(order);
+          const showTransportAgencySent = Boolean(
+            order.delivery_type === "delivery" &&
+              order.delivery_provider === "transport_agency" &&
+              (currentTransportOrder || transportAgencyIntegration) &&
+              !showTransportAgencyButton
+          );
           const shouldShowTransportAgencyStatus = Boolean(
             (currentTransportOrder || transportAgencyIntegration) &&
               transportAgencyStatus &&
@@ -919,6 +964,7 @@ export function OrdersManager() {
           );
           const isSendingDelivery = sendingDeliveryId === order.id;
           const isSavingPayment = savingPaymentId === order.id;
+          const isSavingStatus = savingStatusOrderId === order.id;
           const isNewOrder = order.status === "received";
           const paymentStatus = getOrderPaymentStatus(order);
 
@@ -932,7 +978,7 @@ export function OrdersManager() {
                   : "ring-[#25262B]/[0.06]",
               ].join(" ")}
             >
-              <div className="grid gap-2 lg:grid-cols-[92px_1fr_86px_150px_auto] lg:items-center">
+              <div className="grid gap-2 lg:grid-cols-[92px_1fr_86px_150px_180px_auto] lg:items-center">
                 <div className="min-w-0">
                   <h3 className="truncate text-sm font-black">{order.public_code}</h3>
                   {isNewOrder ? (
@@ -975,6 +1021,31 @@ export function OrdersManager() {
                       Pagado
                     </button>
                   ) : null}
+                </div>
+
+                <div className="rounded-2xl bg-[#F8F3E8] p-2">
+                  <p className="mb-1 text-[10px] font-black uppercase tracking-[0.12em] text-[#746f69]">
+                    Estado
+                  </p>
+                  {hasAgencyHandoff ? (
+                    <div className="rounded-xl bg-white px-3 py-2 text-[11px] font-black text-indigo-700">
+                      {transportStatusLabels[transportAgencyStatus] || "Empresa delivery"}
+                    </div>
+                  ) : (
+                    <select
+                      value={order.status}
+                      onChange={(event) => changeOrderStatus(order, event.target.value)}
+                      disabled={isSavingStatus}
+                      className="w-full rounded-xl border border-[#25262B]/10 bg-white px-3 py-2 text-[11px] font-black outline-none focus:border-[#2E3A79] disabled:opacity-60"
+                      aria-label={`Cambiar estado de ${order.public_code}`}
+                    >
+                      {getStatusOptionsForOrder(order).map((item) => (
+                        <option key={item.value} value={item.value}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 lg:justify-end">
@@ -1056,6 +1127,18 @@ export function OrdersManager() {
                         </span>
                       ) : null}
 
+                      {showTransportAgencySent ? (
+                        <button
+                          type="button"
+                          disabled
+                          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-green-100 px-2.5 text-[11px] font-black text-green-700 ring-1 ring-green-200"
+                          title="Pedido ya solicitado a la empresa delivery"
+                        >
+                          <Truck size={16} />
+                          Delivery
+                        </button>
+                      ) : null}
+
                       {showTransportAgencyButton && (
                         <button
                           type="button"
@@ -1068,7 +1151,7 @@ export function OrdersManager() {
                           ) : (
                             <Truck size={16} />
                           )}
-                          Enviar a empresa
+                          Delivery
                         </button>
                       )}
                     </>

@@ -352,6 +352,27 @@ export function canSendToTransportAgency(order: OrderRow) {
   return ["error", "failed"].includes(integration.status);
 }
 
+export function hasActiveTransportAgencyHandoff(order: OrderRow) {
+  if (order.delivery_provider !== "transport_agency") return false;
+
+  const integration = getTransportAgencyIntegration(order);
+  const transportOrder = getCurrentTransportOrder(order);
+  const status = transportOrder?.status || integration?.status || order.transport_agency_status || "";
+
+  return Boolean(
+    status &&
+      ![
+        "pending",
+        "pending_agency",
+        "agency_rejected",
+        "cancelled",
+        "delivery_failed",
+        "error",
+        "failed",
+      ].includes(status)
+  );
+}
+
 export function isDeliveryAlreadyDelivered(order: OrderRow) {
   const entrega2Integration = getEntrega2Integration(order);
   const transportAgencyIntegration = getTransportAgencyIntegration(order);

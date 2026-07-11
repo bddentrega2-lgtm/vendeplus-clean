@@ -98,41 +98,51 @@ function buildTransportAgencyMessage(order: any, agency: any, transportOrder?: a
       ? `https://www.google.com/maps/search/?api=1&query=${order.delivery_lat},${order.delivery_lng}`
       : "";
   const paymentStatus = cleanText(order.payment_status) || "pending";
+  const deliveryFee = Number(
+    optionalNumber(order.transport_agency_fee_usd) ?? optionalNumber(order.delivery_usd) ?? 0
+  );
   const items = (order.order_items || []).map((item: any) => {
     const quantity = optionalNumber(item.quantity) || 1;
     const totalUsd = optionalNumber(item.total_usd) || 0;
     const variant = cleanText(item.variant_name) ? ` (${item.variant_name})` : "";
     const notes = cleanText(item.notes) ? ` - ${item.notes}` : "";
-    return `- ${quantity}x ${item.product_name}${variant} - $${totalUsd.toFixed(2)}${notes}`;
+    return `• ${quantity}x ${item.product_name}${variant} — $${totalUsd.toFixed(2)}${notes}`;
   });
 
   return [
-    `Pedido confirmado - ${agency.name || "empresa delivery"}`,
-    "Enviado desde el panel del comercio.",
+    `*Nuevo pedido para delivery*`,
+    `${agency.name || "Empresa delivery"}`,
     "",
-    `Codigo: ${order.public_code}`,
+    `*Pedido*`,
+    `Código: ${order.public_code}`,
     `Comercio: ${order.stores?.name || "Comercio"}`,
-    order.stores?.whatsapp ? `WhatsApp comercio: ${order.stores.whatsapp}` : "",
+    order.stores?.whatsapp ? `WhatsApp comercio: ${order.stores.whatsapp}` : null,
     "",
-    `Cliente: ${order.customer_name}`,
-    `Telefono cliente: ${order.customer_phone}`,
-    `Entrega: ${order.delivery_reference || order.delivery_address || "Por confirmar"}`,
-    mapsUrl ? `Mapa: ${mapsUrl}` : "",
-    order.distance_km ? `Distancia: ${Number(order.distance_km).toFixed(2)} km` : "",
+    `*Cliente*`,
+    `Nombre: ${order.customer_name}`,
+    `Teléfono: ${order.customer_phone}`,
     "",
-    "Productos:",
+    `*Entrega*`,
+    `Dirección / referencia: ${order.delivery_reference || order.delivery_address || "Por confirmar"}`,
+    order.delivery_zone_name ? `Zona: ${order.delivery_zone_name}` : null,
+    order.distance_km ? `Distancia: ${Number(order.distance_km).toFixed(2)} km` : null,
+    mapsUrl ? `Mapa: ${mapsUrl}` : null,
+    "",
+    "*Productos*",
     ...items,
     "",
-    `Subtotal: $${Number(optionalNumber(order.subtotal_usd) || 0).toFixed(2)}`,
-    `Delivery empresa: $${Number(optionalNumber(order.transport_agency_fee_usd) ?? optionalNumber(order.delivery_usd) ?? 0).toFixed(2)}`,
-    `Total pedido: $${Number(optionalNumber(order.total_usd) || 0).toFixed(2)}`,
-    `Pago: ${order.payment_method || "No indicado"} - ${paymentStatus}`,
-    order.order_details || order.notes ? `Notas: ${order.order_details || order.notes}` : "",
+    "*Cobro*",
+    `Subtotal productos: $${Number(optionalNumber(order.subtotal_usd) || 0).toFixed(2)}`,
+    `Tarifa delivery empresa: $${deliveryFee.toFixed(2)}`,
+    `Total cobrado al cliente: $${Number(optionalNumber(order.total_usd) || 0).toFixed(2)}`,
+    `Pago: ${order.payment_method || "No indicado"} · ${paymentStatus}`,
+    order.order_details || order.notes ? `Notas del comercio: ${order.order_details || order.notes}` : null,
+    "",
     transportOrder?.id
-      ? `Panel empresa delivery: ${process.env.NEXT_PUBLIC_SITE_URL || "https://vendeplus-clean.vercel.app"}/transporte/panel/pedidos`
-      : "",
+      ? `Panel: ${process.env.NEXT_PUBLIC_SITE_URL || "https://vendeplus-clean.vercel.app"}/transporte/panel/pedidos`
+      : null,
   ]
-    .filter(Boolean)
+    .filter((line) => line !== null && line !== undefined)
     .join("\n");
 }
 

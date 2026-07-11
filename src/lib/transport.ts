@@ -127,9 +127,11 @@ export function mapTransportAgencyDeliverySettings(params: {
   distanceRates?: any[];
   connectionId?: string | null;
   pickupEnabled?: boolean;
+  promoSettings?: Partial<StoreDeliverySettings> | null;
 }): StoreDeliverySettings {
   const agency = params.agency || {};
   const rate = params.rate || {};
+  const promoSettings = params.promoSettings || {};
   const pricingType = normalizePricingType(agency.pricing_type);
   const manualMessage =
     cleanTransportText(rate.manual_quote_message, 280) ||
@@ -146,11 +148,11 @@ export function mapTransportAgencyDeliverySettings(params: {
           ? "manual"
           : pricingType,
     fixedFeeUsd: transportMoney(rate.flat_fee_usd),
-    freeDeliveryMinUsd: null,
-    deliveryPromoEnabled: false,
-    deliveryPromoMinSubtotalUsd: null,
-    deliveryPromoDiscountType: "free",
-    deliveryPromoDiscountValue: 0,
+    freeDeliveryMinUsd: promoSettings.freeDeliveryMinUsd ?? null,
+    deliveryPromoEnabled: Boolean(promoSettings.deliveryPromoEnabled),
+    deliveryPromoMinSubtotalUsd: promoSettings.deliveryPromoMinSubtotalUsd ?? null,
+    deliveryPromoDiscountType: promoSettings.deliveryPromoDiscountType || "free",
+    deliveryPromoDiscountValue: promoSettings.deliveryPromoDiscountValue || 0,
     maxDistanceKm: optionalTransportNumber(rate.max_distance_km),
     distanceFactor: null,
     manualQuoteMessage: manualMessage,
@@ -198,7 +200,7 @@ export async function loadTransportAgencyDeliverySettings(
   if (connectionError || !connection?.agency_id) return null;
   if (isTransportConnectionEnded(connection)) return null;
 
-  const [agencyResult, rateResult, zonesResult, distanceRatesResult] =
+  const [agencyResult, rateResult, zonesResult, distanceRatesResult, settingsResult] =
     await Promise.all([
       supabase
         .from("transport_agencies")
@@ -223,6 +225,13 @@ export async function loadTransportAgencyDeliverySettings(
         .eq("agency_id", connection.agency_id)
         .eq("is_active", true)
         .order("sort_order", { ascending: true }),
+      supabase
+        .from("store_delivery_settings")
+        .select(
+          "free_delivery_min_usd, delivery_promo_enabled, delivery_promo_min_subtotal_usd, delivery_promo_discount_type, delivery_promo_discount_value"
+        )
+        .eq("store_id", storeId)
+        .maybeSingle(),
     ]);
 
   if (
@@ -230,6 +239,7 @@ export async function loadTransportAgencyDeliverySettings(
     rateResult.error ||
     zonesResult.error ||
     distanceRatesResult.error ||
+    settingsResult.error ||
     !agencyResult.data
   ) {
     return null;
@@ -259,6 +269,21 @@ export async function loadTransportAgencyDeliverySettings(
       distanceRates: distanceRatesResult.data || [],
       connectionId: connection.id,
       pickupEnabled,
+      promoSettings: {
+        freeDeliveryMinUsd:
+          optionalTransportNumber(settingsResult.data?.free_delivery_min_usd) ??
+          optionalTransportNumber(settingsResult.data?.delivery_promo_min_subtotal_usd),
+        deliveryPromoEnabled: Boolean(settingsResult.data?.delivery_promo_enabled),
+        deliveryPromoMinSubtotalUsd:
+          optionalTransportNumber(settingsResult.data?.delivery_promo_min_subtotal_usd) ??
+          optionalTransportNumber(settingsResult.data?.free_delivery_min_usd),
+        deliveryPromoDiscountType: ["free", "amount", "percent"].includes(
+          String(settingsResult.data?.delivery_promo_discount_type)
+        )
+          ? settingsResult.data?.delivery_promo_discount_type
+          : "free",
+        deliveryPromoDiscountValue: transportMoney(settingsResult.data?.delivery_promo_discount_value),
+      },
     }),
   };
 }

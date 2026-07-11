@@ -24,6 +24,7 @@ export function TransportMarketplaceSection({ pin, onChanged }: Props) {
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [nowMs, setNowMs] = useState(0);
+  const [recentlyRequestedAgencyIds, setRecentlyRequestedAgencyIds] = useState<string[]>([]);
 
   const stores = data.stores ?? EMPTY_LIST;
   const agencies = data.agencies ?? EMPTY_LIST;
@@ -138,8 +139,19 @@ export function TransportMarketplaceSection({ pin, onChanged }: Props) {
       setMessage(next.error || "No se pudo solicitar.");
       return;
     }
+    setRecentlyRequestedAgencyIds((current) =>
+      current.includes(agencyId) ? current : [...current, agencyId]
+    );
+    setData((current: any) => {
+      const request = next.request;
+      if (!request) return current;
+      const requests = (current.requests || []).filter(
+        (entry: any) => !(entry.store_id === activeStoreId && entry.agency_id === agencyId)
+      );
+      return { ...current, requests: [...requests, request] };
+    });
     setMessage(next.message || "Solicitud enviada a la empresa delivery.");
-    load();
+    await load();
   }
 
   async function activateConnection(connectionId: string) {
@@ -239,6 +251,7 @@ export function TransportMarketplaceSection({ pin, onChanged }: Props) {
           const isEnded = connectionEnded(connection);
           const isPendingExit = connectionPendingExit(connection);
           const canResendRequest = request && ["rejected", "cancelled"].includes(request.status);
+          const wasJustRequested = recentlyRequestedAgencyIds.includes(agency.id);
           const canSeeRates = agency.rates_visibility !== "private" || (connection && !isEnded);
 
           return (
@@ -384,10 +397,11 @@ export function TransportMarketplaceSection({ pin, onChanged }: Props) {
                     </div>
                     <button
                       onClick={() => requestAgency(agency.id)}
+                      disabled={wasJustRequested}
                       className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-4 py-3 text-sm font-black text-[#25262B]"
                     >
                       <Send size={16} />
-                      Solicitar afiliacion de nuevo
+                      {wasJustRequested ? "Solicitud enviada" : "Solicitar afiliacion de nuevo"}
                     </button>
                   </div>
                 ) : request && !canResendRequest ? (
@@ -401,19 +415,21 @@ export function TransportMarketplaceSection({ pin, onChanged }: Props) {
                     </div>
                     <button
                       onClick={() => requestAgency(agency.id)}
-                      className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-4 py-3 text-sm font-black text-[#25262B]"
+                      disabled={wasJustRequested}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-4 py-3 text-sm font-black text-[#25262B] disabled:opacity-60"
                     >
                       <Send size={16} />
-                      Enviar solicitud de nuevo
+                      {wasJustRequested ? "Solicitud enviada" : "Enviar solicitud de nuevo"}
                     </button>
                   </div>
                 ) : (
                   <button
                     onClick={() => requestAgency(agency.id)}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-4 py-3 text-sm font-black text-[#25262B]"
+                    disabled={wasJustRequested}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-4 py-3 text-sm font-black text-[#25262B] disabled:opacity-60"
                   >
                     <Send size={16} />
-                    Solicitar afiliacion
+                    {wasJustRequested ? "Solicitud enviada" : "Solicitar afiliacion"}
                   </button>
                 )}
               </div>
