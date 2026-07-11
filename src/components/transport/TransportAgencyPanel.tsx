@@ -127,7 +127,34 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
         headers: await getPanelAuthHeaders(savedPin),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "No se pudo cargar.");
+      if (!response.ok) {
+        const detail = data.error || "No se pudo cargar.";
+
+        if (response.status === 401) {
+          clearPanelAuthStorage();
+          setHasSession(false);
+          setAgencies([]);
+          setRequests([]);
+          setConnections([]);
+          setBilling(null);
+          transportPanelCache = null;
+          setMessage("Sesion vencida o invalida. Inicia sesion como empresa delivery.");
+          return;
+        }
+
+        if (response.status === 403) {
+          setHasSession(false);
+          setAgencies([]);
+          setRequests([]);
+          setConnections([]);
+          setBilling(null);
+          transportPanelCache = null;
+          setMessage(`${detail} Entra con el correo asignado a la empresa delivery.`);
+          return;
+        }
+
+        throw new Error(detail);
+      }
       setAgencies(data.agencies || []);
       setRequests(data.requests || []);
       setConnections(data.connections || []);
@@ -665,7 +692,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
         <p className="mt-2 text-center text-sm font-bold text-[#746f69]">
           {hasSession
             ? message || "Cuando VendeMas active tu empresa delivery, podras entrar con el correo registrado."
-            : "Entra con el correo y clave asignados a tu empresa delivery."}
+            : "Entra con el correo y clave asignados a tu empresa delivery. Si vienes del panel comercio, usa aqui el acceso de la empresa delivery."}
         </p>
 
         {!hasSession ? (
