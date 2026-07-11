@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
   Loader2,
   Lock,
   RefreshCcw,
+  Trash2,
   UserRoundPlus,
 } from "lucide-react";
 import {
@@ -41,7 +42,7 @@ async function apiRequest(pin: string, options?: RequestInit) {
   });
   const data = await response.json();
 
-  if (!response.ok) throw new Error(data.error || "Error cargando asignaciones.");
+  if (!response.ok) throw new Error(data.error || "Error cargando usuarios.");
 
   return data;
 }
@@ -49,17 +50,28 @@ async function apiRequest(pin: string, options?: RequestInit) {
 export function AdminAssignmentsManager() {
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
+  const [search, setSearch] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [createUser, setCreateUser] = useState(false);
   const [storeId, setStoreId] = useState("");
-  const [role, setRole] = useState("operator");
+  const [role, setRole] = useState("staff");
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => hasSavedPanelAuth());
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+
+  const filteredAssignments = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return assignments;
+
+    return assignments.filter((assignment) =>
+      [assignment.user_email, assignment.store_name, assignment.store_slug, assignment.role]
+        .some((value) => String(value || "").toLowerCase().includes(needle))
+    );
+  }, [assignments, search]);
 
   async function loadAssignments() {
     setIsLoading(true);
@@ -74,7 +86,7 @@ export function AdminAssignmentsManager() {
       setStoreId((current) => current || nextStores[0]?.id || "");
       setIsUnlocked(true);
     } catch (error: any) {
-      setError(error.message || "No se pudo cargar asignaciones.");
+      setError(error.message || "No se pudo cargar usuarios.");
       setIsUnlocked(false);
     } finally {
       setIsLoading(false);
@@ -111,6 +123,26 @@ export function AdminAssignmentsManager() {
     }
   }
 
+  async function removeAssignment(assignmentId: string) {
+    setIsSaving(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const data = await apiRequest("", {
+        method: "DELETE",
+        body: JSON.stringify({ assignment_id: assignmentId }),
+      });
+
+      setMessage(data.message || "Acceso eliminado.");
+      await loadAssignments();
+    } catch (error: any) {
+      setError(error.message || "No se pudo quitar acceso.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   useEffect(() => {
     const savedToken = getSavedPanelToken();
 
@@ -138,14 +170,14 @@ export function AdminAssignmentsManager() {
         </div>
         <h2 className="mt-5 text-3xl font-black">Acceso fundador</h2>
         <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
-          Inicia sesión con un email fundador para asignar usuarios.
+          Inicia sesion con un email fundador para gestionar usuarios.
         </p>
         <a
           href="/panel/login"
           className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B]"
         >
           <CheckCircle2 size={18} />
-          Iniciar sesión
+          Iniciar sesion
         </a>
         {error && <p className="mt-3 text-sm font-black text-red-600">{error}</p>}
       </section>
@@ -160,7 +192,7 @@ export function AdminAssignmentsManager() {
         </div>
         <h2 className="mt-4 text-3xl font-black">Asignar usuario</h2>
         <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
-          El usuario debe estar registrado primero. Aquí solo se conecta al comercio.
+          Crea o conecta un usuario de Supabase Auth con un comercio.
         </p>
 
         <div className="mt-5 space-y-4">
@@ -231,6 +263,7 @@ export function AdminAssignmentsManager() {
             >
               <option value="owner">owner</option>
               <option value="admin">admin</option>
+              <option value="staff">staff</option>
               <option value="operator">operator</option>
             </select>
           </label>
@@ -256,41 +289,57 @@ export function AdminAssignmentsManager() {
             <p className="text-sm font-black uppercase tracking-[0.18em] text-[#746f69]">
               Usuarios asignados
             </p>
-            <h2 className="mt-1 text-3xl font-black">{assignments.length} accesos</h2>
+            <h2 className="mt-1 text-3xl font-black">{filteredAssignments.length} accesos</h2>
           </div>
-          <button
-            type="button"
-            onClick={() => loadAssignments()}
-            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F8F3E8] px-4 py-3 text-sm font-black text-[#2E3A79]"
-          >
-            <RefreshCcw size={16} />
-            Actualizar
-          </button>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Buscar email o comercio"
+              className="rounded-full border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => loadAssignments()}
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F8F3E8] px-4 py-3 text-sm font-black text-[#2E3A79]"
+            >
+              <RefreshCcw size={16} />
+              Actualizar
+            </button>
+          </div>
         </div>
 
         <div className="mt-5 space-y-3">
-          {assignments.map((assignment) => (
-            <article
-              key={assignment.id}
-              className="rounded-2xl bg-[#F8F3E8] p-4"
-            >
-              <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+          {filteredAssignments.map((assignment) => (
+            <article key={assignment.id} className="rounded-2xl bg-[#F8F3E8] p-4">
+              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
                 <div>
                   <p className="font-black">{assignment.user_email}</p>
                   <p className="mt-1 text-sm font-bold text-[#746f69]">
-                    {assignment.store_name} · /{assignment.store_slug}
+                    {assignment.store_name} - /{assignment.store_slug}
                   </p>
                 </div>
-                <span className="w-fit rounded-full bg-white px-3 py-2 text-xs font-black text-[#2E3A79]">
-                  {assignment.role}
-                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="w-fit rounded-full bg-white px-3 py-2 text-xs font-black text-[#2E3A79]">
+                    {assignment.role}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeAssignment(assignment.id)}
+                    disabled={isSaving}
+                    className="inline-flex items-center gap-2 rounded-full bg-red-100 px-3 py-2 text-xs font-black text-red-700 disabled:opacity-50"
+                  >
+                    <Trash2 size={14} />
+                    Quitar
+                  </button>
+                </div>
               </div>
             </article>
           ))}
 
-          {assignments.length === 0 && (
+          {filteredAssignments.length === 0 && (
             <p className="text-sm font-bold text-[#746f69]">
-              Todavía no hay usuarios asignados a comercios.
+              No hay usuarios asignados que coincidan.
             </p>
           )}
         </div>

@@ -4,12 +4,12 @@ import { AdminShell } from "@/components/admin/AdminShell";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export default function AdminAssignmentsPage() {
+export default function AdminUsersPage() {
   return (
     <AdminShell
-      active="/admin/asignaciones"
-      title="Asignaciones"
-      subtitle="Administra que usuarios pueden operar cada comercio y con que rol."
+      active="/admin/usuarios"
+      title="Usuarios"
+      subtitle="Busca usuarios, asigna accesos a comercios, cambia roles y quita accesos sin entrar a Supabase."
     >
       <AdminAssignmentsManager />
     </AdminShell>

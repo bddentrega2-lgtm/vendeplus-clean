@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PanelAuthProvider } from "@/components/panel/PanelAuthProvider";
 
 export const metadata: Metadata = {
   robots: {
@@ -8,5 +9,5 @@ export const metadata: Metadata = {
 };
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  return children;
+  return <PanelAuthProvider>{children}</PanelAuthProvider>;
 }

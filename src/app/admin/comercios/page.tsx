@@ -9,7 +9,7 @@ export default function AdminStoresPage() {
     <AdminShell
       active="/admin/comercios"
       title="Comercios"
-      subtitle="Directorio de comercios conectados, con estado, actividad y accesos rápidos para editar o abrir el catálogo público."
+      subtitle="Directorio de comercios conectados con filtros, estado, plan, actividad y acciones rapidas."
     >
       <AdminStoresManager />
     </AdminShell>

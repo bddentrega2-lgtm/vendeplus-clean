@@ -12,7 +12,16 @@ type StoreIdentity = {
   slug: string;
   logo_url: string | null;
   cover_image_url: string | null;
+  subscription_status?: string | null;
+  subscription_ends_at?: string | null;
+  next_payment_due_at?: string | null;
 };
+
+function isExpired(store: StoreIdentity) {
+  if (store.subscription_status === "expired" || store.subscription_status === "past_due") return true;
+  const due = store.subscription_ends_at || store.next_payment_due_at;
+  return Boolean(due && new Date(due).getTime() < Date.now());
+}
 
 export function PanelStoreIdentity() {
   const [store, setStore] = useState<StoreIdentity | null>(null);
@@ -39,6 +48,9 @@ export function PanelStoreIdentity() {
             slug: firstStore.slug || "",
             logo_url: firstStore.logo_url || null,
             cover_image_url: firstStore.cover_image_url || null,
+            subscription_status: firstStore.subscription_status || null,
+            subscription_ends_at: firstStore.subscription_ends_at || null,
+            next_payment_due_at: firstStore.next_payment_due_at || null,
           });
         }
       } catch {
@@ -93,6 +105,14 @@ export function PanelStoreIdentity() {
         <p className="mt-1 truncate text-xs font-bold text-white/60">
           /{store.slug || "catalogo"}
         </p>
+        {isExpired(store) ? (
+          <a
+            href="/panel/suscripcion"
+            className="mt-3 block rounded-2xl bg-[#FFB547] p-3 text-xs font-black text-[#25262B]"
+          >
+            Cuenta vencida. Envía tu pago o escribe al admin para reactivar tu página.
+          </a>
+        ) : null}
       </div>
     </div>
   );

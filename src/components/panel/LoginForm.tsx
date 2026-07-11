@@ -76,7 +76,7 @@ export function LoginForm() {
         </div>
 
         <p className="mt-5 text-sm font-black uppercase tracking-[0.18em] text-[#746f69]">
-          Panel Vende+
+          Panel VendeMas
         </p>
         <h1 className="mt-2 text-4xl font-black">Iniciar sesión</h1>
         <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">

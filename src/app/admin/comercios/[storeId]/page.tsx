@@ -14,8 +14,8 @@ export default async function EditAdminStorePage({
   return (
     <AdminShell
       active="/admin/comercios"
-      title="Editar comercio"
-      subtitle="Ajusta datos base, visibilidad pública, operación, pagos y estilo del comercio."
+      title="Detalle de comercio"
+      subtitle="Ficha completa para editar datos base, plan, vencimientos, estado, operacion, pagos y estilo."
     >
       <AdminStoreForm storeId={storeId} />
     </AdminShell>

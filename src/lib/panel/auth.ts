@@ -9,6 +9,7 @@ export type PanelAuthContext = {
   userId?: string;
   email?: string;
   storeIds: string[] | null;
+  storeRoles?: Record<string, string>;
   role?: string;
   error?: string;
 };
@@ -118,6 +119,12 @@ export async function getPanelAuthContext(
       };
     }
 
+    const storeRoles = Object.fromEntries(
+      storeUsers
+        .filter((row) => row.store_id)
+        .map((row) => [row.store_id, row.role || "operator"])
+    );
+
     return {
       isAuthorized: true,
       mode: "user",
@@ -126,6 +133,7 @@ export async function getPanelAuthContext(
       userId: userResult.user.id,
       email: userEmail,
       storeIds: storeUsers.map((row) => row.store_id),
+      storeRoles,
       role: storeUsers[0]?.role || "operator",
     };
   } catch (error: any) {

@@ -3,11 +3,14 @@ import { LogoutButton } from "@/components/panel/LogoutButton";
 import { PwaInstallButton } from "@/components/pwa/PwaInstallButton";
 import {
   Building2,
+  CreditCard,
   Home,
   LayoutDashboard,
   PlusCircle,
   ShieldCheck,
   Sparkles,
+  Tags,
+  Truck,
   UserRoundPlus,
 } from "lucide-react";
 
@@ -15,6 +18,10 @@ const navItems = [
   { href: "/admin", label: "Resumen", icon: LayoutDashboard },
   { href: "/admin/comercios", label: "Comercios", icon: Building2 },
   { href: "/admin/comercios/nuevo", label: "Crear comercio", icon: PlusCircle },
+  { href: "/admin/usuarios", label: "Usuarios", icon: UserRoundPlus },
+  { href: "/admin/planes", label: "Planes", icon: Tags },
+  { href: "/admin/suscripciones", label: "Suscripciones", icon: CreditCard },
+  { href: "/admin/transporte", label: "Transporte", icon: Truck },
   { href: "/admin/asignaciones", label: "Asignaciones", icon: UserRoundPlus },
 ];
 
@@ -38,9 +45,7 @@ export function AdminShell({
               <ShieldCheck size={22} />
             </div>
             <div>
-              <p className="text-xl font-black leading-none text-[#25262B]">
-                Vende+
-              </p>
+              <p className="text-xl font-black leading-none text-[#25262B]">VendeMas</p>
               <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-[#746f69]">
                 Admin
               </p>
@@ -76,7 +81,7 @@ export function AdminShell({
               Zona fundador
             </p>
             <p className="mt-2 text-sm font-semibold leading-relaxed text-white/75">
-              Alta de comercios, control de usuarios asignados y preparación de clientes sin tocar herramientas técnicas.
+              Alta de comercios, planes, suscripciones y accesos sin entrar a Supabase.
             </p>
           </div>
 
@@ -89,7 +94,7 @@ export function AdminShell({
             className="mt-4 flex items-center gap-2 rounded-3xl bg-[#F8F3E8] px-4 py-3 text-sm font-black text-[#2E3A79]"
           >
             <Home size={17} />
-            Ver catálogo público
+            Ver catalogo publico
           </Link>
 
           <div className="mt-4">

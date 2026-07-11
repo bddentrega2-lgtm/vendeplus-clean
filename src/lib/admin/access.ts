@@ -22,8 +22,5 @@ export function adminErrorResponse(error: unknown, fallbackMessage: string) {
     );
   }
 
-  const message =
-    error instanceof Error ? error.message || fallbackMessage : fallbackMessage;
-
-  return NextResponse.json({ error: message }, { status: 500 });
+  return NextResponse.json({ error: fallbackMessage }, { status: 500 });
 }

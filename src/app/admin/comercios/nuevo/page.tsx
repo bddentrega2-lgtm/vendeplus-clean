@@ -9,7 +9,7 @@ export default function NewAdminStorePage() {
     <AdminShell
       active="/admin/comercios/nuevo"
       title="Crear comercio"
-      subtitle="Alta mínima de un nuevo cliente: datos comerciales, URL pública, operación, pagos e identidad visual."
+      subtitle="Alta controlada de comercios, plan inicial, estado comercial y acceso del usuario dueno."
     >
       <AdminStoreForm />
     </AdminShell>

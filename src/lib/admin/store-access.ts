@@ -1,4 +1,4 @@
-const validRoles = new Set(["owner", "admin", "operator"]);
+const validRoles = new Set(["owner", "admin", "operator", "staff"]);
 
 function cleanText(value: unknown) {
   return String(value || "").trim();

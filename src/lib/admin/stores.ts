@@ -1,3 +1,5 @@
+import { PER_SERVICE_FEE_USD } from "@/lib/plans";
+
 export const adminStoreSelect = `
   id,
   slug,
@@ -22,6 +24,16 @@ export const adminStoreSelect = `
   accepts_delivery,
   accepts_pickup,
   is_active,
+  plan_type,
+  trial_started_at,
+  trial_ends_at,
+  subscription_status,
+  subscription_started_at,
+  subscription_ends_at,
+  next_payment_due_at,
+  monthly_price_usd,
+  billing_notes,
+  last_payment_at,
   created_at
 `;
 
@@ -62,6 +74,23 @@ function normalizePaymentMethods(value: unknown) {
 export function normalizeAdminStorePayload(body: any) {
   const name = cleanText(body.name);
   const slug = slugifyStore(body.slug || name);
+  const planType = [
+    "trial",
+    "monthly",
+    "per_service",
+    "emprendedor",
+    "visionario",
+    "founder",
+  ].includes(cleanText(body.plan_type))
+    ? cleanText(body.plan_type)
+    : "trial";
+  const subscriptionStatus = ["trial", "active", "past_due", "paused", "cancelled", "expired"].includes(
+    cleanText(body.subscription_status)
+  )
+    ? cleanText(body.subscription_status)
+    : planType === "trial"
+      ? "trial"
+      : "active";
 
   return {
     slug,
@@ -86,5 +115,58 @@ export function normalizeAdminStorePayload(body: any) {
     accepts_delivery: body.accepts_delivery === true,
     accepts_pickup: body.accepts_pickup !== false,
     is_active: body.is_active !== false,
+    plan_type: planType,
+    trial_started_at: cleanText(body.trial_started_at) || null,
+    trial_ends_at: cleanText(body.trial_ends_at) || null,
+    subscription_status: subscriptionStatus,
+    subscription_started_at: cleanText(body.subscription_started_at) || null,
+    subscription_ends_at: cleanText(body.subscription_ends_at) || null,
+    next_payment_due_at: cleanText(body.next_payment_due_at) || null,
+    monthly_price_usd: Math.max(
+      0,
+      Number(
+        body.monthly_price_usd ||
+          (planType === "monthly" ? 20 : planType === "per_service" ? PER_SERVICE_FEE_USD : 0)
+      )
+    ),
+    billing_notes: cleanText(body.billing_notes) || null,
+    last_payment_at: cleanText(body.last_payment_at) || null,
+  };
+}
+
+export function normalizeAdminSubscriptionPayload(body: any) {
+  const planType = [
+    "trial",
+    "monthly",
+    "per_service",
+    "emprendedor",
+    "visionario",
+    "founder",
+  ].includes(cleanText(body.plan_type))
+    ? cleanText(body.plan_type)
+    : "trial";
+  const subscriptionStatus = ["trial", "active", "past_due", "paused", "cancelled", "expired"].includes(
+    cleanText(body.subscription_status)
+  )
+    ? cleanText(body.subscription_status)
+    : "trial";
+
+  return {
+    plan_type: planType,
+    subscription_status: subscriptionStatus,
+    trial_started_at: cleanText(body.trial_started_at) || null,
+    trial_ends_at: cleanText(body.trial_ends_at) || null,
+    subscription_started_at: cleanText(body.subscription_started_at) || null,
+    subscription_ends_at: cleanText(body.subscription_ends_at) || null,
+    next_payment_due_at: cleanText(body.next_payment_due_at) || null,
+    monthly_price_usd: Math.max(
+      0,
+      Number(
+        body.monthly_price_usd ||
+          (planType === "monthly" ? 20 : planType === "per_service" ? PER_SERVICE_FEE_USD : 0)
+      )
+    ),
+    billing_notes: cleanText(body.billing_notes) || null,
+    last_payment_at: cleanText(body.last_payment_at) || null,
   };
 }

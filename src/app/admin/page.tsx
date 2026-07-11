@@ -9,7 +9,7 @@ export default function AdminPage() {
     <AdminShell
       active="/admin"
       title="Resumen fundador"
-      subtitle="Vista global para preparar clientes, revisar comercios y operar altas sin tocar herramientas técnicas."
+      subtitle="Vista global para revisar comercios, planes, vencimientos, pedidos y alertas sin tocar herramientas tecnicas."
     >
       <AdminDashboard />
     </AdminShell>

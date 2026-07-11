@@ -7,7 +7,7 @@ import {
   normalizeAccessRole,
 } from "@/lib/admin/store-access";
 
-const validRoles = new Set(["owner", "admin", "operator"]);
+const validRoles = new Set(["owner", "admin", "operator", "staff"]);
 
 function cleanText(value: unknown) {
   return String(value || "").trim();
@@ -174,5 +174,27 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     return adminErrorResponse(error, "Error asignando usuario.");
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    await requireAdminAuth(request);
+    const body = await request.json();
+    const assignmentId = cleanText(body.assignment_id);
+
+    if (!assignmentId) return badRequest("Falta la asignacion.");
+
+    const supabase = createSupabaseAdminClient();
+    const { error } = await supabase
+      .from("store_users")
+      .delete()
+      .eq("id", assignmentId);
+
+    if (error) throw error;
+
+    return NextResponse.json({ ok: true, message: "Asignacion eliminada." });
+  } catch (error) {
+    return adminErrorResponse(error, "Error quitando acceso.");
   }
 }

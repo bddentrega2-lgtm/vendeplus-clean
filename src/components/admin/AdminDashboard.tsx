@@ -23,10 +23,17 @@ type Summary = {
   totalStores: number;
   activeStores: number;
   inactiveStores: number;
+  trialStores: number;
+  expiredStores: number;
   totalOrders: number;
+  ordersToday: number;
+  ordersLast7Days: number;
   totalProducts: number;
   totalAssignments: number;
+  totalCustomers: number;
+  estimatedMrrUsd: number;
   revenueUsd: number;
+  attentionStores: number;
 };
 
 type RecentStore = {
@@ -36,6 +43,16 @@ type RecentStore = {
   business_type: string | null;
   whatsapp: string | null;
   is_active: boolean;
+  plan_type?: string | null;
+  trial_ends_at?: string | null;
+  subscription_status?: string | null;
+};
+
+type AdminAlert = {
+  type: string;
+  storeId: string;
+  storeName: string;
+  message: string;
 };
 
 type AuthCheck = {
@@ -43,7 +60,6 @@ type AuthCheck = {
   userEmail: string | null;
   founderEmailsConfigured: boolean;
   founderEmailCount: number;
-  founderEmailsPreview: string[];
   matchesFounderEmail: boolean;
   reason: string;
 };
@@ -69,6 +85,9 @@ async function getAdminAuthCheck(): Promise<AuthCheck | null> {
     const response = await fetch("/api/admin/auth-check", {
       headers: await getPanelAuthHeaders(""),
     });
+
+    if (!response.ok) return null;
+
     const data = await response.json();
 
     return data as AuthCheck;
@@ -102,7 +121,7 @@ function AccessBox({
       </div>
       <h2 className="mt-5 text-3xl font-black">Acceso fundador</h2>
       <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
-        Inicia sesión con un email incluido en FOUNDER_EMAILS para entrar al admin.
+        Inicia sesion con un email incluido en FOUNDER_EMAILS para entrar al admin.
       </p>
 
       <button
@@ -112,33 +131,27 @@ function AccessBox({
         className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B] disabled:opacity-60"
       >
         {isLoading ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
-        Validar sesión
+        Validar sesion
       </button>
 
-      <Link
-        href="/panel/login"
-        className="mt-3 inline-flex text-sm font-black text-[#2E3A79]"
-      >
-        Iniciar sesión con email
+      <Link href="/panel/login" className="mt-3 inline-flex text-sm font-black text-[#2E3A79]">
+        Iniciar sesion con email
       </Link>
 
       {error && <p className="mt-3 text-sm font-black text-red-600">{error}</p>}
 
       {authCheck && (
         <div className="mt-4 rounded-2xl bg-[#F8F3E8] p-4 text-left text-sm font-bold text-[#25262B]">
-          <p className="font-black text-[#2E3A79]">Diagnóstico</p>
-          <p className="mt-2">Sesión: {authCheck.authenticated ? "activa" : "no detectada"}</p>
+          <p className="font-black text-[#2E3A79]">Diagnostico</p>
+          <p className="mt-2">Sesion: {authCheck.authenticated ? "activa" : "no detectada"}</p>
           <p>Email detectado: {authCheck.userEmail || "ninguno"}</p>
           <p>
             FOUNDER_EMAILS:{" "}
             {authCheck.founderEmailsConfigured
               ? `${authCheck.founderEmailCount} configurado(s)`
-              : "no configurado en producción"}
+              : "no configurado en produccion"}
           </p>
-          {authCheck.founderEmailsPreview.length > 0 && (
-            <p>Founder configurado: {authCheck.founderEmailsPreview.join(", ")}</p>
-          )}
-          <p>Coincide: {authCheck.matchesFounderEmail ? "sí" : "no"}</p>
+          <p>Coincide: {authCheck.matchesFounderEmail ? "si" : "no"}</p>
           <p className="mt-2 text-[#746f69]">{authCheck.reason}</p>
         </div>
       )}
@@ -154,6 +167,7 @@ export function AdminDashboard() {
   const [authCheck, setAuthCheck] = useState<AuthCheck | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [recentStores, setRecentStores] = useState<RecentStore[]>([]);
+  const [alerts, setAlerts] = useState<AdminAlert[]>([]);
 
   async function loadSummary() {
     setIsLoading(true);
@@ -163,6 +177,7 @@ export function AdminDashboard() {
       const data = await adminRequest("/api/admin/summary", "");
       setSummary(data.summary);
       setRecentStores(data.recentStores || []);
+      setAlerts(data.alerts || []);
       setIsUnlocked(true);
       setAuthCheck(null);
     } catch (error: any) {
@@ -208,9 +223,14 @@ export function AdminDashboard() {
   const cards = [
     { label: "Comercios", value: summary.totalStores, icon: Building2 },
     { label: "Activos", value: summary.activeStores, icon: CheckCircle2 },
-    { label: "Pedidos", value: summary.totalOrders, icon: ClipboardList },
+    { label: "Pausados", value: summary.inactiveStores, icon: Lock },
+    { label: "Trial", value: summary.trialStores, icon: PlusCircle },
+    { label: "Vencidos", value: summary.expiredStores, icon: RefreshCcw },
+    { label: "Pedidos hoy", value: summary.ordersToday, icon: ClipboardList },
+    { label: "Pedidos 7 dias", value: summary.ordersLast7Days, icon: ClipboardList },
     { label: "Productos", value: summary.totalProducts, icon: Package },
-    { label: "Usuarios asignados", value: summary.totalAssignments, icon: UserRoundPlus },
+    { label: "Clientes", value: summary.totalCustomers, icon: UserRoundPlus },
+    { label: "Usuarios", value: summary.totalAssignments, icon: UserRoundPlus },
   ];
 
   return (
@@ -234,14 +254,17 @@ export function AdminDashboard() {
         })}
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[1fr_360px]">
+      <section className="grid gap-4 xl:grid-cols-[1fr_380px]">
         <div className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
             <div>
               <p className="text-sm font-black uppercase tracking-[0.18em] text-[#746f69]">
-                Ventas registradas
+                Operacion comercial
               </p>
-              <h2 className="mt-1 text-3xl font-black">{formatUsd(summary.revenueUsd)}</h2>
+              <h2 className="mt-1 text-3xl font-black">{formatUsd(summary.estimatedMrrUsd)} MRR</h2>
+              <p className="mt-1 text-sm font-bold text-[#746f69]">
+                Ventas historicas: {formatUsd(summary.revenueUsd)} - {summary.attentionStores} comercios requieren atencion
+              </p>
             </div>
             <button
               type="button"
@@ -269,11 +292,11 @@ export function AdminDashboard() {
               Ver comercios
             </Link>
             <Link
-              href="/admin/asignaciones"
+              href="/admin/usuarios"
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#2E3A79] px-4 py-4 text-sm font-black text-white"
             >
               <UserRoundPlus size={17} />
-              Asignar usuario
+              Usuarios
             </Link>
           </div>
         </div>
@@ -291,14 +314,52 @@ export function AdminDashboard() {
               >
                 <p className="font-black">{store.name}</p>
                 <p className="mt-1 text-xs font-bold text-[#746f69]">
-                  /{store.slug} · {store.is_active ? "Activo" : "Inactivo"}
+                  /{store.slug} - {store.is_active ? "Activo" : "Pausado"} - {store.plan_type || "trial"}
                 </p>
               </Link>
             ))}
             {recentStores.length === 0 && (
-              <p className="text-sm font-bold text-[#746f69]">Todavía no hay comercios.</p>
+              <p className="text-sm font-bold text-[#746f69]">Todavia no hay comercios.</p>
             )}
           </div>
+        </div>
+      </section>
+
+      <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+          <div>
+            <p className="text-sm font-black uppercase tracking-[0.18em] text-[#746f69]">
+              Alertas operativas
+            </p>
+            <h2 className="mt-1 text-3xl font-black">{alerts.length} prioridades</h2>
+          </div>
+          <Link
+            href="/admin/comercios"
+            className="inline-flex items-center justify-center rounded-full bg-[#25262B] px-4 py-3 text-sm font-black text-white"
+          >
+            Revisar comercios
+          </Link>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {alerts.map((alert) => (
+            <Link
+              key={`${alert.type}-${alert.storeId}`}
+              href={`/admin/comercios/${alert.storeId}`}
+              className="rounded-2xl bg-[#F8F3E8] p-4 transition hover:bg-[#efe5d2]"
+            >
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-[#2E3A79]">
+                {alert.type}
+              </p>
+              <p className="mt-1 font-black">{alert.storeName}</p>
+              <p className="mt-1 text-sm font-bold text-[#746f69]">{alert.message}</p>
+            </Link>
+          ))}
+          {alerts.length === 0 ? (
+            <p className="rounded-2xl bg-[#F8F3E8] p-4 text-sm font-bold text-[#746f69]">
+              Sin alertas criticas por ahora.
+            </p>
+          ) : null}
         </div>
       </section>
     </div>
