@@ -1,6 +1,19 @@
-const CACHE_VERSION = "vendeplus-pwa-v2";
+const CACHE_VERSION = "vendeplus-pwa-v3";
+const STATIC_CACHE = `${CACHE_VERSION}-static`;
+const PRECACHE_URLS = [
+  "/manifest.webmanifest",
+  "/icons/icon.svg",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+];
 
-self.addEventListener("install", () => {
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches
+      .open(STATIC_CACHE)
+      .then((cache) => cache.addAll(PRECACHE_URLS))
+      .catch(() => undefined)
+  );
   self.skipWaiting();
 });
 
@@ -11,7 +24,7 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => key.startsWith("vendeplus-") && key !== CACHE_VERSION)
+            .filter((key) => key.startsWith("vendeplus-") && !key.startsWith(CACHE_VERSION))
             .map((key) => caches.delete(key))
         )
       )
@@ -19,6 +32,43 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-self.addEventListener("fetch", () => {
-  // Pass through intentionally. Admin/order data should stay network-first and uncached.
+self.addEventListener("fetch", (event) => {
+  const request = event.request;
+
+  if (request.method !== "GET") return;
+
+  const requestUrl = new URL(request.url);
+  if (requestUrl.origin !== self.location.origin) return;
+
+  const pathname = requestUrl.pathname;
+  const isPrivateRoute =
+    pathname.startsWith("/api/") ||
+    pathname.startsWith("/panel") ||
+    pathname.startsWith("/admin");
+
+  if (isPrivateRoute) return;
+
+  const isStaticAsset =
+    pathname.startsWith("/_next/static/") ||
+    pathname.startsWith("/icons/") ||
+    pathname === "/manifest.webmanifest";
+
+  if (!isStaticAsset) return;
+
+  event.respondWith(
+    caches.open(STATIC_CACHE).then(async (cache) => {
+      const cached = await cache.match(request);
+
+      const networkResponse = fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            cache.put(request, response.clone());
+          }
+          return response;
+        })
+        .catch(() => cached || Response.error());
+
+      return cached || networkResponse;
+    })
+  );
 });

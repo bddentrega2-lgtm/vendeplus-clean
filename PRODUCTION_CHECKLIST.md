@@ -14,6 +14,7 @@
 ## 2. Supabase
 
 - Apply every migration in `supabase/migrations`.
+- Run `supabase/production_readiness_checks.sql` in the Supabase SQL Editor and confirm every `ok` value is true, except optional integrations intentionally disabled.
 - Confirm the base schema already has `stores`, `categories`, `products`, `product_variants`, `orders`, and `order_items`.
 - Run Supabase advisors before launch.
 - Confirm RLS is enabled on public tables.
@@ -46,6 +47,7 @@
 
 ## 5. Release Gates
 
+- `npm.cmd run check:production`
 - `npm.cmd run lint`
 - `npm.cmd run build`
 - Verify there are no unexpected demo fallbacks in production logs.

@@ -153,6 +153,55 @@ img {
   display: none;
 }
 
+.vp-logo-marquee {
+  overflow: hidden;
+  position: relative;
+}
+
+.vp-logo-marquee::before,
+.vp-logo-marquee::after {
+  content: "";
+  height: 100%;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  width: 42px;
+  z-index: 1;
+}
+
+.vp-logo-marquee::before {
+  background: linear-gradient(90deg, #ffffff, rgba(255, 255, 255, 0));
+  left: 0;
+}
+
+.vp-logo-marquee::after {
+  background: linear-gradient(270deg, #ffffff, rgba(255, 255, 255, 0));
+  right: 0;
+}
+
+.vp-logo-marquee-track {
+  animation: vp-logo-marquee 26s linear infinite;
+  display: flex;
+  gap: 12px;
+  width: max-content;
+}
+
+@keyframes vp-logo-marquee {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vp-logo-marquee-track {
+    animation: none;
+  }
+}
+
 .vendeplus-store-marker,
 .vendeplus-destination-marker {
   background: transparent;

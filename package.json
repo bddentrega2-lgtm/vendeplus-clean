@@ -6,30 +6,36 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "check:production": "node scripts/check-production.mjs",
+    "predeploy:smoke": "node scripts/predeploy-smoke.mjs",
+    "e2e:checkout": "node scripts/e2e-checkout.mjs",
+    "load:smoke": "node scripts/load-smoke.mjs"
   },
   "dependencies": {
-    "@supabase/ssr": "latest",
-    "@supabase/supabase-js": "^2.106.1",
-    "@swc/helpers": "^0.5.21",
-    "clsx": "latest",
-    "leaflet": "latest",
-    "lucide-react": "latest",
-    "next": "latest",
-    "react": "latest",
-    "react-dom": "latest",
-    "tailwind-merge": "latest",
-    "zod": "latest"
+    "@supabase/ssr": "0.10.3",
+    "@supabase/supabase-js": "2.106.1",
+    "@swc/helpers": "0.5.21",
+    "clsx": "2.1.1",
+    "leaflet": "1.9.4",
+    "lucide-react": "1.16.0",
+    "next": "16.2.6",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "tailwind-merge": "3.6.0",
+    "zod": "4.4.3"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "latest",
-    "@types/leaflet": "latest",
-    "@types/node": "latest",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
-    "eslint": "latest",
-    "eslint-config-next": "latest",
-    "tailwindcss": "latest",
-    "typescript": "latest"
+    "@tailwindcss/postcss": "4.3.0",
+    "@types/leaflet": "1.9.21",
+    "@types/node": "25.9.1",
+    "@types/react": "19.2.15",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.2.6",
+    "playwright": "1.61.1",
+    "supabase": "2.109.0",
+    "tailwindcss": "4.3.0",
+    "typescript": "6.0.3"
   }
 }

@@ -91,7 +91,7 @@ export function PwaInstallButton({ compact = false }: { compact?: boolean }) {
         ].join(" ")}
       >
         {installPrompt ? <Download size={17} /> : <Smartphone size={17} />}
-        Instalar Vende+
+        Instalar VendeMas
       </button>
 
       {showHelp ? (
@@ -114,11 +114,11 @@ export function PwaInstallButton({ compact = false }: { compact?: boolean }) {
           {isIos ? (
             <p className="pr-8">
               En iPhone: toca Compartir en Safari y luego Agregar a pantalla de
-              inicio. El acceso abrirá Vende+ como app.
+              inicio. El acceso abrira VendeMas como app.
             </p>
           ) : (
             <p className="pr-8">
-              Si no aparece la ventana, abre el menu del navegador y elige
+              Si no aparece la ventana, abre el menu del navegador y toca
               Instalar app o Agregar a pantalla de inicio.
             </p>
           )}

@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import { Nunito_Sans } from "next/font/google";
-import { PanelAuthProvider } from "@/components/panel/PanelAuthProvider";
 import { RegisterServiceWorker } from "@/components/pwa/RegisterServiceWorker";
 import "./globals.css";
 
@@ -11,13 +10,13 @@ const nunito = Nunito_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Vende+ | Compra en negocios locales",
+  title: "VendeMas | Compra en negocios locales",
   description: "Explora negocios, arma tu pedido y confirma por WhatsApp.",
   manifest: "/manifest.webmanifest",
-  applicationName: "Vende+",
+  applicationName: "VendeMas",
   appleWebApp: {
     capable: true,
-    title: "Vende+",
+    title: "VendeMas",
     statusBarStyle: "black-translucent",
   },
 };
@@ -33,7 +32,7 @@ export default function RootLayout({
     <html lang="es" data-scroll-behavior="smooth" suppressHydrationWarning>
       <body className={nunito.variable} suppressHydrationWarning>
         <RegisterServiceWorker />
-        <PanelAuthProvider>{children}</PanelAuthProvider>
+        {children}
       </body>
     </html>
   );
