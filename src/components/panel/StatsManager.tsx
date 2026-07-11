@@ -5,7 +5,6 @@ import {
   Activity,
   BarChart3,
   Bike,
-  CalendarDays,
   CheckCircle2,
   DollarSign,
   Loader2,
@@ -354,12 +353,6 @@ export function StatsManager() {
       detail: "Ingreso promedio por pedido",
       icon: TrendingUp,
     },
-    {
-      label: "Ingreso diario",
-      value: formatUsd(stats.summary.averageRevenuePerDayUsd),
-      detail: "Promedio por día del rango",
-      icon: CalendarDays,
-    },
   ];
 
   return (
@@ -451,8 +444,7 @@ export function StatsManager() {
         </div>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-2">
-        <BarList title="Ventas por día" subtitle="Total vendido por fecha" items={stats.salesByDay} valueFormatter={formatUsd} />
+      <section className="grid gap-5">
         <BarList title="Pedidos por día" subtitle="Volumen diario dentro del rango" items={stats.ordersByDay} />
       </section>
 

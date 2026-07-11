@@ -8,10 +8,9 @@ import {
   Boxes,
   ClipboardList,
   ContactRound,
-  Home,
+  CreditCard,
   LayoutDashboard,
   ListPlus,
-  PlusCircle,
   Settings,
   Sparkles,
   Tags,
@@ -21,14 +20,14 @@ import {
 const navItems = [
   { href: "/panel", label: "Inicio", icon: LayoutDashboard },
   { href: "/panel/pedidos", label: "Pedidos", icon: ClipboardList },
-  { href: "/panel/pedidos/nuevo", label: "Crear pedido", icon: PlusCircle },
-  { href: "/panel/clientes", label: "Clientes", icon: ContactRound },
   { href: "/panel/productos", label: "Productos", icon: Boxes },
-  { href: "/panel/opciones", label: "Opciones y extras", icon: ListPlus },
+  { href: "/panel/catalogo", label: "Categorías", icon: Tags },
+  { href: "/panel/opciones", label: "Variantes o adicionales", icon: ListPlus },
   { href: "/panel/delivery", label: "Delivery", icon: Truck },
-  { href: "/panel/catalogo", label: "Catálogo", icon: Tags },
+  { href: "/panel/clientes", label: "Clientes", icon: ContactRound },
   { href: "/panel/estadisticas", label: "Estadísticas", icon: BarChart3 },
   { href: "/panel/configuracion", label: "Configuración", icon: Settings },
+  { href: "/panel/suscripcion", label: "Suscripción", icon: CreditCard },
 ];
 
 export function PanelShell({
@@ -52,7 +51,7 @@ export function PanelShell({
             </div>
             <div>
               <p className="text-xl font-black leading-none text-[#2E3A79]">
-                Vende+
+                VendeMas
               </p>
               <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-[#746f69]">
                 Panel
@@ -85,14 +84,6 @@ export function PanelShell({
 
           <PanelStoreIdentity />
 
-          <Link
-            href="/"
-            className="mt-4 flex items-center gap-2 rounded-3xl bg-[#F8F3E8] px-4 py-3 text-sm font-black text-[#2E3A79]"
-          >
-            <Home size={17} />
-            Ver catálogo público
-          </Link>
-
           <div className="mt-4">
             <PwaInstallButton compact />
           </div>
@@ -107,7 +98,7 @@ export function PanelShell({
             <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
               <div>
                 <p className="text-sm font-black uppercase tracking-[0.18em] text-[#FFB547]">
-                  Vende+ Panel de ventas
+                  VendeMas Panel de ventas
                 </p>
                 <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-5xl">
                   {title}

@@ -1,13 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  assertStoreAccess,
+  assertStoreManager,
   badRequest,
   panelErrorResponse,
   requirePanelAuth,
 } from "@/lib/panel/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { mapStoreDeliverySettings } from "@/lib/delivery";
+import {
+  disableUnavailableTransportAgencySettings,
+  mapStoreDeliverySettings,
+} from "@/lib/delivery";
+import {
+  findOverlappingDistanceRange,
+  formatDistanceRange,
+  normalizeDistanceRangeInput,
+} from "@/lib/distance-ranges";
 import { isMissingColumnError } from "@/lib/supabase/schema-compat";
+import { loadTransportAgencyDeliverySettings } from "@/lib/transport";
+import { isTransportConnectionEnded } from "@/lib/transport/disengagement";
 
 function cleanText(value: unknown) {
   return String(value || "").trim();
@@ -24,7 +34,7 @@ function money(value: unknown) {
 }
 
 function normalizeSettingsPayload(body: any, storeId: string) {
-  const deliveryProvider = ["own_delivery", "entrega2", "manual_quote", "disabled"].includes(
+  const deliveryProvider = ["own_delivery", "entrega2", "manual_quote", "transport_agency", "disabled"].includes(
     cleanText(body.deliveryProvider)
   )
     ? cleanText(body.deliveryProvider)
@@ -51,6 +61,8 @@ function normalizeSettingsPayload(body: any, storeId: string) {
     pricing_type:
       deliveryProvider === "entrega2"
         ? "distance_ranges"
+        : deliveryProvider === "transport_agency"
+          ? pricingType
         : deliveryProvider === "manual_quote"
           ? "manual"
           : deliveryProvider === "disabled"
@@ -63,7 +75,7 @@ function normalizeSettingsPayload(body: any, storeId: string) {
     delivery_promo_discount_type: promoDiscountType,
     delivery_promo_discount_value: money(body.deliveryPromoDiscountValue),
     max_distance_km: optionalNumber(body.maxDistanceKm),
-    distance_factor: optionalNumber(body.distanceFactor),
+    distance_factor: null,
     manual_quote_message:
       cleanText(body.manualQuoteMessage) ||
       "Confirma el precio de tu delivery por WhatsApp con el comercio.",
@@ -106,7 +118,7 @@ async function loadRows(supabase: any, storeIds: string[] | null) {
   if (zonesResult.error) throw zonesResult.error;
   if (ratesResult.error) throw ratesResult.error;
 
-  return (stores || []).map((store: any) => {
+  return Promise.all((stores || []).map(async (store: any) => {
     const row = {
       ...store,
       store_delivery_settings: (settingsResult.data || []).filter(
@@ -120,7 +132,14 @@ async function loadRows(supabase: any, storeIds: string[] | null) {
       ),
     };
 
-    const settings = mapStoreDeliverySettings(row);
+    let settings = mapStoreDeliverySettings(row);
+    const transportSettings = await loadTransportAgencyDeliverySettings(
+      supabase,
+      store.id,
+      settings.pickupEnabled
+    );
+    if (transportSettings) settings = transportSettings.settings;
+    else settings = disableUnavailableTransportAgencySettings(settings);
 
     return {
       store: {
@@ -129,7 +148,7 @@ async function loadRows(supabase: any, storeIds: string[] | null) {
       },
       settings,
     };
-  });
+  }));
 }
 
 export async function GET(request: NextRequest) {
@@ -142,7 +161,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     return panelErrorResponse(
       error,
-      "Error cargando configuración de entrega. Aplica la migración de delivery si todavía no existe."
+      "Error cargando configuracion de delivery. Revisa la configuracion del comercio."
     );
   }
 }
@@ -155,7 +174,7 @@ export async function PATCH(request: NextRequest) {
     const storeId = cleanText(body.storeId);
 
     if (!storeId) return badRequest("Falta el comercio.");
-    assertStoreAccess(auth, storeId, "No tienes permiso para editar este comercio.");
+    assertStoreManager(auth, storeId, "No tienes permiso para editar este comercio.");
 
     if (body.action === "zone") {
       const id = cleanText(body.id);
@@ -178,10 +197,35 @@ export async function PATCH(request: NextRequest) {
     } else if (body.action === "rate") {
       const id = cleanText(body.id);
       if (!id) return badRequest("Falta el rango.");
+      const normalized = normalizeDistanceRangeInput({
+        id,
+        minKm: body.minKm,
+        maxKm: body.maxKm,
+      });
+      if (normalized.error || !normalized.range) return badRequest(normalized.error || "Rango invalido.");
+
+      if (body.isActive !== false) {
+        const { data: existingRates, error: existingError } = await supabase
+          .from("store_delivery_distance_rates")
+          .select("id, min_km, max_km, is_active")
+          .eq("store_id", storeId);
+        if (existingError) throw existingError;
+
+        const conflict = findOverlappingDistanceRange({
+          candidate: normalized.range,
+          ranges: existingRates || [],
+          excludeId: id,
+        });
+        if (conflict) {
+          return badRequest(
+            `Ese rango se cruza con ${formatDistanceRange(conflict)}. Ajusta los kilometros para que no se solapen.`
+          );
+        }
+      }
 
       const payload = {
-        min_km: money(body.minKm),
-        max_km: optionalNumber(body.maxKm),
+        min_km: normalized.range.minKm,
+        max_km: normalized.range.maxKm,
         fee_usd: money(body.feeUsd),
         is_active: body.isActive !== false,
         sort_order: Math.floor(optionalNumber(body.sortOrder) || 0),
@@ -194,6 +238,22 @@ export async function PATCH(request: NextRequest) {
         .eq("store_id", storeId);
       if (error) throw error;
     } else {
+      const { data: activeAgencyConnection, error: activeAgencyError } = await supabase
+        .from("store_transport_agency_connections")
+        .select("id, disengagement_confirmed_at, disengagement_effective_at")
+        .eq("store_id", storeId)
+        .eq("status", "active")
+        .eq("is_default", true)
+        .maybeSingle();
+      if (activeAgencyError) throw activeAgencyError;
+      if (
+        activeAgencyConnection?.id &&
+        !isTransportConnectionEnded(activeAgencyConnection) &&
+        cleanText(body.deliveryProvider) !== "transport_agency"
+      ) {
+        return badRequest("Este comercio tiene una empresa delivery activa. Primero gestiona la desafiliacion para cambiar las tarifas.");
+      }
+
       const payload = normalizeSettingsPayload(body, storeId);
       let { error } = await supabase
         .from("store_delivery_settings")
@@ -236,7 +296,7 @@ export async function PATCH(request: NextRequest) {
     const rows = await loadRows(supabase, auth.storeIds);
     return NextResponse.json({ stores: rows });
   } catch (error: any) {
-    return panelErrorResponse(error, "Error guardando configuración de entrega.");
+    return panelErrorResponse(error, "Error guardando configuracion de delivery.");
   }
 }
 
@@ -248,7 +308,7 @@ export async function POST(request: NextRequest) {
     const storeId = cleanText(body.storeId);
 
     if (!storeId) return badRequest("Falta el comercio.");
-    assertStoreAccess(auth, storeId, "No tienes permiso para editar este comercio.");
+    assertStoreManager(auth, storeId, "No tienes permiso para editar este comercio.");
 
     if (body.action === "zone") {
       const { error } = await supabase.from("store_delivery_zones").insert({
@@ -261,17 +321,39 @@ export async function POST(request: NextRequest) {
       });
       if (error) throw error;
     } else if (body.action === "rate") {
+      const normalized = normalizeDistanceRangeInput({
+        minKm: body.minKm,
+        maxKm: body.maxKm,
+      });
+      if (normalized.error || !normalized.range) return badRequest(normalized.error || "Rango invalido.");
+
+      const { data: existingRates, error: existingError } = await supabase
+        .from("store_delivery_distance_rates")
+        .select("id, min_km, max_km, is_active")
+        .eq("store_id", storeId);
+      if (existingError) throw existingError;
+
+      const conflict = findOverlappingDistanceRange({
+        candidate: normalized.range,
+        ranges: existingRates || [],
+      });
+      if (conflict) {
+        return badRequest(
+          `Ese rango se cruza con ${formatDistanceRange(conflict)}. Ajusta los kilometros para que no se solapen.`
+        );
+      }
+
       const { error } = await supabase.from("store_delivery_distance_rates").insert({
         store_id: storeId,
-        min_km: money(body.minKm),
-        max_km: optionalNumber(body.maxKm),
+        min_km: normalized.range.minKm,
+        max_km: normalized.range.maxKm,
         fee_usd: money(body.feeUsd),
         is_active: true,
         sort_order: Math.floor(optionalNumber(body.sortOrder) || 0),
       });
       if (error) throw error;
     } else {
-      return badRequest("Acción inválida.");
+      return badRequest("Accion invalida.");
     }
 
     const rows = await loadRows(supabase, auth.storeIds);
@@ -290,7 +372,7 @@ export async function DELETE(request: NextRequest) {
     const id = cleanText(body.id);
 
     if (!storeId || !id) return badRequest("Faltan datos.");
-    assertStoreAccess(auth, storeId, "No tienes permiso para editar este comercio.");
+    assertStoreManager(auth, storeId, "No tienes permiso para editar este comercio.");
 
     const table =
       body.action === "zone"
@@ -299,7 +381,7 @@ export async function DELETE(request: NextRequest) {
           ? "store_delivery_distance_rates"
           : "";
 
-    if (!table) return badRequest("Acción inválida.");
+    if (!table) return badRequest("Accion invalida.");
 
     const { error } = await supabase.from(table).delete().eq("id", id).eq("store_id", storeId);
     if (error) throw error;

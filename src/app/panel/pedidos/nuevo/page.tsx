@@ -1,17 +1,8 @@
-import { PanelShell } from "@/components/panel/PanelShell";
-import { ManualOrderManager } from "@/components/panel/ManualOrderManager";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function NewPanelOrderPage() {
-  return (
-    <PanelShell
-      active="/panel/pedidos/nuevo"
-      title="Crear pedido"
-      subtitle="Registra pedidos recibidos por WhatsApp, Instagram, llamada o atención directa sin salir del panel."
-    >
-      <ManualOrderManager />
-    </PanelShell>
-  );
+  redirect("/panel/pedidos");
 }

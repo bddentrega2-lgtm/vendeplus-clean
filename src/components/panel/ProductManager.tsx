@@ -44,6 +44,24 @@ type CategoryRow = {
   is_active?: boolean;
 };
 
+type ProductVariantRow = {
+  id: string;
+  product_id: string;
+  store_id: string;
+  name: string;
+  price_usd: number | string;
+  is_available: boolean;
+  sort_order: number;
+};
+
+type ProductVariantDraft = {
+  id?: string;
+  name: string;
+  price_usd: string;
+  is_available: boolean;
+  sort_order: number;
+};
+
 type ProductRow = {
   id: string;
   store_id: string;
@@ -57,6 +75,7 @@ type ProductRow = {
   sort_order: number;
   stores?: { name?: string } | null;
   categories?: { name?: string } | null;
+  product_variants?: ProductVariantRow[];
   product_option_group_products?: Array<{
     product_option_groups?: {
       id: string;
@@ -69,6 +88,116 @@ function getProductOptionGroups(product: ProductRow) {
   return (product.product_option_group_products || [])
     .map((assignment) => assignment.product_option_groups)
     .filter(Boolean) as Array<{ id: string; name: string }>;
+}
+
+function getVariantDrafts(product: ProductRow): ProductVariantDraft[] {
+  return [...(product.product_variants || [])]
+    .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
+    .filter((variant) => variant.is_available !== false)
+    .map((variant, index) => ({
+      id: variant.id,
+      name: variant.name || "",
+      price_usd: variant.price_usd ? String(variant.price_usd) : "",
+      is_available: variant.is_available !== false,
+      sort_order: Number(variant.sort_order || index + 1),
+    }));
+}
+
+function prepareVariantsForRequest(variants: ProductVariantDraft[]) {
+  return variants
+    .map((variant, index) => ({
+      id: variant.id,
+      name: variant.name.trim(),
+      price_usd: Number(variant.price_usd || 0),
+      is_available: variant.is_available,
+      sort_order: index + 1,
+    }))
+    .filter((variant) => variant.name);
+}
+
+function ProductVariantFields({
+  variants,
+  onChange,
+}: {
+  variants: ProductVariantDraft[];
+  onChange: (variants: ProductVariantDraft[]) => void;
+}) {
+  function updateVariant(index: number, patch: Partial<ProductVariantDraft>) {
+    onChange(
+      variants.map((variant, variantIndex) =>
+        variantIndex === index ? { ...variant, ...patch } : variant
+      )
+    );
+  }
+
+  function addVariant() {
+    onChange([
+      ...variants,
+      {
+        name: "",
+        price_usd: "",
+        is_available: true,
+        sort_order: variants.length + 1,
+      },
+    ]);
+  }
+
+  function removeVariant(index: number) {
+    onChange(variants.filter((_, variantIndex) => variantIndex !== index));
+  }
+
+  return (
+    <div className="rounded-2xl bg-[#F8F3E8] p-3 ring-1 ring-[#25262B]/[0.06]">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-black">Tamaños o presentaciones</p>
+          <p className="text-xs font-bold text-[#746f69]">
+            Si el producto tiene un solo precio, déjalo sin presentaciones.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={addVariant}
+          className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-black text-[#2E3A79]"
+        >
+          <Plus size={14} />
+          Agregar tamaño
+        </button>
+      </div>
+
+      {variants.length ? (
+        <div className="mt-3 space-y-2">
+          {variants.map((variant, index) => (
+            <div key={variant.id || index} className="grid gap-2 rounded-2xl bg-white p-2 sm:grid-cols-[1fr_130px_auto]">
+              <input
+                value={variant.name}
+                onChange={(event) => updateVariant(index, { name: event.target.value })}
+                placeholder="Ej: Pequeño, Grande, 1 kg"
+                className="rounded-xl border border-[#25262B]/10 px-3 py-2 text-xs font-bold outline-none focus:border-[#2E3A79]"
+              />
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={variant.price_usd}
+                onChange={(event) => updateVariant(index, { price_usd: event.target.value })}
+                placeholder="Precio USD"
+                className="rounded-xl border border-[#25262B]/10 px-3 py-2 text-xs font-bold outline-none focus:border-[#2E3A79]"
+              />
+              <button
+                type="button"
+                onClick={() => removeVariant(index)}
+                className="inline-flex items-center justify-center gap-1 rounded-full bg-red-50 px-3 py-2 text-xs font-black text-red-700"
+              >
+                <Trash2 size={13} />
+                Quitar
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 async function apiRequest(pin: string, options?: RequestInit & { url?: string }) {
@@ -141,6 +270,7 @@ function ProductEditor({
     is_available: product.is_available,
     is_featured: product.is_featured,
     sort_order: product.sort_order ? String(product.sort_order) : "",
+    variants: getVariantDrafts(product),
   });
 
   const [isSaving, setIsSaving] = useState(false);
@@ -165,7 +295,8 @@ function ProductEditor({
           id: product.id,
           ...draft,
           price_usd: Number(draft.price_usd || 0),
-          sort_order: Number(draft.sort_order || 0),
+          sort_order: product.sort_order || 0,
+          variants: prepareVariantsForRequest(draft.variants),
         }),
       });
 
@@ -352,22 +483,9 @@ function ProductEditor({
             </select>
           </div>
 
-          <input
-            type="number"
-            value={draft.sort_order}
-            onChange={(event) =>
-              setDraft((current) => ({
-                ...current,
-                sort_order: event.target.value,
-              }))
-            }
-            placeholder="Orden en catálogo"
-            className="w-full rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-          />
-
           <div className="flex flex-col gap-3 rounded-2xl bg-[#F8F3E8] p-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-sm font-black">Opciones y extras</p>
+              <p className="text-sm font-black">Variantes o adicionales</p>
               <p className="text-xs font-bold text-[#746f69]">
                 {optionGroups.length
                   ? `Opciones: ${optionGroups.map((group) => group.name).join(", ")}`
@@ -378,9 +496,19 @@ function ProductEditor({
               href="/panel/opciones"
               className="inline-flex items-center justify-center rounded-full bg-white px-4 py-2 text-xs font-black text-[#2E3A79]"
             >
-              Gestionar opciones
+              Gestionar variantes
             </Link>
           </div>
+
+          <ProductVariantFields
+            variants={draft.variants}
+            onChange={(variants) =>
+              setDraft((current) => ({
+                ...current,
+                variants,
+              }))
+            }
+          />
 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap gap-2">
@@ -490,6 +618,7 @@ export function ProductManager() {
     is_available: true,
     is_featured: false,
     sort_order: "",
+    variants: [] as ProductVariantDraft[],
   });
 
   const filteredNewCategories = useMemo(
@@ -562,7 +691,8 @@ export function ProductManager() {
         body: JSON.stringify({
           ...newProduct,
           price_usd: Number(newProduct.price_usd || 0),
-          sort_order: Number(newProduct.sort_order || 99),
+          sort_order: products.length + 1,
+          variants: prepareVariantsForRequest(newProduct.variants),
         }),
       });
 
@@ -575,6 +705,7 @@ export function ProductManager() {
         image_url: "",
         is_available: true,
         is_featured: false,
+        variants: [],
       }));
       setNewProductMessage("");
       setIsCreateOpen(false);
@@ -710,7 +841,7 @@ export function ProductManager() {
 
         {isCreateOpen ? (
           <>
-        <div className="mt-4 grid gap-3 lg:grid-cols-5">
+        <div className="mt-4 grid gap-3 lg:grid-cols-4">
           <select
             value={newProduct.store_id}
             onChange={(event) =>
@@ -773,18 +904,6 @@ export function ProductManager() {
             className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
           />
 
-          <input
-            type="number"
-            value={newProduct.sort_order}
-            onChange={(event) =>
-              setNewProduct((current) => ({
-                ...current,
-                sort_order: event.target.value,
-              }))
-            }
-            placeholder="Orden en catálogo"
-            className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-          />
         </div>
 
         <div className="mt-3">
@@ -798,6 +917,18 @@ export function ProductManager() {
             }
             placeholder="Descripción"
             className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+          />
+        </div>
+
+        <div className="mt-3">
+          <ProductVariantFields
+            variants={newProduct.variants}
+            onChange={(variants) =>
+              setNewProduct((current) => ({
+                ...current,
+                variants,
+              }))
+            }
           />
         </div>
 

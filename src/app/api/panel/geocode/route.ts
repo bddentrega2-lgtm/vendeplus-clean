@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { panelErrorResponse, requirePanelAuth } from "@/lib/panel/access";
+import {
+  checkDistributedRateLimit,
+  getClientIp,
+  rateLimitHeaders,
+} from "@/lib/server/rate-limit";
+
+const GEOCODE_LIMIT = 30;
+const GEOCODE_RATE_WINDOW_MS = 10 * 60 * 1000;
 
 type GeocodeResult = {
   label: string;
@@ -37,7 +45,23 @@ function normalizeResult(row: any): GeocodeResult | null {
 
 export async function GET(request: NextRequest) {
   try {
-    await requirePanelAuth(request);
+    const auth = await requirePanelAuth(request);
+    const clientIp = getClientIp(request);
+    const rateLimit = await checkDistributedRateLimit({
+      key: `panel:geocode:${auth.userId || auth.email || "unknown"}:${clientIp}`,
+      limit: GEOCODE_LIMIT,
+      windowMs: GEOCODE_RATE_WINDOW_MS,
+    });
+
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Demasiadas búsquedas de dirección. Espera unos minutos." },
+        {
+          status: 429,
+          headers: rateLimitHeaders(rateLimit, GEOCODE_LIMIT),
+        }
+      );
+    }
 
     const { searchParams } = new URL(request.url);
     const query = cleanText(searchParams.get("q"));

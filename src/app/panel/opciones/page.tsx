@@ -8,7 +8,7 @@ export default async function PanelOptionsPage() {
   return (
     <PanelShell
       active="/panel/opciones"
-      title="Opciones y extras"
+      title="Variantes o adicionales"
       subtitle="Crea tallas, colores, salsas, bebidas, sabores o extras y aplícalos a varios productos."
     >
       <OptionsManager />

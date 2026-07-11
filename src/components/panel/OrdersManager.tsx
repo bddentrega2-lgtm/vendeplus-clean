@@ -1,6 +1,5 @@
 ﻿"use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
@@ -11,7 +10,6 @@ import {
   Lock,
   MapPin,
   Navigation,
-  Plus,
   RefreshCcw,
   Search,
   Send,
@@ -34,6 +32,7 @@ import {
   shouldShowPanelInitialAccessGate,
 } from "@/lib/panel/client-auth";
 import { PanelAccessGate, PanelModuleSkeleton } from "@/components/panel/PanelLoadingState";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { formatVenezuelaDateTime } from "@/lib/time/venezuela";
 
 type OrderItem = {
@@ -80,6 +79,10 @@ type OrderRow = {
   delivery_status?: string | null;
   delivery_notes?: string | null;
   delivery_address?: string | null;
+  transport_agency_id?: string | null;
+  transport_agency_name?: string | null;
+  transport_agency_fee_usd?: number | string | null;
+  transport_agency_status?: string | null;
   total_usd: number | string;
   total_bs: number | string;
   distance_km: number | string | null;
@@ -105,6 +108,29 @@ type OrderRow = {
   } | null;
   order_items?: OrderItem[];
   order_integrations?: OrderIntegration[];
+  transport_orders?: TransportOrderSummary[];
+};
+
+type TransportOrderSummary = {
+  id: string;
+  agency_id: string;
+  agency_name_snapshot: string | null;
+  agency_whatsapp_snapshot: string | null;
+  status: string;
+  delivery_fee_usd: number | string | null;
+  agency_status_note: string | null;
+  rejection_reason: string | null;
+  updated_at: string | null;
+  transport_order_events?: Array<{
+    id: string;
+    event_type: string;
+    status_from: string | null;
+    status_to: string | null;
+    note: string | null;
+    actor_type: string;
+    actor_name: string | null;
+    created_at: string;
+  }>;
 };
 
 type OrderIntegration = {
@@ -166,6 +192,22 @@ const entrega2StatusStyles: Record<string, string> = {
   completed: "bg-green-100 text-green-700",
   error: "bg-red-100 text-red-700",
   failed: "bg-red-100 text-red-700",
+};
+
+const transportStatusLabels: Record<string, string> = {
+  pending_agency: "Pendiente por empresa delivery",
+  sent_to_agency: "Enviado",
+  agency_received: "Recibido",
+  agency_accepted: "Aceptado",
+  agency_rejected: "Rechazado",
+  driver_assigned: "Repartidor asignado",
+  pickup_pending: "Pendiente por retirar",
+  picked_up: "Retirado",
+  on_the_way: "En camino",
+  delivered: "Entregado",
+  delivery_failed: "Fallido",
+  issue_reported: "Novedad",
+  cancelled: "Cancelado",
 };
 
 const dateOptions = [
@@ -297,28 +339,20 @@ function buildPaymentDataText(order: OrderRow) {
   return lines.filter(Boolean).join("\n");
 }
 
-function getPaymentDifferenceText(order: OrderRow, currency: string, amountPaid: string) {
-  const paid = Number(amountPaid || 0);
-  if (!Number.isFinite(paid) || paid <= 0) return "Sin monto recibido todavía.";
-
-  const normalizedCurrency = String(currency || "").toUpperCase();
-  const expected =
-    normalizedCurrency === "USD" || normalizedCurrency === "USDT"
-      ? Number(order.total_usd || 0)
-      : Number(order.total_bs || 0);
-  const difference = expected - paid;
-
-  if (difference <= 0) return "Monto recibido completo.";
-
-  return normalizedCurrency === "USD" || normalizedCurrency === "USDT"
-    ? `Faltan ${formatUsd(difference)}`
-    : `Faltan ${formatBs(difference)}`;
-}
-
 function getEntrega2Integration(order: OrderRow) {
   return (order.order_integrations || []).find(
     (integration) => integration.provider === "entrega2"
   );
+}
+
+function getTransportAgencyIntegration(order: OrderRow) {
+  return (order.order_integrations || []).find(
+    (integration) => integration.provider === "transport_agency"
+  );
+}
+
+function getCurrentTransportOrder(order: OrderRow) {
+  return (order.transport_orders || [])[0] || null;
 }
 
 function canSendToEntrega2(order: OrderRow) {
@@ -331,10 +365,49 @@ function canSendToEntrega2(order: OrderRow) {
   return ["error", "failed"].includes(integration.status);
 }
 
+function canSendToTransportAgency(order: OrderRow) {
+  const integration = getTransportAgencyIntegration(order);
+  const transportOrder = getCurrentTransportOrder(order);
+
+  if (order.delivery_type !== "delivery") return false;
+  if (order.delivery_provider !== "transport_agency") return false;
+  if (!order.transport_agency_id) return false;
+  if (transportOrder && !["agency_rejected", "cancelled", "delivery_failed"].includes(transportOrder.status)) {
+    return false;
+  }
+  if (!integration) return true;
+
+  return ["error", "failed"].includes(integration.status);
+}
+
+function isDeliveryAlreadyDelivered(order: OrderRow) {
+  const entrega2Integration = getEntrega2Integration(order);
+  const transportAgencyIntegration = getTransportAgencyIntegration(order);
+  const transportOrder = getCurrentTransportOrder(order);
+
+  return (
+    order.delivery_status === "delivered" ||
+    order.transport_agency_status === "delivered" ||
+    ["delivered", "completed"].includes(entrega2Integration?.status || "") ||
+    ["delivered", "completed"].includes(transportAgencyIntegration?.status || "") ||
+    transportOrder?.status === "delivered"
+  );
+}
+
+function getStatusOptionsForOrder(order: OrderRow) {
+  const cannotCancel = isDeliveryAlreadyDelivered(order);
+  return statusOptions.filter(
+    (item) => item.value !== "all" && (!cannotCancel || item.value !== "cancelled")
+  );
+}
+
 function getDeliverySummary(order: OrderRow) {
   if (order.delivery_type === "pickup") return "Retiro";
   if (order.delivery_zone_name) return `Delivery · ${order.delivery_zone_name}`;
   if (order.delivery_provider === "entrega2") return "Delivery · Entrega2";
+  if (order.delivery_provider === "transport_agency") {
+    return `Delivery - ${order.transport_agency_name || "Empresa delivery"}`;
+  }
   if (order.delivery_provider === "manual_quote") return "Delivery · cotizar";
   return "Delivery";
 }
@@ -408,18 +481,10 @@ function OrderDetail({
     order.customer_phone,
     `Hola, para confirmar tu pedido ${order.public_code}, por favor envíanos la referencia del pago o captura. Gracias.`
   );
-  const paymentDifference = getPaymentDifferenceText(
-    order,
-    paymentDraft.paymentCurrency,
-    paymentDraft.amountPaid
-  );
-
-  function updatePaymentDraft(field: string, value: string) {
-    setPaymentDraft((current) => ({
-      ...current,
-      [field]: value,
-    }));
-  }
+  const currentTransportOrder = getCurrentTransportOrder(order);
+  const agencyWhatsappUrl = currentTransportOrder?.agency_whatsapp_snapshot
+    ? `https://wa.me/${String(currentTransportOrder.agency_whatsapp_snapshot).replace(/[^0-9]/g, "")}`
+    : null;
 
   async function updateStatus(nextStatus: string) {
     setStatus(nextStatus);
@@ -584,6 +649,58 @@ function OrderDetail({
               </div>
             </section>
 
+            {currentTransportOrder ? (
+              <section className="rounded-[32px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.06]">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-xl font-black">Estado con empresa delivery</h3>
+                    <p className="mt-1 text-sm font-bold text-[#746f69]">
+                      {currentTransportOrder.agency_name_snapshot || order.transport_agency_name || "Empresa delivery"}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-[#F8F3E8] px-3 py-1 text-xs font-black text-[#2E3A79]">
+                    {transportStatusLabels[currentTransportOrder.status] || currentTransportOrder.status}
+                  </span>
+                </div>
+                <div className="mt-4 space-y-2 text-sm font-bold text-[#746f69]">
+                  <p>Tarifa: {formatUsd(Number(currentTransportOrder.delivery_fee_usd || order.delivery_usd || 0))}</p>
+                  {currentTransportOrder.updated_at ? (
+                    <p>Ultima actualizacion: {formatDate(currentTransportOrder.updated_at)}</p>
+                  ) : null}
+                  {currentTransportOrder.agency_status_note || currentTransportOrder.rejection_reason ? (
+                    <p className="rounded-2xl bg-[#F8F3E8] p-3">
+                      {currentTransportOrder.agency_status_note || currentTransportOrder.rejection_reason}
+                    </p>
+                  ) : null}
+                </div>
+                {currentTransportOrder.transport_order_events?.length ? (
+                  <div className="mt-4 border-t border-[#25262B]/10 pt-3">
+                    <p className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
+                      Historial
+                    </p>
+                    <div className="mt-2 space-y-1">
+                      {currentTransportOrder.transport_order_events.slice(0, 5).map((event) => (
+                        <p key={event.id} className="text-xs font-bold text-[#746f69]">
+                          {transportStatusLabels[event.status_to || ""] || event.status_to || event.event_type} · {event.actor_name || event.actor_type}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {agencyWhatsappUrl ? (
+                  <a
+                    href={agencyWhatsappUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-green-100 px-4 py-3 text-sm font-black text-green-700"
+                  >
+                    <Send size={16} />
+                    Contactar empresa
+                  </a>
+                ) : null}
+              </section>
+            ) : null}
+
             <section className="rounded-[32px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.06]">
               <h3 className="text-xl font-black">Totales</h3>
               <div className="mt-4 space-y-2 text-sm font-bold">
@@ -624,173 +741,48 @@ function OrderDetail({
                 </span>
               </div>
 
-              <div className="mt-4 grid gap-3">
-                <label className="space-y-1">
-                  <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
-                    Estado de pago
-                  </span>
-                  <select
-                    value={paymentDraft.paymentStatus}
-                    onChange={(event) => updatePaymentDraft("paymentStatus", event.target.value)}
-                    className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-black outline-none"
-                  >
-                    {paymentStatusOptions
-                      .filter((item) => item.value !== "all")
-                      .map((item) => (
-                        <option key={item.value} value={item.value}>
-                          {item.label}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="space-y-1">
-                    <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
-                      Referencia
-                    </span>
-                    <input
-                      value={paymentDraft.paymentReference}
-                      onChange={(event) => updatePaymentDraft("paymentReference", event.target.value)}
-                      placeholder="Ej: 123456"
-                      className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none"
-                    />
-                  </label>
-
-                  <label className="space-y-1">
-                    <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
-                      Banco
-                    </span>
-                    <input
-                      value={paymentDraft.paymentBank}
-                      onChange={(event) => updatePaymentDraft("paymentBank", event.target.value)}
-                      placeholder="Ej: Banesco"
-                      className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none"
-                    />
-                  </label>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-[1fr_110px]">
-                  <label className="space-y-1">
-                    <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
-                      Monto recibido
-                    </span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={paymentDraft.amountPaid}
-                      onChange={(event) => updatePaymentDraft("amountPaid", event.target.value)}
-                      placeholder="0,00"
-                      className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none"
-                    />
-                  </label>
-
-                  <label className="space-y-1">
-                    <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
-                      Moneda
-                    </span>
-                    <select
-                      value={paymentDraft.paymentCurrency}
-                      onChange={(event) => updatePaymentDraft("paymentCurrency", event.target.value)}
-                      className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-black outline-none"
-                    >
-                      <option value="VES">VES</option>
-                      <option value="USD">USD</option>
-                      <option value="USDT">USDT</option>
-                    </select>
-                  </label>
-                </div>
-
-                <p
-                  className={[
-                    "rounded-2xl p-3 text-xs font-black",
-                    paymentDifference.includes("Faltan")
-                      ? "bg-red-50 text-red-700"
-                      : "bg-green-50 text-green-700",
-                  ].join(" ")}
-                >
-                  {paymentDifference}
+              <div className="mt-4 grid gap-2">
+                <p className="rounded-2xl bg-[#F8F3E8] p-3 text-xs font-bold leading-relaxed text-[#746f69]">
+                  El comercio confirma el pago por WhatsApp. Cuando reciba el dinero,
+                  marca el pedido como pagado para control interno.
                 </p>
 
-                <label className="space-y-1">
-                  <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
-                    Notas
-                  </span>
-                  <textarea
-                    value={paymentDraft.paymentNotes}
-                    onChange={(event) => updatePaymentDraft("paymentNotes", event.target.value)}
-                    rows={2}
-                    placeholder="Ej: Pago confirmado por captura."
-                    className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none"
-                  />
-                </label>
-
-                {order.payment_verified_at && (
+                {order.payment_verified_at ? (
                   <p className="text-xs font-bold text-[#746f69]">
-                    Verificado: {formatDate(order.payment_verified_at)}
+                    Marcado pagado: {formatDate(order.payment_verified_at)}
                   </p>
-                )}
-
-                <div className="grid gap-2">
+                ) : (
                   <button
                     type="button"
-                    onClick={() => savePayment()}
+                    onClick={() => savePayment("verified")}
                     disabled={isSavingPayment}
-                    className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-4 py-3 text-sm font-black text-white disabled:opacity-60"
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-green-100 px-4 py-3 text-sm font-black text-green-700 disabled:opacity-60"
                   >
                     {isSavingPayment ? <Loader2 size={16} className="animate-spin" /> : <CircleDollarSign size={16} />}
-                    Guardar pago
+                    Marcar como pagado
                   </button>
+                )}
 
-                  <div className="grid gap-2 sm:grid-cols-3">
-                    <button
-                      type="button"
-                      onClick={() => savePayment("verified")}
-                      disabled={isSavingPayment}
-                      className="rounded-full bg-green-100 px-3 py-2 text-xs font-black text-green-700 disabled:opacity-60"
-                    >
-                      Verificado
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => savePayment("review")}
-                      disabled={isSavingPayment}
-                      className="rounded-full bg-blue-100 px-3 py-2 text-xs font-black text-blue-700 disabled:opacity-60"
-                    >
-                      En revisión
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => savePayment("incomplete")}
-                      disabled={isSavingPayment}
-                      className="rounded-full bg-red-100 px-3 py-2 text-xs font-black text-red-700 disabled:opacity-60"
-                    >
-                      Incompleto
-                    </button>
-                  </div>
+                <button
+                  type="button"
+                  onClick={copyPaymentData}
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F8F3E8] px-4 py-3 text-sm font-black text-[#2E3A79]"
+                >
+                  <Clipboard size={16} />
+                  {paymentCopied ? "Datos copiados" : "Copiar datos de pago"}
+                </button>
 
-                  <button
-                    type="button"
-                    onClick={copyPaymentData}
-                    className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F8F3E8] px-4 py-3 text-sm font-black text-[#2E3A79]"
+                {requestReferenceUrl && !order.payment_verified_at ? (
+                  <a
+                    href={requestReferenceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-4 py-3 text-sm font-black text-green-700"
                   >
-                    <Clipboard size={16} />
-                    {paymentCopied ? "Datos copiados" : "Copiar datos de pago"}
-                  </button>
-
-                  {requestReferenceUrl && (
-                    <a
-                      href={requestReferenceUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center gap-2 rounded-full bg-green-100 px-4 py-3 text-sm font-black text-green-700"
-                    >
-                      <Send size={16} />
-                      Solicitar referencia
-                    </a>
-                  )}
-                </div>
+                    <Send size={16} />
+                    Pedir referencia por WhatsApp
+                  </a>
+                ) : null}
 
                 {paymentMessage && (
                   <p className="text-xs font-black text-[#2E3A79]">{paymentMessage}</p>
@@ -806,14 +798,18 @@ function OrderDetail({
                 onChange={(event) => updateStatus(event.target.value)}
                 className="mt-4 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-black outline-none"
               >
-                {statusOptions
-                  .filter((item) => item.value !== "all")
-                  .map((item) => (
+                {getStatusOptionsForOrder(order).map((item) => (
                     <option key={item.value} value={item.value}>
                       {item.label}
                     </option>
                   ))}
               </select>
+
+              {isDeliveryAlreadyDelivered(order) ? (
+                <p className="mt-2 rounded-2xl bg-green-50 p-3 text-xs font-black text-green-700">
+                  Este pedido ya fue entregado por la empresa delivery. No se puede cancelar.
+                </p>
+              ) : null}
 
               {isSaving && (
                 <p className="mt-2 inline-flex items-center gap-2 text-xs font-black text-[#2E3A79]">
@@ -886,6 +882,7 @@ export function OrdersManager() {
   const [sendingDeliveryId, setSendingDeliveryId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => Date.now());
+  const [realtimeStoreIds, setRealtimeStoreIds] = useState<string[]>([]);
 
   async function loadOrders(
     currentPin: string,
@@ -917,6 +914,11 @@ export function OrdersManager() {
       const data = await apiRequest(currentPin, `/api/panel/orders${queryString}`);
 
       setOrders(data.orders || []);
+      setRealtimeStoreIds(
+        Array.isArray(data.auth?.storeIds)
+          ? data.auth.storeIds.filter((storeId: unknown): storeId is string => typeof storeId === "string")
+          : []
+      );
       setIsUnlocked(true);
       savePanelPin(currentPin);
     } catch (error: any) {
@@ -957,18 +959,22 @@ export function OrdersManager() {
     ];
   }, [orders]);
 
-  async function sendOrderToEntrega2(orderId: string) {
+  async function sendOrderToDelivery(orderId: string) {
     setSendingDeliveryId(orderId);
     setError("");
 
     try {
-      await apiRequest(pin, `/api/panel/orders/${orderId}/send-delivery`, {
+      const result = await apiRequest(pin, `/api/panel/orders/${orderId}/send-delivery`, {
         method: "POST",
       });
 
+      if (result?.whatsappUrl) {
+        window.open(result.whatsappUrl, "_blank", "noopener,noreferrer");
+      }
+
       await loadOrders(pin);
     } catch (error: any) {
-      setError(error.message || "No se pudo enviar el pedido a Entrega2.");
+      setError(error.message || "No se pudo enviar el pedido a delivery.");
     } finally {
       setSendingDeliveryId(null);
     }
@@ -1056,6 +1062,61 @@ export function OrdersManager() {
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    if (!isUnlocked) return;
+
+    const refresh = () => {
+      if (document.visibilityState === "visible") void loadOrders(pin);
+    };
+    document.addEventListener("visibilitychange", refresh);
+
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isUnlocked, pin, selectedStatus, selectedPaymentStatus, selectedDate, selectedPaymentMethod, selectedDeliveryType]);
+
+  useEffect(() => {
+    if (!isUnlocked || !realtimeStoreIds.length) return;
+
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) return;
+
+    let active = true;
+    let refreshTimer: number | null = null;
+    const channels: ReturnType<typeof supabase.channel>[] = [];
+
+    const refreshOrders = () => {
+      if (!active || document.visibilityState !== "visible") return;
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => void loadOrders(pin), 120);
+    };
+
+    void (async () => {
+      const accessToken = await getPanelAccessToken();
+      if (!active || !accessToken) return;
+
+      await supabase.realtime.setAuth(accessToken);
+
+      for (const storeId of realtimeStoreIds) {
+        const channel = supabase
+          .channel(`store:${storeId}:orders`, { config: { private: true } })
+          .on("broadcast", { event: "order_changed" }, refreshOrders)
+          .on("broadcast", { event: "transport_order_changed" }, refreshOrders)
+          .subscribe();
+        channels.push(channel);
+      }
+    })();
+
+    return () => {
+      active = false;
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      for (const channel of channels) void supabase.removeChannel(channel);
+    };
+    // The API remains the source of truth; Broadcast only invalidates the list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isUnlocked, pin, realtimeStoreIds.join(","), selectedStatus, selectedPaymentStatus, selectedDate, selectedPaymentMethod, selectedDeliveryType]);
+
   if (isCheckingAccess) {
     return <PanelAccessGate />;
   }
@@ -1100,13 +1161,6 @@ export function OrdersManager() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Link
-              href="/panel/pedidos/nuevo"
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
-            >
-              <Plus size={16} />
-              Crear pedido
-            </Link>
             <button
               type="button"
               onClick={() => loadOrders(pin)}
@@ -1240,8 +1294,20 @@ export function OrdersManager() {
         {filteredOrders.map((order) => {
           const whatsappUrl = getWhatsappUrl(order.customer_phone);
           const entrega2Integration = getEntrega2Integration(order);
+          const transportAgencyIntegration = getTransportAgencyIntegration(order);
+          const currentTransportOrder = getCurrentTransportOrder(order);
           const entrega2Status = entrega2Integration?.status || "";
+          const transportAgencyStatus =
+            currentTransportOrder?.status ||
+            transportAgencyIntegration?.status ||
+            "";
           const showEntrega2Button = canSendToEntrega2(order);
+          const showTransportAgencyButton = canSendToTransportAgency(order);
+          const shouldShowTransportAgencyStatus = Boolean(
+            (currentTransportOrder || transportAgencyIntegration) &&
+              transportAgencyStatus &&
+              !["pending", "pending_agency"].includes(transportAgencyStatus)
+          );
           const isSendingDelivery = sendingDeliveryId === order.id;
           const isSavingPayment = savingPaymentId === order.id;
           const isNewOrder = order.status === "received";
@@ -1285,7 +1351,7 @@ export function OrdersManager() {
                   >
                     {getPaymentStatusLabel(paymentStatus)}
                   </span>
-                  {paymentStatus === "pending" || paymentStatus === "review" ? (
+                  {paymentStatus !== "verified" ? (
                     <button
                       type="button"
                       onClick={() => markPaymentVerified(order)}
@@ -1338,7 +1404,7 @@ export function OrdersManager() {
                       {showEntrega2Button && (
                         <button
                           type="button"
-                          onClick={() => sendOrderToEntrega2(order.id)}
+                          onClick={() => sendOrderToDelivery(order.id)}
                           disabled={isSendingDelivery}
                           className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-[#2E3A79] px-2.5 text-[11px] font-black text-white disabled:opacity-60"
                         >
@@ -1348,6 +1414,52 @@ export function OrdersManager() {
                             <Truck size={16} />
                           )}
                           {entrega2Integration ? "Reintentar Entrega2" : "Enviar a Entrega2"}
+                        </button>
+                      )}
+
+                      {shouldShowTransportAgencyStatus ? (
+                        <span
+                          title={currentTransportOrder?.agency_status_note || transportAgencyIntegration?.last_error || undefined}
+                          className={[
+                            "inline-flex h-8 items-center rounded-full px-2.5 text-[11px] font-black",
+                            transportAgencyStatus === "sent" ||
+                            transportAgencyStatus === "sent_to_agency" ||
+                            transportAgencyStatus === "agency_received"
+                              ? "bg-indigo-100 text-indigo-700"
+                              : transportAgencyStatus === "agency_accepted" ||
+                                  transportAgencyStatus === "picked_up" ||
+                                  transportAgencyStatus === "on_the_way"
+                                ? "bg-purple-100 text-purple-700"
+                              : transportAgencyStatus === "delivered"
+                                ? "bg-green-100 text-green-700"
+                              : transportAgencyStatus === "error" ||
+                                  transportAgencyStatus === "failed" ||
+                                  transportAgencyStatus === "agency_rejected" ||
+                                  transportAgencyStatus === "cancelled"
+                                ? "bg-red-100 text-red-700"
+                                : "bg-[#F8F3E8] text-[#746f69]",
+                          ].join(" ")}
+                        >
+                          Empresa delivery:{" "}
+                          {transportStatusLabels[transportAgencyStatus] ||
+                            (transportAgencyStatus === "sent" ? "Enviado" : transportAgencyStatus) ||
+                            "Pendiente"}
+                        </span>
+                      ) : null}
+
+                      {showTransportAgencyButton && (
+                        <button
+                          type="button"
+                          onClick={() => sendOrderToDelivery(order.id)}
+                          disabled={isSendingDelivery}
+                          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-[#2E3A79] px-2.5 text-[11px] font-black text-white disabled:opacity-60"
+                        >
+                          {isSendingDelivery ? (
+                            <Loader2 size={16} className="animate-spin" />
+                          ) : (
+                            <Truck size={16} />
+                          )}
+                          Enviar a empresa
                         </button>
                       )}
                     </>

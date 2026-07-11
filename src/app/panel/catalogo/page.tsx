@@ -8,7 +8,7 @@ export default async function PanelCatalogPage() {
   return (
     <PanelShell
       active="/panel/catalogo"
-      title="Catálogo"
+      title="Categorías"
       subtitle="Organiza categorías, visibilidad, destacados y orden visual del catálogo público de cada comercio."
     >
       <CatalogManager />

@@ -58,6 +58,14 @@ type SelectedItem = {
   notes: string;
 };
 
+type InterpretDetails = {
+  mode: "ai" | "local" | "";
+  model?: string | null;
+  confidence?: number | null;
+  warnings: string[];
+  error?: string | null;
+};
+
 const fallbackPaymentMethods = [
   "Pago móvil",
   "Transferencia",
@@ -65,6 +73,8 @@ const fallbackPaymentMethods = [
   "Binance",
   "Otro",
 ];
+
+const ENABLE_ORDER_INTERPRETER = false;
 
 function getPaymentMethods(store?: StoreRow) {
   return store?.payment_methods?.length ? store.payment_methods : fallbackPaymentMethods;
@@ -111,6 +121,10 @@ export function ManualOrderManager() {
   const [deliveryUsd, setDeliveryUsd] = useState("");
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<SelectedItem[]>([]);
+  const [interpretDetails, setInterpretDetails] = useState<InterpretDetails>({
+    mode: "",
+    warnings: [],
+  });
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -265,6 +279,7 @@ export function ManualOrderManager() {
   async function interpretMessage() {
     setError("");
     setSuccess("");
+    setInterpretDetails({ mode: "", warnings: [] });
 
     if (!selectedStoreId) {
       setError("Selecciona un comercio.");
@@ -320,10 +335,26 @@ export function ManualOrderManager() {
       const warnings = Array.isArray(interpretation.warnings)
         ? interpretation.warnings.filter(Boolean)
         : [];
+      setInterpretDetails({
+        mode: data.mode === "ai" ? "ai" : "local",
+        model: data.ai?.model || null,
+        confidence:
+          typeof data.ai?.confidence === "number"
+            ? data.ai.confidence
+            : typeof interpretation.confidence === "number"
+              ? interpretation.confidence
+              : null,
+        warnings,
+        error: data.ai?.error || null,
+      });
       setSuccess(
         data.mode === "ai"
           ? "Pedido interpretado con IA. Revisa antes de guardar."
-          : `Pedido interpretado en modo básico. ${warnings[0] || "Revisa antes de guardar."}`
+          : `Pedido interpretado en modo basico. ${
+              data.ai?.error
+                ? `OpenAI: ${data.ai.error}`
+                : warnings[0] || "Revisa antes de guardar."
+            }`
       );
     } catch (error: any) {
       setError(error.message || "No se pudo interpretar el mensaje.");
@@ -477,36 +508,38 @@ export function ManualOrderManager() {
           </div>
         </section>
 
-        <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
-          <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
-            <div>
-              <h2 className="text-xl font-black">Mensaje recibido</h2>
-              <p className="mt-1 text-sm font-bold text-[#746f69]">
-                Pega el chat y Vende+ intentará llenar el pedido.
-              </p>
+        {ENABLE_ORDER_INTERPRETER ? (
+          <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
+            <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+              <div>
+                <h2 className="text-xl font-black">Mensaje recibido</h2>
+                <p className="mt-1 text-sm font-bold text-[#746f69]">
+                  Pega el chat y VendeMas intentara llenar el pedido.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={interpretMessage}
+                disabled={isInterpreting || !originalMessage.trim()}
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-5 py-3 text-sm font-black text-white disabled:opacity-60"
+              >
+                {isInterpreting ? (
+                  <Loader2 size={17} className="animate-spin" />
+                ) : (
+                  <Sparkles size={17} />
+                )}
+                Interpretar
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={interpretMessage}
-              disabled={isInterpreting || !originalMessage.trim()}
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-5 py-3 text-sm font-black text-white disabled:opacity-60"
-            >
-              {isInterpreting ? (
-                <Loader2 size={17} className="animate-spin" />
-              ) : (
-                <Sparkles size={17} />
-              )}
-              Interpretar
-            </button>
-          </div>
-          <textarea
-            value={originalMessage}
-            onChange={(event) => setOriginalMessage(event.target.value)}
-            placeholder="Ejemplo: Hola, quiero 2 pizzas margarita y 1 refresco con entrega en Base Aragua."
-            rows={4}
-            className="mt-4 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-          />
-        </section>
+            <textarea
+              value={originalMessage}
+              onChange={(event) => setOriginalMessage(event.target.value)}
+              placeholder="Ejemplo: Hola, quiero 2 pizzas margarita y 1 refresco con entrega en Base Aragua."
+              rows={4}
+              className="mt-4 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+            />
+          </section>
+        ) : null}
 
         <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
           <h2 className="text-xl font-black">Datos del cliente</h2>
@@ -727,6 +760,41 @@ export function ManualOrderManager() {
 
           {error && <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm font-black text-red-700">{error}</p>}
           {success && <p className="mt-4 rounded-2xl bg-green-50 p-3 text-sm font-black text-green-700">{success}</p>}
+
+          {ENABLE_ORDER_INTERPRETER && interpretDetails.mode ? (
+            <div className="mt-4 rounded-2xl bg-white/10 p-3 text-xs font-bold text-white/75">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  Modo:{" "}
+                  <strong className="text-white">
+                    {interpretDetails.mode === "ai" ? "IA" : "Local"}
+                  </strong>
+                </span>
+                {interpretDetails.confidence !== null &&
+                interpretDetails.confidence !== undefined ? (
+                  <span>
+                    Confianza:{" "}
+                    <strong className="text-[#FFB547]">
+                      {Math.round(interpretDetails.confidence * 100)}%
+                    </strong>
+                  </span>
+                ) : null}
+              </div>
+              {interpretDetails.model ? (
+                <p className="mt-2 text-white/60">Modelo: {interpretDetails.model}</p>
+              ) : null}
+              {interpretDetails.error ? (
+                <p className="mt-2 text-[#FFB547]">{interpretDetails.error}</p>
+              ) : null}
+              {interpretDetails.warnings.length ? (
+                <ul className="mt-2 space-y-1">
+                  {interpretDetails.warnings.slice(0, 4).map((warning) => (
+                    <li key={warning}>- {warning}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
 
           <button
             type="button"

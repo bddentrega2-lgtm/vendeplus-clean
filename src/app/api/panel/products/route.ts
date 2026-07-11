@@ -1,11 +1,12 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
-  assertStoreAccess,
+  assertStoreManager,
   badRequest,
   panelErrorResponse,
   requirePanelAuth,
 } from "@/lib/panel/access";
+import { getPlan } from "@/lib/plans";
 
 const productsSelect = `
   id,
@@ -20,6 +21,15 @@ const productsSelect = `
   sort_order,
   stores(name),
   categories(name),
+  product_variants (
+    id,
+    product_id,
+    store_id,
+    name,
+    price_usd,
+    is_available,
+    sort_order
+  ),
   product_option_group_products (
     product_option_groups (
       id,
@@ -43,6 +53,30 @@ const legacyProductsSelect = `
   categories(name)
 `;
 
+type NormalizedVariant = {
+  id: string | null;
+  name: string;
+  price_usd: number;
+  is_available: boolean;
+  sort_order: number;
+};
+
+function normalizeVariants(body: any): NormalizedVariant[] {
+  const variants = Array.isArray(body.variants) ? body.variants : [];
+
+  return variants
+    .map((variant: any, index: number) => ({
+      id: variant.id ? String(variant.id) : null,
+      name: String(variant.name || "").trim(),
+      price_usd: Number(variant.price_usd || 0),
+      is_available: variant.is_available !== false,
+      sort_order: Number.isFinite(Number(variant.sort_order))
+        ? Number(variant.sort_order)
+        : index + 1,
+    }))
+    .filter((variant: NormalizedVariant) => variant.name);
+}
+
 function normalizeProductPayload(body: any) {
   return {
     store_id: body.store_id,
@@ -55,6 +89,86 @@ function normalizeProductPayload(body: any) {
     is_featured: Boolean(body.is_featured),
     sort_order: Number(body.sort_order || 0),
   };
+}
+
+function validateVariants(variants: NormalizedVariant[]) {
+  for (const variant of variants) {
+    if (variant.price_usd < 0) {
+      return "El precio de una presentación no puede ser negativo.";
+    }
+  }
+
+  return "";
+}
+
+async function syncProductVariants(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  productId: string,
+  storeId: string,
+  variants: NormalizedVariant[]
+) {
+  const { data: existingRows, error: existingError } = await supabase
+    .from("product_variants")
+    .select("id")
+    .eq("product_id", productId);
+
+  if (existingError) throw existingError;
+
+  const existingIds = new Set((existingRows || []).map((row: any) => String(row.id)));
+  const submittedIds = new Set(
+    variants
+      .map((variant) => variant.id)
+      .filter((id): id is string => Boolean(id) && existingIds.has(String(id)))
+  );
+
+  const rowsToInsert = variants
+    .filter((variant) => !variant.id || !existingIds.has(String(variant.id)))
+    .map((variant, index) => ({
+      store_id: storeId,
+      product_id: productId,
+      name: variant.name,
+      price_usd: variant.price_usd,
+      is_available: variant.is_available,
+      sort_order: variant.sort_order || index + 1,
+    }));
+
+  const rowsToUpdate = variants.filter(
+    (variant) => variant.id && existingIds.has(String(variant.id))
+  );
+
+  const updateResults = await Promise.all(
+    rowsToUpdate.map((variant) =>
+      supabase
+        .from("product_variants")
+        .update({
+          name: variant.name,
+          price_usd: variant.price_usd,
+          is_available: variant.is_available,
+          sort_order: variant.sort_order,
+        })
+        .eq("id", variant.id)
+        .eq("product_id", productId)
+    )
+  );
+
+  const updateError = updateResults.find((result) => result.error)?.error;
+  if (updateError) throw updateError;
+
+  const removedIds = [...existingIds].filter((id) => !submittedIds.has(id));
+  if (removedIds.length) {
+    const { error } = await supabase
+      .from("product_variants")
+      .update({ is_available: false })
+      .in("id", removedIds)
+      .eq("product_id", productId);
+
+    if (error) throw error;
+  }
+
+  if (rowsToInsert.length) {
+    const { error } = await supabase.from("product_variants").insert(rowsToInsert);
+    if (error) throw error;
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -153,12 +267,13 @@ export async function POST(request: NextRequest) {
     const auth = await requirePanelAuth(request);
     const body = await request.json();
     const payload = normalizeProductPayload(body);
+    const variants = normalizeVariants(body);
 
     if (!payload.store_id) {
       return badRequest("Selecciona un comercio.");
     }
 
-    assertStoreAccess(
+    assertStoreManager(
       auth,
       payload.store_id,
       "No tienes permiso para crear productos en este comercio."
@@ -172,7 +287,33 @@ export async function POST(request: NextRequest) {
       return badRequest("El precio no puede ser negativo.");
     }
 
+    const variantError = validateVariants(variants);
+    if (variantError) {
+      return badRequest(variantError);
+    }
+
     const supabase = createSupabaseAdminClient();
+
+    const [{ data: store, error: storeError }, { count: productCount, error: countError }] =
+      await Promise.all([
+        supabase
+          .from("stores")
+          .select("id, plan_type")
+          .eq("id", payload.store_id)
+          .single(),
+        supabase
+          .from("products")
+          .select("id", { count: "exact", head: true })
+          .eq("store_id", payload.store_id),
+      ]);
+
+    if (storeError) throw storeError;
+    if (countError) throw countError;
+
+    const plan = getPlan((store as any)?.plan_type);
+    if ((productCount || 0) >= plan.productLimit) {
+      return badRequest(`Este plan permite hasta ${plan.productLimit} productos.`);
+    }
 
     const { data, error } = await supabase
       .from("products")
@@ -181,6 +322,8 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) throw error;
+
+    await syncProductVariants(supabase, data.id, payload.store_id, variants);
 
     return NextResponse.json({ product: data });
   } catch (error: any) {
@@ -198,12 +341,18 @@ export async function PATCH(request: NextRequest) {
     }
 
     const payload = normalizeProductPayload(body);
+    const variants = normalizeVariants(body);
 
     if (!payload.name) {
       return badRequest("El nombre del producto es obligatorio.");
     }
 
-    assertStoreAccess(
+    const variantError = validateVariants(variants);
+    if (variantError) {
+      return badRequest(variantError);
+    }
+
+    assertStoreManager(
       auth,
       payload.store_id,
       "No tienes permiso para editar productos de este comercio."
@@ -219,7 +368,7 @@ export async function PATCH(request: NextRequest) {
 
     if (existingError) throw existingError;
 
-    assertStoreAccess(
+    assertStoreManager(
       auth,
       existingProduct.store_id,
       "No tienes permiso para editar este producto."
@@ -233,6 +382,8 @@ export async function PATCH(request: NextRequest) {
       .single();
 
     if (error) throw error;
+
+    await syncProductVariants(supabase, body.id, payload.store_id, variants);
 
     return NextResponse.json({ product: data });
   } catch (error: any) {
@@ -259,7 +410,7 @@ export async function DELETE(request: NextRequest) {
 
     if (existingError) throw existingError;
 
-    assertStoreAccess(
+    assertStoreManager(
       auth,
       existingProduct.store_id,
       "No tienes permiso para eliminar este producto."

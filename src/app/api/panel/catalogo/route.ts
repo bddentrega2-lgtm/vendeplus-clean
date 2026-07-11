@@ -1,7 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
-  assertStoreAccess,
+  assertStoreManager,
   badRequest,
   panelErrorResponse,
   requirePanelAuth,
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
       return badRequest("Selecciona un comercio.");
     }
 
-    assertStoreAccess(
+    assertStoreManager(
       auth,
       payload.store_id,
       "No tienes permiso para crear categorías en este comercio."
@@ -148,7 +148,7 @@ export async function PATCH(request: NextRequest) {
 
       if (existingError) throw existingError;
 
-      assertStoreAccess(
+      assertStoreManager(
         auth,
         existingCategory.store_id,
         "No tienes permiso para editar esta categoría."
@@ -195,7 +195,7 @@ export async function PATCH(request: NextRequest) {
 
       if (existingError) throw existingError;
 
-      assertStoreAccess(
+      assertStoreManager(
         auth,
         existingProduct.store_id,
         "No tienes permiso para editar este producto."
@@ -258,7 +258,7 @@ export async function DELETE(request: NextRequest) {
 
       if (existingError) throw existingError;
 
-      assertStoreAccess(
+      assertStoreManager(
         auth,
         existingCategory.store_id,
         "No tienes permiso para eliminar esta categoría."

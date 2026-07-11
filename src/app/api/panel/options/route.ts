@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
-  assertStoreAccess,
+  assertStoreManager,
   badRequest,
   panelErrorResponse,
   requirePanelAuth,
@@ -14,6 +14,33 @@ function cleanText(value: unknown) {
 function toSafeNumber(value: unknown, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeVariantName(value: unknown) {
+  return cleanText(value)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function normalizeVariantPricesByName(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return new Map<string, number>();
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>)
+    .map(([name, price]) => {
+      const normalizedName = normalizeVariantName(name);
+      const parsedPrice = Number(price);
+      if (!normalizedName || !Number.isFinite(parsedPrice) || parsedPrice < 0) {
+        return null;
+      }
+
+      return [normalizedName, parsedPrice] as const;
+    })
+    .filter(Boolean) as Array<readonly [string, number]>;
+
+  return new Map(entries);
 }
 
 function normalizeGroupPayload(body: any) {
@@ -49,6 +76,85 @@ async function getGroupStoreId(supabase: any, groupId: string) {
   return cleanText(data?.store_id);
 }
 
+async function replaceValueVariantPrices({
+  supabase,
+  optionValueId,
+  groupId,
+  storeId,
+  variantPricesByName,
+}: {
+  supabase: any;
+  optionValueId: string;
+  groupId: string;
+  storeId: string;
+  variantPricesByName: unknown;
+}) {
+  const pricesByName = normalizeVariantPricesByName(variantPricesByName);
+
+  const { error: deleteError } = await supabase
+    .from("product_option_value_variant_prices")
+    .delete()
+    .eq("option_value_id", optionValueId);
+
+  if (deleteError) throw deleteError;
+  if (!pricesByName.size) return;
+
+  const { data: assignments, error: assignmentsError } = await supabase
+    .from("product_option_group_products")
+    .select("product_id")
+    .eq("option_group_id", groupId);
+
+  if (assignmentsError) throw assignmentsError;
+
+  const productIds = Array.from(
+    new Set((assignments || []).map((assignment: any) => cleanText(assignment.product_id)).filter(Boolean))
+  );
+
+  if (!productIds.length) return;
+
+  const { data: products, error: productsError } = await supabase
+    .from("products")
+    .select("id, store_id")
+    .eq("store_id", storeId)
+    .in("id", productIds);
+
+  if (productsError) throw productsError;
+
+  const allowedProductIds = new Set(
+    (products || []).map((product: any) => cleanText(product.id)).filter(Boolean)
+  );
+
+  if (!allowedProductIds.size) return;
+
+  const { data: variants, error: variantsError } = await supabase
+    .from("product_variants")
+    .select("id, product_id, name")
+    .in("product_id", Array.from(allowedProductIds));
+
+  if (variantsError) throw variantsError;
+
+  const rows = (variants || [])
+    .map((variant: any) => {
+      const variantName = normalizeVariantName(variant.name);
+      if (!pricesByName.has(variantName)) return null;
+
+      return {
+        option_value_id: optionValueId,
+        variant_id: cleanText(variant.id),
+        price_delta_usd: pricesByName.get(variantName),
+      };
+    })
+    .filter(Boolean);
+
+  if (!rows.length) return;
+
+  const { error: insertError } = await supabase
+    .from("product_option_value_variant_prices")
+    .insert(rows);
+
+  if (insertError) throw insertError;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const auth = await requirePanelAuth(request);
@@ -69,7 +175,24 @@ export async function GET(request: NextRequest) {
       .order("name", { ascending: true });
     let productsQuery = supabase
       .from("products")
-      .select("id, store_id, name, price_usd, image_url, is_available, categories(name)")
+      .select(
+        `
+        id,
+        store_id,
+        name,
+        price_usd,
+        image_url,
+        is_available,
+        categories(name),
+        product_variants (
+          id,
+          name,
+          price_usd,
+          is_available,
+          sort_order
+        )
+      `
+      )
       .order("sort_order", { ascending: true })
       .limit(productsLimit);
     let groupsQuery = supabase
@@ -92,7 +215,11 @@ export async function GET(request: NextRequest) {
           description,
           price_delta_usd,
           sort_order,
-          is_active
+          is_active,
+          product_option_value_variant_prices (
+            variant_id,
+            price_delta_usd
+          )
         ),
         product_option_group_products (
           product_id,
@@ -151,7 +278,7 @@ export async function POST(request: NextRequest) {
       const payload = normalizeGroupPayload(body);
       if (!payload.store_id) return badRequest("Selecciona un comercio.");
       if (!payload.name) return badRequest("El nombre del grupo es obligatorio.");
-      assertStoreAccess(auth, payload.store_id, "No tienes permiso para este comercio.");
+      assertStoreManager(auth, payload.store_id, "No tienes permiso para este comercio.");
 
       const { data, error } = await supabase
         .from("product_option_groups")
@@ -170,7 +297,7 @@ export async function POST(request: NextRequest) {
       if (!name) return badRequest("El nombre de la opción es obligatorio.");
 
       const storeId = await getGroupStoreId(supabase, groupId);
-      assertStoreAccess(auth, storeId, "No tienes permiso para este grupo.");
+      assertStoreManager(auth, storeId, "No tienes permiso para este grupo.");
 
       const { data, error } = await supabase
         .from("product_option_values")
@@ -186,6 +313,15 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (error) throw error;
+      if (Object.prototype.hasOwnProperty.call(body, "variant_prices_by_name")) {
+        await replaceValueVariantPrices({
+          supabase,
+          optionValueId: cleanText(data?.id),
+          groupId,
+          storeId,
+          variantPricesByName: body.variant_prices_by_name,
+        });
+      }
       return NextResponse.json({ value: data });
     }
 
@@ -198,7 +334,7 @@ export async function POST(request: NextRequest) {
       if (!groupId) return badRequest("Falta el grupo.");
 
       const storeId = await getGroupStoreId(supabase, groupId);
-      assertStoreAccess(auth, storeId, "No tienes permiso para este grupo.");
+      assertStoreManager(auth, storeId, "No tienes permiso para este grupo.");
 
       if (productIds.length) {
         const { data: products, error: productsError } = await supabase
@@ -254,7 +390,7 @@ export async function PATCH(request: NextRequest) {
       if (!groupId) return badRequest("Falta el grupo.");
 
       const existingStoreId = await getGroupStoreId(supabase, groupId);
-      assertStoreAccess(auth, existingStoreId, "No tienes permiso para este grupo.");
+      assertStoreManager(auth, existingStoreId, "No tienes permiso para este grupo.");
 
       const payload = normalizeGroupPayload({
         ...body,
@@ -286,7 +422,7 @@ export async function PATCH(request: NextRequest) {
       if (valueError) throw valueError;
 
       const storeId = await getGroupStoreId(supabase, cleanText(value?.option_group_id));
-      assertStoreAccess(auth, storeId, "No tienes permiso para esta opción.");
+      assertStoreManager(auth, storeId, "No tienes permiso para esta opción.");
 
       const name = cleanText(body.name);
       if (!name) return badRequest("El nombre de la opción es obligatorio.");
@@ -305,6 +441,15 @@ export async function PATCH(request: NextRequest) {
         .single();
 
       if (error) throw error;
+      if (Object.prototype.hasOwnProperty.call(body, "variant_prices_by_name")) {
+        await replaceValueVariantPrices({
+          supabase,
+          optionValueId: valueId,
+          groupId: cleanText(value?.option_group_id),
+          storeId,
+          variantPricesByName: body.variant_prices_by_name,
+        });
+      }
       return NextResponse.json({ value: data });
     }
 
@@ -326,7 +471,7 @@ export async function DELETE(request: NextRequest) {
       if (!groupId) return badRequest("Falta el grupo.");
 
       const storeId = await getGroupStoreId(supabase, groupId);
-      assertStoreAccess(auth, storeId, "No tienes permiso para eliminar este grupo.");
+      assertStoreManager(auth, storeId, "No tienes permiso para eliminar este grupo.");
 
       const { error } = await supabase
         .from("product_option_groups")
@@ -350,7 +495,7 @@ export async function DELETE(request: NextRequest) {
       if (valueError) throw valueError;
 
       const storeId = await getGroupStoreId(supabase, cleanText(value?.option_group_id));
-      assertStoreAccess(auth, storeId, "No tienes permiso para eliminar esta opcion.");
+      assertStoreManager(auth, storeId, "No tienes permiso para eliminar esta opcion.");
 
       const { error } = await supabase
         .from("product_option_values")

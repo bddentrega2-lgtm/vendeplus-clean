@@ -223,7 +223,7 @@ export async function GET(request: NextRequest) {
 
     let storesQuery = supabase
       .from("stores")
-      .select("id, slug, name")
+      .select("id, slug, name, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
       .order("name", { ascending: true });
 
     let ordersQuery = supabase
@@ -286,6 +286,7 @@ export async function GET(request: NextRequest) {
 
     const safeStores = stores || [];
     const safeOrders = (orders || []).map(withPaymentFallback);
+    const billableOrders = safeOrders.filter((order: any) => order.status !== "cancelled");
     const safeProducts = products || [];
     let customerSummary = {
       total: 0,
@@ -339,28 +340,28 @@ export async function GET(request: NextRequest) {
     const inProgressOrders = safeOrders.filter(
       (order: any) => !["completed", "cancelled"].includes(order.status)
     );
-    const deliveryOrders = safeOrders.filter((order: any) => order.delivery_type === "delivery");
-    const pickupOrders = safeOrders.filter((order: any) => order.delivery_type === "pickup");
-    const pendingPaymentOrders = safeOrders.filter((order: any) =>
+    const deliveryOrders = billableOrders.filter((order: any) => order.delivery_type === "delivery");
+    const pickupOrders = billableOrders.filter((order: any) => order.delivery_type === "pickup");
+    const pendingPaymentOrders = billableOrders.filter((order: any) =>
       ["pending", "incomplete"].includes(order.payment_status || "pending")
     );
-    const reviewPaymentOrders = safeOrders.filter(
+    const reviewPaymentOrders = billableOrders.filter(
       (order: any) => order.payment_status === "review"
     );
     const todayRange = getVenezuelaRelativeRange("today");
-    const verifiedPaymentsToday = safeOrders.filter((order: any) => {
+    const verifiedPaymentsToday = billableOrders.filter((order: any) => {
       if (order.payment_status !== "verified" || !order.payment_verified_at) return false;
       const verifiedAt = new Date(order.payment_verified_at);
       return verifiedAt >= todayRange.start && verifiedAt <= todayRange.end;
     });
 
-    const totalRevenueUsd = safeOrders.reduce(
+    const totalRevenueUsd = billableOrders.reduce(
       (sum: number, order: any) => sum + toNumber(order.total_usd),
       0
     );
 
-    const averageTicketUsd = safeOrders.length
-      ? totalRevenueUsd / safeOrders.length
+    const averageTicketUsd = billableOrders.length
+      ? totalRevenueUsd / billableOrders.length
       : 0;
     const operationalConversionRate = safeOrders.length
       ? (completedOrders.length / safeOrders.length) * 100
@@ -389,13 +390,13 @@ export async function GET(request: NextRequest) {
       (sum: number, order: any) => sum + toNumber(order.total_usd),
       0
     );
-    const pendingPaymentUsd = safeOrders
+    const pendingPaymentUsd = billableOrders
       .filter((order: any) =>
         ["pending", "review", "incomplete"].includes(order.payment_status || "pending")
       )
       .reduce((sum: number, order: any) => sum + toNumber(order.total_usd), 0);
 
-    const allItems = safeOrders.flatMap((order: any) =>
+    const allItems = billableOrders.flatMap((order: any) =>
       (order.order_items || []).map((item: any) => ({
         ...item,
         order_id: order.id,
@@ -442,7 +443,7 @@ export async function GET(request: NextRequest) {
       { customer: string; phone: string; orders: number; revenue: number; lastOrderAt: string }
     >();
 
-    safeOrders.forEach((order: any) => {
+    billableOrders.forEach((order: any) => {
       const phone = order.customer_phone || "Sin teléfono";
       const current = customerMap.get(phone) || {
         customer: order.customer_name || "Cliente",
@@ -466,33 +467,33 @@ export async function GET(request: NextRequest) {
       .slice(0, 10);
 
     const salesByDay = groupSum(
-      safeOrders,
+      billableOrders,
       (order: any) => toDateKey(order.created_at),
       (order: any) => toNumber(order.total_usd)
     );
 
-    const ordersByDay = groupCount(safeOrders, (order: any) =>
+    const ordersByDay = groupCount(billableOrders, (order: any) =>
       toDateKey(order.created_at)
     )
       .sort((a, b) => a.label.localeCompare(b.label));
 
     const salesByWeek = groupSum(
-      safeOrders,
+      billableOrders,
       (order: any) => getWeekKey(order.created_at),
       (order: any) => toNumber(order.total_usd)
     ).slice(-8);
 
     const salesByMonth = groupSum(
-      safeOrders,
+      billableOrders,
       (order: any) => toMonthKey(order.created_at),
       (order: any) => toNumber(order.total_usd)
     ).slice(-6);
 
-    const ordersByHour = groupCount(safeOrders, (order: any) =>
+    const ordersByHour = groupCount(billableOrders, (order: any) =>
       toHourKey(order.created_at)
     ).sort((a, b) => a.label.localeCompare(b.label));
 
-    const ordersByWeekday = groupCount(safeOrders, (order: any) =>
+    const ordersByWeekday = groupCount(billableOrders, (order: any) =>
       new Intl.DateTimeFormat("es-VE", { weekday: "long" }).format(
         new Date(order.created_at)
       )
@@ -501,17 +502,17 @@ export async function GET(request: NextRequest) {
     const ordersByStatus = groupCount(safeOrders, (order: any) => order.status);
 
     const ordersByPaymentMethod = groupCount(
-      safeOrders,
+      billableOrders,
       (order: any) => order.payment_method
     );
 
     const ordersByDeliveryType = groupCount(
-      safeOrders,
+      billableOrders,
       (order: any) => order.delivery_type
     );
 
     const revenueByStore = groupSum(
-      safeOrders,
+      billableOrders,
       (order: any) => order.stores?.name || "Comercio",
       (order: any) => toNumber(order.total_usd)
     ).sort((a, b) => b.value - a.value);

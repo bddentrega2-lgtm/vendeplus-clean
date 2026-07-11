@@ -33,6 +33,14 @@ type StoreRow = {
   name: string;
 };
 
+type ProductVariantRow = {
+  id: string;
+  name: string;
+  price_usd: number | string;
+  is_available: boolean;
+  sort_order: number;
+};
+
 type ProductRow = {
   id: string;
   store_id: string;
@@ -41,6 +49,12 @@ type ProductRow = {
   image_url: string | null;
   is_available: boolean;
   categories?: { name?: string } | null;
+  product_variants?: ProductVariantRow[];
+};
+
+type OptionValueVariantPriceRow = {
+  variant_id: string;
+  price_delta_usd: number | string;
 };
 
 type OptionValueRow = {
@@ -50,6 +64,7 @@ type OptionValueRow = {
   price_delta_usd: number | string;
   sort_order: number;
   is_active: boolean;
+  product_option_value_variant_prices?: OptionValueVariantPriceRow[];
 };
 
 type OptionGroupRow = {
@@ -84,7 +99,7 @@ const quickTemplates: Template[] = [
     key: "sizes",
     label: "Tallas",
     name: "Talla",
-    description: "El cliente elige una talla.",
+    description: "El cliente agrega una talla.",
     selection_type: "single",
     required: true,
     min_select: 1,
@@ -95,7 +110,7 @@ const quickTemplates: Template[] = [
     key: "colors",
     label: "Colores",
     name: "Color",
-    description: "El cliente elige un color.",
+    description: "El cliente agrega un color.",
     selection_type: "single",
     required: true,
     min_select: 1,
@@ -117,7 +132,7 @@ const quickTemplates: Template[] = [
     key: "extras",
     label: "Extras",
     name: "Extras",
-    description: "Adicionales que pueden sumar precio.",
+    description: "Adicionales que pueden agregar precio.",
     selection_type: "multiple",
     required: false,
     min_select: 0,
@@ -139,7 +154,7 @@ const quickTemplates: Template[] = [
     key: "flavors",
     label: "Sabores",
     name: "Sabor",
-    description: "El cliente elige un sabor.",
+    description: "El cliente agrega un sabor.",
     selection_type: "single",
     required: true,
     min_select: 1,
@@ -150,7 +165,7 @@ const quickTemplates: Template[] = [
     key: "fillings",
     label: "Rellenos",
     name: "Relleno",
-    description: "El cliente elige un relleno.",
+    description: "El cliente agrega un relleno.",
     selection_type: "single",
     required: true,
     min_select: 1,
@@ -199,14 +214,125 @@ function getSelectionLabel(group: Pick<OptionGroupRow, "selection_type">) {
 
 function getRangeText(group: Pick<OptionGroupRow, "selection_type" | "required" | "min_select" | "max_select">) {
   if (group.selection_type === "single") {
-    return group.required ? "El cliente debe elegir 1 opcion." : "El cliente puede elegir 1 opcion.";
+    return group.required ? "El cliente debe agregar 1 opcion." : "El cliente puede agregar 1 opcion.";
   }
 
   if (Number(group.max_select || 0) > 0) {
-    return `El cliente puede elegir hasta ${group.max_select}.`;
+    return `El cliente puede agregar hasta ${group.max_select}.`;
   }
 
-  return "El cliente puede elegir varias opciones.";
+  return "El cliente puede agregar varias opciones.";
+}
+
+function normalizeVariantName(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function getVariantNamesForProducts(products: ProductRow[], selectedProducts: Set<string>) {
+  const names = new Map<string, string>();
+
+  products
+    .filter((product) => selectedProducts.has(product.id))
+    .flatMap((product) => product.product_variants || [])
+    .filter((variant) => variant.is_available !== false && variant.name?.trim())
+    .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
+    .forEach((variant) => {
+      const normalized = normalizeVariantName(variant.name);
+      if (normalized && !names.has(normalized)) {
+        names.set(normalized, variant.name.trim());
+      }
+    });
+
+  return Array.from(names.values());
+}
+
+function buildVariantPricesByName(value: OptionValueRow, products: ProductRow[]) {
+  const variantNamesById = new Map<string, string>();
+
+  products.forEach((product) => {
+    (product.product_variants || []).forEach((variant) => {
+      if (variant.id && variant.name) {
+        variantNamesById.set(variant.id, variant.name.trim());
+      }
+    });
+  });
+
+  return (value.product_option_value_variant_prices || []).reduce<Record<string, string>>(
+    (prices, variantPrice) => {
+      const variantName = variantNamesById.get(variantPrice.variant_id);
+      if (variantName) {
+        prices[variantName] = String(variantPrice.price_delta_usd ?? "");
+      }
+
+      return prices;
+    },
+    {}
+  );
+}
+
+function cleanVariantPricesByName(values: Record<string, string>) {
+  return Object.fromEntries(
+    Object.entries(values)
+      .map(([name, value]) => [name, Number(value)] as const)
+      .filter(([name, value]) => name.trim() && Number.isFinite(value) && value >= 0)
+  );
+}
+
+function formatVariantPriceSummary(value: OptionValueRow, products: ProductRow[]) {
+  const prices = buildVariantPricesByName(value, products);
+  const summary = Object.entries(prices)
+    .filter(([, price]) => price !== "")
+    .map(([name, price]) => `${name}: ${formatUsd(price)}`);
+
+  return summary.length ? ` · Por tamano: ${summary.join(" / ")}` : "";
+}
+
+function VariantPriceInputs({
+  variantNames,
+  values,
+  onChange,
+}: {
+  variantNames: string[];
+  values: Record<string, string>;
+  onChange: (values: Record<string, string>) => void;
+}) {
+  if (!variantNames.length) return null;
+
+  return (
+    <div className="rounded-2xl border border-[#25262B]/10 bg-[#FFF8F0] p-3">
+      <p className="text-xs font-black text-[#25262B]">
+        Precio por tamano o presentacion
+      </p>
+      <p className="mt-1 text-[11px] font-bold text-[#746f69]">
+        Opcional. Si lo dejas vacio, se usa el precio adicional base del extra.
+      </p>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {variantNames.map((variantName) => (
+          <label key={variantName} className="grid gap-1 text-[11px] font-black text-[#746f69]">
+            {variantName}
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={values[variantName] || ""}
+              onChange={(event) =>
+                onChange({
+                  ...values,
+                  [variantName]: event.target.value,
+                })
+              }
+              placeholder="Usa base"
+              className="rounded-2xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold text-[#25262B] outline-none"
+            />
+          </label>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function GroupEditor({
@@ -230,13 +356,18 @@ function GroupEditor({
     sort_order: String(group.sort_order || 0),
     is_active: group.is_active,
   });
-  const [valueDraft, setValueDraft] = useState({ name: "", price_delta_usd: "" });
+  const [valueDraft, setValueDraft] = useState({
+    name: "",
+    price_delta_usd: "",
+    variant_prices_by_name: {} as Record<string, string>,
+  });
   const [editingValueId, setEditingValueId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState({
     name: "",
     price_delta_usd: "",
     sort_order: "",
     is_active: true,
+    variant_prices_by_name: {} as Record<string, string>,
   });
   const [selectedProducts, setSelectedProducts] = useState(
     () =>
@@ -278,6 +409,10 @@ function GroupEditor({
       return matchesCategory && matchesSearch;
     });
   }, [products, productQuery, categoryFilter]);
+  const variantNames = useMemo(
+    () => getVariantNamesForProducts(products, selectedProducts),
+    [products, selectedProducts]
+  );
 
   useEffect(() => {
     setSelectedProducts(
@@ -305,6 +440,7 @@ function GroupEditor({
       price_delta_usd: String(value.price_delta_usd || 0),
       sort_order: String(value.sort_order || 0),
       is_active: value.is_active,
+      variant_prices_by_name: buildVariantPricesByName(value, products),
     });
   }
 
@@ -347,11 +483,14 @@ function GroupEditor({
           group_id: group.id,
           name: valueDraft.name,
           price_delta_usd: Number(valueDraft.price_delta_usd || 0),
+          variant_prices_by_name: cleanVariantPricesByName(
+            valueDraft.variant_prices_by_name
+          ),
           sort_order: values.length + 1,
         }),
       });
 
-      setValueDraft({ name: "", price_delta_usd: "" });
+      setValueDraft({ name: "", price_delta_usd: "", variant_prices_by_name: {} });
       setMessage("Opcion agregada.");
       onSaved();
     } catch (error: any) {
@@ -377,6 +516,13 @@ function GroupEditor({
             editingValueId === value.id
               ? Number(editingValue.price_delta_usd || 0)
               : Number(value.price_delta_usd || 0),
+          ...(editingValueId === value.id
+            ? {
+                variant_prices_by_name: cleanVariantPricesByName(
+                  editingValue.variant_prices_by_name
+                ),
+              }
+            : {}),
           sort_order:
             editingValueId === value.id
               ? Number(editingValue.sort_order || 0)
@@ -598,8 +744,8 @@ function GroupEditor({
               }
               className="rounded-2xl border border-[#25262B]/10 px-3 py-3 text-sm font-black outline-none"
             >
-              <option value="single">El cliente elige una sola opcion</option>
-              <option value="multiple">El cliente puede elegir varias</option>
+              <option value="single">El cliente agrega una sola opcion</option>
+              <option value="multiple">El cliente puede agregar varias</option>
             </select>
             <button
               type="button"
@@ -613,7 +759,7 @@ function GroupEditor({
                   : "bg-white text-[#746f69]",
               ].join(" ")}
             >
-              {draft.required ? "Si, debe elegir" : "No, puede continuar"}
+              {draft.required ? "Si, debe agregar" : "No, puede continuar"}
             </button>
           </div>
           <div className="grid gap-2 sm:grid-cols-3">
@@ -687,57 +833,70 @@ function GroupEditor({
               return (
                 <div key={value.id} className="rounded-2xl bg-white p-3">
                   {isEditing ? (
-                    <div className="grid gap-2 sm:grid-cols-[1fr_120px_90px_auto]">
-                      <input
-                        value={editingValue.name}
-                        onChange={(event) =>
+                    <div className="grid gap-2">
+                      <div className="grid gap-2 sm:grid-cols-[1fr_120px_90px_auto]">
+                        <input
+                          value={editingValue.name}
+                          onChange={(event) =>
+                            setEditingValue((current) => ({
+                              ...current,
+                              name: event.target.value,
+                            }))
+                          }
+                          className="rounded-2xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold outline-none"
+                        />
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={editingValue.price_delta_usd}
+                          onChange={(event) =>
+                            setEditingValue((current) => ({
+                              ...current,
+                              price_delta_usd: event.target.value,
+                            }))
+                          }
+                          className="rounded-2xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold outline-none"
+                          placeholder="Precio base"
+                        />
+                        <input
+                          type="number"
+                          value={editingValue.sort_order}
+                          onChange={(event) =>
+                            setEditingValue((current) => ({
+                              ...current,
+                              sort_order: event.target.value,
+                            }))
+                          }
+                          className="rounded-2xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold outline-none"
+                          placeholder="Orden"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => saveValue(value)}
+                          disabled={isSaving}
+                          className="rounded-full bg-[#2E3A79] px-4 py-2 text-xs font-black text-white disabled:opacity-60"
+                        >
+                          Guardar
+                        </button>
+                      </div>
+                      <VariantPriceInputs
+                        variantNames={variantNames}
+                        values={editingValue.variant_prices_by_name}
+                        onChange={(nextValues) =>
                           setEditingValue((current) => ({
                             ...current,
-                            name: event.target.value,
+                            variant_prices_by_name: nextValues,
                           }))
                         }
-                        className="rounded-2xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold outline-none"
                       />
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={editingValue.price_delta_usd}
-                        onChange={(event) =>
-                          setEditingValue((current) => ({
-                            ...current,
-                            price_delta_usd: event.target.value,
-                          }))
-                        }
-                        className="rounded-2xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold outline-none"
-                        placeholder="Precio adicional"
-                      />
-                      <input
-                        type="number"
-                        value={editingValue.sort_order}
-                        onChange={(event) =>
-                          setEditingValue((current) => ({
-                            ...current,
-                            sort_order: event.target.value,
-                          }))
-                        }
-                        className="rounded-2xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold outline-none"
-                        placeholder="Orden"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => saveValue(value)}
-                        disabled={isSaving}
-                        className="rounded-full bg-[#2E3A79] px-4 py-2 text-xs font-black text-white disabled:opacity-60"
-                      >
-                        Guardar
-                      </button>
                     </div>
                   ) : (
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-black">{value.name}</p>
                         <p className="text-xs font-bold text-[#746f69]">
-                          Precio adicional: {formatUsd(value.price_delta_usd)} · Orden{" "}
+                          Precio base: {formatUsd(value.price_delta_usd)}
+                          {formatVariantPriceSummary(value, products)} · Orden{" "}
                           {value.sort_order}
                         </p>
                       </div>
@@ -791,37 +950,49 @@ function GroupEditor({
             })}
           </div>
 
-          <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_130px_auto]">
-            <input
-              value={valueDraft.name}
-              onChange={(event) =>
-                setValueDraft((current) => ({ ...current, name: event.target.value }))
-              }
-              placeholder="Nueva opcion"
-              className="rounded-2xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold outline-none"
-            />
-            <input
-              type="number"
-              step="0.01"
-              value={valueDraft.price_delta_usd}
-              onChange={(event) =>
+          <div className="mt-3 grid gap-2">
+            <div className="grid gap-2 sm:grid-cols-[1fr_130px_auto]">
+              <input
+                value={valueDraft.name}
+                onChange={(event) =>
+                  setValueDraft((current) => ({ ...current, name: event.target.value }))
+                }
+                placeholder="Nueva opcion"
+                className="rounded-2xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold outline-none"
+              />
+              <input
+                type="number"
+                step="0.01"
+                value={valueDraft.price_delta_usd}
+                onChange={(event) =>
+                  setValueDraft((current) => ({
+                    ...current,
+                    price_delta_usd: event.target.value,
+                  }))
+                }
+                placeholder="Precio base"
+                className="rounded-2xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold outline-none"
+              />
+              <button
+                type="button"
+                onClick={addValue}
+                disabled={isSaving}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-[#FFB547] px-4 text-xs font-black text-[#25262B] disabled:opacity-60"
+              >
+                <Plus size={15} />
+                Agregar
+              </button>
+            </div>
+            <VariantPriceInputs
+              variantNames={variantNames}
+              values={valueDraft.variant_prices_by_name}
+              onChange={(nextValues) =>
                 setValueDraft((current) => ({
                   ...current,
-                  price_delta_usd: event.target.value,
+                  variant_prices_by_name: nextValues,
                 }))
               }
-              placeholder="Precio adicional"
-              className="rounded-2xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold outline-none"
             />
-            <button
-              type="button"
-              onClick={addValue}
-              disabled={isSaving}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-[#FFB547] px-4 text-xs font-black text-[#25262B] disabled:opacity-60"
-            >
-              <Plus size={15} />
-              Agregar
-            </button>
           </div>
         </section>
       </div>
@@ -1063,7 +1234,7 @@ export function OptionsManager() {
   }
 
   if (!isUnlocked && isLoading) {
-    return <PanelModuleSkeleton label="Cargando opciones y extras..." />;
+    return <PanelModuleSkeleton label="Cargando variantes o adicionales..." />;
   }
 
   if (!isUnlocked) {
@@ -1094,9 +1265,9 @@ export function OptionsManager() {
         <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-              Opciones reutilizables
+              Variantes reutilizables
             </p>
-            <h2 className="mt-1 text-2xl font-black">Opciones y extras</h2>
+            <h2 className="mt-1 text-2xl font-black">Variantes o adicionales</h2>
             <p className="mt-2 max-w-3xl text-sm font-bold leading-relaxed text-[#746f69]">
               Crea tallas, colores, salsas, bebidas, sabores o extras y aplicalos a varios productos.
             </p>
@@ -1135,7 +1306,7 @@ export function OptionsManager() {
           <h2 className="text-lg font-black">Plantillas rapidas</h2>
         </div>
         <p className="mt-1 text-sm font-bold text-[#746f69]">
-          Elige una plantilla para precargar el formulario. Luego puedes cambiar nombres y precios.
+          Agrega una plantilla para precargar el formulario. Luego puedes cambiar nombres y precios.
         </p>
         <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {quickTemplates.map((template) => (
@@ -1185,7 +1356,7 @@ export function OptionsManager() {
       </section>
 
       <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-[#25262B]/[0.06]">
-        <h2 className="text-lg font-black">Nuevo grupo de opciones</h2>
+        <h2 className="text-lg font-black">Nuevo grupo de variantes o adicionales</h2>
         <p className="mt-1 text-sm font-bold text-[#746f69]">
           Usa una sola opcion para tallas, colores o tamanos. Usa varias opciones para extras, toppings o salsas.
         </p>
@@ -1219,8 +1390,8 @@ export function OptionsManager() {
             }
             className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-black outline-none"
           >
-            <option value="single">El cliente elige una sola opcion</option>
-            <option value="multiple">El cliente puede elegir varias</option>
+            <option value="single">El cliente agrega una sola opcion</option>
+            <option value="multiple">El cliente puede agregar varias</option>
           </select>
           <button
             type="button"
@@ -1238,7 +1409,7 @@ export function OptionsManager() {
                 : "bg-[#F8F3E8] text-[#746f69]",
             ].join(" ")}
           >
-            {newGroup.required ? "Si, debe elegir" : "No, puede continuar"}
+            {newGroup.required ? "Si, debe agregar" : "No, puede continuar"}
           </button>
           <input
             type="number"

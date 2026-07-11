@@ -51,6 +51,10 @@ const ordersSelect = `
   delivery_status,
   delivery_notes,
   delivery_address,
+  transport_agency_id,
+  transport_agency_name,
+  transport_agency_fee_usd,
+  transport_agency_status,
   total_usd,
   total_bs,
   distance_km,
@@ -240,6 +244,58 @@ async function attachOrderIntegrations(supabase: any, orders: any[]) {
   }
 }
 
+async function attachTransportOrders(supabase: any, orders: any[]) {
+  if (!orders.length) return orders;
+
+  try {
+    const orderIds = orders.map((order) => order.id).filter(Boolean);
+    const { data, error } = await supabase
+      .from("transport_orders")
+      .select(
+        `
+        id,
+        order_id,
+        agency_id,
+        agency_name_snapshot,
+        agency_whatsapp_snapshot,
+        status,
+        delivery_fee_usd,
+        agency_status_note,
+        rejection_reason,
+        updated_at,
+        transport_order_events (
+          id,
+          event_type,
+          status_from,
+          status_to,
+          note,
+          actor_type,
+          actor_name,
+          created_at
+        )
+      `
+      )
+      .in("order_id", orderIds)
+      .order("updated_at", { ascending: false });
+
+    if (error) return orders;
+
+    const byOrder = new Map<string, any[]>();
+    for (const entry of data || []) {
+      const current = byOrder.get(entry.order_id) || [];
+      current.push(entry);
+      byOrder.set(entry.order_id, current);
+    }
+
+    return orders.map((order) => ({
+      ...order,
+      transport_orders: byOrder.get(order.id) || [],
+    }));
+  } catch {
+    return orders;
+  }
+}
+
 function withPaymentFallback(order: any) {
   return {
     ...order,
@@ -264,6 +320,10 @@ function withPaymentFallback(order: any) {
     delivery_status: order?.delivery_status || null,
     delivery_notes: order?.delivery_notes || null,
     delivery_address: order?.delivery_address || order?.delivery_reference || null,
+    transport_agency_id: order?.transport_agency_id || null,
+    transport_agency_name: order?.transport_agency_name || null,
+    transport_agency_fee_usd: order?.transport_agency_fee_usd ?? null,
+    transport_agency_status: order?.transport_agency_status || null,
     stores: order?.stores
       ? {
           ...order.stores,
@@ -271,6 +331,33 @@ function withPaymentFallback(order: any) {
         }
       : order?.stores,
   };
+}
+
+async function isOrderDeliveredByExternalDelivery(supabase: any, order: any) {
+  if (
+    order?.delivery_status === "delivered" ||
+    order?.transport_agency_status === "delivered"
+  ) {
+    return true;
+  }
+
+  const [{ data: integrations }, { data: transportOrders }] = await Promise.all([
+    supabase
+      .from("order_integrations")
+      .select("provider, status")
+      .eq("order_id", order.id)
+      .in("provider", ["entrega2", "transport_agency"]),
+    supabase
+      .from("transport_orders")
+      .select("status")
+      .eq("order_id", order.id),
+  ]);
+
+  return (
+    (integrations || []).some((entry: any) =>
+      ["delivered", "completed"].includes(entry.status)
+    ) || (transportOrders || []).some((entry: any) => entry.status === "delivered")
+  );
 }
 
 export async function GET(request: NextRequest) {
@@ -347,10 +434,11 @@ export async function GET(request: NextRequest) {
 
       if (error) throw error;
 
-      const [order] = await attachOrderIntegrations(
+      const integratedOrderRows = await attachOrderIntegrations(
         supabase,
         data ? [withPaymentFallback(data)] : []
       );
+      const [order] = await attachTransportOrders(supabase, integratedOrderRows);
 
       return NextResponse.json({ order: order || null });
     }
@@ -375,13 +463,15 @@ export async function GET(request: NextRequest) {
       supabase,
       (data || []).map(withPaymentFallback)
     );
+    const ordersWithTransport = await attachTransportOrders(supabase, orders);
 
     return NextResponse.json({
-      orders,
+      orders: ordersWithTransport,
       auth: {
         mode: auth.mode,
         email: auth.email || null,
         role: auth.role || null,
+        storeIds: auth.storeIds || [],
       },
     });
   } catch (error: any) {
@@ -621,7 +711,7 @@ export async function PATCH(request: NextRequest) {
 
     const { data: existingOrder, error: existingError } = await supabase
       .from("orders")
-      .select("id, store_id")
+      .select("id, store_id, delivery_status, transport_agency_status")
       .eq("id", id)
       .single();
 
@@ -632,6 +722,13 @@ export async function PATCH(request: NextRequest) {
       existingOrder.store_id,
       "No tienes permiso para operar este pedido."
     );
+
+    if (
+      status === "cancelled" &&
+      (await isOrderDeliveredByExternalDelivery(supabase, existingOrder))
+    ) {
+      return badRequest("No puedes cancelar un pedido ya entregado por la empresa delivery.");
+    }
 
     const { data, error } = await supabase
       .from("orders")

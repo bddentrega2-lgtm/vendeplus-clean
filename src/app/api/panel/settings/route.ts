@@ -1,13 +1,12 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
-  assertStoreAccess,
+  assertStoreManager,
   badRequest,
   panelErrorResponse,
   requirePanelAuth,
 } from "@/lib/panel/access";
 import { isMissingColumnError } from "@/lib/supabase/schema-compat";
-import { extractCoordinatesFromUrl } from "@/lib/location-link";
 
 function optionalNumber(value: unknown) {
   if (value === "" || value === null || value === undefined) return null;
@@ -69,7 +68,6 @@ function normalizePaymentDetails(value: unknown) {
 
 function normalizeStorePayload(body: any) {
   const locationLink = body.location_link ? String(body.location_link).trim() : null;
-  const coordinates = locationLink ? extractCoordinatesFromUrl(locationLink) : null;
   const baseCurrency =
     String(body.base_currency || "USD").toUpperCase() === "EUR" ? "EUR" : "USD";
 
@@ -79,8 +77,8 @@ function normalizeStorePayload(body: any) {
     business_type: String(body.business_type || "general").trim(),
     whatsapp: body.whatsapp ? String(body.whatsapp).replace(/[^0-9]/g, "") : null,
     address: body.address ? String(body.address).trim() : null,
-    latitude: coordinates?.latitude ?? optionalNumber(body.latitude),
-    longitude: coordinates?.longitude ?? optionalNumber(body.longitude),
+    latitude: optionalNumber(body.latitude),
+    longitude: optionalNumber(body.longitude),
     location_link: locationLink,
     cover_image_url: body.cover_image_url ? String(body.cover_image_url).trim() : null,
     logo_url: body.logo_url ? String(body.logo_url).trim() : null,
@@ -91,6 +89,8 @@ function normalizeStorePayload(body: any) {
     payment_details: normalizePaymentDetails(body.payment_details),
     usd_to_bs: Number(body.usd_to_bs || 600),
     base_currency: baseCurrency,
+    show_prices_in_bs: body.show_prices_in_bs !== false,
+    auto_update_exchange_rate: body.auto_update_exchange_rate !== false,
     business_hours:
       body.business_hours && typeof body.business_hours === "object" && !Array.isArray(body.business_hours)
         ? body.business_hours
@@ -135,6 +135,8 @@ const storeSelect = `
   payment_details,
   usd_to_bs,
   base_currency,
+  show_prices_in_bs,
+  auto_update_exchange_rate,
   business_hours,
   manual_open_status,
   manual_open_note,
@@ -172,7 +174,12 @@ const baseStoreSelect = `
   button_text_color,
   accepts_delivery,
   accepts_pickup,
-  is_active
+  is_active,
+  subscription_status,
+  subscription_ends_at,
+  next_payment_due_at,
+  monthly_price_usd,
+  plan_type
 `;
 
 function addPaymentDetailsFallback(store: any) {
@@ -209,6 +216,8 @@ export async function GET(request: NextRequest) {
       "payment_details",
       "location_link",
       "base_currency",
+      "show_prices_in_bs",
+      "auto_update_exchange_rate",
       "business_hours",
       "manual_open_status",
       "manual_open_note",
@@ -247,7 +256,7 @@ export async function PATCH(request: NextRequest) {
       return badRequest("Falta el ID del comercio.");
     }
 
-    assertStoreAccess(
+    assertStoreManager(
       auth,
       body.id,
       "No tienes permiso para editar este comercio."
@@ -275,6 +284,8 @@ export async function PATCH(request: NextRequest) {
         "payment_details",
         "location_link",
         "base_currency",
+        "show_prices_in_bs",
+        "auto_update_exchange_rate",
         "exchange_rate_source",
         "exchange_rate_updated_at",
       ])
@@ -284,6 +295,8 @@ export async function PATCH(request: NextRequest) {
         payment_details: _paymentDetails,
         location_link: _locationLink,
         base_currency: _baseCurrency,
+        show_prices_in_bs: _showPricesInBs,
+        auto_update_exchange_rate: _autoUpdateExchangeRate,
         exchange_rate_source: _exchangeRateSource,
         exchange_rate_updated_at: _exchangeRateUpdatedAt,
         ...basePayload

@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   Loader2,
   Lock,
-  MapPin,
   RefreshCcw,
   Copy,
   ExternalLink,
@@ -52,6 +51,8 @@ type StoreRow = {
   payment_details: StorePaymentDetails | null;
   usd_to_bs: number | string | null;
   base_currency?: "USD" | "EUR" | string | null;
+  show_prices_in_bs?: boolean | null;
+  auto_update_exchange_rate?: boolean | null;
   business_hours?: BusinessHours | null;
   manual_open_status?: ManualOpenStatus | string | null;
   manual_open_note?: string | null;
@@ -64,14 +65,6 @@ type StoreRow = {
   accepts_delivery: boolean;
   accepts_pickup: boolean;
   is_active: boolean;
-};
-
-type GeocodeResult = {
-  label: string;
-  latitude: number;
-  longitude: number;
-  source: string;
-  locationLink: string;
 };
 
 const businessTypes = [
@@ -245,6 +238,8 @@ function StoreSettingsCard({
     usd_to_bs: String(store.usd_to_bs || 600),
     base_currency:
       String(store.base_currency || "USD").toUpperCase() === "EUR" ? "EUR" : "USD",
+    show_prices_in_bs: store.show_prices_in_bs !== false,
+    auto_update_exchange_rate: store.auto_update_exchange_rate !== false,
     business_hours: normalizeBusinessHours(store.business_hours),
     manual_open_status:
       store.manual_open_status === "open" || store.manual_open_status === "closed"
@@ -267,8 +262,6 @@ function StoreSettingsCard({
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isUploadingCover, setIsUploadingCover] = useState(false);
   const [isFetchingRate, setIsFetchingRate] = useState(false);
-  const [isSearchingAddress, setIsSearchingAddress] = useState(false);
-  const [addressResults, setAddressResults] = useState<GeocodeResult[]>([]);
   const [message, setMessage] = useState("");
   const [customPaymentMethod, setCustomPaymentMethod] = useState("");
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -369,6 +362,8 @@ function StoreSettingsCard({
           payment_details: draft.payment_details,
           usd_to_bs: Number(draft.usd_to_bs || 600),
           base_currency: draft.base_currency,
+          show_prices_in_bs: draft.show_prices_in_bs,
+          auto_update_exchange_rate: draft.auto_update_exchange_rate,
           exchange_rate_source: draft.exchange_rate_source,
           exchange_rate_updated_at: draft.exchange_rate_updated_at,
           location_link: draft.location_link,
@@ -429,53 +424,6 @@ function StoreSettingsCard({
     } finally {
       setIsFetchingRate(false);
     }
-  }
-
-  async function searchAddress() {
-    const query = draft.address.trim();
-
-    if (query.length < 3) {
-      setMessage("Escribe al menos 3 caracteres para buscar una dirección.");
-      return;
-    }
-
-    setIsSearchingAddress(true);
-    setMessage("Buscando direcciones...");
-
-    try {
-      const response = await fetch(
-        `/api/panel/geocode?q=${encodeURIComponent(query)}`,
-        { headers: await getPanelAuthHeaders(pin) }
-      );
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "No se pudo buscar la dirección.");
-      }
-
-      setAddressResults(data.results || []);
-      setMessage(
-        data.results?.length
-          ? "Elige una ubicación sugerida para llenar el mapa."
-          : "No encontré sugerencias. Puedes pegar un link de Maps o colocar coordenadas."
-      );
-    } catch (error: any) {
-      setMessage(error.message || "No se pudo buscar la dirección.");
-    } finally {
-      setIsSearchingAddress(false);
-    }
-  }
-
-  function applyAddressResult(result: GeocodeResult) {
-    setDraft((current) => ({
-      ...current,
-      address: result.label,
-      latitude: String(result.latitude),
-      longitude: String(result.longitude),
-      location_link: result.locationLink,
-    }));
-    setAddressResults([]);
-    setMessage("Ubicación aplicada. Presiona Guardar cambios para dejarla activa.");
   }
 
   async function uploadCover(file?: File) {
@@ -717,6 +665,32 @@ function StoreSettingsCard({
             )}
             Actualizar tasa BCV
           </button>
+          <div className="mt-3 grid gap-2">
+            <button
+              type="button"
+              onClick={() => updateField("auto_update_exchange_rate", !draft.auto_update_exchange_rate)}
+              className={[
+                "rounded-full px-3 py-2 text-xs font-black",
+                draft.auto_update_exchange_rate
+                  ? "bg-green-100 text-green-700"
+                  : "bg-white text-[#746f69] ring-1 ring-[#25262B]/10",
+              ].join(" ")}
+            >
+              {draft.auto_update_exchange_rate ? "Tasa diaria automática" : "Tasa manual"}
+            </button>
+            <button
+              type="button"
+              onClick={() => updateField("show_prices_in_bs", !draft.show_prices_in_bs)}
+              className={[
+                "rounded-full px-3 py-2 text-xs font-black",
+                draft.show_prices_in_bs
+                  ? "bg-[#FFB547] text-[#25262B]"
+                  : "bg-white text-[#746f69] ring-1 ring-[#25262B]/10",
+              ].join(" ")}
+            >
+              {draft.show_prices_in_bs ? "Mostrar Bs al cliente" : "Solo mostrar USD/EUR"}
+            </button>
+          </div>
           {draft.exchange_rate_updated_at ? (
             <p className="mt-2 truncate text-[11px] font-bold text-[#746f69]">
               Fuente API: {draft.exchange_rate_source || "configurada"}
@@ -782,73 +756,21 @@ function StoreSettingsCard({
       <div className="mt-4">
         <label className="space-y-1">
           <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-            Dirección
+            Dirección escrita
           </span>
-          <div className="grid gap-2 md:grid-cols-[1fr_auto]">
-            <input
-              value={draft.address}
-              onChange={(event) => updateField("address", event.target.value)}
-              placeholder="Ej: C.C. Las Américas, Maracay"
-              className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-            />
-            <button
-              type="button"
-              onClick={searchAddress}
-              disabled={isSearchingAddress}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#2E3A79] px-5 py-3 text-sm font-black text-white disabled:opacity-60"
-            >
-              {isSearchingAddress ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <MapPin size={16} />
-              )}
-              Buscar
-            </button>
-          </div>
+          <input
+            value={draft.address}
+            onChange={(event) => updateField("address", event.target.value)}
+            placeholder="Ej: C.C. Las Americas, local 12, Maracay"
+            className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+          />
+          <span className="block text-[11px] font-bold text-[#746f69]">
+            Esta dirección es informativa para el cliente. El punto real para calcular delivery se toma abajo desde el mapa.
+          </span>
         </label>
-
-        {addressResults.length > 0 ? (
-          <div className="mt-3 grid gap-2">
-            {addressResults.map((result) => (
-              <button
-                key={`${result.latitude}-${result.longitude}-${result.label}`}
-                type="button"
-                onClick={() => applyAddressResult(result)}
-                className="rounded-2xl bg-[#F8F3E8] p-3 text-left text-sm font-bold leading-relaxed text-[#25262B] ring-1 ring-[#25262B]/[0.06] transition hover:bg-white"
-              >
-                <span className="block font-black">{result.label}</span>
-                <span className="text-xs text-[#746f69]">
-                  {result.latitude.toFixed(6)}, {result.longitude.toFixed(6)}
-                </span>
-              </button>
-            ))}
-          </div>
-        ) : null}
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-3">
-        <label className="space-y-1">
-          <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-            Latitud
-          </span>
-          <input
-            value={draft.latitude}
-            onChange={(event) => updateField("latitude", event.target.value)}
-            className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-          />
-        </label>
-
-        <label className="space-y-1">
-          <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-            Longitud
-          </span>
-          <input
-            value={draft.longitude}
-            onChange={(event) => updateField("longitude", event.target.value)}
-            className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-          />
-        </label>
-
         <label className="space-y-1">
           <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
             Tiempo de Delivery
@@ -935,7 +857,7 @@ function StoreSettingsCard({
           </div>
           {hasStoreLocation ? (
             <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-[#2E3A79]">
-              {parsedLatitude.toFixed(5)}, {parsedLongitude.toFixed(5)}
+              Punto de partida configurado
             </span>
           ) : null}
         </div>
@@ -1058,23 +980,6 @@ function StoreSettingsCard({
           </div>
         </div>
       </section>
-
-      <div className="mt-4">
-        <label className="space-y-1">
-          <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-            Link de ubicación
-          </span>
-          <input
-            value={draft.location_link}
-            onChange={(event) => updateField("location_link", event.target.value)}
-            placeholder="Pega aquí un enlace de Google Maps con el punto del comercio"
-            className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-          />
-        </label>
-        <p className="mt-2 text-xs font-bold text-[#746f69]">
-          Al guardar, si el enlace trae coordenadas, Vende+ actualizará latitud y longitud automáticamente.
-        </p>
-      </div>
 
       <section className="mt-4 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
         <div className="flex flex-col justify-between gap-2 xl:flex-row xl:items-start">

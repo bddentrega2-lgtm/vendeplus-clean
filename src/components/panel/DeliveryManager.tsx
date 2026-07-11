@@ -13,6 +13,12 @@ import {
   Truck,
 } from "lucide-react";
 import { PanelAccessGate, PanelModuleSkeleton } from "@/components/panel/PanelLoadingState";
+import { TransportMarketplaceSection } from "@/components/panel/TransportMarketplaceSection";
+import {
+  findOverlappingDistanceRange,
+  formatDistanceRange,
+  normalizeDistanceRangeInput,
+} from "@/lib/distance-ranges";
 import {
   getPanelAccessToken,
   getPanelAuthHeaders,
@@ -22,7 +28,7 @@ import {
   shouldShowPanelInitialAccessGate,
 } from "@/lib/panel/client-auth";
 
-type DeliveryProvider = "own_delivery" | "entrega2" | "manual_quote" | "disabled";
+type DeliveryProvider = "own_delivery" | "entrega2" | "manual_quote" | "transport_agency" | "disabled";
 type PricingType = "fixed" | "fixed_distance" | "distance_ranges" | "zones" | "free_over_amount" | "manual";
 type DeliveryPromoDiscountType = "free" | "amount" | "percent";
 
@@ -84,6 +90,29 @@ function moneyLabel(value: number) {
   return `$${Number(value || 0).toFixed(2)}`;
 }
 
+function validateRateDraft(
+  draft: { minKm: string; maxKm: string },
+  ranges: DeliverySettingsRow["settings"]["distanceRates"],
+  excludeId?: string
+) {
+  const normalized = normalizeDistanceRangeInput({
+    minKm: draft.minKm,
+    maxKm: draft.maxKm,
+  });
+
+  if (normalized.error || !normalized.range) return normalized.error || "Rango invalido.";
+
+  const conflict = findOverlappingDistanceRange({
+    candidate: normalized.range,
+    ranges,
+    excludeId,
+  });
+
+  return conflict
+    ? `Ese rango se cruza con ${formatDistanceRange(conflict)}. Ajusta los kilometros para que no se solapen.`
+    : "";
+}
+
 function DeliveryStoreCard({
   row,
   pin,
@@ -109,8 +138,6 @@ function DeliveryStoreCard({
     deliveryPromoDiscountValue: String(row.settings.deliveryPromoDiscountValue ?? 0),
     maxDistanceKm:
       row.settings.maxDistanceKm === null ? "" : String(row.settings.maxDistanceKm),
-    distanceFactor:
-      row.settings.distanceFactor === null ? "" : String(row.settings.distanceFactor),
   });
   const [zoneDraft, setZoneDraft] = useState({
     name: "",
@@ -126,6 +153,9 @@ function DeliveryStoreCard({
   const [isSaving, setIsSaving] = useState(false);
 
   const isEntrega2 = draft.deliveryProvider === "entrega2";
+  const isTransportAgency = draft.deliveryProvider === "transport_agency";
+  const isAgencyLocked = isTransportAgency;
+  const isOwnDelivery = draft.deliveryProvider === "own_delivery" && draft.deliveryEnabled;
   const normalizedPricingType: PricingType =
     draft.pricingType === "fixed" ||
     (draft.deliveryProvider === "own_delivery" &&
@@ -150,6 +180,15 @@ function DeliveryStoreCard({
         next.pricingType = "manual";
         next.manualQuoteMessage =
           "Confirma el precio de tu delivery por WhatsApp con el comercio.";
+      }
+
+      if (field === "deliveryProvider" && value === "transport_agency") {
+        next.deliveryEnabled = true;
+        if (next.pricingType === "manual" || next.pricingType === "fixed") {
+          next.pricingType = "fixed_distance";
+        }
+        next.manualQuoteMessage =
+          "La empresa delivery afiliada calcula o confirma el delivery segun su tarifa activa.";
       }
 
       if (field === "deliveryProvider" && value === "disabled") {
@@ -186,10 +225,18 @@ function DeliveryStoreCard({
     if (
       draft.deliveryProvider === "own_delivery" &&
       effectivePricingType === "distance_ranges" &&
-      !hasActiveDistanceRates &&
-      draft.distanceFactor === ""
+      !hasActiveDistanceRates
     ) {
-      setMessage("Agrega al menos un rango activo o un precio por km para calcular el delivery.");
+      setMessage("Agrega al menos un rango activo para calcular el delivery.");
+      return;
+    }
+
+    if (
+      draft.deliveryProvider === "own_delivery" &&
+      effectivePricingType === "zones" &&
+      !row.settings.zones.some((zone) => zone.isActive)
+    ) {
+      setMessage("Agrega al menos una zona activa para que el cliente pueda ver el precio.");
       return;
     }
 
@@ -213,8 +260,7 @@ function DeliveryStoreCard({
           deliveryPromoDiscountValue: Number(draft.deliveryPromoDiscountValue || 0),
           maxDistanceKm:
             draft.maxDistanceKm === "" ? null : Number(draft.maxDistanceKm),
-          distanceFactor:
-            draft.distanceFactor === "" ? null : Number(draft.distanceFactor),
+          distanceFactor: null,
         }),
       });
       setMessage("Delivery guardado.");
@@ -265,6 +311,12 @@ function DeliveryStoreCard({
   }
 
   async function createRate() {
+    const validationMessage = validateRateDraft(rateDraft, row.settings.distanceRates);
+    if (validationMessage) {
+      setMessage(validationMessage);
+      return;
+    }
+
     await deliveryRequest(pin, {
       method: "POST",
       body: JSON.stringify({
@@ -284,6 +336,21 @@ function DeliveryStoreCard({
     rate: DeliverySettingsRow["settings"]["distanceRates"][number],
     patch: Record<string, unknown>
   ) {
+    if (patch.isActive !== false) {
+      const validationMessage = validateRateDraft(
+        {
+          minKm: String(patch.minKm ?? rate.minKm),
+          maxKm: patch.maxKm === null ? "" : String(patch.maxKm ?? rate.maxKm ?? ""),
+        },
+        row.settings.distanceRates,
+        rate.id
+      );
+      if (validationMessage) {
+        setMessage(validationMessage);
+        return;
+      }
+    }
+
     await deliveryRequest(pin, {
       method: "PATCH",
       body: JSON.stringify({
@@ -318,14 +385,14 @@ function DeliveryStoreCard({
           </p>
           <h2 className="mt-1 text-2xl font-black">{row.store.name}</h2>
           <p className="mt-2 max-w-2xl text-sm font-bold text-[#746f69]">
-            Configura retiro, delivery propio, Entrega2, zonas, rangos y promociones
+            Configura retiro, delivery propio, empresas delivery afiliadas, zonas, rangos y promociones
             de delivery desde un solo modulo.
           </p>
         </div>
         <button
           type="button"
           onClick={saveSettings}
-          disabled={isSaving}
+          disabled={isSaving || isAgencyLocked}
           className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B] disabled:opacity-60"
         >
           {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
@@ -337,18 +404,20 @@ function DeliveryStoreCard({
         <button
           type="button"
           onClick={() => updateDraft("deliveryEnabled", !draft.deliveryEnabled)}
+          disabled={isAgencyLocked}
           className={`rounded-2xl px-4 py-3 text-sm font-black ${
             draft.deliveryEnabled ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-          }`}
+          } disabled:opacity-60`}
         >
           {draft.deliveryEnabled ? "Delivery activo" : "Delivery oculto"}
         </button>
         <button
           type="button"
           onClick={() => updateDraft("pickupEnabled", !draft.pickupEnabled)}
+          disabled={isAgencyLocked}
           className={`rounded-2xl px-4 py-3 text-sm font-black ${
             draft.pickupEnabled ? "bg-blue-100 text-blue-700" : "bg-red-100 text-red-700"
-          }`}
+          } disabled:opacity-60`}
         >
           {draft.pickupEnabled ? "Retiro activo" : "Retiro oculto"}
         </button>
@@ -362,15 +431,20 @@ function DeliveryStoreCard({
           <select
             value={draft.deliveryProvider}
             onChange={(event) => updateDraft("deliveryProvider", event.target.value)}
-            className="mt-2 w-full rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
+            disabled={isAgencyLocked}
+            className="mt-2 w-full rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79] disabled:bg-white/60 disabled:text-[#746f69]"
           >
             <option value="own_delivery">Propio del comercio</option>
-            <option value="entrega2">Entrega2</option>
+            {isTransportAgency ? (
+              <option value="transport_agency" disabled>
+                Empresa delivery afiliada activa
+              </option>
+            ) : null}
             <option value="manual_quote">Cotizar por WhatsApp</option>
             <option value="disabled">No ofrecer delivery</option>
           </select>
           <p className="mt-2 text-xs font-bold text-[#746f69]">
-            Si eliges Entrega2, la tarifa queda anclada a su API y no se edita aqui.
+            Agrega la modalidad real del comercio. Las empresas se solicitan abajo, en Afiliarse a una empresa delivery.
           </p>
         </label>
 
@@ -381,7 +455,12 @@ function DeliveryStoreCard({
           <select
             value={effectivePricingType}
             onChange={(event) => updateDraft("pricingType", event.target.value)}
-            disabled={isEntrega2 || draft.deliveryProvider === "manual_quote" || draft.deliveryProvider === "disabled"}
+            disabled={
+              isEntrega2 ||
+              isTransportAgency ||
+              draft.deliveryProvider === "manual_quote" ||
+              draft.deliveryProvider === "disabled"
+            }
             className="mt-2 w-full rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79] disabled:bg-white/60 disabled:text-[#746f69]"
           >
             <option value="fixed_distance">Tarifa plana hasta X km</option>
@@ -399,58 +478,68 @@ function DeliveryStoreCard({
 
       {isEntrega2 ? (
         <div className="mt-4 rounded-2xl bg-[#FFF8F0] p-4 text-sm font-bold leading-relaxed text-[#746f69] ring-1 ring-[#FFB547]/30">
-          Entrega2 cotiza desde su API. Esta modalidad no permite editar zonas,
-          rangos ni tarifa plana dentro de Vende+. Si la API aun no responde, el
-          cliente vera que debe confirmar el precio por WhatsApp.
+          Este comercio tiene una configuracion legacy de delivery externo. Activa una empresa delivery afiliada
+          desde la Red de transporte para usar tarifas nuevas en el checkout.
+        </div>
+      ) : null}
+      {isTransportAgency ? (
+        <div className="mt-4 rounded-2xl bg-[#FFF8F0] p-4 text-sm font-bold leading-relaxed text-[#746f69] ring-1 ring-[#FFB547]/30">
+          Este comercio tiene una empresa delivery activa. Las tarifas de delivery quedan bloqueadas y el checkout usa los precios de la empresa afiliada.
+          Para cambiar a delivery propio primero hay que gestionar la desafiliacion con la empresa.
         </div>
       ) : null}
       <div className="mt-4 grid gap-3">
-        {effectivePricingType === "fixed_distance" && !isEntrega2 ? (
+        {effectivePricingType === "fixed_distance" && isOwnDelivery ? (
           <div className="rounded-[24px] bg-white p-4 ring-1 ring-[#25262B]/10">
             <h3 className="text-sm font-black text-[#25262B]">Tarifa plana hasta X km</h3>
             <p className="mt-1 text-xs font-bold text-[#746f69]">
               El cliente comparte ubicacion; si esta dentro del rango, se suma esta tarifa.
             </p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <input
-                type="number"
-                value={draft.fixedFeeUsd}
-                onChange={(event) => updateDraft("fixedFeeUsd", event.target.value)}
-                placeholder="Monto del delivery"
-                className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-              />
+              <label className="space-y-1">
+                <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69]">Monto delivery USD</span>
+                <input
+                  type="number"
+                  value={draft.fixedFeeUsd}
+                  onChange={(event) => updateDraft("fixedFeeUsd", event.target.value)}
+                  placeholder="Ej: 2.50"
+                  className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69]">Máximo km</span>
                 <input
                   type="number"
                   value={draft.maxDistanceKm}
                   onChange={(event) => updateDraft("maxDistanceKm", event.target.value)}
-                  placeholder="Hasta cuantos km"
-                  className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+                  placeholder="Ej: 5"
+                  className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
                 />
+              </label>
             </div>
           </div>
         ) : null}
 
-        {effectivePricingType === "distance_ranges" && !isEntrega2 ? (
+        {effectivePricingType === "distance_ranges" && isOwnDelivery ? (
           <div className="rounded-[24px] bg-white p-4 ring-1 ring-[#25262B]/10">
             <h3 className="text-sm font-black text-[#25262B]">Rangos de km</h3>
             <p className="mt-1 text-xs font-bold text-[#746f69]">
-              El cliente comparte ubicacion y Vende+ elige el rango que corresponda.
+              El cliente comparte ubicacion y VendeMas aplica el rango que corresponda.
             </p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <input
-                type="number"
-                value={draft.maxDistanceKm}
-                onChange={(event) => updateDraft("maxDistanceKm", event.target.value)}
-                placeholder="Distancia maxima opcional"
-                className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-              />
-              <input
-                type="number"
-                value={draft.distanceFactor}
-                onChange={(event) => updateDraft("distanceFactor", event.target.value)}
-                placeholder="Precio por km si no hay rango"
-                className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-              />
+              <label className="space-y-1">
+                <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69]">Distancia máxima opcional</span>
+                <input
+                  type="number"
+                  value={draft.maxDistanceKm}
+                  onChange={(event) => updateDraft("maxDistanceKm", event.target.value)}
+                  placeholder="Ej: 8"
+                  className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+                />
+              </label>
+              <div className="rounded-2xl bg-[#F8F3E8] p-3 text-xs font-bold leading-relaxed text-[#746f69]">
+                La tarifa saldra solo de los rangos activos. Si falta un tramo, el checkout pedira ajustar la cobertura.
+              </div>
             </div>
           </div>
         ) : null}
@@ -518,6 +607,7 @@ function DeliveryStoreCard({
       <textarea
         value={draft.manualQuoteMessage}
         onChange={(event) => updateDraft("manualQuoteMessage", event.target.value)}
+        disabled={isAgencyLocked}
         rows={2}
         className="mt-3 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
         placeholder="Mensaje cuando la tarifa se confirma manualmente"
@@ -536,23 +626,29 @@ function DeliveryStoreCard({
             Zonas ({row.settings.zones.length})
           </summary>
           <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_110px_auto]">
-            <input
-              value={zoneDraft.name}
-              onChange={(event) =>
-                setZoneDraft((current) => ({ ...current, name: event.target.value }))
-              }
-              placeholder="Nombre"
-              className="rounded-2xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold"
-            />
-            <input
-              type="number"
-              value={zoneDraft.feeUsd}
-              onChange={(event) =>
-                setZoneDraft((current) => ({ ...current, feeUsd: event.target.value }))
-              }
-              placeholder="Tarifa"
-              className="rounded-2xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold"
-            />
+            <label className="space-y-1">
+              <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69]">Nombre zona</span>
+              <input
+                value={zoneDraft.name}
+                onChange={(event) =>
+                  setZoneDraft((current) => ({ ...current, name: event.target.value }))
+                }
+                placeholder="Ej: Centro"
+                className="w-full rounded-2xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69]">Tarifa USD</span>
+              <input
+                type="number"
+                value={zoneDraft.feeUsd}
+                onChange={(event) =>
+                  setZoneDraft((current) => ({ ...current, feeUsd: event.target.value }))
+                }
+                placeholder="2.00"
+                className="w-full rounded-2xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold"
+              />
+            </label>
             <button
               type="button"
               onClick={createZone}
@@ -613,33 +709,42 @@ function DeliveryStoreCard({
             Rangos por distancia ({row.settings.distanceRates.length})
           </summary>
           <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
-            <input
-              type="number"
-              value={rateDraft.minKm}
-              onChange={(event) =>
-                setRateDraft((current) => ({ ...current, minKm: event.target.value }))
-              }
-              placeholder="Desde"
-              className="rounded-2xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold"
-            />
-            <input
-              type="number"
-              value={rateDraft.maxKm}
-              onChange={(event) =>
-                setRateDraft((current) => ({ ...current, maxKm: event.target.value }))
-              }
-              placeholder="Hasta"
-              className="rounded-2xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold"
-            />
-            <input
-              type="number"
-              value={rateDraft.feeUsd}
-              onChange={(event) =>
-                setRateDraft((current) => ({ ...current, feeUsd: event.target.value }))
-              }
-              placeholder="Tarifa"
-              className="rounded-2xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold"
-            />
+            <label className="space-y-1">
+              <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69]">Desde km</span>
+              <input
+                type="number"
+                value={rateDraft.minKm}
+                onChange={(event) =>
+                  setRateDraft((current) => ({ ...current, minKm: event.target.value }))
+                }
+                placeholder="0"
+                className="w-full rounded-2xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69]">Hasta km</span>
+              <input
+                type="number"
+                value={rateDraft.maxKm}
+                onChange={(event) =>
+                  setRateDraft((current) => ({ ...current, maxKm: event.target.value }))
+                }
+                placeholder="3"
+                className="w-full rounded-2xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69]">Tarifa USD</span>
+              <input
+                type="number"
+                value={rateDraft.feeUsd}
+                onChange={(event) =>
+                  setRateDraft((current) => ({ ...current, feeUsd: event.target.value }))
+                }
+                placeholder="2.00"
+                className="w-full rounded-2xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold"
+              />
+            </label>
             <button
               type="button"
               onClick={createRate}
@@ -700,7 +805,7 @@ function DeliveryStoreCard({
         <button
           type="button"
           onClick={saveSettings}
-          disabled={isSaving}
+          disabled={isSaving || isAgencyLocked}
           className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B] disabled:opacity-60 sm:w-auto"
         >
           {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
@@ -831,6 +936,8 @@ export function DeliveryManager() {
           onSaved={() => loadDelivery(pin)}
         />
       ))}
+
+      <TransportMarketplaceSection pin={pin} onChanged={() => loadDelivery(pin)} />
 
       {!rows.length ? (
         <section className="rounded-[34px] bg-white p-6 text-sm font-bold text-[#746f69] shadow-xl shadow-[#2E3A79]/[0.07]">

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
   Clipboard,
+  Download,
   ExternalLink,
   Loader2,
   Lock,
@@ -402,6 +403,7 @@ export function CustomersManager() {
   const [selectedOrders, setSelectedOrders] = useState<CustomerOrder[]>([]);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [isBackfilling, setIsBackfilling] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   async function loadCustomers(
@@ -501,6 +503,45 @@ export function CustomersManager() {
     }
   }
 
+  async function exportCustomers() {
+    setIsExporting(true);
+    setError("");
+
+    try {
+      const params = new URLSearchParams();
+      if (search.trim()) params.set("search", search.trim());
+      if (segment !== "all") params.set("segment", segment);
+
+      const response = await fetch(
+        `/api/panel/customers/export${params.toString() ? `?${params}` : ""}`,
+        {
+          headers: await getPanelAuthHeaders(pin),
+        }
+      );
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "No se pudo descargar el reporte.");
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const date = new Date().toISOString().slice(0, 10);
+
+      link.href = url;
+      link.download = `clientes-vendemas-${date}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      setError(error.message || "No se pudo descargar el reporte.");
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
   useEffect(() => {
     let active = true;
 
@@ -585,7 +626,7 @@ export function CustomersManager() {
       </section>
 
       <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-[#25262B]/[0.06]">
-        <div className="grid gap-3 lg:grid-cols-[1fr_220px_auto]">
+        <div className="grid gap-3 lg:grid-cols-[1fr_220px_auto_auto]">
           <label className="flex items-center gap-3 rounded-2xl bg-[#F8F3E8] px-4 py-3">
             <Search size={18} className="text-[#746f69]" />
             <input
@@ -623,6 +664,16 @@ export function CustomersManager() {
           >
             {isLoading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16} />}
             Buscar
+          </button>
+
+          <button
+            type="button"
+            onClick={exportCustomers}
+            disabled={isExporting || isLoading}
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F8F3E8] px-5 py-3 text-sm font-black text-[#2E3A79] ring-1 ring-[#25262B]/10 disabled:opacity-60"
+          >
+            {isExporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+            Excel
           </button>
         </div>
         <div className="hidden">

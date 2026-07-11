@@ -12,11 +12,11 @@ import {
   Lock,
   ShoppingBag,
   Store,
-  TrendingUp,
   UsersRound,
 } from "lucide-react";
 import Link from "next/link";
 import { formatUsd } from "@/lib/currency";
+import { buildStoreWelcomeMessage } from "@/lib/store-share";
 import { PanelAccessGate, PanelModuleSkeleton } from "@/components/panel/PanelLoadingState";
 import {
   getPanelAccessToken,
@@ -66,6 +66,50 @@ function MetricCard({
       </div>
     </article>
   );
+}
+
+function getSubscriptionReminder(store: any) {
+  if (!store) return null;
+
+  const dueValue =
+    store.next_payment_due_at || store.subscription_ends_at || store.trial_ends_at || null;
+  if (!dueValue) return null;
+
+  const dueTime = new Date(dueValue).getTime();
+  if (!Number.isFinite(dueTime)) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dueDate = new Date(dueTime);
+  dueDate.setHours(0, 0, 0, 0);
+  const days = Math.ceil((dueDate.getTime() - today.getTime()) / 86400000);
+  const formattedDate = new Intl.DateTimeFormat("es-VE", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(dueValue));
+
+  if (days < 0) {
+    return {
+      tone: "danger",
+      title: "Pago vencido",
+      text: `Tu fecha de pago vencio el ${formattedDate}. El catalogo publico puede quedar inactivo hasta regularizar la suscripcion.`,
+    };
+  }
+
+  if (days === 0) {
+    return {
+      tone: "warning",
+      title: "Pago vence hoy",
+      text: `Tu fecha de pago es hoy (${formattedDate}).`,
+    };
+  }
+
+  return {
+    tone: days <= 5 ? "warning" : "ok",
+    title: `${days} dia${days === 1 ? "" : "s"} para tu proximo pago`,
+    text: `Fecha de pago: ${formattedDate}.`,
+  };
 }
 
 export function DashboardManager() {
@@ -159,6 +203,7 @@ export function DashboardManager() {
   const summary = stats.summary || {};
   const stores = Array.isArray(stats.stores) ? stats.stores : [];
   const primaryStore = stores[0];
+  const subscriptionReminder = getSubscriptionReminder(primaryStore);
   const publicCatalogUrl =
     typeof window !== "undefined" && primaryStore?.slug
       ? `${window.location.origin}/${primaryStore.slug}`
@@ -167,17 +212,22 @@ export function DashboardManager() {
   async function copyCatalogLink() {
     setShareMessage("");
 
-    if (!publicCatalogUrl) {
+    if (!publicCatalogUrl || !primaryStore?.name) {
       setShareMessage("No hay un catálogo público disponible todavía.");
       return;
     }
 
+    const welcomeMessage = buildStoreWelcomeMessage({
+      storeName: primaryStore.name,
+      catalogUrl: publicCatalogUrl,
+    });
+
     try {
-      await navigator.clipboard.writeText(publicCatalogUrl);
+      await navigator.clipboard.writeText(welcomeMessage);
       setCatalogShared(true);
-      setShareMessage("Link del catálogo copiado.");
+      setShareMessage("🎉 Mensaje de bienvenida copiado. Pégalo en WhatsApp, Instagram o donde atiendas clientes.");
     } catch {
-      setShareMessage("No se pudo copiar el link. Abre el catálogo y copia la URL.");
+      setShareMessage("No se pudo copiar el mensaje. Abre el catálogo y copia la URL.");
     }
   }
 
@@ -228,12 +278,6 @@ export function DashboardManager() {
       icon: DollarSign,
     },
     {
-      label: "Ingreso diario",
-      value: formatUsd(summary.averageRevenuePerDayUsd),
-      detail: `${stats.range?.days || 1} días analizados`,
-      icon: TrendingUp,
-    },
-    {
       label: "Pedidos registrados",
       value: String(summary.totalOrders || 0),
       detail: `${summary.completedOrders || 0} completados · ${summary.cancelledOrders || 0} cancelados`,
@@ -261,6 +305,35 @@ export function DashboardManager() {
 
   return (
     <div className="space-y-6">
+      {subscriptionReminder ? (
+        <section
+          className={[
+            "rounded-[32px] p-5 shadow-xl ring-1",
+            subscriptionReminder.tone === "danger"
+              ? "bg-red-50 text-red-800 shadow-red-100 ring-red-100"
+              : subscriptionReminder.tone === "warning"
+                ? "bg-amber-50 text-amber-900 shadow-amber-100 ring-amber-100"
+                : "bg-white text-[#25262B] shadow-[#2E3A79]/[0.07] ring-[#25262B]/[0.06]",
+          ].join(" ")}
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.16em] opacity-70">
+                Suscripcion
+              </p>
+              <h2 className="mt-1 text-2xl font-black">{subscriptionReminder.title}</h2>
+              <p className="mt-1 text-sm font-bold opacity-80">{subscriptionReminder.text}</p>
+            </div>
+            <Link
+              href="/panel/suscripcion"
+              className="inline-flex items-center justify-center rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
+            >
+              Ver suscripcion
+            </Link>
+          </div>
+        </section>
+      ) : null}
+
       <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
         <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
           <div>
@@ -297,7 +370,17 @@ export function DashboardManager() {
         </div>
 
         {shareMessage && (
-          <p className="mt-3 text-sm font-black text-[#2E3A79]">{shareMessage}</p>
+          <div className="mt-4 rounded-[24px] bg-[#FFF8F0] p-4 ring-1 ring-[#FFB547]/35">
+            <p className="text-sm font-black text-[#2E3A79]">{shareMessage}</p>
+            {publicCatalogUrl && primaryStore?.name ? (
+              <pre className="mt-3 whitespace-pre-wrap rounded-2xl bg-white p-3 text-xs font-bold leading-relaxed text-[#25262B]">
+                {buildStoreWelcomeMessage({
+                  storeName: primaryStore.name,
+                  catalogUrl: publicCatalogUrl,
+                })}
+              </pre>
+            ) : null}
+          </div>
         )}
 
         <div className="mt-5 grid gap-3 lg:grid-cols-5">
@@ -365,63 +448,6 @@ export function DashboardManager() {
             </p>
           </div>
 
-        </div>
-      </section>
-
-      <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
-        <div className="flex flex-col justify-between gap-3 xl:flex-row xl:items-center">
-          <div>
-            <p className="text-sm font-black uppercase tracking-[0.18em] text-[#746f69]">
-              Control de pagos
-            </p>
-            <h2 className="mt-1 text-2xl font-black text-[#25262B]">
-              Pedidos pendientes de pago
-            </h2>
-            <p className="mt-1 text-sm font-bold text-[#746f69]">
-              Revisa referencias, montos recibidos y pagos incompletos desde pedidos.
-            </p>
-          </div>
-          <Link
-            href="/panel/pedidos"
-            className="inline-flex items-center justify-center rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
-          >
-            Ver pagos
-          </Link>
-        </div>
-
-        <div className="mt-4 grid gap-3 md:grid-cols-4">
-          <div className="rounded-[24px] bg-[#F8F3E8] p-4">
-            <p className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
-              Pendientes
-            </p>
-            <p className="mt-2 text-3xl font-black text-[#25262B]">
-              {summary.pendingPayments || 0}
-            </p>
-          </div>
-          <div className="rounded-[24px] bg-blue-50 p-4">
-            <p className="text-xs font-black uppercase tracking-[0.12em] text-blue-700">
-              En revisión
-            </p>
-            <p className="mt-2 text-3xl font-black text-blue-700">
-              {summary.reviewPayments || 0}
-            </p>
-          </div>
-          <div className="rounded-[24px] bg-green-50 p-4">
-            <p className="text-xs font-black uppercase tracking-[0.12em] text-green-700">
-              Verificados hoy
-            </p>
-            <p className="mt-2 text-3xl font-black text-green-700">
-              {summary.verifiedPaymentsToday || 0}
-            </p>
-          </div>
-          <div className="rounded-[24px] bg-red-50 p-4">
-            <p className="text-xs font-black uppercase tracking-[0.12em] text-red-700">
-              Monto pendiente
-            </p>
-            <p className="mt-2 text-2xl font-black text-red-700">
-              {formatUsd(summary.pendingPaymentUsd || 0)}
-            </p>
-          </div>
         </div>
       </section>
 

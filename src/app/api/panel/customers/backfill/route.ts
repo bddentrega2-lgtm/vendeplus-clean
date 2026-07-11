@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
-  assertStoreAccess,
+  assertStoreManager,
+  canUseStoreRole,
   panelErrorResponse,
   requirePanelAuth,
 } from "@/lib/panel/access";
+import {
+  checkDistributedRateLimit,
+  getClientIp,
+  rateLimitHeaders,
+} from "@/lib/server/rate-limit";
 import { normalizePhone } from "@/lib/customers/normalize-phone";
 import { safeUpsertCustomerFromOrder } from "@/lib/customers/upsert-customer-from-order";
 
@@ -12,15 +18,40 @@ function cleanText(value: unknown) {
   return String(value || "").trim();
 }
 
+const CUSTOMER_BACKFILL_LIMIT = 3;
+const CUSTOMER_BACKFILL_RATE_WINDOW_MS = 60 * 60 * 1000;
+
 export async function POST(request: NextRequest) {
   try {
     const auth = await requirePanelAuth(request);
+    const clientIp = getClientIp(request);
+    const rateLimit = await checkDistributedRateLimit({
+      key: `panel:customers-backfill:${auth.userId || auth.email || "unknown"}:${clientIp}`,
+      limit: CUSTOMER_BACKFILL_LIMIT,
+      windowMs: CUSTOMER_BACKFILL_RATE_WINDOW_MS,
+    });
+
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Esta reconstruccion ya fue solicitada varias veces. Prueba mas tarde." },
+        {
+          status: 429,
+          headers: rateLimitHeaders(rateLimit, CUSTOMER_BACKFILL_LIMIT),
+        }
+      );
+    }
+
     const body = await request.json().catch(() => ({}));
     const requestedStoreId = cleanText(body.storeId);
     const supabase = createSupabaseAdminClient();
 
+    const managerStoreIds =
+      auth.storeIds === null
+        ? null
+        : auth.storeIds.filter((id) => canUseStoreRole(auth, id, ["owner", "admin"]));
+
     if (requestedStoreId) {
-      assertStoreAccess(
+      assertStoreManager(
         auth,
         requestedStoreId,
         "No tienes permiso para reconstruir clientes de este comercio."
@@ -46,8 +77,10 @@ export async function POST(request: NextRequest) {
       .order("created_at", { ascending: true })
       .limit(1000);
 
-    if (auth.storeIds !== null) {
-      ordersQuery = ordersQuery.in("store_id", auth.storeIds);
+    if (managerStoreIds !== null) {
+      ordersQuery = managerStoreIds.length
+        ? ordersQuery.in("store_id", managerStoreIds)
+        : ordersQuery.eq("store_id", "__no_authorized_store__");
     }
 
     if (requestedStoreId) {

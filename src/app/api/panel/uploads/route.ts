@@ -2,15 +2,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
-  assertStoreAccess,
+  assertStoreManager,
   badRequest,
   panelErrorResponse,
   requirePanelAuth,
 } from "@/lib/panel/access";
+import {
+  checkDistributedRateLimit,
+  getClientIp,
+  rateLimitHeaders,
+} from "@/lib/server/rate-limit";
 
 const BUCKET_NAME = "product-images";
 const MAX_FILE_SIZE = 2 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const UPLOAD_LIMIT = 20;
+const UPLOAD_RATE_WINDOW_MS = 10 * 60 * 1000;
 
 function getExtension(file: File) {
   if (file.type === "image/png") return "png";
@@ -35,6 +42,23 @@ export async function POST(request: NextRequest) {
     }
 
     const auth = await requirePanelAuth(request);
+    const clientIp = getClientIp(request);
+    const rateLimit = await checkDistributedRateLimit({
+      key: `panel:uploads:${auth.userId || auth.email || "unknown"}:${clientIp}`,
+      limit: UPLOAD_LIMIT,
+      windowMs: UPLOAD_RATE_WINDOW_MS,
+    });
+
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Demasiadas imágenes en poco tiempo. Espera unos minutos." },
+        {
+          status: 429,
+          headers: rateLimitHeaders(rateLimit, UPLOAD_LIMIT),
+        }
+      );
+    }
+
     const formData = await request.formData();
 
     const file = formData.get("file");
@@ -45,7 +69,7 @@ export async function POST(request: NextRequest) {
       return badRequest("Falta el comercio para subir la imagen.");
     }
 
-    assertStoreAccess(
+    assertStoreManager(
       auth,
       storeId,
       "No tienes permiso para subir imágenes a este comercio."

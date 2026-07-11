@@ -20,6 +20,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { PanelAccessGate, PanelModuleSkeleton } from "@/components/panel/PanelLoadingState";
+import { buildStoreWelcomeMessage } from "@/lib/store-share";
 import {
   getPanelAccessToken,
   getPanelAuthHeaders,
@@ -678,11 +679,17 @@ export function CatalogManager() {
 
     const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
 
+    const publicUrl = `${baseUrl}/${selectedStore.slug}`;
+    const welcomeMessage = buildStoreWelcomeMessage({
+      storeName: selectedStore.name,
+      catalogUrl: publicUrl,
+    });
+
     try {
-      await navigator.clipboard.writeText(`${baseUrl}/${selectedStore.slug}`);
-      setCopyMessage("Link del catálogo copiado.");
+      await navigator.clipboard.writeText(welcomeMessage);
+      setCopyMessage("🎉 Mensaje de bienvenida copiado. Pégalo en WhatsApp, Instagram o donde atiendas clientes.");
     } catch {
-      setCopyMessage("No se pudo copiar el link. Abre el catálogo y copia la URL.");
+      setCopyMessage("No se pudo copiar el mensaje. Abre el catálogo y copia la URL.");
     }
   }
 

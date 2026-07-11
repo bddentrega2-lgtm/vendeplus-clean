@@ -6,6 +6,14 @@ import {
   panelErrorResponse,
   requirePanelAuth,
 } from "@/lib/panel/access";
+import {
+  checkDistributedRateLimit,
+  getClientIp,
+  rateLimitHeaders,
+} from "@/lib/server/rate-limit";
+
+const INTERPRET_LIMIT = 20;
+const INTERPRET_RATE_WINDOW_MS = 10 * 60 * 1000;
 
 type ProductRow = {
   id: string;
@@ -35,13 +43,18 @@ type ManualOrderInterpretation = {
 };
 
 const fallbackPaymentMethods = [
-  "Pago móvil",
+  "Pago movil",
   "Transferencia",
   "Efectivo",
   "Binance",
   "Zelle",
   "Otro",
 ];
+
+const MAX_INTERPRET_BODY_BYTES = 40_000;
+const MAX_INTERPRET_MESSAGE_LENGTH = 6_000;
+const OPENAI_TIMEOUT_MS = 12_000;
+const DEFAULT_OPENAI_ORDER_MODEL = "gpt-5.4-mini";
 
 function cleanText(value: unknown) {
   return String(value || "").trim();
@@ -69,12 +82,12 @@ function normalizePhone(value: string) {
 
 function findName(message: string) {
   const patterns = [
-    /\b(?:soy|me llamo|mi nombre es)\s+([a-záéíóúñü\s]{2,50})/i,
-    /\b(?:cliente|nombre)\s*[:\-]\s*([a-záéíóúñü\s]{2,50})/i,
+    /\b(?:soy|me llamo|mi nombre es)\s+([a-z\s]{2,50})/i,
+    /\b(?:cliente|nombre)\s*[:\-]\s*([a-z\s]{2,50})/i,
   ];
 
   for (const pattern of patterns) {
-    const match = message.match(pattern);
+    const match = normalizeText(message).match(pattern);
     if (match?.[1]) {
       return match[1]
         .replace(/\b(quiero|necesito|pedido|para|con|delivery|entrega)\b.*$/i, "")
@@ -94,7 +107,7 @@ function findPaymentMethod(message: string, paymentMethods: string[]) {
     if (normalizedMethod && normalized.includes(normalizedMethod)) return method;
   }
 
-  if (normalized.includes("pago movil")) return "Pago móvil";
+  if (normalized.includes("pago movil")) return "Pago movil";
   if (normalized.includes("transferencia")) return "Transferencia";
   if (normalized.includes("efectivo")) return "Efectivo";
   if (normalized.includes("binance")) return "Binance";
@@ -105,8 +118,8 @@ function findPaymentMethod(message: string, paymentMethods: string[]) {
 
 function findDeliveryReference(message: string) {
   const patterns = [
-    /\b(?:direccion|dirección|entrega en|delivery en|enviar a|llevar a)\s*[:\-]?\s*(.{6,120})/i,
-    /\b(?:para|en)\s+(.{6,120})$/i,
+    /\b(?:direccion|entrega en|delivery en|enviar a|llevar a)\s*[:\-]?\s*(.{6,160})/i,
+    /\b(?:para|en)\s+(.{6,160})$/i,
   ];
 
   for (const pattern of patterns) {
@@ -129,7 +142,7 @@ function findProductItems(message: string, products: ProductRow[]) {
     if (!normalizedName || !normalizedMessage.includes(normalizedName)) continue;
 
     const index = normalizedMessage.indexOf(normalizedName);
-    const before = normalizedMessage.slice(Math.max(0, index - 18), index);
+    const before = normalizedMessage.slice(Math.max(0, index - 24), index);
     const quantityMatch = before.match(/(\d+)\s*$/);
     const quantity = quantityMatch ? Math.max(1, Number(quantityMatch[1])) : 1;
 
@@ -152,11 +165,13 @@ function mergeItems(items: InterpretationItem[]) {
     const existing = byProduct.get(item.productId);
     if (existing) {
       existing.quantity += item.quantity;
+      existing.notes = [existing.notes, item.notes].filter(Boolean).join("; ");
       existing.confidence = Math.max(existing.confidence, item.confidence);
     } else {
       byProduct.set(item.productId, {
         ...item,
         quantity: Math.max(1, Math.floor(Number(item.quantity) || 1)),
+        notes: cleanText(item.notes),
         confidence: Math.max(0, Math.min(1, Number(item.confidence) || 0.5)),
       });
     }
@@ -185,7 +200,7 @@ function localInterpretation({
   const warnings: string[] = [];
 
   if (!items.length) {
-    warnings.push("No pude asociar productos automáticamente; revisa el pedido manualmente.");
+    warnings.push("No pude asociar productos automaticamente; revisa el pedido manualmente.");
   }
 
   return {
@@ -221,51 +236,48 @@ function sanitizeAiInterpretation(
 ): ManualOrderInterpretation {
   const productIds = new Set(products.map((product) => product.id));
   const methods = paymentMethods.length ? paymentMethods : fallbackPaymentMethods;
-  const paymentMethod = methods.includes(cleanText(value?.paymentMethod))
-    ? cleanText(value?.paymentMethod)
+  const rawPaymentMethod = cleanText(value?.paymentMethod);
+  const paymentMethod = methods.includes(rawPaymentMethod)
+    ? rawPaymentMethod
     : methods[0] || "";
+
+  const items = mergeItems(
+    Array.isArray(value?.items)
+      ? value.items
+          .filter((item: any) => productIds.has(cleanText(item?.productId)))
+          .map((item: any) => ({
+            productId: cleanText(item.productId),
+            quantity: Math.max(1, Math.floor(Number(item.quantity || 1))),
+            notes: cleanText(item.notes),
+            confidence: Number(item.confidence || 0.7),
+          }))
+      : []
+  );
+
+  const warnings = Array.isArray(value?.warnings)
+    ? value.warnings.map(cleanText).filter(Boolean).slice(0, 8)
+    : [];
+
+  if (!items.length) {
+    warnings.push("La IA no encontro productos con suficiente confianza.");
+  }
 
   return {
     customerName: cleanText(value?.customerName),
-    customerPhone: cleanText(value?.customerPhone),
+    customerPhone: normalizePhone(cleanText(value?.customerPhone)) || cleanText(value?.customerPhone),
     deliveryReference: cleanText(value?.deliveryReference),
     orderDetails: cleanText(value?.orderDetails),
     deliveryType: value?.deliveryType === "pickup" ? "pickup" : "delivery",
     paymentMethod,
     deliveryUsd: Math.max(0, Number(value?.deliveryUsd || 0)),
-    items: mergeItems(
-      Array.isArray(value?.items)
-        ? value.items
-            .filter((item: any) => productIds.has(cleanText(item?.productId)))
-            .map((item: any) => ({
-              productId: cleanText(item.productId),
-              quantity: Math.max(1, Math.floor(Number(item.quantity || 1))),
-              notes: cleanText(item.notes),
-              confidence: Number(item.confidence || 0.7),
-            }))
-        : []
-    ),
-    warnings: Array.isArray(value?.warnings)
-      ? value.warnings.map(cleanText).filter(Boolean).slice(0, 6)
-      : [],
+    items,
+    warnings,
     confidence: Math.max(0, Math.min(1, Number(value?.confidence || 0.7))),
   };
 }
 
-async function interpretWithOpenAi({
-  message,
-  products,
-  paymentMethods,
-}: {
-  message: string;
-  products: ProductRow[];
-  paymentMethods: string[];
-}) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
-  if (!products.length) return null;
-
-  const schema = {
+function buildInterpretationSchema(products: ProductRow[], paymentMethods: string[]) {
+  return {
     type: "object",
     additionalProperties: false,
     properties: {
@@ -274,7 +286,10 @@ async function interpretWithOpenAi({
       deliveryReference: { type: "string" },
       orderDetails: { type: "string" },
       deliveryType: { type: "string", enum: ["delivery", "pickup"] },
-      paymentMethod: { type: "string", enum: paymentMethods.length ? paymentMethods : fallbackPaymentMethods },
+      paymentMethod: {
+        type: "string",
+        enum: paymentMethods.length ? paymentMethods : fallbackPaymentMethods,
+      },
       deliveryUsd: { type: "number" },
       items: {
         type: "array",
@@ -306,65 +321,138 @@ async function interpretWithOpenAi({
       "confidence",
     ],
   };
+}
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: process.env.OPENAI_ORDER_MODEL || "gpt-4.1",
-      input: [
-        {
-          role: "system",
-          content:
-            "Extrae datos de pedidos por WhatsApp para un comercio venezolano. Interpreta cantidades, sabores, tamanos, notas de preparacion, direccion, referencia y metodo de pago con cuidado. Usa solo productId existentes; si el cliente usa nombres parecidos, elige el producto mas probable y baja confidence si hay duda. Si falta algo importante, deja string vacio y agrega una advertencia corta y accionable.",
-        },
-        {
-          role: "user",
-          content: JSON.stringify({
-            message,
-            paymentMethods,
-            products: products.map((product) => ({
-              id: product.id,
-              name: product.name,
-              priceUsd: Number(product.price_usd || 0),
-            })),
-          }),
-        },
-      ],
-      text: {
-        format: {
-          type: "json_schema",
-          name: "manual_order_interpretation",
-          schema,
-          strict: true,
-        },
+function buildSystemPrompt() {
+  return [
+    "Eres el extractor de pedidos de VendeMas para comercios en Venezuela.",
+    "Tu tarea es convertir mensajes libres de WhatsApp en un pedido estructurado.",
+    "Reglas estrictas:",
+    "- Usa solamente productId del catalogo recibido. Nunca inventes productos.",
+    "- Si el cliente escribe un nombre parecido, usa el producto mas probable y baja confidence.",
+    "- Si dos productos se parecen demasiado, no adivines con confianza alta; agrega warning.",
+    "- Extrae cantidades aunque esten en texto: uno, una, dos, media docena, combo, etc.",
+    "- Usa notes para sabores, tamanos, terminos de coccion, salsas, extras escritos y restricciones.",
+    "- deliveryUsd debe ser 0 salvo que el mensaje diga explicitamente el costo de delivery.",
+    "- Si dice retiro, pickup, paso buscando o lo busco, usa pickup; si no, usa delivery.",
+    "- Si falta telefono, direccion, producto o metodo de pago, deja el campo vacio y agrega warning.",
+    "- Devuelve strings cortos y accionables; no expliques fuera del JSON.",
+  ].join("\n");
+}
+
+async function interpretWithOpenAi({
+  message,
+  products,
+  paymentMethods,
+}: {
+  message: string;
+  products: ProductRow[];
+  paymentMethods: string[];
+}) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+  if (!products.length) return null;
+
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
+  const model = cleanText(process.env.OPENAI_ORDER_MODEL) || DEFAULT_OPENAI_ORDER_MODEL;
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
       },
-    }),
-  });
+      body: JSON.stringify({
+        model,
+        input: [
+          {
+            role: "system",
+            content: buildSystemPrompt(),
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              message,
+              paymentMethods,
+              products: products.map((product) => ({
+                id: product.id,
+                name: product.name,
+                priceUsd: Number(product.price_usd || 0),
+              })),
+            }),
+          },
+        ],
+        max_output_tokens: 1800,
+        text: {
+          format: {
+            type: "json_schema",
+            name: "manual_order_interpretation",
+            schema: buildInterpretationSchema(products, paymentMethods),
+            strict: true,
+          },
+        },
+      }),
+    });
 
-  if (!response.ok) {
-    throw new Error("La interpretación con IA no respondió correctamente.");
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      const message = cleanText(data?.error?.message) || "OpenAI no respondio correctamente.";
+      throw new Error(message);
+    }
+
+    const text = getResponseText(data);
+    if (!text) throw new Error("OpenAI no devolvio una respuesta legible.");
+
+    return {
+      model,
+      raw: JSON.parse(text),
+    };
+  } finally {
+    globalThis.clearTimeout(timeout);
   }
-
-  const data = await response.json();
-  const text = getResponseText(data);
-  if (!text) throw new Error("La IA no devolvió una respuesta legible.");
-
-  return JSON.parse(text);
 }
 
 export async function POST(request: NextRequest) {
   try {
+    const contentLength = Number(request.headers.get("content-length") || 0);
+    if (contentLength > MAX_INTERPRET_BODY_BYTES) {
+      return NextResponse.json(
+        { error: "El mensaje es demasiado largo para interpretarlo." },
+        { status: 413 }
+      );
+    }
+
     const auth = await requirePanelAuth(request);
+    const clientIp = getClientIp(request);
+    const rateLimit = await checkDistributedRateLimit({
+      key: `panel:interpret:${auth.userId || auth.email || "unknown"}:${clientIp}`,
+      limit: INTERPRET_LIMIT,
+      windowMs: INTERPRET_RATE_WINDOW_MS,
+    });
+
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Demasiados intentos de interpretacion. Espera unos minutos." },
+        {
+          status: 429,
+          headers: rateLimitHeaders(rateLimit, INTERPRET_LIMIT),
+        }
+      );
+    }
+
     const body = await request.json();
     const storeId = cleanText(body.storeId);
     const message = cleanText(body.message);
 
     if (!storeId) return badRequest("Selecciona un comercio.");
     if (message.length < 4) return badRequest("Pega el mensaje del cliente.");
+    if (message.length > MAX_INTERPRET_MESSAGE_LENGTH) {
+      return badRequest("El mensaje es demasiado largo. Resume el pedido antes de interpretarlo.");
+    }
 
     assertStoreAccess(auth, storeId, "No tienes permiso para interpretar pedidos en este comercio.");
 
@@ -376,6 +464,7 @@ export async function POST(request: NextRequest) {
         .select("id, name, price_usd, is_available")
         .eq("store_id", storeId)
         .eq("is_available", true)
+        .order("name", { ascending: true })
         .limit(300),
     ]);
 
@@ -393,24 +482,48 @@ export async function POST(request: NextRequest) {
       const aiResult = await interpretWithOpenAi({ message, products, paymentMethods });
 
       if (!aiResult) {
-        return NextResponse.json({ interpretation: fallback, mode: "local" });
+        return NextResponse.json({
+          interpretation: fallback,
+          mode: "local",
+          ai: { configured: false, model: null },
+        });
       }
 
+      const interpretation = sanitizeAiInterpretation(
+        aiResult.raw,
+        products,
+        paymentMethods
+      );
+
       return NextResponse.json({
-        interpretation: sanitizeAiInterpretation(aiResult, products, paymentMethods),
+        interpretation,
         mode: "ai",
+        ai: {
+          configured: true,
+          model: aiResult.model,
+          confidence: interpretation.confidence,
+        },
       });
     } catch (error: any) {
+      console.warn("OpenAI order interpretation failed", {
+        model: cleanText(process.env.OPENAI_ORDER_MODEL) || DEFAULT_OPENAI_ORDER_MODEL,
+        message: error.message || "IA no disponible.",
+      });
+
       return NextResponse.json({
         interpretation: {
           ...fallback,
           warnings: [
             ...fallback.warnings,
-            "La IA no estuvo disponible; apliqué lectura básica local.",
+            "La IA no estuvo disponible; aplique lectura basica local.",
           ],
         },
         mode: "local",
-        aiError: error.message || "IA no disponible.",
+        ai: {
+          configured: Boolean(process.env.OPENAI_API_KEY),
+          model: cleanText(process.env.OPENAI_ORDER_MODEL) || DEFAULT_OPENAI_ORDER_MODEL,
+          error: error.message || "IA no disponible.",
+        },
       });
     }
   } catch (error: any) {
