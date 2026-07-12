@@ -34,6 +34,18 @@ Ahora:
 - Los endpoints admin reciben solo resultados agregados.
 - `requireAdminAuth` se mantiene intacto.
 
+### Fallback temporal anti-ruptura
+
+Despues del commit inicial se agrego un fallback server-side para evitar que el admin falle si el codigo se despliega antes de aplicar la migracion SQL.
+
+El fallback solo se activa cuando Supabase/PostgREST reporta que la RPC no existe o no esta en el schema cache (`PGRST202` / schema cache). No oculta errores reales de permisos, datos o autorizacion.
+
+Archivo:
+
+- `src/lib/admin/metrics-fallback.ts`
+
+Cuando la migracion ya esta aplicada, los endpoints usan las RPCs agregadas y no ejecutan el fallback.
+
 ## Seguridad
 
 Las funciones se crean sin `security definer`; se ejecutan con los privilegios del invocador.
@@ -73,7 +85,7 @@ Tambien se verifico que los tres endpoints ya no contienen los limites masivos:
 
 ## Orden seguro de despliegue
 
-No desplegar el codigo de esta rama antes de aplicar la migracion en la base de datos de destino.
+El orden ideal sigue siendo aplicar primero la migracion y despues desplegar codigo. Sin embargo, los endpoints tienen un fallback temporal para que el admin no quede inutilizable si se despliega antes de aplicar la migracion.
 
 Orden recomendado:
 

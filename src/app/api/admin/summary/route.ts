@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth, adminErrorResponse } from "@/lib/admin/access";
+import {
+  isMissingAdminMetricsRpc,
+  loadAdminStoreMetricsFallback,
+  loadAdminSummaryMetricsFallback,
+} from "@/lib/admin/metrics-fallback";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getPlan } from "@/lib/plans";
 
@@ -45,13 +50,22 @@ export async function GET(request: NextRequest) {
 
     if (storesResult.error) throw storesResult.error;
     if (recentStoresResult.error) throw recentStoresResult.error;
-    if (summaryMetricsResult.error) throw summaryMetricsResult.error;
-    if (storeMetricsResult.error) throw storeMetricsResult.error;
+    if (summaryMetricsResult.error && !isMissingAdminMetricsRpc(summaryMetricsResult.error)) {
+      throw summaryMetricsResult.error;
+    }
+    if (storeMetricsResult.error && !isMissingAdminMetricsRpc(storeMetricsResult.error)) {
+      throw storeMetricsResult.error;
+    }
 
     const stores = storesResult.data || [];
-    const summaryMetrics = (summaryMetricsResult.data || {}) as Record<string, unknown>;
+    const summaryMetrics = (summaryMetricsResult.error
+      ? await loadAdminSummaryMetricsFallback(supabase)
+      : summaryMetricsResult.data || {}) as Record<string, unknown>;
+    const storeMetricsRows = storeMetricsResult.error
+      ? await loadAdminStoreMetricsFallback(supabase)
+      : storeMetricsResult.data || [];
     const storeMetrics = new Map(
-      (storeMetricsResult.data || []).map((entry: any) => [entry.store_id, entry])
+      storeMetricsRows.map((entry: any) => [entry.store_id, entry])
     );
     const now = Date.now();
     const threeDaysFromNow = now + 3 * 24 * 60 * 60 * 1000;

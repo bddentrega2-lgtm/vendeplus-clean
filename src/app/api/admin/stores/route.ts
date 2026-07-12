@@ -4,6 +4,10 @@ import {
   adminStoreSelect,
   normalizeAdminStorePayload,
 } from "@/lib/admin/stores";
+import {
+  isMissingAdminMetricsRpc,
+  loadAdminStoreMetricsFallback,
+} from "@/lib/admin/metrics-fallback";
 import { ensureStoreAccessUser, normalizeAccessEmail } from "@/lib/admin/store-access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -26,7 +30,7 @@ function withCounts(stores: any[], metricsRows: any[]) {
   return stores.map((store) => {
     const row = metrics.get(store.id) || {};
     return {
-    ...store,
+      ...store,
       product_count: toNumber(row.product_count),
       active_product_count: toNumber(row.active_product_count),
       order_count: toNumber(row.order_count),
@@ -48,10 +52,16 @@ export async function GET(request: NextRequest) {
       ]);
 
     if (storesResult.error) throw storesResult.error;
-    if (metricsResult.error) throw metricsResult.error;
+    if (metricsResult.error && !isMissingAdminMetricsRpc(metricsResult.error)) {
+      throw metricsResult.error;
+    }
+
+    const metricsRows = metricsResult.error
+      ? await loadAdminStoreMetricsFallback(supabase)
+      : metricsResult.data || [];
 
     return NextResponse.json({
-      stores: withCounts(storesResult.data || [], metricsResult.data || []),
+      stores: withCounts(storesResult.data || [], metricsRows),
     });
   } catch (error) {
     return adminErrorResponse(error, "Error cargando comercios.");

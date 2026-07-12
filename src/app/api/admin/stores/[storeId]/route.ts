@@ -4,6 +4,10 @@ import {
   adminStoreSelect,
   normalizeAdminStorePayload,
 } from "@/lib/admin/stores";
+import {
+  isMissingAdminMetricsRpc,
+  loadAdminStoreDetailMetricsFallback,
+} from "@/lib/admin/metrics-fallback";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabasePublicClient } from "@/lib/supabase/server";
 
@@ -58,9 +62,13 @@ export async function GET(
 
     if (assignmentsResult.error) throw assignmentsResult.error;
     if (deliverySettingsResult.error) throw deliverySettingsResult.error;
-    if (metricsResult.error) throw metricsResult.error;
+    if (metricsResult.error && !isMissingAdminMetricsRpc(metricsResult.error)) {
+      throw metricsResult.error;
+    }
 
-    const metrics = (metricsResult.data || {}) as Record<string, unknown>;
+    const metrics = (metricsResult.error
+      ? await loadAdminStoreDetailMetricsFallback(supabase, storeId)
+      : metricsResult.data || {}) as Record<string, unknown>;
 
     return NextResponse.json({
       store: data,
