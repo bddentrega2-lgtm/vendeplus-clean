@@ -15,39 +15,25 @@ function conflict(message: string) {
   return NextResponse.json({ error: message }, { status: 409 });
 }
 
-function incrementCount(map: Map<string, number>, key?: string | null) {
-  if (!key) return;
-  map.set(key, (map.get(key) || 0) + 1);
+function toNumber(value: unknown) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function withCounts(stores: any[], products: any[], orders: any[], users: any[]) {
-  const productCounts = new Map<string, number>();
-  const activeProductCounts = new Map<string, number>();
-  const orderCounts = new Map<string, number>();
-  const order30Counts = new Map<string, number>();
-  const userCounts = new Map<string, number>();
-  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+function withCounts(stores: any[], metricsRows: any[]) {
+  const metrics = new Map(metricsRows.map((entry: any) => [entry.store_id, entry]));
 
-  products.forEach((product) => {
-    incrementCount(productCounts, product.store_id);
-    if (product.is_available !== false) incrementCount(activeProductCounts, product.store_id);
-  });
-  orders.forEach((order) => {
-    incrementCount(orderCounts, order.store_id);
-    if (new Date(order.created_at).getTime() >= thirtyDaysAgo) {
-      incrementCount(order30Counts, order.store_id);
-    }
-  });
-  users.forEach((user) => incrementCount(userCounts, user.store_id));
-
-  return stores.map((store) => ({
+  return stores.map((store) => {
+    const row = metrics.get(store.id) || {};
+    return {
     ...store,
-    product_count: productCounts.get(store.id) || 0,
-    active_product_count: activeProductCounts.get(store.id) || 0,
-    order_count: orderCounts.get(store.id) || 0,
-    order_count_30d: order30Counts.get(store.id) || 0,
-    user_count: userCounts.get(store.id) || 0,
-  }));
+      product_count: toNumber(row.product_count),
+      active_product_count: toNumber(row.active_product_count),
+      order_count: toNumber(row.order_count),
+      order_count_30d: toNumber(row.order_count_30d),
+      user_count: toNumber(row.user_count),
+    };
+  });
 }
 
 export async function GET(request: NextRequest) {
@@ -55,26 +41,17 @@ export async function GET(request: NextRequest) {
     await requireAdminAuth(request);
     const supabase = createSupabaseAdminClient();
 
-    const [storesResult, productsResult, ordersResult, usersResult] =
+    const [storesResult, metricsResult] =
       await Promise.all([
         supabase.from("stores").select(adminStoreSelect).order("name", { ascending: true }),
-        supabase.from("products").select("id, store_id, is_available").limit(5000),
-        supabase.from("orders").select("id, store_id, created_at").limit(10000),
-        supabase.from("store_users").select("id, store_id").limit(5000),
+        supabase.rpc("admin_store_metrics"),
       ]);
 
     if (storesResult.error) throw storesResult.error;
-    if (productsResult.error) throw productsResult.error;
-    if (ordersResult.error) throw ordersResult.error;
-    if (usersResult.error) throw usersResult.error;
+    if (metricsResult.error) throw metricsResult.error;
 
     return NextResponse.json({
-      stores: withCounts(
-        storesResult.data || [],
-        productsResult.data || [],
-        ordersResult.data || [],
-        usersResult.data || []
-      ),
+      stores: withCounts(storesResult.data || [], metricsResult.data || []),
     });
   } catch (error) {
     return adminErrorResponse(error, "Error cargando comercios.");

@@ -15,6 +15,11 @@ function conflict(message: string) {
   return NextResponse.json({ error: message }, { status: 409 });
 }
 
+function toNumber(value: unknown) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ storeId: string }> }
@@ -36,53 +41,38 @@ export async function GET(
 
     const [
       assignmentsResult,
-      productsResult,
-      ordersResult,
-      customersResult,
       deliverySettingsResult,
+      metricsResult,
     ] = await Promise.all([
       supabase
         .from("store_users")
         .select("id, user_id, store_id, role, created_at")
         .eq("store_id", storeId),
-      supabase.from("products").select("id, is_available").eq("store_id", storeId).limit(5000),
-      supabase
-        .from("orders")
-        .select("id, total_usd, created_at")
-        .eq("store_id", storeId)
-        .order("created_at", { ascending: false })
-        .limit(5000),
-      supabase.from("customers").select("id").eq("store_id", storeId).limit(5000),
       supabase
         .from("store_delivery_settings")
         .select("delivery_enabled, pickup_enabled, delivery_provider, pricing_type")
         .eq("store_id", storeId)
         .maybeSingle(),
+      supabase.rpc("admin_store_detail_metrics", { p_store_id: storeId }).maybeSingle(),
     ]);
 
     if (assignmentsResult.error) throw assignmentsResult.error;
-    if (productsResult.error) throw productsResult.error;
-    if (ordersResult.error) throw ordersResult.error;
-    if (customersResult.error) throw customersResult.error;
     if (deliverySettingsResult.error) throw deliverySettingsResult.error;
+    if (metricsResult.error) throw metricsResult.error;
 
-    const products = productsResult.data || [];
-    const orders = ordersResult.data || [];
-    const now = Date.now();
-    const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
-    const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
+    const metrics = (metricsResult.data || {}) as Record<string, unknown>;
 
     return NextResponse.json({
       store: data,
       assignments: assignmentsResult.data || [],
       metrics: {
-        activeProducts: products.filter((product: any) => product.is_available !== false).length,
-        totalProducts: products.length,
-        totalOrders: orders.length,
-        ordersLast7Days: orders.filter((order: any) => new Date(order.created_at).getTime() >= sevenDaysAgo).length,
-        ordersLast30Days: orders.filter((order: any) => new Date(order.created_at).getTime() >= thirtyDaysAgo).length,
-        totalRevenueUsd: orders.reduce((sum: number, order: any) => sum + Number(order.total_usd || 0), 0),
-        customers: customersResult.data?.length || 0,
+        activeProducts: toNumber(metrics.active_products),
+        totalProducts: toNumber(metrics.total_products),
+        totalOrders: toNumber(metrics.total_orders),
+        ordersLast7Days: toNumber(metrics.orders_last_7_days),
+        ordersLast30Days: toNumber(metrics.orders_last_30_days),
+        totalRevenueUsd: toNumber(metrics.total_revenue_usd),
+        customers: toNumber(metrics.customers),
       },
       deliverySettings: deliverySettingsResult.data || null,
     });

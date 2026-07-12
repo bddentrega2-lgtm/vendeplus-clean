@@ -3,8 +3,9 @@ import { requireAdminAuth, adminErrorResponse } from "@/lib/admin/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getPlan } from "@/lib/plans";
 
-function countRows(rows: any[] | null | undefined) {
-  return Array.isArray(rows) ? rows.length : 0;
+function toNumber(value: unknown) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 export async function GET(request: NextRequest) {
@@ -14,11 +15,9 @@ export async function GET(request: NextRequest) {
 
     const [
       storesResult,
-      ordersResult,
-      productsResult,
-      storeUsersResult,
       recentStoresResult,
-      customersResult,
+      summaryMetricsResult,
+      storeMetricsResult,
     ] = await Promise.all([
       supabase.from("stores").select(`
         id,
@@ -36,62 +35,26 @@ export async function GET(request: NextRequest) {
         accepts_delivery
       `),
       supabase
-        .from("orders")
-        .select("id, store_id, total_usd, created_at")
-        .order("created_at", { ascending: false })
-        .limit(20000),
-      supabase.from("products").select("id, store_id, is_available"),
-      supabase.from("store_users").select("id"),
-      supabase
         .from("stores")
         .select("id, slug, name, business_type, whatsapp, is_active, created_at, plan_type, trial_ends_at, subscription_status")
         .order("created_at", { ascending: false })
         .limit(6),
-      supabase.from("customers").select("id").limit(20000),
+      supabase.rpc("admin_summary_metrics").maybeSingle(),
+      supabase.rpc("admin_store_metrics"),
     ]);
 
     if (storesResult.error) throw storesResult.error;
-    if (ordersResult.error) throw ordersResult.error;
-    if (productsResult.error) throw productsResult.error;
-    if (storeUsersResult.error) throw storeUsersResult.error;
     if (recentStoresResult.error) throw recentStoresResult.error;
-    if (customersResult.error) throw customersResult.error;
+    if (summaryMetricsResult.error) throw summaryMetricsResult.error;
+    if (storeMetricsResult.error) throw storeMetricsResult.error;
 
     const stores = storesResult.data || [];
-    const orders = ordersResult.data || [];
-    const products = productsResult.data || [];
+    const summaryMetrics = (summaryMetricsResult.data || {}) as Record<string, unknown>;
+    const storeMetrics = new Map(
+      (storeMetricsResult.data || []).map((entry: any) => [entry.store_id, entry])
+    );
     const now = Date.now();
-    const todayCaracas = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "America/Caracas",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date());
-    const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
     const threeDaysFromNow = now + 3 * 24 * 60 * 60 * 1000;
-    const revenueUsd = orders.reduce(
-      (sum: number, order: any) => sum + Number(order.total_usd || 0),
-      0
-    );
-    const ordersToday = orders.filter((order: any) => {
-      const day = new Intl.DateTimeFormat("en-CA", {
-        timeZone: "America/Caracas",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }).format(new Date(order.created_at));
-
-      return day === todayCaracas;
-    });
-    const ordersLast7Days = orders.filter(
-      (order: any) => new Date(order.created_at).getTime() >= sevenDaysAgo
-    );
-    const productCounts = new Map<string, number>();
-
-    for (const product of products) {
-      if (product.is_available === false) continue;
-      productCounts.set(product.store_id, (productCounts.get(product.store_id) || 0) + 1);
-    }
 
     const alerts = stores.flatMap((store: any) => {
       const storeAlerts: Array<{ type: string; storeId: string; storeName: string; message: string }> = [];
@@ -114,7 +77,7 @@ export async function GET(request: NextRequest) {
           message: "Cuenta vencida o pago pendiente.",
         });
       }
-      if (!productCounts.get(store.id)) {
+      if (!toNumber((storeMetrics.get(store.id) as any)?.active_product_count)) {
         storeAlerts.push({
           type: "no_products",
           storeId: store.id,
@@ -149,18 +112,18 @@ export async function GET(request: NextRequest) {
         inactiveStores: stores.filter((store: any) => store.is_active === false).length,
         trialStores: stores.filter((store: any) => store.plan_type === "trial" || store.subscription_status === "trial").length,
         expiredStores: stores.filter((store: any) => store.subscription_status === "expired" || store.subscription_status === "past_due").length,
-        totalOrders: orders.length,
-        ordersToday: ordersToday.length,
-        ordersLast7Days: ordersLast7Days.length,
-        totalProducts: countRows(productsResult.data),
-        totalAssignments: countRows(storeUsersResult.data),
-        totalCustomers: countRows(customersResult.data),
+        totalOrders: toNumber(summaryMetrics.total_orders),
+        ordersToday: toNumber(summaryMetrics.orders_today),
+        ordersLast7Days: toNumber(summaryMetrics.orders_last_7_days),
+        totalProducts: toNumber(summaryMetrics.total_products),
+        totalAssignments: toNumber(summaryMetrics.total_assignments),
+        totalCustomers: toNumber(summaryMetrics.total_customers),
         estimatedMrrUsd: stores.reduce((sum: number, store: any) => {
           if (store.is_active === false || ["cancelled", "paused", "expired"].includes(store.subscription_status)) return sum;
           const configuredPrice = Number(store.monthly_price_usd || 0);
           return sum + (configuredPrice || getPlan(store.plan_type).priceUsd);
         }, 0),
-        revenueUsd,
+        revenueUsd: toNumber(summaryMetrics.revenue_usd),
         attentionStores: new Set(alerts.map((alert) => alert.storeId)).size,
       },
       recentStores: recentStoresResult.data || [],
