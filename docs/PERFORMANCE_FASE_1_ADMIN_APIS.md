@@ -69,6 +69,7 @@ Comandos ejecutados:
 ```powershell
 npm.cmd run lint
 npm.cmd run build
+npm.cmd run predeploy:smoke
 ```
 
 Resultado:
@@ -76,6 +77,7 @@ Resultado:
 - Lint limpio.
 - Build limpio.
 - TypeScript estricto sin errores.
+- Smoke predeploy limpio.
 
 Tambien se verifico que los tres endpoints ya no contienen los limites masivos:
 
@@ -149,3 +151,48 @@ drop function if exists public.admin_store_detail_metrics(uuid);
 - Falta medir endpoints con sesion founder real antes/despues.
 - Falta ejecutar `EXPLAIN` en staging/produccion para planes reales.
 - Falta confirmar que la migracion fue aplicada en produccion antes de desplegar esta rama.
+
+## Deploy production
+
+Fecha: 2026-07-12, America/Caracas  
+Commit desplegado: `c031c97 fix: keep admin metrics working before rpc migration`  
+Deployment: `dpl_J71equhkuBDXUvQzLxCsBveERwvN`  
+URL de deployment: `https://vendeplus-clean-a8ihntt85-entrega2-s-projects.vercel.app`  
+Alias production: `https://vendeplus-clean.vercel.app`  
+Estado Vercel: `Ready`
+
+Verificacion HTTP post-deploy:
+
+| Ruta | Resultado |
+|---|---:|
+| `/` | 200 |
+| `/marketplace` | 200 |
+| `/armario` | 200 |
+| `/armario/carrito` | 200 |
+| `/panel/login` | 200 |
+| `/admin` | 200 |
+| `/api/admin/summary` sin sesion | 401 |
+| `/api/admin/stores` sin sesion | 401 |
+
+Marketplace post-deploy:
+
+- `Armario`: visible.
+- `Knockouts`: visible.
+- `Sabore`: visible.
+- `Smash`: visible.
+
+Smoke de carga liviano:
+
+```powershell
+npm.cmd run load:smoke
+```
+
+Resultado con concurrencia 4:
+
+| Ruta | Avg | P95 | Max | Status |
+|---|---:|---:|---:|---|
+| `/` | 1495ms | 2136ms | 2136ms | 200 |
+| `/marketplace` | 1216ms | 1847ms | 1847ms | 200 |
+| `/armario` | 1414ms | 1877ms | 1877ms | 200 |
+| `/armario/carrito` | 2546ms | 3144ms | 3144ms | 200 |
+| `/transporte` | 1801ms | 2397ms | 2397ms | 200 |
