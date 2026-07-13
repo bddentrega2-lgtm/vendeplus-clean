@@ -27,8 +27,8 @@ import {
   normalizeDistanceRangeInput,
 } from "@/lib/distance-ranges";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { getTransportAgencyConfigIssues, getTransportAgencyRateFromRelation } from "@/lib/transport";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
+import { useTransportPanelDerivedData } from "@/components/transport/use-transport-panel-derived-data";
 import {
   connectionEnded,
   connectionPendingExit,
@@ -84,26 +84,14 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
   const agencyPricingType = agency?.pricing_type || "";
   const billingCurrency = agency?.billing_currency === "EUR" ? "EUR" : "USD";
   const billingSymbol = billingCurrency === "EUR" ? "€" : "$";
-  const rate = getTransportAgencyRateFromRelation(agency?.transport_agency_rates) || {};
-  const zones = (agency?.transport_agency_zones || [])
-    .filter((zone) => zone.is_active !== false)
-    .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
-  const distanceRates = (agency?.transport_agency_distance_rates || [])
-    .filter((entry) => entry.is_active !== false)
-    .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
-  const pendingRequests = requests.filter((entry) => entry.status === "pending");
-  const configIssues = agency
-    ? getTransportAgencyConfigIssues({
-        agency,
-        rate,
-        zones,
-        distanceRates,
-      })
-    : [];
-
-  const activeConnectionsCount = connections.filter(
-    (entry) => entry.status === "active" && !connectionEnded(entry, nowMs)
-  ).length;
+  const {
+    activeConnectionsCount,
+    configIssues,
+    distanceRates,
+    pendingRequests,
+    rate,
+    zones,
+  } = useTransportPanelDerivedData({ agency, requests, connections, nowMs });
 
   async function authHeaders() {
     const savedPin = pin || getSavedPanelPin();

@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
   CircleDollarSign,
@@ -58,6 +58,11 @@ import {
   transportStatusLabels,
   type OrderRow,
 } from "@/components/panel/orders/orders-manager-helpers";
+import {
+  buildOrdersQueryString,
+  useOrderFilters,
+  type OrderFilters,
+} from "@/components/panel/orders/use-order-filters";
 
 function OrderDetail({
   order,
@@ -503,33 +508,23 @@ export function OrdersManager() {
   const [now, setNow] = useState(() => Date.now());
   const [realtimeStoreIds, setRealtimeStoreIds] = useState<string[]>([]);
 
-  async function loadOrders(
-    currentPin: string,
-    filters = {
+  const { currentFilters, filterSignature } = useOrderFilters({
       status: selectedStatus,
       paymentStatus: selectedPaymentStatus,
       date: selectedDate,
       paymentMethod: selectedPaymentMethod,
       deliveryType: selectedDeliveryType,
-    }
-  ) {
+    });
+
+  const loadOrders = useCallback(async (
+    currentPin: string,
+    filters: OrderFilters = currentFilters
+  ) => {
     setIsLoading(true);
     setError("");
 
     try {
-      const params = new URLSearchParams();
-      if (filters.status !== "all") params.set("status", filters.status);
-      if (filters.paymentStatus !== "all") {
-        params.set("paymentStatus", filters.paymentStatus);
-      }
-      if (filters.date !== "all") params.set("date", filters.date);
-      if (filters.paymentMethod !== "all") {
-        params.set("paymentMethod", filters.paymentMethod);
-      }
-      if (filters.deliveryType !== "all") {
-        params.set("deliveryType", filters.deliveryType);
-      }
-      const queryString = params.toString() ? `?${params.toString()}` : "";
+      const queryString = buildOrdersQueryString(filters);
       const data = await apiRequest(currentPin, `/api/panel/orders${queryString}`);
 
       setOrders(data.orders || []);
@@ -547,7 +542,7 @@ export function OrdersManager() {
       setIsLoading(false);
       setIsCheckingAccess(false);
     }
-  }
+  }, [currentFilters]);
 
   const filteredOrders = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -578,7 +573,7 @@ export function OrdersManager() {
     ];
   }, [orders]);
 
-  async function sendOrderToDelivery(orderId: string) {
+  const sendOrderToDelivery = useCallback(async (orderId: string) => {
     setSendingDeliveryId(orderId);
     setError("");
 
@@ -597,9 +592,9 @@ export function OrdersManager() {
     } finally {
       setSendingDeliveryId(null);
     }
-  }
+  }, [loadOrders, pin]);
 
-  async function changeOrderStatus(order: OrderRow, nextStatus: string) {
+  const changeOrderStatus = useCallback(async (order: OrderRow, nextStatus: string) => {
     setSavingStatusOrderId(order.id);
     setError("");
 
@@ -625,9 +620,9 @@ export function OrdersManager() {
     } finally {
       setSavingStatusOrderId(null);
     }
-  }
+  }, [pin]);
 
-  async function markPaymentVerified(order: OrderRow) {
+  const markPaymentVerified = useCallback(async (order: OrderRow) => {
     setSavingPaymentId(order.id);
     setError("");
 
@@ -676,7 +671,7 @@ export function OrdersManager() {
     } finally {
       setSavingPaymentId(null);
     }
-  }
+  }, [pin]);
 
   useEffect(() => {
     let active = true;
@@ -720,8 +715,7 @@ export function OrdersManager() {
     return () => {
       document.removeEventListener("visibilitychange", refresh);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isUnlocked, pin, selectedStatus, selectedPaymentStatus, selectedDate, selectedPaymentMethod, selectedDeliveryType]);
+  }, [isUnlocked, pin, loadOrders, filterSignature]);
 
   useEffect(() => {
     if (!isUnlocked || !realtimeStoreIds.length) return;
@@ -762,7 +756,7 @@ export function OrdersManager() {
     };
     // The API remains the source of truth; Broadcast only invalidates the list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isUnlocked, pin, realtimeStoreIds.join(","), selectedStatus, selectedPaymentStatus, selectedDate, selectedPaymentMethod, selectedDeliveryType]);
+  }, [isUnlocked, pin, realtimeStoreIds.join(","), loadOrders, filterSignature]);
 
   if (isCheckingAccess) {
     return <PanelAccessGate />;
