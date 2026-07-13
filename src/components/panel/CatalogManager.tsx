@@ -20,6 +20,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { PanelAccessGate, PanelModuleSkeleton } from "@/components/panel/PanelLoadingState";
+import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import { buildStoreWelcomeMessage } from "@/lib/store-share";
 import {
   getPanelAccessToken,
@@ -353,10 +354,14 @@ function ProductCatalogCard({
         </div>
         <div className="overflow-hidden rounded-2xl bg-[#F8F3E8]">
           {product.image_url ? (
-            <img
+            <OptimizedImage
               src={product.image_url}
               alt={product.name}
+              width={220}
+              height={96}
+              sizes="(max-width: 768px) 100vw, 220px"
               className="h-24 w-full object-cover md:h-full"
+              fallback={<div className="h-24 w-full bg-[#F8F3E8] md:h-full" />}
             />
           ) : (
             <div className="grid h-24 place-items-center text-[#746f69]">

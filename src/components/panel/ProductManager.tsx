@@ -28,6 +28,7 @@ import {
   savePanelPin,
   shouldShowPanelInitialAccessGate,
 } from "@/lib/panel/client-auth";
+import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import { compressImageForUpload } from "@/lib/images/client-compress";
 
 type StoreRow = {
@@ -357,10 +358,18 @@ function ProductEditor({
       <div className="grid gap-3 xl:grid-cols-[124px_1fr]">
         <div className="aspect-square overflow-hidden rounded-2xl bg-[#F8F3E8]">
           {draft.image_url ? (
-            <img
+            <OptimizedImage
               src={draft.image_url}
               alt={draft.name}
+              width={124}
+              height={124}
+              sizes="124px"
               className="h-full w-full object-cover"
+              fallback={
+                <div className="grid h-full w-full place-items-center text-sm font-black text-[#2E3A79]">
+                  Sin imagen
+                </div>
+              }
             />
           ) : (
             <div className="grid h-full place-items-center text-[#746f69]">
@@ -936,10 +945,18 @@ export function ProductManager() {
           <div className="grid gap-4 md:grid-cols-[144px_1fr] md:items-center">
             <div className="aspect-square w-36 overflow-hidden rounded-2xl bg-white">
               {newProduct.image_url ? (
-                <img
+                <OptimizedImage
                   src={newProduct.image_url}
                   alt={newProduct.name || "Imagen del producto"}
+                  width={144}
+                  height={144}
+                  sizes="144px"
                   className="h-full w-full object-cover"
+                  fallback={
+                    <div className="grid h-full w-full place-items-center text-sm font-black text-[#2E3A79]">
+                      Sin imagen
+                    </div>
+                  }
                 />
               ) : (
                 <div className="grid h-full place-items-center text-[#746f69]">
@@ -1103,10 +1120,14 @@ export function ProductManager() {
                   <div className="grid gap-3 sm:grid-cols-[56px_1fr_150px_auto] sm:items-center">
                     <div className="h-14 w-14 overflow-hidden rounded-xl bg-[#F8F3E8]">
                       {product.image_url ? (
-                        <img
+                        <OptimizedImage
                           src={product.image_url}
                           alt={product.name}
+                          width={56}
+                          height={56}
+                          sizes="56px"
                           className="h-full w-full object-cover"
+                          fallback={<div className="h-full w-full bg-[#F8F3E8]" />}
                         />
                       ) : (
                         <div className="grid h-full place-items-center text-[#746f69]">

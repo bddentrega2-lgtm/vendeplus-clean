@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { CartItem, Store } from "@/types";
 import { getCart, getCartSubtotal, removeCartItem, updateCartItemQuantity } from "@/lib/cart";
 import { formatBaseCurrency, formatBs } from "@/lib/currency";
+import { OptimizedImage } from "@/components/shared/OptimizedImage";
 
 function formatSelectedOptions(item: CartItem, baseCurrency: "USD" | "EUR" | string) {
   const groups = new Map<string, string[]>();
@@ -98,7 +99,19 @@ export function CartPageClient({ store }: { store: Store }) {
             items.map((item, index) => (
               <article key={`${item.productId}-${item.variantId || "base"}-${index}`} className="rounded-[28px] bg-white p-3 shadow-sm ring-1 ring-[#25262B]/[0.07]">
                 <div className="flex gap-3">
-                  <img src={item.productImageUrl} alt={item.productName} className="h-24 w-24 rounded-[22px] object-cover" decoding="async" loading="lazy" />
+                  <OptimizedImage
+                    src={item.productImageUrl}
+                    alt={item.productName}
+                    width={96}
+                    height={96}
+                    sizes="96px"
+                    className="h-24 w-24 rounded-[22px] object-cover"
+                    fallback={
+                      <div className="grid h-24 w-24 place-items-center rounded-[22px] bg-[#F8F3E8] text-xl font-black text-[#2E3A79]">
+                        {item.productName.slice(0, 1).toUpperCase()}
+                      </div>
+                    }
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
                       <div>

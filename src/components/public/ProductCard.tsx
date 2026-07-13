@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import type { Product, ProductOptionValue, ProductVariant, SelectedCartOption } from "@/types";
 import { addToCart } from "@/lib/cart";
 import { formatBaseCurrency, formatBs } from "@/lib/currency";
+import { OptimizedImage } from "@/components/shared/OptimizedImage";
 
 type SelectionMap = Record<string, string[]>;
 
@@ -353,12 +354,18 @@ export function ProductListItem({
           "grid min-h-[112px] grid-cols-[76px_minmax(0,1fr)] gap-2.5",
         ].join(" ")}
       >
-        <img
+        <OptimizedImage
           src={product.imageUrl}
           alt={product.imageAlt}
+          width={76}
+          height={112}
+          sizes="76px"
           className="h-[112px] w-[76px] rounded-xl bg-[#F8F3E8] object-cover"
-          decoding="async"
-          loading="lazy"
+          fallback={
+            <div className="grid h-[112px] w-[76px] place-items-center rounded-xl bg-[#F8F3E8] text-lg font-black text-[#2E3A79]">
+              {product.name.slice(0, 1).toUpperCase()}
+            </div>
+          }
         />
         <div className="flex min-w-0 flex-col">
           <div className="flex min-w-0 items-start justify-between gap-2">

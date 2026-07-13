@@ -17,6 +17,7 @@ import {
 import type { Store } from "@/types";
 import { BrandLogo } from "@/components/public/BrandLogo";
 import { PwaInstallButton } from "@/components/pwa/PwaInstallButton";
+import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import { plans } from "@/lib/plans";
 
 type AffiliatedStore = {
@@ -242,12 +243,18 @@ export function HomeClient({ stores = [] }: { stores?: Store[] }) {
                       className="flex min-w-[170px] items-center gap-3 rounded-2xl bg-[#F6F4EF] p-3 ring-1 ring-[#25262B]/[0.06]"
                     >
                       {store.imageUrl ? (
-                        <img
+                        <OptimizedImage
                           src={store.imageUrl}
                           alt={`${store.name} logo`}
+                          width={44}
+                          height={44}
+                          sizes="44px"
                           className="h-11 w-11 shrink-0 rounded-2xl bg-white object-cover ring-1 ring-[#25262B]/10"
-                          decoding="async"
-                          loading="lazy"
+                          fallback={
+                            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#2E3A79] text-sm font-black text-[#FFB547]">
+                              {store.initials}
+                            </span>
+                          }
                         />
                       ) : (
                         <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#2E3A79] text-sm font-black text-[#FFB547]">
@@ -412,11 +419,16 @@ export function HomeClient({ stores = [] }: { stores?: Store[] }) {
             </Link>
           </div>
           <div className="grid gap-3 sm:grid-cols-[0.9fr_1.1fr]">
-            <img
+            <div className="relative h-72 overflow-hidden rounded-[26px]">
+              <OptimizedImage
               src="https://images.unsplash.com/photo-1617347454431-f49d7ff5c3b1?auto=format&fit=crop&w=900&q=80"
               alt="Empresa delivery organizando entregas urbanas"
-              className="h-72 w-full rounded-[26px] object-cover"
-            />
+                fill
+                sizes="(max-width: 640px) 100vw, 45vw"
+                className="object-cover"
+                fallback={<div className="h-full w-full bg-[#F6F4EF]" />}
+              />
+            </div>
             <div className="grid gap-3">
               {deliveryBenefits.map((item) => (
                 <div key={item} className="flex items-center gap-3 rounded-[18px] bg-[#F6F4EF] p-4">

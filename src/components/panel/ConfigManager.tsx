@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { PanelAccessGate, PanelModuleSkeleton } from "@/components/panel/PanelLoadingState";
 import { LocationPicker } from "@/components/public/LocationPicker";
+import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import {
   getPanelAccessToken,
   getPanelAuthHeaders,
@@ -703,10 +704,18 @@ function StoreSettingsCard({
         <div className="grid gap-4 md:grid-cols-[120px_1fr] md:items-center">
           <div className="grid h-28 w-28 place-items-center overflow-hidden rounded-3xl bg-white">
             {draft.logo_url ? (
-              <img
+              <OptimizedImage
                 src={draft.logo_url}
                 alt={`Logo de ${draft.name}`}
+                width={112}
+                height={112}
+                sizes="112px"
                 className="h-full w-full object-cover"
+                fallback={
+                  <span className="text-3xl font-black text-[#2E3A79]">
+                    {draft.name?.slice(0, 1).toUpperCase() || "V"}
+                  </span>
+                }
               />
             ) : (
               <ImageIcon size={30} className="text-[#746f69]" />
@@ -934,10 +943,14 @@ function StoreSettingsCard({
         <div className="grid gap-4 md:grid-cols-[180px_1fr] md:items-center">
           <div className="overflow-hidden rounded-3xl bg-white">
             {draft.cover_image_url ? (
-              <img
+              <OptimizedImage
                 src={draft.cover_image_url}
                 alt={`Portada de ${draft.name}`}
+                width={360}
+                height={128}
+                sizes="(max-width: 768px) 100vw, 360px"
                 className="h-32 w-full object-cover"
+                fallback={<div className="h-32 w-full bg-[#F8F3E8]" />}
               />
             ) : (
               <div className="grid h-32 place-items-center text-[#746f69]">

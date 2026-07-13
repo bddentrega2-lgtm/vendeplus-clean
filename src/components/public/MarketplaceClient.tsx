@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import type { Store } from "@/types";
 import { BrandLogo } from "@/components/public/BrandLogo";
+import { OptimizedImage } from "@/components/shared/OptimizedImage";
 
 const businessLabels: Record<string, string> = {
   food: "Comida",
@@ -56,12 +57,17 @@ function StoreCard({ store }: { store: Store }) {
       className="group grid overflow-hidden rounded-[24px] bg-white shadow-xl shadow-[#2E3A79]/[0.08] ring-1 ring-[#25262B]/[0.07] transition hover:-translate-y-1"
     >
       <div className="relative h-44 overflow-hidden">
-        <img
+        <OptimizedImage
           src={store.logoUrl || store.heroImageUrl}
           alt={store.name}
-          className="h-full w-full bg-[#F8F3E8] object-cover transition duration-500 group-hover:scale-105"
-          decoding="async"
-          loading="lazy"
+          fill
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+          className="bg-[#F8F3E8] object-cover transition duration-500 group-hover:scale-105"
+          fallback={
+            <div className="grid h-full w-full place-items-center bg-[#F8F3E8] text-4xl font-black text-[#2E3A79]">
+              {store.name.slice(0, 1).toUpperCase()}
+            </div>
+          }
         />
         <div className="absolute left-3 top-3 flex flex-wrap gap-2">
           <span className="rounded-full bg-white/95 px-3 py-1.5 text-xs font-black text-[#2E3A79]">

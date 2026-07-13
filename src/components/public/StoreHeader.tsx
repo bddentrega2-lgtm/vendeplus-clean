@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Clock, MapPin, ShoppingBag, Star } from "lucide-react";
 import type { Store } from "@/types";
 import { BrandLogo } from "@/components/public/BrandLogo";
+import { OptimizedImage } from "@/components/shared/OptimizedImage";
 
 export function StoreHeader({ store }: { store: Store }) {
   const isOpen = store.openState?.isOpen !== false;
@@ -9,7 +10,15 @@ export function StoreHeader({ store }: { store: Store }) {
   return (
     <header className="relative overflow-hidden rounded-b-[38px] bg-[#2E3A79] text-white shadow-2xl shadow-[#2E3A79]/20">
       <div className="absolute inset-0">
-        <img src={store.heroImageUrl} alt={store.name} className="h-full w-full object-cover opacity-22" decoding="async" fetchPriority="high" />
+        <OptimizedImage
+          src={store.heroImageUrl}
+          alt={store.name}
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover opacity-22"
+          fallback={<div className="h-full w-full bg-[#2E3A79]" />}
+        />
         <div className="absolute inset-0 bg-gradient-to-b from-[#151B4F]/70 via-[#2E3A79]/88 to-[#2E3A79]" />
       </div>
 

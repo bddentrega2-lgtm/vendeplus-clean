@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Clock3, Loader2, RefreshCcw, Send, ShieldCheck, Truck, XCircle } from "lucide-react";
 import { getPanelAuthHeaders } from "@/lib/panel/client-auth";
+import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import { getTransportAgencyRateFromRelation } from "@/lib/transport";
 
 type Props = {
@@ -258,10 +259,18 @@ export function TransportMarketplaceSection({ pin, onChanged }: Props) {
             <div key={agency.id} className="rounded-[28px] bg-white p-4 text-[#25262B]">
               <div className="flex gap-3">
                 {agency.logo_url ? (
-                  <img
+                  <OptimizedImage
                     src={agency.logo_url}
                     alt={agency.name}
+                    width={48}
+                    height={48}
+                    sizes="48px"
                     className="h-12 w-12 shrink-0 rounded-2xl bg-[#F8F3E8] object-cover"
+                    fallback={
+                      <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#F8F3E8] text-sm font-black text-[#2E3A79]">
+                        {agency.name?.slice(0, 1).toUpperCase() || "D"}
+                      </div>
+                    }
                   />
                 ) : (
                   <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#2E3A79] text-[#FFB547]">

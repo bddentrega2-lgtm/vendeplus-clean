@@ -6,6 +6,7 @@ import {
   getPanelAuthHeaders,
   getSavedPanelPin,
 } from "@/lib/panel/client-auth";
+import { OptimizedImage } from "@/components/shared/OptimizedImage";
 
 type StoreIdentity = {
   name: string;
@@ -80,20 +81,32 @@ export function PanelStoreIdentity() {
     <div className="mt-8 overflow-hidden rounded-[32px] bg-[#25262B] text-white shadow-lg shadow-[#2E3A79]/15">
       <div className="h-24 bg-[#2E3A79]">
         {store.cover_image_url ? (
-          <img
+          <OptimizedImage
             src={store.cover_image_url}
             alt={store.name}
+            width={360}
+            height={96}
+            sizes="320px"
             className="h-full w-full object-cover"
+            fallback={<div className="h-full w-full bg-[#2E3A79]" />}
           />
         ) : null}
       </div>
       <div className="p-4">
         <div className="-mt-10 mb-3 grid h-16 w-16 place-items-center overflow-hidden rounded-2xl bg-white ring-4 ring-[#25262B]">
           {store.logo_url ? (
-            <img
+            <OptimizedImage
               src={store.logo_url}
               alt={`Logo de ${store.name}`}
+              width={64}
+              height={64}
+              sizes="64px"
               className="h-full w-full object-contain p-2"
+              fallback={
+                <span className="text-xl font-black text-[#2E3A79]">
+                  {store.name.slice(0, 1).toUpperCase()}
+                </span>
+              }
             />
           ) : (
             <span className="text-xl font-black text-[#2E3A79]">

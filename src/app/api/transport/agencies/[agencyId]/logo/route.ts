@@ -41,6 +41,7 @@ export async function POST(
     const { error: uploadError } = await supabase.storage
       .from("transport-agency-logos")
       .upload(path, bytes, {
+        cacheControl: "31536000",
         contentType: file.type,
         upsert: true,
       });

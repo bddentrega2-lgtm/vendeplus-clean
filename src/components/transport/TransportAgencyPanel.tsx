@@ -28,6 +28,7 @@ import {
 } from "@/lib/distance-ranges";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { getTransportAgencyConfigIssues, getTransportAgencyRateFromRelation } from "@/lib/transport";
+import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import {
   connectionEnded,
   connectionPendingExit,
@@ -772,10 +773,18 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
             </p>
             <div className="mt-2 flex items-center gap-3">
               {agency.logo_url ? (
-                <img
+                <OptimizedImage
                   src={agency.logo_url}
                   alt={agency.name}
+                  width={56}
+                  height={56}
+                  sizes="56px"
                   className="h-14 w-14 rounded-2xl bg-white object-cover"
+                  fallback={
+                    <div className="grid h-14 w-14 place-items-center rounded-2xl bg-white text-sm font-black text-[#2E3A79]">
+                      {agency.name.slice(0, 1).toUpperCase()}
+                    </div>
+                  }
                 />
               ) : null}
               <h1 className="text-3xl font-black">{agency.name}</h1>
@@ -1264,10 +1273,18 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
             <h2 className="text-xl font-black">Logo</h2>
             <div className="mt-4 grid place-items-center rounded-[28px] bg-[#F8F3E8] p-6">
               {agency.logo_url ? (
-                <img
+                <OptimizedImage
                   src={agency.logo_url}
                   alt={agency.name}
+                  width={144}
+                  height={144}
+                  sizes="144px"
                   className="h-36 w-36 rounded-[28px] bg-white object-cover shadow-lg shadow-[#25262B]/10"
+                  fallback={
+                    <div className="grid h-36 w-36 place-items-center rounded-[28px] bg-white text-[#2E3A79] shadow-lg shadow-[#25262B]/10">
+                      <ImagePlus size={36} />
+                    </div>
+                  }
                 />
               ) : (
                 <div className="grid h-36 w-36 place-items-center rounded-[28px] bg-white text-[#2E3A79]">
