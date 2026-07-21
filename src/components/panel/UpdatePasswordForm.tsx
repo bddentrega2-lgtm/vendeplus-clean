@@ -130,7 +130,7 @@ export function UpdatePasswordForm() {
         </div>
 
         <p className="mt-5 text-sm font-black uppercase tracking-[0.18em] text-[#746f69]">
-          Panel VendeMas
+          Panel Somos
         </p>
         <h1 className="mt-2 text-4xl font-black">Actualizar contraseña</h1>
         <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">

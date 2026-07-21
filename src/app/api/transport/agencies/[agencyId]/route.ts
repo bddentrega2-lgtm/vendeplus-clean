@@ -83,9 +83,13 @@ export async function PATCH(
         ? cleanTransportText(body.pricingType)
         : "manual";
       const maxDistanceKm = optionalTransportNumber(body.maxDistanceKm);
+      const distanceFactorUsd = optionalTransportNumber(body.distanceFactorUsd);
 
       if (!maxDistanceKm || maxDistanceKm <= 0) {
         return badRequest("Indica el KM maximo de cobertura.");
+      }
+      if (distanceFactorUsd !== null && distanceFactorUsd < 0) {
+        return badRequest("El monto por km adicional no puede ser negativo.");
       }
 
       const agencyUpdate = await supabase
@@ -102,7 +106,8 @@ export async function PATCH(
           agency_id: agencyId,
           flat_fee_usd: transportMoney(body.flatFeeUsd),
           max_distance_km: maxDistanceKm,
-          distance_factor_usd: null,
+          distance_factor_usd:
+            pricingType === "distance_ranges" ? distanceFactorUsd : null,
           minimum_order_usd: null,
           manual_quote_message: cleanTransportText(body.manualQuoteMessage, 260) || null,
           is_active: true,
@@ -140,14 +145,31 @@ export async function PATCH(
     if (zonesResult.error) throw zonesResult.error;
     if (distanceRatesResult.error) throw distanceRatesResult.error;
 
-    return NextResponse.json({
-      ok: true,
-      configIssues: getTransportAgencyConfigIssues({
+    const configIssues = getTransportAgencyConfigIssues({
         agency: agencyResult.data,
         rate: rateResult.data,
         zones: zonesResult.data || [],
         distanceRates: distanceRatesResult.data || [],
-      }),
+      });
+    const shouldPublish =
+      agencyResult.data?.status === "active" && configIssues.length === 0;
+
+    if (Boolean(agencyResult.data?.is_active) !== shouldPublish) {
+      const { error: publishError } = await supabase
+        .from("transport_agencies")
+        .update({
+          is_active: shouldPublish,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", agencyId);
+
+      if (publishError) throw publishError;
+    }
+
+    return NextResponse.json({
+      ok: true,
+      isActive: shouldPublish,
+      configIssues,
     });
   } catch (error) {
     return transportErrorResponse(error, "Error guardando empresa delivery.");

@@ -1,19 +1,25 @@
 import Link from "next/link";
 import { ArrowRight, Building2, CheckCircle2, ClipboardList, Truck } from "lucide-react";
+import { AffiliatedDeliveryLogos } from "@/components/public/AffiliatedDeliveryLogos";
+import type { PublicTransportAgencyLogo } from "@/lib/transport";
 
 const steps = [
   { title: "Afiliate gratis", text: "Registra datos, cobertura, modalidad y tarifa base sin costo inicial." },
-  { title: "VendeMas revisa", text: "Validamos la informacion antes de mostrar tu empresa a comercios." },
-  { title: "Gana por referir", text: "Obtén beneficios por referir comercios a VendeMas." },
+  { title: "Somos revisa", text: "Validamos la informacion antes de mostrar tu empresa a comercios." },
+  { title: "Gana por referir", text: "Obten beneficios por referir comercios a Somos." },
 ];
 
-export function TransportLanding() {
+export function TransportLanding({
+  transportAgencies = [],
+}: {
+  transportAgencies?: PublicTransportAgencyLogo[];
+}) {
   return (
     <main className="min-h-screen bg-[#F8F3E8] text-[#25262B]">
       <section className="mx-auto grid min-h-[88vh] w-full max-w-6xl content-center gap-8 px-4 py-10 md:grid-cols-[1.1fr_0.9fr] md:items-center">
         <div>
           <Link href="/" className="text-sm font-black text-[#2E3A79]">
-            VendeMas
+            Somos
           </Link>
           <p className="mt-10 text-sm font-black uppercase tracking-[0.18em] text-[#2E3A79]">
             Red de empresas delivery
@@ -23,10 +29,10 @@ export function TransportLanding() {
           </h1>
           <p className="mt-4 max-w-2xl text-base font-semibold leading-relaxed text-[#746f69]">
             Conecta tu empresa delivery con restaurantes, tiendas y emprendimientos que necesitan delivery
-            claro, tarifas visibles y pedidos organizados desde VendeMas.
+            claro, tarifas visibles y pedidos organizados desde Somos.
           </p>
           <p className="mt-4 inline-flex rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#2E3A79] ring-1 ring-[#25262B]/10">
-            Afiliate gratis y obtén beneficios por referir comercios.
+            Afiliate gratis y obten beneficios por referir comercios.
           </p>
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
             <Link
@@ -59,6 +65,32 @@ export function TransportLanding() {
                 <p className="mt-1 text-sm font-bold text-[#746f69]">{step.text}</p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="border-t border-[#25262B]/10 bg-white">
+        <div className="mx-auto max-w-6xl px-4 py-8">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#FFB547]">
+                Red activa
+              </p>
+              <h2 className="mt-1 text-2xl font-black text-[#2E3A79]">
+                Empresas delivery afiliadas
+              </h2>
+            </div>
+            <p className="max-w-xl text-sm font-bold text-[#746f69]">
+              Aliados logísticos disponibles para que los comercios puedan operar delivery externo
+              con datos claros y configuración revisada.
+            </p>
+          </div>
+          <div className="overflow-hidden rounded-[26px] bg-[#F8F3E8] p-3 ring-1 ring-[#25262B]/[0.06]">
+            <AffiliatedDeliveryLogos
+              agencies={transportAgencies}
+              cardClassName="bg-white"
+              emptyMessage="Pronto veras aqui las empresas delivery activas de la red Somos."
+            />
           </div>
         </div>
       </section>

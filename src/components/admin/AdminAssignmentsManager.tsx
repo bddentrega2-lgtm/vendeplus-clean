@@ -31,6 +31,13 @@ type AssignmentRow = {
   store_slug: string;
 };
 
+type RegisteredUserRow = {
+  id: string;
+  email: string;
+  email_confirmed_at: string | null;
+  created_at: string | null;
+};
+
 async function apiRequest(pin: string, options?: RequestInit) {
   const response = await fetch("/api/admin/assign-user", {
     ...options,
@@ -50,6 +57,7 @@ async function apiRequest(pin: string, options?: RequestInit) {
 export function AdminAssignmentsManager() {
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
+  const [registeredUsers, setRegisteredUsers] = useState<RegisteredUserRow[]>([]);
   const [search, setSearch] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -73,6 +81,12 @@ export function AdminAssignmentsManager() {
     );
   }, [assignments, search]);
 
+  const filteredRegisteredUsers = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return registeredUsers;
+    return registeredUsers.filter((user) => user.email.toLowerCase().includes(needle));
+  }, [registeredUsers, search]);
+
   async function loadAssignments() {
     setIsLoading(true);
     setError("");
@@ -83,6 +97,7 @@ export function AdminAssignmentsManager() {
 
       setStores(nextStores);
       setAssignments(data.assignments || []);
+      setRegisteredUsers(data.registeredUsers || []);
       setStoreId((current) => current || nextStores[0]?.id || "");
       setIsUnlocked(true);
     } catch (error: any) {
@@ -138,6 +153,26 @@ export function AdminAssignmentsManager() {
       await loadAssignments();
     } catch (error: any) {
       setError(error.message || "No se pudo quitar acceso.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function authorizeEmail(userId: string) {
+    setIsSaving(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const data = await apiRequest("", {
+        method: "PATCH",
+        body: JSON.stringify({ user_id: userId }),
+      });
+
+      setMessage(data.message || "Correo autorizado.");
+      await loadAssignments();
+    } catch (error: any) {
+      setError(error.message || "No se pudo autorizar el correo.");
     } finally {
       setIsSaving(false);
     }
@@ -342,6 +377,52 @@ export function AdminAssignmentsManager() {
               No hay usuarios asignados que coincidan.
             </p>
           )}
+        </div>
+      </section>
+
+      <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06] xl:col-span-2">
+        <div>
+          <p className="text-sm font-black uppercase tracking-[0.18em] text-[#746f69]">
+            Correos registrados
+          </p>
+          <h2 className="mt-1 text-3xl font-black">{filteredRegisteredUsers.length} usuarios</h2>
+          <p className="mt-2 text-sm font-bold text-[#746f69]">
+            Autoriza directamente los correos pendientes antes de asignarlos a un comercio.
+          </p>
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          {filteredRegisteredUsers.map((user) => {
+            const isConfirmed = Boolean(user.email_confirmed_at);
+
+            return (
+              <article key={user.id} className="rounded-2xl bg-[#F8F3E8] p-4">
+                <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+                  <div className="min-w-0">
+                    <p className="truncate font-black">{user.email}</p>
+                    <p className={isConfirmed ? "mt-1 text-xs font-black text-green-700" : "mt-1 text-xs font-black text-amber-700"}>
+                      {isConfirmed ? "Correo autorizado" : "Pendiente por autorizar"}
+                    </p>
+                  </div>
+                  {!isConfirmed ? (
+                    <button
+                      type="button"
+                      onClick={() => authorizeEmail(user.id)}
+                      disabled={isSaving}
+                      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-4 py-3 text-xs font-black text-white disabled:opacity-50"
+                    >
+                      <CheckCircle2 size={15} />
+                      Autorizar correo
+                    </button>
+                  ) : null}
+                </div>
+              </article>
+            );
+          })}
+
+          {filteredRegisteredUsers.length === 0 ? (
+            <p className="text-sm font-bold text-[#746f69]">No hay correos registrados que coincidan.</p>
+          ) : null}
         </div>
       </section>
     </div>

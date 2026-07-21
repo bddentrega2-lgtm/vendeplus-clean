@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  getEntrega2CreatedByUserId,
+  getEntrega2DefaultVehicleType,
   getEntrega2ExternalOrderId,
   getEntrega2Provider,
+  normalizeEntrega2OrderStatus,
   sendEntrega2Order,
 } from "@/lib/integrations/entrega2";
 import {
@@ -22,6 +25,7 @@ import {
   mapTransportStatusToOrderDeliveryStatus,
   normalizeTransportOrderStatus,
 } from "@/lib/transport/orders";
+import { buildPublicUrl } from "@/lib/public-url";
 
 function cleanText(value: unknown) {
   return String(value || "").trim();
@@ -38,7 +42,7 @@ function serializeError(error: unknown) {
     return error.message;
   }
 
-  return "Error desconocido enviando a Entrega2.";
+  return "Error desconocido enviando a Entrega2 App.";
 }
 
 function buildWhatsappUrl(phone: string, message: string) {
@@ -47,48 +51,50 @@ function buildWhatsappUrl(phone: string, message: string) {
   return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
 }
 
+function buildGoogleMapsUrl(lat: unknown, lng: unknown) {
+  const latitude = optionalNumber(lat);
+  const longitude = optionalNumber(lng);
+  if (latitude === null || longitude === null) return "";
+  return `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
+}
+
 function buildEntrega2Payload(order: any) {
   const externalOrderId = getEntrega2ExternalOrderId(order.id);
+  const deliveryMapsUrl = buildGoogleMapsUrl(order.delivery_lat, order.delivery_lng);
+  const items = (order.order_items || []).map((item: any) => {
+    const quantity = optionalNumber(item.quantity) || 1;
+    const totalUsd = optionalNumber(item.total_usd) || 0;
+    const variant = cleanText(item.variant_name) ? ` (${item.variant_name})` : "";
+    const notes = cleanText(item.notes) ? ` - ${item.notes}` : "";
+    return `${quantity}x ${item.product_name}${variant} - $${totalUsd.toFixed(2)}${notes}`;
+  });
+  const pedido = [
+    order.public_code ? `Pedido ${order.public_code}` : "Pedido Somos",
+    order.customer_name ? `Cliente: ${order.customer_name}` : null,
+    order.customer_phone ? `Tel: ${order.customer_phone}` : null,
+    items.length ? `Productos: ${items.join(" | ")}` : null,
+    order.payment_method ? `Pago: ${order.payment_method}` : null,
+    order.total_usd ? `Total: $${Number(optionalNumber(order.total_usd) || 0).toFixed(2)}` : null,
+    order.order_details || order.notes ? `Notas: ${order.order_details || order.notes}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   return {
-    externalOrderId,
-    orderId: order.id,
-    publicCode: order.public_code,
-    source: "vendeplus",
-    store: {
-      id: order.store_id,
-      name: order.stores?.name || "Comercio",
-      phone: order.stores?.whatsapp || null,
-      address: order.stores?.address || null,
-      latitude: optionalNumber(order.stores?.latitude),
-      longitude: optionalNumber(order.stores?.longitude),
-    },
-    customer: {
-      name: order.customer_name,
-      phone: order.customer_phone,
-    },
-    delivery: {
-      reference: order.delivery_reference,
-      notes: order.order_details || order.notes || null,
-      latitude: optionalNumber(order.delivery_lat),
-      longitude: optionalNumber(order.delivery_lng),
-      distanceKm: optionalNumber(order.distance_km),
-    },
-    payment: {
-      method: order.payment_method,
-      subtotalUsd: optionalNumber(order.subtotal_usd) || 0,
-      deliveryUsd: optionalNumber(order.delivery_usd) || 0,
-      totalUsd: optionalNumber(order.total_usd) || 0,
-      totalBs: optionalNumber(order.total_bs) || 0,
-    },
-    items: (order.order_items || []).map((item: any) => ({
-      name: item.product_name,
-      variant: item.variant_name || null,
-      quantity: optionalNumber(item.quantity) || 1,
-      unitPriceUsd: optionalNumber(item.unit_price_usd) || 0,
-      totalUsd: optionalNumber(item.total_usd) || 0,
-      notes: item.notes || null,
-    })),
+    pedido,
+    direccion_entrega:
+      cleanText(order.delivery_address) ||
+      cleanText(order.delivery_reference) ||
+      deliveryMapsUrl,
+    latitud_entrega: optionalNumber(order.delivery_lat),
+    longitud_entrega: optionalNumber(order.delivery_lng),
+    latitud_retiro: optionalNumber(order.stores?.latitude),
+    longitud_retiro: optionalNumber(order.stores?.longitude),
+    id_comercio: `vp_${cleanText(order.stores?.slug) || cleanText(order.store_id)}`,
+    nombre_comercio: order.stores?.name || "Comercio Somos",
+    tipo_vehiculo: getEntrega2DefaultVehicleType(),
+    id_externo: externalOrderId,
+    creado_por_usuario_id: getEntrega2CreatedByUserId(),
   };
 }
 
@@ -139,7 +145,7 @@ function buildTransportAgencyMessage(order: any, agency: any, transportOrder?: a
     order.order_details || order.notes ? `Notas del comercio: ${order.order_details || order.notes}` : null,
     "",
     transportOrder?.id
-      ? `Panel: ${process.env.NEXT_PUBLIC_SITE_URL || "https://vendeplus-clean.vercel.app"}/transporte/panel/pedidos`
+      ? `Panel: ${buildPublicUrl("/transporte/panel/pedidos")}`
       : null,
   ]
     .filter((line) => line !== null && line !== undefined)
@@ -150,19 +156,11 @@ async function upsertTransportOrderFromOrder(params: {
   supabase: any;
   order: any;
   agency: any;
+  connectionId: string;
   actorUserId?: string | null;
 }) {
-  const { supabase, order, agency, actorUserId } = params;
+  const { supabase, order, agency, connectionId, actorUserId } = params;
   const now = new Date().toISOString();
-
-  const { data: connection } = await supabase
-    .from("store_transport_agency_connections")
-    .select("id")
-    .eq("store_id", order.store_id)
-    .eq("agency_id", agency.id)
-    .eq("status", "active")
-    .order("is_default", { ascending: false })
-    .maybeSingle();
 
   const { data: existing, error: existingError } = await supabase
     .from("transport_orders")
@@ -180,7 +178,7 @@ async function upsertTransportOrderFromOrder(params: {
     order_id: order.id,
     store_id: order.store_id,
     agency_id: agency.id,
-    connection_id: connection?.id || existing?.connection_id || null,
+    connection_id: connectionId,
     status: nextStatus,
     store_name_snapshot: order.stores?.name || null,
     store_whatsapp_snapshot: order.stores?.whatsapp || null,
@@ -276,6 +274,7 @@ export async function POST(
         status,
         stores (
           id,
+          slug,
           name,
           whatsapp,
           address,
@@ -307,6 +306,12 @@ export async function POST(
       return badRequest("Solo los pedidos delivery se pueden enviar a un proveedor.");
     }
 
+    if (["cancelled", "canceled", "cancelado"].includes(cleanText(order.status).toLowerCase())) {
+      return badRequest(
+        "Este pedido esta cancelado. Cambia el estado del pedido antes de solicitar delivery."
+      );
+    }
+
     if (order.delivery_provider === "transport_agency") {
       if (!order.transport_agency_id) {
         return badRequest("Este pedido no tiene empresa delivery asignada.");
@@ -335,11 +340,26 @@ export async function POST(
       if (agencyError) throw agencyError;
       if (!agency) return badRequest("No se encontro la empresa delivery.");
 
+      const { data: connection, error: connectionError } = await supabase
+        .from("store_transport_agency_connections")
+        .select("id")
+        .eq("store_id", order.store_id)
+        .eq("agency_id", agency.id)
+        .eq("status", "active")
+        .order("is_default", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (connectionError) throw connectionError;
+      if (!connection) {
+        return badRequest("La empresa delivery ya no tiene una conexion activa con este comercio.");
+      }
+
       const agencyPhone = agency.whatsapp_phone || agency.contact_phone;
       const transportOrder = await upsertTransportOrderFromOrder({
         supabase,
         order,
         agency,
+        connectionId: connection.id,
         actorUserId: auth.userId || null,
       });
       const transportStatus = normalizeTransportOrderStatus(transportOrder.status);
@@ -404,19 +424,26 @@ export async function POST(
     }
 
     if (order.delivery_provider !== "entrega2") {
-      return badRequest("Este pedido no esta configurado para Entrega2.");
+      return badRequest("Este pedido no esta configurado para Entrega2 App.");
     }
     if (!cleanText(order.customer_name) || !cleanText(order.customer_phone)) {
       return badRequest("El pedido necesita nombre y telefono del cliente.");
     }
 
     if (
-      !cleanText(order.delivery_reference) &&
-      (optionalNumber(order.delivery_lat) === null ||
-        optionalNumber(order.delivery_lng) === null)
+      optionalNumber(order.delivery_lat) === null ||
+      optionalNumber(order.delivery_lng) === null
     ) {
       return badRequest(
-        "El pedido necesita referencia o coordenadas de entrega antes de enviarlo."
+        "El pedido necesita ubicacion GPS de entrega antes de enviarlo a Entrega2 App."
+      );
+    }
+    if (
+      optionalNumber((order.stores as any)?.latitude) === null ||
+      optionalNumber((order.stores as any)?.longitude) === null
+    ) {
+      return badRequest(
+        "El comercio necesita ubicacion GPS configurada antes de enviar pedidos a Entrega2 App."
       );
     }
 
@@ -437,7 +464,7 @@ export async function POST(
     ) {
       return attachApiResponseHeaders(
         NextResponse.json(
-          { error: "Este pedido ya fue enviado a Entrega2." },
+          { error: "Este pedido ya fue enviado a Entrega2 App." },
           { status: 409 }
         ),
         apiContext,
@@ -466,6 +493,12 @@ export async function POST(
 
     try {
       const entrega2Response = await sendEntrega2Order(requestPayload);
+      const entrega2Status = normalizeEntrega2OrderStatus(
+        (entrega2Response.payload as any)?.estado
+      ) || "sent";
+      const entrega2ExternalId = (entrega2Response.payload as any)?.id
+        ? String((entrega2Response.payload as any).id)
+        : externalOrderId;
 
       const { data: integration, error: integrationError } = await supabase
         .from("order_integrations")
@@ -473,8 +506,8 @@ export async function POST(
           {
             order_id: order.id,
             provider,
-            external_id: externalOrderId,
-            status: "sent",
+            external_id: entrega2ExternalId,
+            status: entrega2Status,
             request_payload: requestPayload,
             last_payload: entrega2Response.payload,
             last_error: null,
@@ -491,7 +524,13 @@ export async function POST(
         orderId: order.id,
         storeId: order.store_id,
         integrationId: integration.id,
+        entrega2Id: entrega2ExternalId,
       });
+
+      await supabase
+        .from("orders")
+        .update({ delivery_status: entrega2Status })
+        .eq("id", order.id);
 
       return attachApiResponseHeaders(NextResponse.json({
         ok: true,

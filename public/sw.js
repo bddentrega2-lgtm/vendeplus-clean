@@ -1,10 +1,12 @@
-const CACHE_VERSION = "vendeplus-pwa-v3";
+const CACHE_VERSION = "somos-pwa-v2";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE_URLS = [
   "/manifest.webmanifest",
   "/icons/icon.svg",
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
+  "/icons/somos-icon-192.png",
+  "/icons/somos-icon-512.png",
+  "/icons/somos-apple-touch-icon.png",
+  "/favicon.png",
 ];
 
 self.addEventListener("install", (event) => {
@@ -25,6 +27,7 @@ self.addEventListener("activate", (event) => {
         Promise.all(
           keys
             .filter((key) => key.startsWith("vendeplus-") && !key.startsWith(CACHE_VERSION))
+            .concat(keys.filter((key) => key.startsWith("somos-") && !key.startsWith(CACHE_VERSION)))
             .map((key) => caches.delete(key))
         )
       )

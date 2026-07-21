@@ -13,7 +13,6 @@ import {
   logApiError,
   logApiEvent,
 } from "@/lib/server/observability";
-import { buildPublicSiteUrl } from "@/lib/server/site-url";
 import {
   cleanTransportText,
   normalizeAgencyModality,
@@ -21,6 +20,7 @@ import {
   slugifyTransportAgency,
   transportMoney,
 } from "@/lib/transport";
+import { buildPublicSiteUrl } from "@/lib/server/site-url";
 
 const MAX_TRANSPORT_APPLY_BODY_BYTES = 25_000;
 const TRANSPORT_APPLY_IP_LIMIT = 4;
@@ -57,12 +57,39 @@ function authSignupError(message: string) {
   return badRequest("No se pudo crear el acceso. Revisa los datos e intenta de nuevo.");
 }
 
+async function canRecoverOrphanTransportUser(supabase: any, user: any) {
+  const accountType = String(user?.user_metadata?.account_type || "");
+  if (accountType && accountType !== "transport_agency") return false;
+
+  const [agencyUserResult, storeUserResult] = await Promise.all([
+    supabase
+      .from("transport_agency_users")
+      .select("id")
+      .eq("user_id", user.id)
+      .limit(1),
+    supabase
+      .from("store_users")
+      .select("id")
+      .eq("user_id", user.id)
+      .limit(1),
+  ]);
+
+  if (agencyUserResult.error) throw agencyUserResult.error;
+  if (storeUserResult.error) throw storeUserResult.error;
+
+  return (
+    (agencyUserResult.data || []).length === 0 &&
+    (storeUserResult.data || []).length === 0
+  );
+}
+
 export async function POST(request: NextRequest) {
   const apiContext = createApiRequestContext(request, "transport-agency-apply");
   const observed = (response: NextResponse) =>
     attachApiResponseHeaders(response, apiContext, "transport-agency-apply");
   let createdUserId = "";
   let createdAgencyId = "";
+  let shouldDeleteAuthUserOnFailure = false;
 
   try {
     const contentLength = Number(request.headers.get("content-length") || 0);
@@ -100,6 +127,7 @@ export async function POST(request: NextRequest) {
     const contactEmail = normalizeAccessEmail(body.contactEmail);
     const contactPhone = cleanTransportText(body.contactPhone, 40);
     const password = cleanTransportText(body.password, 120);
+    const confirmPassword = cleanTransportText(body.confirmPassword, 120);
     const captchaToken = cleanTransportText(body.captchaToken, 2000);
     const pricingType = "manual";
 
@@ -112,32 +140,43 @@ export async function POST(request: NextRequest) {
     if (password.length < 8) {
       return observed(badRequest("La clave debe tener al menos 8 caracteres."));
     }
-
-    const emailLimit = await checkDistributedRateLimit({
-      key: `transport-apply:email:${contactEmail}`,
-      limit: TRANSPORT_APPLY_EMAIL_LIMIT,
-      windowMs: TRANSPORT_APPLY_RATE_WINDOW_MS,
-    });
-
-    if (!emailLimit.allowed) {
-      return observed(
-        NextResponse.json(
-          { error: "Demasiados intentos con este correo. Prueba de nuevo mas tarde." },
-          {
-            status: 429,
-            headers: rateLimitHeaders(emailLimit, TRANSPORT_APPLY_EMAIL_LIMIT),
-          }
-        )
-      );
+    if (confirmPassword && password !== confirmPassword) {
+      return observed(badRequest("Las claves no coinciden."));
     }
 
     const supabase = createSupabaseAdminClient();
     const existingUser = await findUserByEmail(supabase, contactEmail);
 
     if (existingUser) {
-      return observed(
-        conflict("Ese correo ya tiene una cuenta. Usa otro correo o pide recuperar la clave.")
-      );
+      const canRecover = await canRecoverOrphanTransportUser(supabase, existingUser);
+
+      if (!canRecover) {
+        return observed(
+          conflict("Ese correo ya tiene una cuenta. Usa otro correo o pide recuperar la clave.")
+        );
+      }
+
+      createdUserId = existingUser.id;
+    }
+
+    if (!createdUserId) {
+      const emailLimit = await checkDistributedRateLimit({
+        key: `transport-apply:email:${contactEmail}`,
+        limit: TRANSPORT_APPLY_EMAIL_LIMIT,
+        windowMs: TRANSPORT_APPLY_RATE_WINDOW_MS,
+      });
+
+      if (!emailLimit.allowed) {
+        return observed(
+          NextResponse.json(
+            { error: "Demasiados intentos con este correo. Prueba de nuevo mas tarde." },
+            {
+              status: 429,
+              headers: rateLimitHeaders(emailLimit, TRANSPORT_APPLY_EMAIL_LIMIT),
+            }
+          )
+        );
+      }
     }
 
     const baseSlug = slugifyTransportAgency(name);
@@ -173,30 +212,38 @@ export async function POST(request: NextRequest) {
       is_active: false,
     };
 
-    const publicAuth = createSupabasePublicClient();
+    let requiresEmailConfirmation = false;
 
-    if (!publicAuth) {
-      throw new Error("Faltan variables publicas de Supabase.");
-    }
+    if (!createdUserId) {
+      const publicAuth = createSupabasePublicClient();
 
-    const authResult = await publicAuth.auth.signUp({
-      email: contactEmail,
-      password,
-      options: {
-        emailRedirectTo: buildPublicSiteUrl(request, "/transporte/panel"),
-        captchaToken: captchaToken || undefined,
-        data: {
-          display_name: contactName,
-          account_type: "transport_agency",
+      if (!publicAuth) {
+        throw new Error("Faltan variables publicas de Supabase.");
+      }
+
+      const authResult = await publicAuth.auth.signUp({
+        email: contactEmail,
+        password,
+        options: {
+          emailRedirectTo: buildPublicSiteUrl(request, "/transporte/panel"),
+          captchaToken: captchaToken || undefined,
+          data: {
+            display_name: contactName,
+            account_type: "transport_agency",
+          },
         },
-      },
-    });
+      });
 
-    if (authResult.error) {
-      return observed(authSignupError(authResult.error.message || ""));
+      if (authResult.error) {
+        return observed(authSignupError(authResult.error.message || ""));
+      }
+
+      createdUserId = authResult.data.user?.id || "";
+      shouldDeleteAuthUserOnFailure = Boolean(createdUserId);
+      requiresEmailConfirmation = !authResult.data.session;
+    } else {
+      requiresEmailConfirmation = !existingUser?.email_confirmed_at;
     }
-
-    createdUserId = authResult.data.user?.id || "";
 
     if (!createdUserId) {
       throw new Error("No se pudo crear el usuario.");
@@ -209,7 +256,9 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (agencyError) {
-      if (createdUserId) await supabase.auth.admin.deleteUser(createdUserId);
+      if (shouldDeleteAuthUserOnFailure && createdUserId) {
+        await supabase.auth.admin.deleteUser(createdUserId);
+      }
       throw agencyError;
     }
 
@@ -226,7 +275,9 @@ export async function POST(request: NextRequest) {
 
     if (rateError) {
       await supabase.from("transport_agencies").delete().eq("id", agency.id);
-      if (createdUserId) await supabase.auth.admin.deleteUser(createdUserId);
+      if (shouldDeleteAuthUserOnFailure && createdUserId) {
+        await supabase.auth.admin.deleteUser(createdUserId);
+      }
       throw rateError;
     }
 
@@ -239,22 +290,25 @@ export async function POST(request: NextRequest) {
 
     if (userError) {
       await supabase.from("transport_agencies").delete().eq("id", agency.id);
-      if (createdUserId) await supabase.auth.admin.deleteUser(createdUserId);
+      if (shouldDeleteAuthUserOnFailure && createdUserId) {
+        await supabase.auth.admin.deleteUser(createdUserId);
+      }
       throw userError;
     }
 
     logApiEvent(apiContext, "transport_agency_application_created", {
       agencyId: agency.id,
-      requiresEmailConfirmation: !authResult.data.session,
+      recoveredOrphanUser: Boolean(existingUser),
+      requiresEmailConfirmation,
     });
 
     return observed(
       NextResponse.json({
         agency,
-        requiresEmailConfirmation: !authResult.data.session,
-        message: authResult.data.session
-          ? "Solicitud recibida. El equipo VendeMas revisara la empresa delivery antes de publicarla."
-          : "Solicitud recibida. Revisa tu correo para confirmar el acceso; el equipo VendeMas revisara la empresa delivery antes de publicarla.",
+        requiresEmailConfirmation,
+        message: !requiresEmailConfirmation
+          ? "Solicitud recibida. El equipo Somos revisara la empresa delivery antes de publicarla."
+          : "Solicitud recibida. Revisa tu correo para confirmar el acceso; el equipo Somos revisara la empresa delivery antes de publicarla.",
       })
     );
   } catch (error) {
@@ -266,7 +320,7 @@ export async function POST(request: NextRequest) {
     try {
       const supabase = createSupabaseAdminClient();
       if (createdAgencyId) await supabase.from("transport_agencies").delete().eq("id", createdAgencyId);
-      if (createdUserId) await supabase.auth.admin.deleteUser(createdUserId);
+      if (shouldDeleteAuthUserOnFailure && createdUserId) await supabase.auth.admin.deleteUser(createdUserId);
     } catch {
       // Best-effort cleanup only.
     }

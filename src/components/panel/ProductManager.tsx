@@ -70,6 +70,7 @@ type ProductRow = {
   name: string;
   description: string | null;
   price_usd: number | string;
+  discount_percent?: number | string;
   image_url: string | null;
   is_available: boolean;
   is_featured: boolean;
@@ -77,6 +78,7 @@ type ProductRow = {
   stores?: { name?: string } | null;
   categories?: { name?: string } | null;
   product_variants?: ProductVariantRow[];
+  product_images?: Array<{ image_url: string; sort_order: number; is_active: boolean }>;
   product_option_group_products?: Array<{
     product_option_groups?: {
       id: string;
@@ -267,7 +269,9 @@ function ProductEditor({
     name: product.name,
     description: product.description || "",
     price_usd: product.price_usd ? String(product.price_usd) : "",
+    discount_percent: product.discount_percent ? String(product.discount_percent) : "",
     image_url: product.image_url || "",
+    product_images: (product.product_images || []).filter((image) => image.sort_order === 1).map((image) => image.image_url).slice(0, 1),
     is_available: product.is_available,
     is_featured: product.is_featured,
     sort_order: product.sort_order ? String(product.sort_order) : "",
@@ -279,6 +283,7 @@ function ProductEditor({
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [message, setMessage] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const secondFileInputRef = useRef<HTMLInputElement>(null);
 
   const filteredCategories = categories.filter(
     (category) => category.store_id === draft.store_id
@@ -296,6 +301,7 @@ function ProductEditor({
           id: product.id,
           ...draft,
           price_usd: Number(draft.price_usd || 0),
+          discount_percent: Number(draft.discount_percent || 0),
           sort_order: product.sort_order || 0,
           variants: prepareVariantsForRequest(draft.variants),
         }),
@@ -325,6 +331,22 @@ function ProductEditor({
     } finally {
       setIsUploadingImage(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function handleSecondImageUpload(file?: File) {
+    if (!file) return;
+    setIsUploadingImage(true);
+    setMessage("Subiendo segunda imagen...");
+    try {
+      const data = await uploadProductImage(file, draft.store_id, `${product.id}-2`, pin);
+      setDraft((current) => ({ ...current, product_images: [data.publicUrl] }));
+      setMessage("Segunda imagen subida. Presiona Guardar para aplicar.");
+    } catch (error: any) {
+      setMessage(error.message || "No se pudo subir la segunda imagen.");
+    } finally {
+      setIsUploadingImage(false);
+      if (secondFileInputRef.current) secondFileInputRef.current.value = "";
     }
   }
 
@@ -402,6 +424,22 @@ function ProductEditor({
               placeholder="Precio USD"
               className="w-full rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
             />
+
+            <input
+              type="number"
+              min="0"
+              max="95"
+              step="1"
+              value={draft.discount_percent}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  discount_percent: event.target.value,
+                }))
+              }
+              placeholder="Descuento % (opcional)"
+              className="w-full rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+            />
           </div>
 
           <textarea
@@ -452,6 +490,12 @@ function ProductEditor({
                 Quitar imagen
               </button>
             )}
+          </div>
+          <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-[#F8F3E8] p-3">
+            {draft.product_images[0] ? <OptimizedImage src={draft.product_images[0]} alt={`Segunda imagen de ${draft.name}`} width={72} height={72} sizes="72px" className="h-18 w-18 rounded-xl object-cover" /> : null}
+            <input ref={secondFileInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => handleSecondImageUpload(event.target.files?.[0])} />
+            <button type="button" onClick={() => secondFileInputRef.current?.click()} disabled={isUploadingImage} className="rounded-full bg-white px-4 py-2 text-xs font-black text-[#2E3A79]">{draft.product_images[0] ? "Cambiar segunda foto" : "Agregar segunda foto"}</button>
+            {draft.product_images[0] ? <button type="button" onClick={() => setDraft((current) => ({ ...current, product_images: [] }))} className="rounded-full px-4 py-2 text-xs font-black text-red-600">Quitar</button> : null}
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">
@@ -616,6 +660,7 @@ export function ProductManager() {
   const [error, setError] = useState("");
   const [newProductMessage, setNewProductMessage] = useState("");
   const newProductFileInputRef = useRef<HTMLInputElement>(null);
+  const newProductSecondFileInputRef = useRef<HTMLInputElement>(null);
 
   const [newProduct, setNewProduct] = useState({
     store_id: "",
@@ -623,7 +668,9 @@ export function ProductManager() {
     name: "",
     description: "",
     price_usd: "",
+    discount_percent: "",
     image_url: "",
+    product_images: [] as string[],
     is_available: true,
     is_featured: false,
     sort_order: "",
@@ -700,6 +747,7 @@ export function ProductManager() {
         body: JSON.stringify({
           ...newProduct,
           price_usd: Number(newProduct.price_usd || 0),
+          discount_percent: Number(newProduct.discount_percent || 0),
           sort_order: products.length + 1,
           variants: prepareVariantsForRequest(newProduct.variants),
         }),
@@ -711,7 +759,9 @@ export function ProductManager() {
         name: "",
         description: "",
         price_usd: "",
+        discount_percent: "",
         image_url: "",
+        product_images: [],
         is_available: true,
         is_featured: false,
         variants: [],
@@ -755,6 +805,21 @@ export function ProductManager() {
     } finally {
       setIsUploadingNewImage(false);
       if (newProductFileInputRef.current) newProductFileInputRef.current.value = "";
+    }
+  }
+
+  async function uploadNewProductSecondImage(file?: File) {
+    if (!file || !newProduct.store_id) return;
+    setIsUploadingNewImage(true);
+    try {
+      const data = await uploadProductImage(file, newProduct.store_id, "new-product-2", pin);
+      setNewProduct((current) => ({ ...current, product_images: [data.publicUrl] }));
+      setNewProductMessage("Segunda imagen subida.");
+    } catch (error: any) {
+      setNewProductMessage(error.message || "No se pudo subir la segunda imagen.");
+    } finally {
+      setIsUploadingNewImage(false);
+      if (newProductSecondFileInputRef.current) newProductSecondFileInputRef.current.value = "";
     }
   }
 
@@ -834,7 +899,7 @@ export function ProductManager() {
           <div>
             <h2 className="text-xl font-black">Productos</h2>
             <p className="text-sm font-bold text-[#746f69]">
-              Gestiona tu inventario sin abrir formularios hasta que los necesites.
+              Coloca el nombre, su imagen y precio. Luego guárdalo.
             </p>
           </div>
           <button
@@ -910,6 +975,22 @@ export function ProductManager() {
               }))
             }
             placeholder="Precio USD"
+            className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+          />
+
+          <input
+            type="number"
+            min="0"
+            max="95"
+            step="1"
+            value={newProduct.discount_percent}
+            onChange={(event) =>
+              setNewProduct((current) => ({
+                ...current,
+                discount_percent: event.target.value,
+              }))
+            }
+            placeholder="Descuento % (opcional)"
             className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
           />
 
@@ -1009,6 +1090,11 @@ export function ProductManager() {
                     Quitar imagen
                   </button>
                 )}
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <input ref={newProductSecondFileInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => uploadNewProductSecondImage(event.target.files?.[0])} />
+                <button type="button" onClick={() => newProductSecondFileInputRef.current?.click()} disabled={isUploadingNewImage} className="rounded-full bg-white px-4 py-2 text-xs font-black text-[#2E3A79]">{newProduct.product_images[0] ? "Cambiar segunda foto" : "Agregar segunda foto"}</button>
+                {newProduct.product_images[0] ? <button type="button" onClick={() => setNewProduct((current) => ({ ...current, product_images: [] }))} className="text-xs font-black text-red-600">Quitar segunda foto</button> : null}
               </div>
             </div>
           </div>
@@ -1143,6 +1229,11 @@ export function ProductManager() {
                         ${Number(product.price_usd || 0).toFixed(2)} ·{" "}
                         {product.categories?.name || "Sin categoría"}
                       </p>
+                      {Number(product.discount_percent || 0) > 0 ? (
+                        <p className="mt-1 inline-flex rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-black text-red-700">
+                          Promo {Number(product.discount_percent || 0)}%
+                        </p>
+                      ) : null}
                     </div>
                     <div className="min-w-0 text-left sm:text-right">
                       <span

@@ -2,8 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import {
   CheckCircle2,
+  Copy,
+  Eye,
+  EyeOff,
   ImagePlus,
   Loader2,
   LogOut,
@@ -21,6 +25,7 @@ import {
   getSavedPanelPin,
   savePanelToken,
 } from "@/lib/panel/client-auth";
+import { buildClientPublicUrl } from "@/lib/public-url";
 import {
   findOverlappingDistanceRange,
   formatDistanceRange,
@@ -35,13 +40,26 @@ import {
   formatDateTime,
   panelNavItems,
   relationshipModeLabel,
-  transportStatusLabels,
   type Agency,
   type PanelCache,
   type PricingType,
 } from "@/components/transport/transport-panel-helpers";
+import { describeDistanceRangeFee } from "@/lib/delivery";
+
+const TransportOrdersTab = dynamic(() =>
+  import("@/components/transport/TransportOrdersTab").then((module) => module.TransportOrdersTab)
+);
+const TransportBillingTab = dynamic(() =>
+  import("@/components/transport/TransportBillingTab").then((module) => module.TransportBillingTab)
+);
 
 let transportPanelCache: PanelCache | null = null;
+
+function optionalPanelNumber(value: unknown) {
+  if (value === "" || value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : null;
+}
 
 export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: string }) {
   const [pin, setPin] = useState("");
@@ -55,17 +73,18 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
   const [hasSession, setHasSession] = useState(Boolean(transportPanelCache?.hasSession));
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [pricingType, setPricingType] = useState<PricingType>("manual");
   const [zoneDraft, setZoneDraft] = useState({ name: "", description: "", feeUsd: "" });
   const [rangeDraft, setRangeDraft] = useState({ minKm: "", maxKm: "", feeUsd: "" });
+  const [distanceSimulatorKm, setDistanceSimulatorKm] = useState("12");
   const [isRuleSaving, setIsRuleSaving] = useState(false);
   const [isProfileSaving, setIsProfileSaving] = useState(false);
   const [isRatesSaving, setIsRatesSaving] = useState(false);
   const [isLogoUploading, setIsLogoUploading] = useState(false);
+  const [isBannerUploading, setIsBannerUploading] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [billingStoreFilter, setBillingStoreFilter] = useState("all");
-  const [billingStatusFilter, setBillingStatusFilter] = useState("all");
   const [transportOrders, setTransportOrders] = useState<any[]>([]);
   const [transportOrderStores, setTransportOrderStores] = useState<any[]>([]);
   const [transportOrderStatusFilter, setTransportOrderStatusFilter] = useState("all");
@@ -77,7 +96,10 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
   const [savingTransportOrderId, setSavingTransportOrderId] = useState<string | null>(null);
   const [savingConnectionModeId, setSavingConnectionModeId] = useState<string | null>(null);
   const [requestRelationshipModes, setRequestRelationshipModes] = useState<Record<string, "exclusive" | "mixed">>({});
+  const [marketplaceCopied, setMarketplaceCopied] = useState(false);
   const [nowMs, setNowMs] = useState(0);
+  const [hasLoadedRelations, setHasLoadedRelations] = useState(Boolean(transportPanelCache));
+  const [hasLoadedBilling, setHasLoadedBilling] = useState(Boolean(transportPanelCache?.billing));
 
   const agency = agencies[0] || null;
   const agencyId = agency?.id || "";
@@ -92,13 +114,83 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     rate,
     zones,
   } = useTransportPanelDerivedData({ agency, requests, connections, nowMs });
+  const distanceFactorUsd = optionalPanelNumber(rate.distance_factor_usd);
+  const simulatedDistanceKm = optionalPanelNumber(distanceSimulatorKm);
+  const panelDistanceRates = useMemo(
+    () =>
+      distanceRates.map((entry) => ({
+        id: String(entry.id),
+        minKm: Number(entry.min_km || 0),
+        maxKm:
+          entry.max_km === null || entry.max_km === undefined || entry.max_km === ""
+            ? null
+            : Number(entry.max_km),
+        feeUsd: Number(entry.fee_usd || 0),
+        isActive: entry.is_active !== false,
+        sortOrder: Number(entry.sort_order || 0),
+      })),
+    [distanceRates]
+  );
+  const lastFiniteDistanceRate = useMemo(
+    () =>
+      [...panelDistanceRates]
+        .filter((entry) => entry.isActive && entry.maxKm !== null)
+        .sort((a, b) => Number(b.maxKm || 0) - Number(a.maxKm || 0))[0] || null,
+    [panelDistanceRates]
+  );
+  const distanceRangeGaps = useMemo(() => {
+    const sorted = [...panelDistanceRates]
+      .filter((entry) => entry.isActive)
+      .sort((a, b) => a.minKm - b.minKm || a.sortOrder - b.sortOrder);
+    const gaps: Array<{ from: number; to: number }> = [];
+
+    for (let index = 1; index < sorted.length; index += 1) {
+      const previousMax = sorted[index - 1]?.maxKm;
+      const nextMin = sorted[index]?.minKm;
+      if (
+        previousMax !== null &&
+        previousMax !== undefined &&
+        nextMin - previousMax > 0.011
+      ) {
+        gaps.push({ from: previousMax, to: nextMin });
+      }
+    }
+
+    return gaps;
+  }, [panelDistanceRates]);
+  const simulatorResult = useMemo(() => {
+    if (simulatedDistanceKm === null) return null;
+    return describeDistanceRangeFee({
+      distanceKm: simulatedDistanceKm,
+      rates: panelDistanceRates,
+      distanceFactor: distanceFactorUsd,
+    });
+  }, [simulatedDistanceKm, panelDistanceRates, distanceFactorUsd]);
+  const simulatorExceedsLastRange =
+    simulatedDistanceKm !== null &&
+    lastFiniteDistanceRate?.maxKm !== null &&
+    lastFiniteDistanceRate?.maxKm !== undefined &&
+    simulatedDistanceKm > lastFiniteDistanceRate.maxKm;
 
   async function authHeaders() {
     const savedPin = pin || getSavedPanelPin();
     return getPanelAuthHeaders(savedPin);
   }
 
-  async function load(options: { silent?: boolean } = {}) {
+  async function copyMarketplaceLink() {
+    if (!agency?.slug) return;
+    const url = buildClientPublicUrl(`/transporte/${agency.slug}/marketplace`);
+
+    try {
+      await navigator.clipboard.writeText(url);
+      setMarketplaceCopied(true);
+      window.setTimeout(() => setMarketplaceCopied(false), 2200);
+    } catch {
+      setMessage("No se pudo copiar el link del marketplace.");
+    }
+  }
+
+  async function load(options: { silent?: boolean; includeBilling?: boolean; includeRelations?: boolean } = {}) {
     if (!options.silent && !transportPanelCache) setIsLoading(true);
     if (!options.silent) setMessage("");
     try {
@@ -112,7 +204,9 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
         return;
       }
 
-      const response = await fetch("/api/transport/me", {
+      const includeBilling = options.includeBilling ?? ["resumen", "facturacion"].includes(tab);
+      const includeRelations = options.includeRelations ?? tab !== "pedidos";
+      const response = await fetch(`/api/transport/me?includeBilling=${includeBilling ? "true" : "false"}&includeRelations=${includeRelations ? "true" : "false"}`, {
         headers: await getPanelAuthHeaders(savedPin),
       });
       const data = await response.json();
@@ -126,6 +220,8 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
           setRequests([]);
           setConnections([]);
           setBilling(null);
+          setHasLoadedBilling(false);
+          setHasLoadedRelations(false);
           transportPanelCache = null;
           setMessage("Sesion vencida o invalida. Inicia sesion como empresa delivery.");
           return;
@@ -137,6 +233,8 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
           setRequests([]);
           setConnections([]);
           setBilling(null);
+          setHasLoadedBilling(false);
+          setHasLoadedRelations(false);
           transportPanelCache = null;
           setMessage(`${detail} Entra con el correo asignado a la empresa delivery.`);
           return;
@@ -145,15 +243,21 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
         throw new Error(detail);
       }
       setAgencies(data.agencies || []);
-      setRequests(data.requests || []);
-      setConnections(data.connections || []);
-      setBilling(data.billing || null);
+      if (data.relationsLoaded) {
+        setRequests(data.requests || []);
+        setConnections(data.connections || []);
+        setHasLoadedRelations(true);
+      }
+      if (data.billing) {
+        setBilling(data.billing);
+        setHasLoadedBilling(true);
+      }
       setHasSession(true);
       transportPanelCache = {
         agencies: data.agencies || [],
-        requests: data.requests || [],
-        connections: data.connections || [],
-        billing: data.billing || null,
+        requests: data.relationsLoaded ? data.requests || [] : transportPanelCache?.requests || [],
+        connections: data.relationsLoaded ? data.connections || [] : transportPanelCache?.connections || [],
+        billing: data.billing || transportPanelCache?.billing || null,
         hasSession: true,
       };
     } catch (error: any) {
@@ -169,8 +273,29 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
 
   useEffect(() => {
     setNowMs(Date.now());
-    load({ silent: Boolean(transportPanelCache) });
+    load({
+      silent: Boolean(transportPanelCache),
+      includeBilling: ["resumen", "facturacion"].includes(initialTab),
+      includeRelations: initialTab !== "pedidos",
+    });
+    // Initial boot only; later section loads are handled by the dependency-aware effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!hasSession) return;
+    const needsBilling = tab === "facturacion" && !hasLoadedBilling;
+    const needsRelations = tab !== "pedidos" && !hasLoadedRelations;
+    if (needsBilling || needsRelations) {
+      void load({
+        silent: true,
+        includeBilling: needsBilling,
+        includeRelations: needsRelations,
+      });
+    }
+    // load intentionally follows the active authenticated panel state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, hasSession, hasLoadedRelations, hasLoadedBilling]);
 
   async function loadTransportOrders(overrides: Record<string, string> = {}) {
     setIsTransportOrdersLoading(true);
@@ -292,6 +417,10 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       });
 
       if (error) {
+        if ((error.message || "").toLowerCase().includes("email not confirmed")) {
+          setMessage("Tu acceso ya existe, pero falta confirmar el correo. Si ya fuiste aprobado por Somos, pide al admin reactivar/aprobar tu empresa para liberar el acceso.");
+          return;
+        }
         setMessage(error.message || "Correo o clave incorrectos.");
         return;
       }
@@ -322,6 +451,8 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     setRequests([]);
     setConnections([]);
     setBilling(null);
+    setHasLoadedBilling(false);
+    setHasLoadedRelations(false);
     transportPanelCache = null;
     setHasSession(false);
     setLoginPassword("");
@@ -332,6 +463,28 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     event.preventDefault();
     if (!agency) return;
     const form = new FormData(event.currentTarget);
+    const submittedMaxDistanceKm = optionalPanelNumber(form.get("maxDistanceKm"));
+    const submittedDistanceFactorUsd = optionalPanelNumber(form.get("distanceFactorUsd"));
+
+    if (pricingType === "distance_ranges") {
+      if (!distanceRates.length) {
+        setMessage("Agrega al menos un rango de kilometros antes de guardar esta modalidad.");
+        return;
+      }
+      if (
+        submittedMaxDistanceKm !== null &&
+        lastFiniteDistanceRate?.maxKm !== null &&
+        lastFiniteDistanceRate?.maxKm !== undefined &&
+        submittedMaxDistanceKm > lastFiniteDistanceRate.maxKm &&
+        submittedDistanceFactorUsd === null
+      ) {
+        setMessage(
+          `Tu cobertura llega a ${submittedMaxDistanceKm} km, pero el ultimo rango termina en ${lastFiniteDistanceRate.maxKm} km. Agrega el precio por km adicional o ajusta la cobertura.`
+        );
+        return;
+      }
+    }
+
     setIsRatesSaving(true);
     setMessage("");
     try {
@@ -343,6 +496,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
           pricingType,
           flatFeeUsd: form.get("flatFeeUsd"),
           maxDistanceKm: form.get("maxDistanceKm"),
+          distanceFactorUsd: form.get("distanceFactorUsd"),
           manualQuoteMessage: form.get("manualQuoteMessage"),
         }),
       });
@@ -526,6 +680,33 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     }
   }
 
+  async function uploadBanner(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!agency || !file) return;
+    setIsBannerUploading(true);
+    setMessage("");
+
+    try {
+      const formData = new FormData();
+      formData.append("banner", file);
+
+      const response = await fetch(`/api/transport/agencies/${agency.id}/banner`, {
+        method: "POST",
+        headers: await authHeaders(),
+        body: formData,
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudo subir el banner.");
+      setMessage("Banner del marketplace actualizado.");
+      load();
+    } catch (error: any) {
+      setMessage(error.message || "No se pudo subir el banner.");
+    } finally {
+      setIsBannerUploading(false);
+      event.currentTarget.value = "";
+    }
+  }
+
   async function reviewRequest(requestId: string, action: "approve" | "reject") {
     const relationshipMode = requestRelationshipModes[requestId] || (agency?.modality === "exclusive" ? "exclusive" : "mixed");
     const response = await fetch(`/api/transport/requests/${requestId}`, {
@@ -632,55 +813,6 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     };
   }, [billing]);
 
-  const billingStats = useMemo(() => {
-    const orders = (billing?.orders || []) as any[];
-    const storeMap = new Map<string, { storeId: string; storeName: string; orders: number; total: number; delivered: number; pending: number }>();
-
-    for (const order of orders) {
-      const storeId = String(order.store_id || "sin-comercio");
-      const storeName = order.stores?.name || "Comercio";
-      const status = String(order.status || "");
-      const amount = Number(order.delivery_fee_usd ?? order.orders?.delivery_usd ?? 0);
-      const current =
-        storeMap.get(storeId) ||
-        { storeId, storeName, orders: 0, total: 0, delivered: 0, pending: 0 };
-
-      current.orders += 1;
-      if (status === "delivered") current.total += amount;
-      if (status === "delivered") current.delivered += 1;
-      else current.pending += 1;
-      storeMap.set(storeId, current);
-    }
-
-    const filteredOrders = orders.filter((order) => {
-      const status = String(order.status || "");
-      const matchesStore = billingStoreFilter === "all" || order.store_id === billingStoreFilter;
-      const matchesStatus = billingStatusFilter === "all" || status === billingStatusFilter;
-      return matchesStore && matchesStatus;
-    });
-
-    return {
-      byStore: Array.from(storeMap.values()).sort((a, b) => b.total - a.total),
-      filteredOrders,
-      filteredTotal: filteredOrders.reduce(
-        (sum, order) =>
-          order.status === "delivered"
-            ? sum + Number(order.delivery_fee_usd ?? order.orders?.delivery_usd ?? 0)
-            : sum,
-        0
-      ),
-      deliveredCount: orders.filter((order) =>
-        String(order.status || "") === "delivered"
-      ).length,
-      pendingCount: orders.filter(
-        (order) =>
-          !["delivered", "cancelled", "agency_rejected"].includes(
-            String(order.status || "")
-          )
-      ).length,
-    };
-  }, [billing, billingStatusFilter, billingStoreFilter]);
-
   if (isLoading) {
     return <div className="rounded-[32px] bg-white p-6 font-black">Cargando empresa delivery...</div>;
   }
@@ -696,7 +828,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
         </h1>
         <p className="mt-2 text-center text-sm font-bold text-[#746f69]">
           {hasSession
-            ? message || "Cuando VendeMas active tu empresa delivery, podras entrar con el correo registrado."
+            ? message || "Cuando Somos active tu empresa delivery, podras entrar con el correo registrado."
             : "Entra con el correo y clave asignados a tu empresa delivery. Si vienes del panel comercio, usa aqui el acceso de la empresa delivery."}
         </p>
 
@@ -719,13 +851,23 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
               <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
                 Clave
               </span>
-              <input
-                value={loginPassword}
-                onChange={(event) => setLoginPassword(event.target.value)}
-                type="password"
-                placeholder="Tu clave"
-                className="mt-1 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-              />
+              <span className="relative mt-1 block">
+                <input
+                  value={loginPassword}
+                  onChange={(event) => setLoginPassword(event.target.value)}
+                  type={showLoginPassword ? "text" : "password"}
+                  placeholder="Tu clave"
+                  className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 pr-12 text-sm font-bold outline-none focus:border-[#2E3A79]"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowLoginPassword((current) => !current)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-[#746f69] hover:bg-[#F8F3E8] hover:text-[#2E3A79]"
+                  aria-label={showLoginPassword ? "Ocultar clave" : "Mostrar clave"}
+                >
+                  {showLoginPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </span>
             </label>
 
             <button
@@ -782,6 +924,27 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
+            {agency?.slug ? (
+              <>
+                <Link
+                  href={`/transporte/${agency.slug}/marketplace`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-white/10 px-5 py-3 text-sm font-black text-white"
+                >
+                  <Eye size={16} />
+                  Ver marketplace
+                </Link>
+                <button
+                  type="button"
+                  onClick={copyMarketplaceLink}
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-black text-[#2E3A79]"
+                >
+                  <Copy size={16} />
+                  {marketplaceCopied ? "Link copiado" : "Copiar link"}
+                </button>
+              </>
+            ) : null}
             <button
               onClick={async () => {
                 await load();
@@ -861,223 +1024,32 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       ) : null}
 
       {tab === "pedidos" ? (
-        <section className="space-y-4">
-          <div className="rounded-[32px] bg-white p-5 shadow-xl shadow-[#25262B]/10">
-            <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
-              <div>
-                <h2 className="text-xl font-black">Pedidos recibidos</h2>
-                <p className="mt-1 text-sm font-bold text-[#746f69]">
-                  Servicios enviados por comercios afiliados a tu empresa delivery.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => loadTransportOrders()}
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
-              >
-                {isTransportOrdersLoading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16} />}
-                Actualizar
-              </button>
-            </div>
-
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <select
-                value={transportOrderPeriod}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setTransportOrderPeriod(value);
-                  loadTransportOrders({ period: value });
-                }}
-                className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
-              >
-                <option value="today">Hoy</option>
-                <option value="week">Semana</option>
-                <option value="all">Todos</option>
-              </select>
-              <select
-                value={transportOrderStatusFilter}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setTransportOrderStatusFilter(value);
-                  loadTransportOrders({ status: value });
-                }}
-                className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
-              >
-                <option value="all">Todos los estados</option>
-                <option value="pending">Pendientes</option>
-                <option value="agency_accepted">Aceptados</option>
-                <option value="agency_rejected">Rechazados</option>
-                <option value="on_the_way">En camino</option>
-                <option value="delivered">Entregados</option>
-                <option value="issue_reported">Novedades</option>
-              </select>
-              <select
-                value={transportOrderStoreFilter}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setTransportOrderStoreFilter(value);
-                  loadTransportOrders({ storeId: value });
-                }}
-                className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
-              >
-                <option value="all">Todos los comercios</option>
-                {transportOrderStores.map((store) => (
-                  <option key={store.id} value={store.id}>
-                    {store.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <List
-            empty={isTransportOrdersLoading ? "Cargando pedidos..." : "No hay pedidos de empresa delivery con estos filtros."}
-            items={transportOrders}
-            render={(entry) => {
-              const isSaving = savingTransportOrderId === entry.id;
-              const commercePhone = String(entry.store_whatsapp_snapshot || entry.stores?.whatsapp || "").replace(/[^0-9]/g, "");
-              const customerPhone = String(entry.customer_phone_snapshot || "").replace(/[^0-9]/g, "");
-              const actions = [
-                ["agency_received", "Recibido"],
-                ["agency_accepted", "Aceptar"],
-                ["agency_rejected", "Rechazar"],
-                ["pickup_pending", "Pendiente por retirar"],
-                ["picked_up", "Retirado"],
-                ["on_the_way", "En camino"],
-                ["delivered", "Entregado"],
-                ["delivery_failed", "Entrega fallida"],
-                ["issue_reported", "Novedad"],
-              ];
-              const latitude = Number(entry.orders?.delivery_lat);
-              const longitude = Number(entry.orders?.delivery_lng);
-              const hasLocation = Number.isFinite(latitude) && Number.isFinite(longitude);
-
-              return (
-                <article className="rounded-[28px] bg-white p-4 shadow-xl shadow-[#25262B]/10">
-                  <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-start">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-lg font-black">
-                          {entry.orders?.public_code || "Pedido"}
-                        </h3>
-                        <span className="rounded-full bg-[#F8F3E8] px-3 py-1 text-xs font-black text-[#2E3A79]">
-                          {transportStatusLabels[entry.status] || entry.status}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-sm font-bold text-[#746f69]">
-                        {entry.store_name_snapshot || entry.stores?.name || "Comercio"} · {entry.customer_name_snapshot || "Cliente"} · {entry.customer_phone_snapshot || "sin telefono"}
-                      </p>
-                      <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
-                        {entry.delivery_address || entry.delivery_reference || "Direccion por confirmar"}
-                        {entry.delivery_zone_name ? ` · ${entry.delivery_zone_name}` : ""}
-                      </p>
-                      <p className="mt-2 text-sm font-black">
-                        Delivery: {billingSymbol}{Number(entry.delivery_fee_usd || 0).toFixed(2)}
-                      </p>
-                      {hasLocation ? (
-                        <a
-                          href={`https://www.google.com/maps?q=${latitude},${longitude}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-2 inline-flex rounded-full bg-blue-50 px-3 py-2 text-xs font-black text-blue-700"
-                        >
-                          Ver ubicación en mapa
-                        </a>
-                      ) : null}
-                      {entry.orders?.order_items?.length ? (
-                        <div className="mt-3 rounded-2xl bg-[#F8F3E8] p-3">
-                          <p className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">Detalle del pedido</p>
-                          {entry.orders.order_items.map((item: any) => (
-                            <p key={item.id} className="mt-1 text-sm font-bold text-[#746f69]">
-                              {item.quantity} × {item.product_name}{item.variant_name ? ` · ${item.variant_name}` : ""}
-                            </p>
-                          ))}
-                          {entry.orders.order_details || entry.orders.notes ? (
-                            <p className="mt-2 text-xs font-bold text-[#746f69]">
-                              {entry.orders.order_details || entry.orders.notes}
-                            </p>
-                          ) : null}
-                        </div>
-                      ) : null}
-                      {entry.agency_status_note || entry.rejection_reason ? (
-                        <p className="mt-2 rounded-2xl bg-[#F8F3E8] p-3 text-xs font-bold text-[#746f69]">
-                          {entry.agency_status_note || entry.rejection_reason}
-                        </p>
-                      ) : null}
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 lg:max-w-md lg:justify-end">
-                      {commercePhone ? (
-                        <a
-                          href={`https://wa.me/${commercePhone}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="rounded-full bg-green-100 px-3 py-2 text-xs font-black text-green-700"
-                        >
-                          Comercio WA
-                        </a>
-                      ) : null}
-                      {customerPhone ? (
-                        <a
-                          href={`https://wa.me/${customerPhone}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="rounded-full bg-green-100 px-3 py-2 text-xs font-black text-green-700"
-                        >
-                          Cliente WA
-                        </a>
-                      ) : null}
-                      <select
-                        value={entry.status}
-                        disabled={isSaving || ["delivered", "agency_rejected", "cancelled"].includes(entry.status)}
-                        onChange={(event) => updateTransportOrderStatus(entry.id, event.target.value)}
-                        className="rounded-full border border-[#2E3A79]/20 bg-[#2E3A79] px-4 py-2 text-xs font-black text-white disabled:bg-[#F8F3E8] disabled:text-[#746f69]"
-                        aria-label={`Actualizar estado de ${entry.orders?.public_code || "pedido"}`}
-                      >
-                        <option value={entry.status}>{isSaving ? "Actualizando..." : transportStatusLabels[entry.status] || entry.status}</option>
-                        {actions.filter(([status]) => status !== entry.status).map(([status, label]) => (
-                          <option key={status} value={status}>{label}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  {entry.transport_order_events?.length ? (
-                    <div className="mt-4 border-t border-[#25262B]/10 pt-3">
-                      <p className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
-                        Historial
-                      </p>
-                      <div className="mt-2 grid gap-1">
-                        {entry.transport_order_events.slice(0, 4).map((event: any) => (
-                          <p key={event.id} className="text-xs font-bold text-[#746f69]">
-                            {transportStatusLabels[event.status_to] || event.status_to || event.event_type} · {event.actor_name || event.actor_type}
-                          </p>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                </article>
-              );
-            }}
-          />
-          {transportOrdersHasMore ? (
-            <div className="flex justify-center">
-              <button
-                type="button"
-                onClick={() =>
-                  loadTransportOrders({
-                    page: String(transportOrderPage + 1),
-                    append: "true",
-                  })
-                }
-                disabled={isTransportOrdersLoading}
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-black text-[#2E3A79] shadow-xl shadow-[#25262B]/10 disabled:opacity-60"
-              >
-                {isTransportOrdersLoading ? <Loader2 size={16} className="animate-spin" /> : null}
-                Cargar mas pedidos
-              </button>
-            </div>
-          ) : null}
-        </section>
+        <TransportOrdersTab
+          billingSymbol={billingSymbol}
+          hasMore={transportOrdersHasMore}
+          isLoading={isTransportOrdersLoading}
+          loadOrders={loadTransportOrders}
+          onPeriodChange={(value) => {
+            setTransportOrderPeriod(value);
+            void loadTransportOrders({ period: value });
+          }}
+          onStatusChange={(value) => {
+            setTransportOrderStatusFilter(value);
+            void loadTransportOrders({ status: value });
+          }}
+          onStoreChange={(value) => {
+            setTransportOrderStoreFilter(value);
+            void loadTransportOrders({ storeId: value });
+          }}
+          onUpdateStatus={updateTransportOrderStatus}
+          orders={transportOrders}
+          page={transportOrderPage}
+          period={transportOrderPeriod}
+          savingOrderId={savingTransportOrderId}
+          statusFilter={transportOrderStatusFilter}
+          storeFilter={transportOrderStoreFilter}
+          stores={transportOrderStores}
+        />
       ) : null}
 
       {tab === "tarifas" ? (
@@ -1104,7 +1076,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
               </label>
               <Input
                 name="maxDistanceKm"
-                label="KM maximo de cobertura"
+                label="KM maximo de cobertura total"
                 defaultValue={rate.max_distance_km}
                 required
               />
@@ -1128,10 +1100,16 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
               <div className="mt-4 rounded-3xl bg-[#F8F3E8] p-4">
                 <h3 className="text-sm font-black">Rangos de km</h3>
                 <p className="mt-1 text-xs font-bold text-[#746f69]">
-                  Agrega tramos sin solaparlos. El checkout usara unicamente el rango donde caiga el cliente.
+                  Cada rango cobra un monto fijo. Opcionalmente puedes cobrar por cada km que exceda el ultimo rango configurado.
                 </p>
+                <p className="mt-1 text-xs font-bold text-[#746f69]">
+                  Ejemplo: si el ultimo rango termina en 10 km y vale $5, a 12 km se cobrara $5 mas 2 km adicionales.
+                </p>
+                <div className="mt-3 max-w-sm">
+                  <Input name="distanceFactorUsd" label={`${billingCurrency} por km adicional despues del ultimo rango`} defaultValue={rate.distance_factor_usd} />
+                </div>
               </div>
-            ) : null}
+            ) : <input type="hidden" name="distanceFactorUsd" value="" />}
 
             {pricingType === "zones" ? (
               <div className="mt-4 rounded-3xl bg-[#F8F3E8] p-4">
@@ -1218,7 +1196,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
               <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
                 <TextInput label="Desde km" type="number" value={rangeDraft.minKm} onChange={(value) => { markDirty(); setRangeDraft((current) => ({ ...current, minKm: value })); }} />
                 <TextInput label="Hasta km" type="number" value={rangeDraft.maxKm} onChange={(value) => { markDirty(); setRangeDraft((current) => ({ ...current, maxKm: value })); }} />
-                <TextInput label={billingCurrency} type="number" value={rangeDraft.feeUsd} onChange={(value) => { markDirty(); setRangeDraft((current) => ({ ...current, feeUsd: value })); }} />
+                <TextInput label={`Monto ${billingCurrency}`} type="number" value={rangeDraft.feeUsd} onChange={(value) => { markDirty(); setRangeDraft((current) => ({ ...current, feeUsd: value })); }} />
                 <button
                   type="button"
                   onClick={() => createRule("distance_rate")}
@@ -1249,6 +1227,55 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
                   </div>
                 ))}
                 {!distanceRates.length ? <p className="text-sm font-black text-[#746f69]">Aun no hay rangos.</p> : null}
+              </div>
+              {distanceRangeGaps.length ? (
+                <div className="mt-4 rounded-3xl bg-amber-50 p-4 text-sm font-bold text-amber-800">
+                  <p className="font-black">Hay espacios sin tarifa configurada.</p>
+                  <p className="mt-1">
+                    {distanceRangeGaps
+                      .map((gap) => `de ${gap.from} km a ${gap.to} km`)
+                      .join(", ")}
+                    . Ajusta los rangos para evitar pedidos sin precio.
+                  </p>
+                </div>
+              ) : null}
+              <div className="mt-4 grid gap-3 rounded-3xl border border-[#25262B]/10 bg-[#F8F3E8] p-4 md:grid-cols-[220px_1fr] md:items-end">
+                <TextInput
+                  label="Probar km"
+                  type="number"
+                  value={distanceSimulatorKm}
+                  onChange={setDistanceSimulatorKm}
+                />
+                <div className="rounded-2xl bg-white p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
+                    Simulador de tarifa
+                  </p>
+                  {simulatorResult && simulatedDistanceKm !== null ? (
+                    <>
+                      <p className="mt-1 text-2xl font-black text-[#2E3A79]">
+                        {billingSymbol}{simulatorResult.feeUsd.toFixed(2)}
+                      </p>
+                      <p className="mt-1 text-xs font-bold text-[#746f69]">
+                        {simulatedDistanceKm.toFixed(2)} km - {simulatorResult.summary}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="mt-1 text-sm font-black text-[#746f69]">
+                      {simulatorExceedsLastRange
+                        ? "Esa distancia supera el ultimo rango. Configura y guarda el monto por km adicional para simularla."
+                        : "No hay una regla activa para esa distancia."}
+                    </p>
+                  )}
+                </div>
+                <p className="text-xs font-bold leading-relaxed text-[#746f69] md:col-span-2">
+                  Cobertura actual: {rate.max_distance_km ? `hasta ${Number(rate.max_distance_km)} km` : "sin KM maximo guardado"}.
+                  {lastFiniteDistanceRate?.maxKm !== null && lastFiniteDistanceRate?.maxKm !== undefined
+                    ? ` Ultimo rango fijo: hasta ${lastFiniteDistanceRate.maxKm} km.`
+                    : " Ultimo rango fijo: no definido."}
+                  {distanceFactorUsd !== null
+                    ? ` Km adicional: ${billingSymbol}${distanceFactorUsd.toFixed(2)} por km.`
+                    : " Km adicional: no configurado."}
+                </p>
               </div>
             </section>
           ) : null}
@@ -1294,6 +1321,48 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
             <p className="mt-3 text-xs font-bold leading-relaxed text-[#746f69]">
               PNG, JPG o WebP. Maximo 2 MB.
             </p>
+
+            <div className="mt-6 border-t border-[#25262B]/10 pt-5">
+              <h2 className="text-xl font-black">Banner marketplace</h2>
+              <div className="mt-4 overflow-hidden rounded-[24px] bg-[#F8F3E8]">
+                {agency.banner_image_url ? (
+                  <OptimizedImage
+                    src={agency.banner_image_url}
+                    alt={`Banner de ${agency.name}`}
+                    width={640}
+                    height={260}
+                    sizes="320px"
+                    className="h-36 w-full object-cover"
+                    fallback={
+                      <div className="grid h-36 place-items-center text-[#2E3A79]">
+                        <ImagePlus size={32} />
+                      </div>
+                    }
+                  />
+                ) : (
+                  <div className="grid h-36 place-items-center text-center text-[#2E3A79]">
+                    <div>
+                      <ImagePlus className="mx-auto" size={32} />
+                      <p className="mt-2 text-xs font-black">Sin banner</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <label className="mt-4 flex cursor-pointer items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-5 py-3 text-sm font-black text-white">
+                {isBannerUploading ? <Loader2 size={16} className="animate-spin" /> : <ImagePlus size={16} />}
+                Subir banner
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={uploadBanner}
+                  disabled={isBannerUploading}
+                  className="sr-only"
+                />
+              </label>
+              <p className="mt-3 text-xs font-bold leading-relaxed text-[#746f69]">
+                Recomendado horizontal 1200x450. PNG, JPG o WebP. Maximo 3 MB.
+              </p>
+            </div>
           </div>
 
           <form onSubmit={saveProfile} onChangeCapture={markDirty} className="rounded-[32px] bg-white p-5 shadow-xl shadow-[#25262B]/10">
@@ -1696,127 +1765,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       ) : null}
 
       {tab === "facturacion" ? (
-        <section className="space-y-4">
-          <div className="rounded-[32px] bg-white p-5 shadow-xl shadow-[#25262B]/10">
-            <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
-              <div>
-                <h2 className="text-xl font-black">Facturacion semanal</h2>
-                <p className="mt-2 text-sm font-bold text-[#746f69]">
-                  {billing?.week?.startDate} a {billing?.week?.endDate} · Moneda de cobro {billingCurrency}
-                </p>
-              </div>
-              <div className="rounded-3xl bg-[#F8F3E8] px-5 py-4 text-right">
-                <p className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
-                  Balance general
-                </p>
-                <p className="mt-1 text-3xl font-black">
-                  {billingSymbol}{totals.usd.toFixed(2)}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-3 md:grid-cols-4">
-              {[
-                ["Servicios", totals.orders],
-                ["Entregados", billingStats.deliveredCount],
-                ["Pendientes", billingStats.pendingCount],
-                ["Filtrado", `${billingSymbol}${billingStats.filteredTotal.toFixed(2)}`],
-              ].map(([label, value]) => (
-                <div key={label} className="border-t border-[#25262B]/10 pt-3">
-                  <p className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">{label}</p>
-                  <p className="mt-1 text-2xl font-black">{value}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <label className="space-y-1">
-                <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
-                  Comercio
-                </span>
-                <select
-                  value={billingStoreFilter}
-                  onChange={(event) => setBillingStoreFilter(event.target.value)}
-                  className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
-                >
-                  <option value="all">Todos los comercios</option>
-                  {billingStats.byStore.map((store) => (
-                    <option key={store.storeId} value={store.storeId}>
-                      {store.storeName}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="space-y-1">
-                <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
-                  Estado
-                </span>
-                <select
-                  value={billingStatusFilter}
-                  onChange={(event) => setBillingStatusFilter(event.target.value)}
-                  className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
-                >
-                  <option value="all">Todos</option>
-                  <option value="sent_to_agency">Enviado</option>
-                  <option value="agency_received">Recibido</option>
-                  <option value="agency_accepted">Aceptado</option>
-                  <option value="picked_up">Retirado</option>
-                  <option value="on_the_way">En camino</option>
-                  <option value="delivered">Entregado</option>
-                  <option value="issue_reported">Novedad</option>
-                </select>
-              </label>
-            </div>
-          </div>
-
-          <div className="grid gap-3 lg:grid-cols-2">
-            {billingStats.byStore.map((store) => (
-              <article key={store.storeId} className="rounded-[28px] bg-white p-5 shadow-xl shadow-[#25262B]/10">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 className="font-black">{store.storeName}</h3>
-                    <p className="mt-1 text-sm font-bold text-[#746f69]">
-                      {store.orders} servicios · {store.delivered} entregados · {store.pending} pendientes
-                    </p>
-                  </div>
-                  <p className="text-xl font-black">
-                    {billingSymbol}{store.total.toFixed(2)}
-                  </p>
-                </div>
-              </article>
-            ))}
-            {!billingStats.byStore.length ? (
-              <div className="rounded-[28px] bg-white p-5 text-sm font-black text-[#746f69]">
-                Aun no hay servicios facturables esta semana.
-              </div>
-            ) : null}
-          </div>
-
-          <div className="rounded-[32px] bg-white p-5 shadow-xl shadow-[#25262B]/10">
-            <h3 className="text-lg font-black">Servicios filtrados</h3>
-            <div className="mt-3 grid gap-2">
-              {billingStats.filteredOrders.slice(0, 30).map((order) => (
-                <div key={order.id} className="flex flex-col justify-between gap-2 rounded-2xl bg-[#F8F3E8] p-3 sm:flex-row sm:items-center">
-                  <div>
-                    <p className="text-sm font-black">{order.orders?.public_code || "Pedido"}</p>
-                    <p className="text-xs font-bold text-[#746f69]">
-                      {order.stores?.name || "Comercio"} · {order.status}
-                    </p>
-                  </div>
-                  <p className="text-sm font-black">
-                    {billingSymbol}{Number(order.delivery_fee_usd ?? order.orders?.delivery_usd ?? 0).toFixed(2)}
-                  </p>
-                </div>
-              ))}
-              {!billingStats.filteredOrders.length ? (
-                <p className="text-sm font-black text-[#746f69]">
-                  No hay servicios con esos filtros.
-                </p>
-              ) : null}
-            </div>
-          </div>
-        </section>
+        <TransportBillingTab billing={billing} currency={billingCurrency} symbol={billingSymbol} />
       ) : null}
 
       {message ? <p className="rounded-2xl bg-white p-3 text-sm font-black text-[#2E3A79]">{message}</p> : null}

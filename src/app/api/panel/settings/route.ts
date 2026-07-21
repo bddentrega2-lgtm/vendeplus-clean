@@ -112,11 +112,14 @@ function normalizeStorePayload(body: any) {
     accepts_delivery: Boolean(body.accepts_delivery),
     accepts_pickup: Boolean(body.accepts_pickup),
     is_active: Boolean(body.is_active),
+    service_fee_payer: body.service_fee_payer === "customer" ? "customer" : "merchant",
+    service_fee_billing_cycle: body.service_fee_billing_cycle === "weekly" ? "weekly" : "monthly",
   };
 }
 
 const storeSelect = `
   id,
+  plan_type,
   slug,
   name,
   description,
@@ -149,6 +152,8 @@ const storeSelect = `
   accepts_delivery,
   accepts_pickup,
   is_active
+  ,service_fee_payer
+  ,service_fee_billing_cycle
 `;
 
 const baseStoreSelect = `
@@ -233,8 +238,14 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error;
 
+    const storesWithFees = await Promise.all((data || []).map(async (store: any) => {
+      if (store.plan_type !== "per_service") return store;
+      const { data: balance } = await supabase.rpc("store_service_fee_balance", { p_store_id: store.id }).maybeSingle();
+      return { ...store, service_fee_balance: balance || null };
+    }));
+
     return NextResponse.json({
-      stores: data || [],
+      stores: storesWithFees,
       paymentDetailsAvailable,
       auth: {
         mode: auth.mode,

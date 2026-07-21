@@ -17,18 +17,17 @@ function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
 }
 
-async function getUsersById(supabase: any, userIds: string[]) {
-  const uniqueIds = Array.from(new Set(userIds.filter(Boolean)));
-  const users = new Map<string, any>();
+async function listAuthUsers(supabase: any) {
+  const users: any[] = [];
 
-  await Promise.all(
-    uniqueIds.map(async (userId) => {
-      const { data, error } = await supabase.auth.admin.getUserById(userId);
-      if (!error && data?.user) {
-        users.set(userId, data.user);
-      }
-    })
-  );
+  for (let page = 1; page <= 20; page += 1) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
+    if (error) throw error;
+
+    const pageUsers = data?.users || [];
+    users.push(...pageUsers);
+    if (pageUsers.length < 1000) break;
+  }
 
   return users;
 }
@@ -50,10 +49,8 @@ export async function GET(request: NextRequest) {
     if (assignmentsResult.error) throw assignmentsResult.error;
 
     const assignments = assignmentsResult.data || [];
-    const usersById = await getUsersById(
-      supabase,
-      assignments.map((assignment: any) => assignment.user_id)
-    );
+    const authUsers = await listAuthUsers(supabase);
+    const usersById = new Map(authUsers.map((user: any) => [user.id, user]));
     const storesById = new Map(
       (storesResult.data || []).map((store: any) => [store.id, store])
     );
@@ -71,9 +68,46 @@ export async function GET(request: NextRequest) {
           store_slug: store?.slug || "",
         };
       }),
+      registeredUsers: authUsers
+        .filter((user: any) => Boolean(user.email))
+        .map((user: any) => ({
+          id: user.id,
+          email: user.email,
+          email_confirmed_at: user.email_confirmed_at || null,
+          created_at: user.created_at || null,
+        }))
+        .sort((a: any, b: any) => String(b.created_at || "").localeCompare(String(a.created_at || ""))),
     });
   } catch (error) {
     return adminErrorResponse(error, "Error cargando asignaciones.");
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    await requireAdminAuth(request);
+    const body = await request.json();
+    const userId = cleanText(body.user_id);
+
+    if (!userId) return badRequest("Falta el usuario.");
+
+    const supabase = createSupabaseAdminClient();
+    const { data, error } = await supabase.auth.admin.updateUserById(userId, {
+      email_confirm: true,
+    });
+
+    if (error) throw error;
+
+    return NextResponse.json({
+      user: {
+        id: data.user.id,
+        email: data.user.email,
+        email_confirmed_at: data.user.email_confirmed_at,
+      },
+      message: `Correo ${data.user.email || "del usuario"} autorizado.`,
+    });
+  } catch (error) {
+    return adminErrorResponse(error, "Error autorizando correo.");
   }
 }
 
@@ -123,12 +157,21 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const user = await findUserByEmail(supabase, email);
+    let user = await findUserByEmail(supabase, email);
 
     if (!user) {
       return badRequest(
         "No existe un usuario registrado con ese email. Créalo primero desde el sistema de usuarios."
       );
+    }
+
+    if (!user.email_confirmed_at) {
+      const { data, error } = await supabase.auth.admin.updateUserById(user.id, {
+        email_confirm: true,
+      });
+
+      if (error) throw error;
+      user = data.user || user;
     }
 
     const { data: existingAssignment, error: existingError } = await supabase

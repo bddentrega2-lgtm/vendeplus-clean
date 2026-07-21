@@ -15,6 +15,7 @@ import {
 import { PanelAccessGate, PanelModuleSkeleton } from "@/components/panel/PanelLoadingState";
 import { LocationPicker } from "@/components/public/LocationPicker";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
+import { buildClientPublicUrl } from "@/lib/public-url";
 import {
   getPanelAccessToken,
   getPanelAuthHeaders,
@@ -34,6 +35,7 @@ import type {
 
 type StoreRow = {
   id: string;
+  plan_type?: string | null;
   slug: string;
   name: string;
   description: string | null;
@@ -66,6 +68,9 @@ type StoreRow = {
   accepts_delivery: boolean;
   accepts_pickup: boolean;
   is_active: boolean;
+  service_fee_payer?: "merchant" | "customer";
+  service_fee_billing_cycle?: "weekly" | "monthly";
+  service_fee_balance?: { orders_count?: number; amount_usd?: number | string; period_start?: string } | null;
 };
 
 const businessTypes = [
@@ -257,6 +262,8 @@ function StoreSettingsCard({
     accepts_delivery: store.accepts_delivery === true,
     accepts_pickup: store.accepts_pickup !== false,
     is_active: store.is_active !== false,
+    service_fee_payer: store.service_fee_payer === "customer" ? "customer" : "merchant",
+    service_fee_billing_cycle: store.service_fee_billing_cycle === "weekly" ? "weekly" : "monthly",
   });
 
   const [isSaving, setIsSaving] = useState(false);
@@ -340,8 +347,7 @@ function StoreSettingsCard({
   }
 
   async function copyStoreLink() {
-    const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
-    const url = `${baseUrl}/${store.slug}`;
+    const url = buildClientPublicUrl(`/${store.slug}`);
 
     await navigator.clipboard.writeText(url);
     setMessage("Link público copiado.");
@@ -1172,6 +1178,28 @@ function StoreSettingsCard({
           {draft.is_active ? "Visible en la web" : "Oculto en la web"}
         </button>
       </div>
+
+      {store.plan_type === "per_service" ? (
+        <section className="mt-5 rounded-2xl bg-[#F8F3E8] p-4">
+          <h3 className="text-base font-black text-[#25262B]">Cargo por servicio</h3>
+          <p className="mt-1 text-xs font-bold text-[#746f69]">Cada pedido procesado acumula $0,10 para Somos.</p>
+          <p className="mt-3 rounded-xl bg-white p-3 text-sm font-black text-[#2E3A79]">Acumulado del corte: ${Number(store.service_fee_balance?.amount_usd || 0).toFixed(2)} · {Number(store.service_fee_balance?.orders_count || 0)} pedidos</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="text-xs font-black text-[#746f69]">¿Quién asume el cargo?
+              <select value={draft.service_fee_payer} onChange={(event) => updateField("service_fee_payer", event.target.value)} className="mt-1 w-full rounded-xl bg-white px-3 py-3 text-sm text-[#25262B]">
+                <option value="merchant">Lo asume el comercio</option>
+                <option value="customer">Se agrega al pedido del cliente</option>
+              </select>
+            </label>
+            <label className="text-xs font-black text-[#746f69]">Frecuencia de liquidación
+              <select value={draft.service_fee_billing_cycle} onChange={(event) => updateField("service_fee_billing_cycle", event.target.value)} className="mt-1 w-full rounded-xl bg-white px-3 py-3 text-sm text-[#25262B]">
+                <option value="weekly">Semanal</option>
+                <option value="monthly">Mensual</option>
+              </select>
+            </label>
+          </div>
+        </section>
+      ) : null}
 
       <div className="mt-5 flex justify-end">
         <button

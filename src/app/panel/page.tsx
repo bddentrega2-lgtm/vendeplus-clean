@@ -1,16 +1,12 @@
-import { PanelShell } from "@/components/panel/PanelShell";
 import { DashboardManager } from "@/components/panel/DashboardManager";
+import { PanelShell } from "@/components/panel/PanelShell";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function PanelPage() {
   return (
-    <PanelShell
-      active="/panel"
-      title="Inicio"
-      subtitle="Primeros pasos, accesos rápidos y resumen de ventas para operar tu negocio."
-    >
+    <PanelShell active="/panel" title="Inicio">
       <DashboardManager />
     </PanelShell>
   );

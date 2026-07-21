@@ -86,6 +86,7 @@ export async function GET(request: NextRequest) {
           delivery_lat,
           delivery_lng,
           delivery_reference,
+          delivery_notes,
           order_details,
           notes,
           order_items (

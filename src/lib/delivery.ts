@@ -100,6 +100,7 @@ export function createDefaultDeliverySettings(): StoreDeliverySettings {
     manualQuoteMessage: DEFAULT_MANUAL_DELIVERY_MESSAGE,
     zones: [],
     distanceRates: [],
+    transportAgencyLogoUrl: null,
   };
 }
 
@@ -175,7 +176,9 @@ export function mapStoreDeliverySettings(row: any): StoreDeliverySettings {
     .sort((a: any, b: any) => a.sortOrder - b.sortOrder);
   const normalizedPricingType = normalizePricingType(settings.pricing_type);
   const inferredPricingType =
-    normalizedProvider === "manual_quote" || normalizedProvider === "disabled"
+    normalizedProvider === "entrega2" ||
+    normalizedProvider === "manual_quote" ||
+    normalizedProvider === "disabled"
       ? "manual"
       : normalizedPricingType === "manual" || normalizedPricingType === "free_over_amount"
         ? zones.some((zone: any) => zone.isActive)
@@ -232,6 +235,7 @@ export function disableUnavailableTransportAgencySettings(
     transportAgencyConnectionId: null,
     transportAgencyId: null,
     transportAgencyName: null,
+    transportAgencyLogoUrl: null,
   };
 }
 
@@ -257,6 +261,89 @@ function applyDeliveryPromo(feeUsd: number, settings: StoreDeliverySettings, sub
   };
 }
 
+export function calculateDistanceRangeFee(
+  distanceKm: number,
+  rates: StoreDeliverySettings["distanceRates"],
+  distanceFactor: number | null = null
+) {
+  const activeRates = rates
+    .filter((entry) => entry.isActive)
+    .sort((a, b) => a.minKm - b.minKm || a.sortOrder - b.sortOrder);
+
+  const matchingRate = activeRates.find(
+    (entry) =>
+      distanceKm >= entry.minKm &&
+      (entry.maxKm === null || distanceKm <= entry.maxKm)
+  );
+  if (matchingRate) return Number(matchingRate.feeUsd.toFixed(2));
+
+  const finalFiniteRate = [...activeRates]
+    .reverse()
+    .find((entry) => entry.maxKm !== null);
+  if (
+    finalFiniteRate?.maxKm !== null &&
+    finalFiniteRate?.maxKm !== undefined &&
+    distanceFactor !== null &&
+    distanceKm > finalFiniteRate.maxKm
+  ) {
+    return Number(
+      (finalFiniteRate.feeUsd + (distanceKm - finalFiniteRate.maxKm) * distanceFactor).toFixed(2)
+    );
+  }
+
+  return null;
+}
+
+export function describeDistanceRangeFee(params: {
+  distanceKm: number;
+  rates: StoreDeliverySettings["distanceRates"];
+  distanceFactor?: number | null;
+}) {
+  const roundedDistance = Number(params.distanceKm.toFixed(2));
+  const activeRates = params.rates
+    .filter((entry) => entry.isActive)
+    .sort((a, b) => a.minKm - b.minKm || a.sortOrder - b.sortOrder);
+  const matchingRate = activeRates.find(
+    (entry) =>
+      roundedDistance >= entry.minKm &&
+      (entry.maxKm === null || roundedDistance <= entry.maxKm)
+  );
+
+  if (matchingRate) {
+    return {
+      feeUsd: Number(matchingRate.feeUsd.toFixed(2)),
+      summary:
+        matchingRate.maxKm === null
+          ? `Rango ${matchingRate.minKm} km en adelante`
+          : `Rango ${matchingRate.minKm}-${matchingRate.maxKm} km`,
+    };
+  }
+
+  const finalFiniteRate = [...activeRates]
+    .reverse()
+    .find((entry) => entry.maxKm !== null);
+  const distanceFactor = params.distanceFactor ?? null;
+
+  if (
+    finalFiniteRate?.maxKm !== null &&
+    finalFiniteRate?.maxKm !== undefined &&
+    distanceFactor !== null &&
+    roundedDistance > finalFiniteRate.maxKm
+  ) {
+    const extraKm = Number((roundedDistance - finalFiniteRate.maxKm).toFixed(2));
+    const feeUsd = Number(
+      (finalFiniteRate.feeUsd + extraKm * distanceFactor).toFixed(2)
+    );
+
+    return {
+      feeUsd,
+      summary: `Rango final ${finalFiniteRate.minKm}-${finalFiniteRate.maxKm} km + ${extraKm.toFixed(2)} km adicional a $${distanceFactor.toFixed(2)}/km`,
+    };
+  }
+
+  return null;
+}
+
 export function calculateDeliveryQuoteFromSettings(params: {
   settings?: StoreDeliverySettings | null;
   deliveryType: "delivery" | "pickup";
@@ -267,6 +354,11 @@ export function calculateDeliveryQuoteFromSettings(params: {
 }): DeliveryQuote {
   const settings = params.settings || createDefaultDeliverySettings();
   const source = params.source || "manual";
+  const agencyQuoteMeta = {
+    transportAgencyId: settings.transportAgencyId || null,
+    transportAgencyName: settings.transportAgencyName || null,
+    transportAgencyLogoUrl: settings.transportAgencyLogoUrl || null,
+  };
 
   if (params.deliveryType === "pickup") {
     return {
@@ -277,8 +369,7 @@ export function calculateDeliveryQuoteFromSettings(params: {
       available: settings.pickupEnabled,
       provider: settings.deliveryProvider,
       pricingType: settings.pricingType,
-      transportAgencyId: settings.transportAgencyId || null,
-      transportAgencyName: settings.transportAgencyName || null,
+      ...agencyQuoteMeta,
     };
   }
 
@@ -291,9 +382,22 @@ export function calculateDeliveryQuoteFromSettings(params: {
       available: false,
       provider: settings.deliveryProvider,
       pricingType: settings.pricingType,
-      transportAgencyId: settings.transportAgencyId || null,
-      transportAgencyName: settings.transportAgencyName || null,
+      ...agencyQuoteMeta,
       message: "Este comercio no tiene delivery activo en este momento.",
+    };
+  }
+
+  if (settings.deliveryProvider === "entrega2") {
+    return {
+      distanceKm: params.distanceKm ?? null,
+      feeUsd: 0,
+      label: "Entrega2 App cotiza el delivery",
+      source: params.distanceKm === null ? "pending" : source,
+      available: true,
+      provider: settings.deliveryProvider,
+      pricingType: settings.pricingType,
+      ...agencyQuoteMeta,
+      message: "El delivery se cotiza con Entrega2 App al confirmar el pedido.",
     };
   }
 
@@ -306,8 +410,7 @@ export function calculateDeliveryQuoteFromSettings(params: {
       available: true,
       provider: settings.deliveryProvider,
       pricingType: settings.pricingType,
-      transportAgencyId: settings.transportAgencyId || null,
-      transportAgencyName: settings.transportAgencyName || null,
+      ...agencyQuoteMeta,
       message: settings.manualQuoteMessage,
     };
   }
@@ -325,8 +428,7 @@ export function calculateDeliveryQuoteFromSettings(params: {
         available: activeZones.length > 0,
         provider: settings.deliveryProvider,
         pricingType: settings.pricingType,
-        transportAgencyId: settings.transportAgencyId || null,
-        transportAgencyName: settings.transportAgencyName || null,
+        ...agencyQuoteMeta,
         message: activeZones.length
           ? undefined
           : "Este comercio aún no tiene zonas activas para calcular el delivery.",
@@ -349,8 +451,7 @@ export function calculateDeliveryQuoteFromSettings(params: {
       pricingType: settings.pricingType,
       zoneId: zone.id,
       zoneName: zone.name,
-      transportAgencyId: settings.transportAgencyId || null,
-      transportAgencyName: settings.transportAgencyName || null,
+      ...agencyQuoteMeta,
     };
   }
 
@@ -366,8 +467,7 @@ export function calculateDeliveryQuoteFromSettings(params: {
         available: true,
         provider: settings.deliveryProvider,
         pricingType: settings.pricingType,
-        transportAgencyId: settings.transportAgencyId || null,
-        transportAgencyName: settings.transportAgencyName || null,
+        ...agencyQuoteMeta,
         message: "Comparte tu ubicacion para calcular el delivery.",
       };
     }
@@ -382,8 +482,7 @@ export function calculateDeliveryQuoteFromSettings(params: {
         available: false,
         provider: settings.deliveryProvider,
         pricingType: settings.pricingType,
-        transportAgencyId: settings.transportAgencyId || null,
-        transportAgencyName: settings.transportAgencyName || null,
+        ...agencyQuoteMeta,
         message: `La ubicacion supera el radio configurado de ${settings.maxDistanceKm} km.`,
       };
     }
@@ -402,8 +501,7 @@ export function calculateDeliveryQuoteFromSettings(params: {
       available: true,
       provider: settings.deliveryProvider,
       pricingType: settings.pricingType,
-      transportAgencyId: settings.transportAgencyId || null,
-      transportAgencyName: settings.transportAgencyName || null,
+      ...agencyQuoteMeta,
     };
   }
 
@@ -419,8 +517,7 @@ export function calculateDeliveryQuoteFromSettings(params: {
         available: true,
         provider: settings.deliveryProvider,
         pricingType: settings.pricingType,
-        transportAgencyId: settings.transportAgencyId || null,
-        transportAgencyName: settings.transportAgencyName || null,
+        ...agencyQuoteMeta,
         message: "Comparte tu ubicacion para calcular el delivery por km.",
       };
     }
@@ -435,20 +532,17 @@ export function calculateDeliveryQuoteFromSettings(params: {
         available: false,
         provider: settings.deliveryProvider,
         pricingType: settings.pricingType,
-        transportAgencyId: settings.transportAgencyId || null,
-        transportAgencyName: settings.transportAgencyName || null,
+        ...agencyQuoteMeta,
         message: `La ubicacion supera el radio configurado de ${settings.maxDistanceKm} km.`,
       };
     }
 
-    const rate = settings.distanceRates
-      .filter((entry) => entry.isActive)
-      .find(
-        (entry) =>
-          rounded >= entry.minKm &&
-          (entry.maxKm === null || rounded <= entry.maxKm)
-      );
-    const baseFee = rate?.feeUsd ?? null;
+    const rangeFee = describeDistanceRangeFee({
+      distanceKm: rounded,
+      rates: settings.distanceRates,
+      distanceFactor: settings.distanceFactor,
+    });
+    const baseFee = rangeFee?.feeUsd ?? null;
 
     if (baseFee === null) {
       return {
@@ -459,8 +553,7 @@ export function calculateDeliveryQuoteFromSettings(params: {
         available: false,
         provider: settings.deliveryProvider,
         pricingType: settings.pricingType,
-        transportAgencyId: settings.transportAgencyId || null,
-        transportAgencyName: settings.transportAgencyName || null,
+        ...agencyQuoteMeta,
         message: "El comercio debe configurar rangos activos para cobrar este delivery.",
       };
     }
@@ -480,8 +573,8 @@ export function calculateDeliveryQuoteFromSettings(params: {
       available: true,
       provider: settings.deliveryProvider,
       pricingType: settings.pricingType,
-      transportAgencyId: settings.transportAgencyId || null,
-      transportAgencyName: settings.transportAgencyName || null,
+      ...agencyQuoteMeta,
+      ruleSummary: rangeFee?.summary || null,
     };
   }
 
@@ -493,9 +586,45 @@ export function calculateDeliveryQuoteFromSettings(params: {
     available: true,
     provider: settings.deliveryProvider,
     pricingType: settings.pricingType,
-    transportAgencyId: settings.transportAgencyId || null,
-    transportAgencyName: settings.transportAgencyName || null,
+    ...agencyQuoteMeta,
     message: settings.manualQuoteMessage || DEFAULT_MANUAL_DELIVERY_MESSAGE,
+  };
+}
+
+export function calculateEntrega2FallbackQuote(params: {
+  settings?: StoreDeliverySettings | null;
+  subtotalUsd: number;
+  distanceKm: number | null;
+  source?: DeliveryQuote["source"];
+}): DeliveryQuote {
+  const settings = params.settings || createDefaultDeliverySettings();
+  const fallbackSettings: StoreDeliverySettings = {
+    ...settings,
+    deliveryProvider: "own_delivery",
+    pricingType: "distance_ranges",
+  };
+  const quote = calculateDeliveryQuoteFromSettings({
+    settings: fallbackSettings,
+    deliveryType: "delivery",
+    subtotalUsd: params.subtotalUsd,
+    distanceKm: params.distanceKm,
+    source: params.source || "fallback",
+  });
+
+  return {
+    ...quote,
+    provider: "entrega2",
+    pricingType: "distance_ranges",
+    source: quote.source === "pending" ? "pending" : "fallback",
+    label:
+      quote.available === false
+        ? quote.label
+        : `Entrega2 App respaldo · ${quote.label}`,
+    message:
+      quote.available === false
+        ? quote.message
+        : "Cotizacion de respaldo calculada con las tarifas por km guardadas en Somos.",
+    ruleSummary: quote.ruleSummary || "Tarifa local de respaldo Entrega2 App",
   };
 }
 

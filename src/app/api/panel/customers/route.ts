@@ -88,13 +88,14 @@ export async function GET(request: NextRequest) {
     const supabase = createSupabaseAdminClient();
     const { searchParams } = new URL(request.url);
     const search = String(searchParams.get("search") || "").trim();
-    const safeSearch = search.replace(/[%,()]/g, " ").trim();
+    const safeSearch = search.replace(/[,.%()]/g, " ").trim();
     const segment = String(searchParams.get("segment") || "all");
     const limit = Math.min(
       200,
       Math.max(25, Number(searchParams.get("limit") || 80))
     );
     const offset = Math.max(0, Number(searchParams.get("offset") || 0));
+    const to = offset + limit;
 
     let customersQuery = supabase
       .from("customers")
@@ -122,8 +123,7 @@ export async function GET(request: NextRequest) {
         )
       `
       )
-      .order("last_order_at", { ascending: false, nullsFirst: false })
-      .range(offset, offset + limit - 1);
+      .order("last_order_at", { ascending: false, nullsFirst: false });
 
     let storesQuery = supabase
       .from("stores")
@@ -140,6 +140,25 @@ export async function GET(request: NextRequest) {
         `name.ilike.%${safeSearch}%,phone.ilike.%${safeSearch}%,phone_normalized.ilike.%${safeSearch}%`
       );
     }
+
+    if (segment === "new") {
+      customersQuery = customersQuery.lte("orders_count", 1);
+    } else if (segment === "frequent") {
+      customersQuery = customersQuery.gte("orders_count", 3);
+    } else if (segment === "vip") {
+      customersQuery = customersQuery.or("orders_count.gte.5,total_spent_usd.gte.100");
+    } else if (segment === "contact") {
+      const contactBefore = new Date(Date.now() - 21 * 86400000).toISOString();
+      customersQuery = customersQuery
+        .gte("orders_count", 2)
+        .lte("last_order_at", contactBefore);
+    } else if (segment === "delivery") {
+      customersQuery = customersQuery.eq("preferred_fulfillment", "delivery");
+    } else if (segment === "pickup") {
+      customersQuery = customersQuery.eq("preferred_fulfillment", "pickup");
+    }
+
+    customersQuery = customersQuery.range(offset, to);
 
     let [customersResult, storesResult] = await Promise.all([
       customersQuery,
@@ -164,7 +183,9 @@ export async function GET(request: NextRequest) {
     }
     if (storesResult.error) throw storesResult.error;
 
-    let customers = customersResult.data || [];
+    const pageRows = customersResult.data || [];
+    const hasMore = pageRows.length > limit;
+    let customers = hasMore ? pageRows.slice(0, limit) : pageRows;
 
     if (!customers.length && offset === 0 && !safeSearch && segment === "all") {
       const processed = await hydrateCustomersFromExistingOrders(supabase, auth.storeIds);
@@ -197,7 +218,7 @@ export async function GET(request: NextRequest) {
           `
           )
           .order("last_order_at", { ascending: false, nullsFirst: false })
-          .range(offset, offset + limit - 1);
+          .range(offset, to);
 
         if (auth.storeIds !== null) {
           hydratedCustomersQuery = hydratedCustomersQuery.in("store_id", auth.storeIds);
@@ -205,7 +226,8 @@ export async function GET(request: NextRequest) {
 
         const hydratedResult = await hydratedCustomersQuery;
         if (!hydratedResult.error) {
-          customers = hydratedResult.data || [];
+          const hydratedRows = hydratedResult.data || [];
+          customers = hydratedRows.length > limit ? hydratedRows.slice(0, limit) : hydratedRows;
         }
       }
     }
@@ -310,7 +332,8 @@ export async function GET(request: NextRequest) {
       page: {
         limit,
         offset,
-        hasMore: customers.length === limit,
+        nextOffset: offset + customers.length,
+        hasMore,
       },
       auth: {
         mode: auth.mode,

@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { formatUsd } from "@/lib/currency";
+import { buildClientPublicUrl } from "@/lib/public-url";
 import { buildStoreWelcomeMessage } from "@/lib/store-share";
 import { PanelAccessGate, PanelModuleSkeleton } from "@/components/panel/PanelLoadingState";
 import {
@@ -28,7 +29,7 @@ import {
 } from "@/lib/panel/client-auth";
 
 async function apiRequest(pin: string) {
-  const response = await fetch("/api/panel/stats", {
+  const response = await fetch("/api/panel/stats?mode=summary", {
     headers: await getPanelAuthHeaders(pin),
   });
 
@@ -205,8 +206,8 @@ export function DashboardManager() {
   const primaryStore = stores[0];
   const subscriptionReminder = getSubscriptionReminder(primaryStore);
   const publicCatalogUrl =
-    typeof window !== "undefined" && primaryStore?.slug
-      ? `${window.location.origin}/${primaryStore.slug}`
+    primaryStore?.slug
+      ? buildClientPublicUrl(`/${primaryStore.slug}`)
       : "";
 
   async function copyCatalogLink() {
@@ -338,11 +339,11 @@ export function DashboardManager() {
         <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
           <div>
             <p className="text-sm font-black uppercase tracking-[0.18em] text-[#746f69]">
-              Primeros pasos
+              Acciones rápidas
             </p>
-            <h2 className="mt-2 text-3xl font-black">Empieza a vender con tu catálogo</h2>
+            <h2 className="mt-2 text-3xl font-black">Prepara tu catálogo</h2>
             <p className="mt-2 max-w-2xl text-sm font-bold leading-relaxed text-[#746f69]">
-              Sigue esta guía para dejar tu negocio listo, compartirlo con clientes y atender pedidos.
+              Completa lo básico, comparte el link y empieza a recibir pedidos.
             </p>
           </div>
 

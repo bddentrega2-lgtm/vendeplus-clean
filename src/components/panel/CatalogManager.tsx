@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { PanelAccessGate, PanelModuleSkeleton } from "@/components/panel/PanelLoadingState";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
+import { buildClientPublicUrl } from "@/lib/public-url";
 import { buildStoreWelcomeMessage } from "@/lib/store-share";
 import {
   getPanelAccessToken,
@@ -682,9 +683,7 @@ export function CatalogManager() {
       return;
     }
 
-    const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
-
-    const publicUrl = `${baseUrl}/${selectedStore.slug}`;
+    const publicUrl = buildClientPublicUrl(`/${selectedStore.slug}`);
     const welcomeMessage = buildStoreWelcomeMessage({
       storeName: selectedStore.name,
       catalogUrl: publicUrl,

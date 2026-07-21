@@ -83,6 +83,7 @@ Cliente: ${form.customerName} | ${form.customerPhone}
 ${itemsText}${orderDetails}
 
 ${deliveryBlock}
+${Number(totals.serviceFeeUsd || 0) > 0 ? `\n🧾 Fee: ${formatBaseCurrency(totals.serviceFeeUsd || 0, baseCurrency)}\n` : ""}
 
 💳 ${form.paymentMethod}${paymentReference}
 💰 Total: ${formatBaseCurrency(totals.totalUsd, baseCurrency)} / ${formatBs(totals.totalBs)}${notes}`;

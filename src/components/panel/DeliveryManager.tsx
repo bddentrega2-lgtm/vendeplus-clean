@@ -67,6 +67,21 @@ type DeliverySettingsRow = {
   };
 };
 
+type DeliveryBillingOrder = {
+  id: string;
+  publicCode?: string | null;
+  provider: "entrega2" | "transport_agency" | string;
+  providerName?: string | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
+  feeUsd: number;
+  deliveryDistanceKm?: number | string | null;
+  deliveryZoneName?: string | null;
+  status?: string | null;
+  createdAt?: string | null;
+  billable?: boolean;
+};
+
 async function deliveryRequest(pin: string, options?: RequestInit) {
   const response = await fetch("/api/panel/delivery-settings", {
     ...options,
@@ -88,6 +103,158 @@ async function deliveryRequest(pin: string, options?: RequestInit) {
 
 function moneyLabel(value: number) {
   return `$${Number(value || 0).toFixed(2)}`;
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "Sin fecha";
+  return new Intl.DateTimeFormat("es-VE", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function deliveryDetail(order: DeliveryBillingOrder) {
+  if (order.deliveryZoneName) return `Zona: ${order.deliveryZoneName}`;
+  const distance = Number(order.deliveryDistanceKm);
+  if (Number.isFinite(distance) && distance > 0) return `${distance.toFixed(2)} km`;
+  return "Sin km/zona";
+}
+
+function DeliveryBillingSection({
+  rows,
+  pin,
+}: {
+  rows: DeliverySettingsRow[];
+  pin: string;
+}) {
+  const [billing, setBilling] = useState<any>(null);
+  const [selectedStoreId, setSelectedStoreId] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const activeStoreId = selectedStoreId || rows[0]?.store.id || "";
+  const orders: DeliveryBillingOrder[] = billing?.orders || [];
+
+  async function loadBilling(storeId = activeStoreId) {
+    setIsLoading(true);
+    setMessage("");
+    try {
+      const params = storeId ? `?storeId=${encodeURIComponent(storeId)}` : "";
+      const response = await fetch(`/api/panel/transport/billing${params}`, {
+        headers: await getPanelAuthHeaders(pin),
+      });
+      const next = await response.json();
+      if (!response.ok) throw new Error(next.error || "No se pudo cargar facturación.");
+      setBilling(next);
+    } catch (error: any) {
+      setMessage(error.message || "No se pudo cargar facturación.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!rows.length) return;
+    loadBilling(activeStoreId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStoreId, rows.length]);
+
+  return (
+    <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.07]">
+      <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
+        <div>
+          <p className="text-sm font-black uppercase tracking-[0.18em] text-[#2E3A79]">
+            Facturación semanal
+          </p>
+          <h2 className="mt-1 text-2xl font-black text-[#25262B]">Cuenta de delivery</h2>
+          <p className="mt-1 text-sm font-bold text-[#746f69]">
+            Detalle por cliente, empresa, precio, km/zona, fecha y hora.
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          {rows.length > 1 ? (
+            <select
+              value={activeStoreId}
+              onChange={(event) => setSelectedStoreId(event.target.value)}
+              className="rounded-full border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black text-[#25262B]"
+            >
+              {rows.map((row) => (
+                <option key={row.store.id} value={row.store.id}>
+                  {row.store.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => loadBilling(activeStoreId)}
+            disabled={isLoading}
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-5 py-3 text-sm font-black text-white disabled:opacity-60"
+          >
+            {isLoading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16} />}
+            Actualizar
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-2xl bg-[#F8F3E8] p-4">
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Semana</p>
+          <p className="mt-1 text-sm font-black text-[#25262B]">
+            {billing?.week?.startDate || "--"} a {billing?.week?.endDate || "--"}
+          </p>
+        </div>
+        <div className="rounded-2xl bg-[#F8F3E8] p-4">
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Servicios</p>
+          <p className="mt-1 text-2xl font-black text-[#25262B]">{orders.length}</p>
+        </div>
+        <div className="rounded-2xl bg-[#2E3A79] p-4 text-white">
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-white/65">Total a pagar</p>
+          <p className="mt-1 text-2xl font-black text-[#FFB547]">
+            {moneyLabel(Number(billing?.totalUsd || 0))}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-2">
+        {orders.slice(0, 12).map((order) => (
+          <article
+            key={`${order.provider}-${order.id}`}
+            className="grid gap-3 rounded-2xl bg-[#F8F3E8] p-4 text-sm md:grid-cols-[1.1fr_0.9fr_auto]"
+          >
+            <div>
+              <p className="font-black text-[#25262B]">
+                {order.customerName || "Cliente"} · {order.publicCode || "Pedido"}
+              </p>
+              <p className="mt-1 font-bold text-[#746f69]">
+                {order.providerName || "Delivery"} · {formatDateTime(order.createdAt)}
+              </p>
+            </div>
+            <div>
+              <p className="font-black text-[#25262B]">{deliveryDetail(order)}</p>
+              <p className="mt-1 font-bold text-[#746f69]">Estado: {order.status || "pendiente"}</p>
+            </div>
+            <div className="text-left md:text-right">
+              <p className="text-lg font-black text-[#2E3A79]">{moneyLabel(order.feeUsd)}</p>
+              <p className="text-xs font-black text-[#746f69]">
+                {order.billable ? "Facturable" : "Referencia"}
+              </p>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      {!orders.length && !isLoading ? (
+        <p className="mt-4 rounded-2xl bg-[#F8F3E8] p-4 text-sm font-bold text-[#746f69]">
+          Aún no hay servicios delivery registrados esta semana.
+        </p>
+      ) : null}
+
+      {message ? (
+        <p className="mt-3 rounded-2xl bg-red-50 p-3 text-sm font-black text-red-700">{message}</p>
+      ) : null}
+    </section>
+  );
 }
 
 function validateRateDraft(
@@ -154,6 +321,7 @@ function DeliveryStoreCard({
 
   const isEntrega2 = draft.deliveryProvider === "entrega2";
   const isTransportAgency = draft.deliveryProvider === "transport_agency";
+  const isExternalDeliveryLocked = isEntrega2 || isTransportAgency;
   const isAgencyLocked = isTransportAgency;
   const isOwnDelivery = draft.deliveryProvider === "own_delivery" && draft.deliveryEnabled;
   const normalizedPricingType: PricingType =
@@ -162,7 +330,7 @@ function DeliveryStoreCard({
       (draft.pricingType === "manual" || draft.pricingType === "free_over_amount"))
       ? "fixed_distance"
       : draft.pricingType;
-  const effectivePricingType: PricingType = isEntrega2 ? "distance_ranges" : normalizedPricingType;
+  const effectivePricingType: PricingType = isEntrega2 ? "manual" : normalizedPricingType;
 
   function updateDraft(field: string, value: unknown) {
     setDraft((current) => {
@@ -172,7 +340,7 @@ function DeliveryStoreCard({
         next.deliveryEnabled = true;
         next.pricingType = "distance_ranges";
         next.manualQuoteMessage =
-          "Entrega2 calculara la tarifa desde su API. Si aun no esta activa, confirma el precio por WhatsApp.";
+          "Entrega2 App cotiza y confirma el delivery real. Si aun no esta activa, confirma el precio por WhatsApp.";
       }
 
       if (field === "deliveryProvider" && value === "manual_quote") {
@@ -392,7 +560,7 @@ function DeliveryStoreCard({
         <button
           type="button"
           onClick={saveSettings}
-          disabled={isSaving || isAgencyLocked}
+          disabled={isSaving || isExternalDeliveryLocked}
           className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B] disabled:opacity-60"
         >
           {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
@@ -404,7 +572,7 @@ function DeliveryStoreCard({
         <button
           type="button"
           onClick={() => updateDraft("deliveryEnabled", !draft.deliveryEnabled)}
-          disabled={isAgencyLocked}
+          disabled={isExternalDeliveryLocked}
           className={`rounded-2xl px-4 py-3 text-sm font-black ${
             draft.deliveryEnabled ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
           } disabled:opacity-60`}
@@ -414,7 +582,7 @@ function DeliveryStoreCard({
         <button
           type="button"
           onClick={() => updateDraft("pickupEnabled", !draft.pickupEnabled)}
-          disabled={isAgencyLocked}
+          disabled={isExternalDeliveryLocked}
           className={`rounded-2xl px-4 py-3 text-sm font-black ${
             draft.pickupEnabled ? "bg-blue-100 text-blue-700" : "bg-red-100 text-red-700"
           } disabled:opacity-60`}
@@ -431,10 +599,15 @@ function DeliveryStoreCard({
           <select
             value={draft.deliveryProvider}
             onChange={(event) => updateDraft("deliveryProvider", event.target.value)}
-            disabled={isAgencyLocked}
+            disabled={isExternalDeliveryLocked}
             className="mt-2 w-full rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79] disabled:bg-white/60 disabled:text-[#746f69]"
           >
             <option value="own_delivery">Propio del comercio</option>
+            {isEntrega2 ? (
+              <option value="entrega2" disabled>
+                Entrega2 App activa
+              </option>
+            ) : null}
             {isTransportAgency ? (
               <option value="transport_agency" disabled>
                 Empresa delivery afiliada activa
@@ -478,8 +651,8 @@ function DeliveryStoreCard({
 
       {isEntrega2 ? (
         <div className="mt-4 rounded-2xl bg-[#FFF8F0] p-4 text-sm font-bold leading-relaxed text-[#746f69] ring-1 ring-[#FFB547]/30">
-          Este comercio tiene una configuracion legacy de delivery externo. Activa una empresa delivery afiliada
-          desde la Red de transporte para usar tarifas nuevas en el checkout.
+          Conexion activa con Entrega2 App. Las zonas, rangos y promos de delivery propio quedan bloqueadas porque
+          el checkout cotiza directo con Entrega2 App. El comercio decide cuando enviar cada pedido desde Pedidos.
         </div>
       ) : null}
       {isTransportAgency ? (
@@ -524,7 +697,7 @@ function DeliveryStoreCard({
           <div className="rounded-[24px] bg-white p-4 ring-1 ring-[#25262B]/10">
             <h3 className="text-sm font-black text-[#25262B]">Rangos de km</h3>
             <p className="mt-1 text-xs font-bold text-[#746f69]">
-              El cliente comparte ubicacion y VendeMas aplica el rango que corresponda.
+              El cliente comparte ubicacion y Somos aplica el rango que corresponda.
             </p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <label className="space-y-1">
@@ -550,6 +723,7 @@ function DeliveryStoreCard({
         si el comercio no ofrece descuento de delivery por compra minima.
       </div>
 
+      {!isEntrega2 ? (
       <details open={draft.deliveryPromoEnabled} className="mt-3 rounded-[24px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
         <summary className="cursor-pointer list-none">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -603,11 +777,12 @@ function DeliveryStoreCard({
           </div>
         ) : null}
       </details>
+      ) : null}
 
       <textarea
         value={draft.manualQuoteMessage}
         onChange={(event) => updateDraft("manualQuoteMessage", event.target.value)}
-        disabled={isAgencyLocked}
+        disabled={isExternalDeliveryLocked}
         rows={2}
         className="mt-3 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
         placeholder="Mensaje cuando la tarifa se confirma manualmente"
@@ -616,7 +791,7 @@ function DeliveryStoreCard({
       <div
         className={[
           "mt-4 grid gap-4 xl:grid-cols-2",
-          effectivePricingType === "zones" || (effectivePricingType === "distance_ranges" && !isEntrega2)
+          !isEntrega2 && (effectivePricingType === "zones" || effectivePricingType === "distance_ranges")
             ? ""
             : "hidden",
         ].join(" ")}
@@ -937,7 +1112,31 @@ export function DeliveryManager() {
         />
       ))}
 
-      <TransportMarketplaceSection pin={pin} onChanged={() => loadDelivery(pin)} />
+      {rows.length ? <DeliveryBillingSection rows={rows} pin={pin} /> : null}
+
+      {rows.some((row) => row.settings.deliveryProvider === "entrega2") ? (
+        <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.07]">
+          <div className="flex items-start gap-3">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#2E3A79] text-[#FFB547]">
+              <Lock size={20} />
+            </span>
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#2E3A79]">
+                Entrega2 App activa
+              </p>
+              <h3 className="mt-1 text-xl font-black text-[#25262B]">
+                Afiliaciones delivery bloqueadas
+              </h3>
+              <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
+                Este comercio ya está conectado a Entrega2 App. Para proteger esa integración,
+                no se muestran otras empresas delivery ni solicitudes de afiliación desde este módulo.
+              </p>
+            </div>
+          </div>
+        </section>
+      ) : (
+        <TransportMarketplaceSection pin={pin} onChanged={() => loadDelivery(pin)} />
+      )}
 
       {!rows.length ? (
         <section className="rounded-[34px] bg-white p-6 text-sm font-bold text-[#746f69] shadow-xl shadow-[#2E3A79]/[0.07]">

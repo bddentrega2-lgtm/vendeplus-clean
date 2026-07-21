@@ -327,9 +327,16 @@ export function getCurrentTransportOrder(order: OrderRow) {
   return (order.transport_orders || [])[0] || null;
 }
 
+export function isOrderCancelled(order: Pick<OrderRow, "status">) {
+  return ["cancelled", "canceled", "cancelado"].includes(
+    String(order.status || "").toLowerCase()
+  );
+}
+
 export function canSendToEntrega2(order: OrderRow) {
   const integration = getEntrega2Integration(order);
 
+  if (isOrderCancelled(order)) return false;
   if (order.delivery_type !== "delivery") return false;
   if (order.delivery_provider !== "entrega2") return false;
   if (!integration) return true;
@@ -341,6 +348,7 @@ export function canSendToTransportAgency(order: OrderRow) {
   const integration = getTransportAgencyIntegration(order);
   const transportOrder = getCurrentTransportOrder(order);
 
+  if (isOrderCancelled(order)) return false;
   if (order.delivery_type !== "delivery") return false;
   if (order.delivery_provider !== "transport_agency") return false;
   if (!order.transport_agency_id) return false;
@@ -397,7 +405,7 @@ export function getStatusOptionsForOrder(order: OrderRow) {
 export function getDeliverySummary(order: OrderRow) {
   if (order.delivery_type === "pickup") return "Retiro";
   if (order.delivery_zone_name) return `Delivery · ${order.delivery_zone_name}`;
-  if (order.delivery_provider === "entrega2") return "Delivery · Entrega2";
+  if (order.delivery_provider === "entrega2") return "Delivery · Entrega2 App";
   if (order.delivery_provider === "transport_agency") {
     return `Delivery - ${order.transport_agency_name || "Empresa delivery"}`;
   }

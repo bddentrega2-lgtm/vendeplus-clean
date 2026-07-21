@@ -1,4 +1,3 @@
-import { Clock, MessageCircle, ShoppingBag } from "lucide-react";
 import type { Store } from "@/types";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
 
@@ -23,9 +22,6 @@ export function StoreBrandHeader({ store }: { store: BrandedStore }) {
 
   const primaryColor = store.primaryColor || "#2E3A79";
   const accentColor = store.accentColor || "#FFB547";
-  const whatsappUrl = store.whatsappPhone
-    ? `https://wa.me/${store.whatsappPhone}`
-    : "";
   const logoFallback = (
     <div
       className="grid h-20 w-20 place-items-center rounded-3xl border-4 border-white text-3xl font-black shadow-xl"
@@ -82,27 +78,6 @@ export function StoreBrandHeader({ store }: { store: BrandedStore }) {
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            <span className="inline-flex items-center gap-2 rounded-full bg-white/14 px-3 py-2 text-xs font-black backdrop-blur">
-              <ShoppingBag size={15} className="text-[#FFB547]" />
-              Delivery {store.deliveryEstimate || "disponible"}
-            </span>
-            <span className="inline-flex items-center gap-2 rounded-full bg-white/14 px-3 py-2 text-xs font-black backdrop-blur">
-              <Clock size={15} className="text-[#FFB547]" />
-              Retiro (pick up) disponible
-            </span>
-            {whatsappUrl ? (
-              <a
-                href={whatsappUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-full bg-[#FFB547] px-3 py-2 text-xs font-black text-[#25262B]"
-              >
-                <MessageCircle size={15} />
-                Consultar por WhatsApp
-              </a>
-            ) : null}
-          </div>
         </div>
       </div>
     </section>

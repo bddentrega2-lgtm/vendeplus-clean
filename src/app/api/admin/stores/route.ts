@@ -75,6 +75,7 @@ export async function POST(request: NextRequest) {
     const payload = normalizeAdminStorePayload(body);
     const accessEmail = normalizeAccessEmail(body.access_email);
     const accessPassword = String(body.access_password || "").trim();
+    const accessPasswordConfirmation = String(body.access_password_confirmation || "").trim();
     const accessRole = String(body.access_role || "owner").trim();
 
     if (!payload.name) {
@@ -87,6 +88,10 @@ export async function POST(request: NextRequest) {
 
     if (accessEmail && accessPassword.length < 6) {
       return badRequest("La clave de acceso debe tener al menos 6 caracteres.");
+    }
+
+    if (accessEmail && accessPassword !== accessPasswordConfirmation) {
+      return badRequest("Las claves de acceso no coinciden.");
     }
 
     const supabase = createSupabaseAdminClient();

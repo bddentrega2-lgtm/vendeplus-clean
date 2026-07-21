@@ -1,8 +1,8 @@
 "use client";
 
 import { Check, Plus, X } from "lucide-react";
-import { useMemo, useState } from "react";
-import type { Product, ProductOptionValue, ProductVariant, SelectedCartOption } from "@/types";
+import { useMemo, useRef, useState } from "react";
+import type { Product, ProductOptionGroup, ProductOptionValue, ProductVariant, SelectedCartOption } from "@/types";
 import { addToCart } from "@/lib/cart";
 import { formatBaseCurrency, formatBs } from "@/lib/currency";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
@@ -46,6 +46,11 @@ function buildSelectedOptions(
   });
 }
 
+function getVariantPlaceholder(product: Product) {
+  const variantNames = product.variants?.map((variant) => variant.name.toLowerCase()) || [];
+  return variantNames.some((name) => name.includes("oz")) ? "Elige tamaño" : "Elige";
+}
+
 function ProductOptionsSheet({
   product,
   storeSlug,
@@ -55,6 +60,9 @@ function ProductOptionsSheet({
   quantity,
   selectedVariant,
   baseUnitPrice,
+  isLoadingOptions = false,
+  optionsMessage = "",
+  onRetryLoadOptions,
   onClose,
   onAdded,
 }: {
@@ -66,6 +74,9 @@ function ProductOptionsSheet({
   quantity: number;
   selectedVariant: ProductVariant | null;
   baseUnitPrice: number;
+  isLoadingOptions?: boolean;
+  optionsMessage?: string;
+  onRetryLoadOptions?: () => void;
   onClose: () => void;
   onAdded: () => void;
 }) {
@@ -74,6 +85,7 @@ function ProductOptionsSheet({
   }, []);
   const [selections, setSelections] = useState<SelectionMap>(initialSelections);
   const [message, setMessage] = useState("");
+  const hasLoadedOptions = Boolean(product.optionGroups?.length);
 
   const selectedOptions = useMemo(
     () => buildSelectedOptions(product, selections, selectedVariant),
@@ -119,7 +131,9 @@ function ProductOptionsSheet({
       const minSelect = group.required ? Math.max(1, group.minSelect) : 0;
 
       if (selectedCount < minSelect) {
-        return `Selecciona una opción para continuar en ${group.name}.`;
+        return minSelect === 1
+          ? `Selecciona una opción para continuar en ${group.name}.`
+          : `Selecciona ${minSelect} opciones para continuar en ${group.name}.`;
       }
 
       if (group.maxSelect > 0 && selectedCount > group.maxSelect) {
@@ -179,6 +193,28 @@ function ProductOptionsSheet({
         </div>
 
         <div className="mt-4 space-y-4">
+          {isLoadingOptions && !hasLoadedOptions ? (
+            <div className="rounded-2xl bg-[#FFF8F0] p-4 ring-1 ring-[#25262B]/[0.06]">
+              <p className="text-sm font-black text-[#25262B]">Cargando extras...</p>
+              <p className="mt-1 text-xs font-bold text-[#746f69]">
+                Estamos preparando las opciones de este producto.
+              </p>
+            </div>
+          ) : null}
+          {optionsMessage && !hasLoadedOptions ? (
+            <div className="rounded-2xl bg-red-50 p-4 text-sm font-black text-red-700">
+              <p>{optionsMessage}</p>
+              {onRetryLoadOptions ? (
+                <button
+                  type="button"
+                  onClick={onRetryLoadOptions}
+                  className="mt-3 rounded-full bg-white px-4 py-2 text-xs font-black text-red-700 ring-1 ring-red-100"
+                >
+                  Intentar de nuevo
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           {(product.optionGroups || []).map((group) => {
             const selectedIds = selections[group.id] || [];
             const maxSelect = group.maxSelect > 0 ? group.maxSelect : group.values.length;
@@ -187,7 +223,11 @@ function ProductOptionsSheet({
                 ? group.required
                   ? "Selecciona 1 opción"
                   : "Puedes seleccionar 1 opción"
-                : `Puedes seleccionar hasta ${maxSelect}`;
+                : group.required && group.minSelect > 0
+                  ? group.minSelect === maxSelect
+                    ? `Selecciona ${group.minSelect} opciones`
+                    : `Selecciona al menos ${group.minSelect} y hasta ${maxSelect}`
+                  : `Puedes seleccionar hasta ${maxSelect}`;
 
             return (
               <fieldset key={group.id} className="rounded-2xl bg-[#FFF8F0] p-3">
@@ -274,7 +314,13 @@ function ProductOptionsSheet({
           <button
             type="button"
             onClick={addCustomizedProduct}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B]"
+            disabled={isLoadingOptions || !hasLoadedOptions}
+            className={[
+              "inline-flex w-full items-center justify-center gap-2 rounded-full px-5 py-4 text-sm font-black",
+              isLoadingOptions || !hasLoadedOptions
+                ? "bg-[#F8F3E8] text-[#746f69]"
+                : "bg-[#FFB547] text-[#25262B]",
+            ].join(" ")}
           >
             <Plus size={18} />
             Añadir al carrito
@@ -304,19 +350,84 @@ export function ProductListItem({
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const [added, setAdded] = useState(false);
   const [isCustomizing, setIsCustomizing] = useState(false);
+  const [loadedOptionGroups, setLoadedOptionGroups] = useState<ProductOptionGroup[] | null>(
+    product.optionGroups?.length ? product.optionGroups : null
+  );
+  const optionGroupsRequestRef = useRef<Promise<ProductOptionGroup[]> | null>(null);
+  const [isLoadingOptions, setIsLoadingOptions] = useState(false);
+  const [optionsMessage, setOptionsMessage] = useState("");
+  const [isGalleryOpen, setIsGalleryOpen] = useState(false);
+  const [activeImage, setActiveImage] = useState(product.imageUrl);
+  const productImages = (product.imageUrls?.length ? product.imageUrls : [product.imageUrl]).slice(0, 2);
+  const hasOptionGroups = Boolean(loadedOptionGroups?.length || product.hasOptionGroups);
+  const productForOptions = useMemo(
+    () => ({
+      ...product,
+      optionGroups: loadedOptionGroups || product.optionGroups || [],
+    }),
+    [loadedOptionGroups, product]
+  );
 
   const unitPrice = useMemo(() => {
     return product.priceUsd + (selectedVariant?.priceDeltaUsd || 0);
   }, [product.priceUsd, selectedVariant]);
+  const originalUnitPrice = useMemo(() => {
+    if (!product.discountPercent || product.discountPercent <= 0) return null;
+    return selectedVariant?.originalPriceUsd || product.originalPriceUsd || null;
+  }, [product.discountPercent, product.originalPriceUsd, selectedVariant]);
   const canAdd = !hasVariants || Boolean(selectedVariant);
 
-  function handleAdd() {
+  async function loadOptionGroups() {
+    if (loadedOptionGroups) return loadedOptionGroups;
+    if (optionGroupsRequestRef.current) return optionGroupsRequestRef.current;
+
+    setIsLoadingOptions(true);
+    setOptionsMessage("");
+
+    const request = (async () => {
+      const params = new URLSearchParams({
+        storeSlug,
+        productId: product.id,
+      });
+      const response = await fetch(`/api/catalog/product-options?${params.toString()}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "No se pudieron cargar los extras.");
+      }
+
+      const nextOptionGroups = Array.isArray(data.optionGroups) ? data.optionGroups : [];
+      setLoadedOptionGroups(nextOptionGroups);
+      if (product.hasOptionGroups && !nextOptionGroups.length) {
+        setOptionsMessage("No se pudieron cargar los extras de este producto. Intenta de nuevo.");
+      }
+      return nextOptionGroups as ProductOptionGroup[];
+    })();
+
+    optionGroupsRequestRef.current = request;
+
+    try {
+      return await request;
+    } finally {
+      optionGroupsRequestRef.current = null;
+      setIsLoadingOptions(false);
+    }
+  }
+
+  async function handleAdd() {
     if (!canAdd) {
       return;
     }
 
-    if (product.optionGroups?.length) {
-      setIsCustomizing(true);
+    if (hasOptionGroups) {
+      try {
+        const optionGroups = await loadOptionGroups();
+        if (optionGroups.length) {
+          setIsCustomizing(true);
+        }
+      } catch (error: any) {
+        setOptionsMessage(error.message || "No se pudieron cargar los extras de este producto.");
+      }
       return;
     }
 
@@ -340,6 +451,13 @@ export function ProductListItem({
     window.setTimeout(() => setAdded(false), 1200);
   }
 
+  function prefetchOptions() {
+    if (!canAdd || !hasOptionGroups || loadedOptionGroups || isLoadingOptions) return;
+    void loadOptionGroups().catch(() => {
+      // La apertura del modal muestra el error si el cliente intenta continuar.
+    });
+  }
+
   return (
     <article
       className={[
@@ -354,19 +472,11 @@ export function ProductListItem({
           "grid min-h-[112px] grid-cols-[76px_minmax(0,1fr)] gap-2.5",
         ].join(" ")}
       >
-        <OptimizedImage
-          src={product.imageUrl}
-          alt={product.imageAlt}
-          width={76}
-          height={112}
-          sizes="76px"
-          className="h-[112px] w-[76px] rounded-xl bg-[#F8F3E8] object-cover"
-          fallback={
-            <div className="grid h-[112px] w-[76px] place-items-center rounded-xl bg-[#F8F3E8] text-lg font-black text-[#2E3A79]">
-              {product.name.slice(0, 1).toUpperCase()}
-            </div>
-          }
-        />
+        <button type="button" onClick={() => { setActiveImage(productImages[0]); setIsGalleryOpen(true); }} className="relative text-left" aria-label={`Ver fotos de ${product.name} en grande`}>
+          <OptimizedImage src={product.imageUrl} alt={product.imageAlt} width={76} height={112} sizes="76px" className="h-[112px] w-[76px] rounded-xl bg-[#F8F3E8] object-cover" fallback={<div className="grid h-[112px] w-[76px] place-items-center rounded-xl bg-[#F8F3E8] text-lg font-black text-[#2E3A79]">{product.name.slice(0, 1).toUpperCase()}</div>} />
+          {product.discountPercent && product.discountPercent > 0 ? <span className="absolute left-1 top-1 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-black text-white shadow-sm">-{product.discountPercent}%</span> : null}
+          {productImages.length > 1 ? <span className="absolute bottom-1 right-1 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-black text-white">2 fotos</span> : null}
+        </button>
         <div className="flex min-w-0 flex-col">
           <div className="flex min-w-0 items-start justify-between gap-2">
             <div className="min-w-0">
@@ -395,7 +505,7 @@ export function ProductListItem({
                 }}
                 className="mb-1.5 h-8 w-full rounded-lg border border-[#25262B]/10 bg-[#FFF8F0] px-2.5 text-[11px] font-black text-[#746f69] outline-none"
               >
-                <option value="">Elige el tamaño</option>
+                <option value="">{getVariantPlaceholder(product)}</option>
                 {product.variants.map((variant) => (
                   <option
                     key={variant.id}
@@ -409,6 +519,11 @@ export function ProductListItem({
             ) : null}
             <div className="flex items-end justify-between gap-2">
               <div className="min-w-0 leading-tight">
+                {originalUnitPrice && originalUnitPrice > unitPrice ? (
+                  <p className="text-[11px] font-black text-[#746f69] line-through">
+                    {formatBaseCurrency(originalUnitPrice, baseCurrency)}
+                  </p>
+                ) : null}
                 <p className="text-sm font-black text-[#25262B]">
                   {formatBaseCurrency(unitPrice, baseCurrency)}
                 </p>
@@ -421,6 +536,8 @@ export function ProductListItem({
               <button
                 type="button"
                 onClick={handleAdd}
+                onMouseEnter={prefetchOptions}
+                onFocus={prefetchOptions}
                 disabled={!canAdd}
                 className={[
                   "inline-flex min-h-8 shrink-0 items-center justify-center gap-1 rounded-full px-2.5 text-center text-[11px] font-black leading-tight",
@@ -432,15 +549,18 @@ export function ProductListItem({
                 ].join(" ")}
               >
                 {added ? <Check size={15} /> : <Plus size={15} />}
-                {added ? "Listo" : "Añadir"}
+                {isLoadingOptions ? "Cargando" : added ? "Listo" : "Añadir"}
               </button>
             </div>
+            {optionsMessage ? (
+              <p className="mt-1 text-[11px] font-black text-red-600">{optionsMessage}</p>
+            ) : null}
           </div>
         </div>
       </div>
       {isCustomizing ? (
         <ProductOptionsSheet
-          product={product}
+          product={productForOptions}
           storeSlug={storeSlug}
           usdToBs={usdToBs}
           baseCurrency={baseCurrency}
@@ -448,9 +568,25 @@ export function ProductListItem({
           quantity={1}
           selectedVariant={selectedVariant}
           baseUnitPrice={unitPrice}
+          isLoadingOptions={isLoadingOptions}
+          optionsMessage={optionsMessage}
+          onRetryLoadOptions={() => {
+            void loadOptionGroups().catch((error: any) => {
+              setOptionsMessage(error.message || "No se pudieron cargar los extras de este producto.");
+            });
+          }}
           onClose={() => setIsCustomizing(false)}
           onAdded={markAdded}
         />
+      ) : null}
+      {isGalleryOpen ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 p-3" role="dialog" aria-modal="true" aria-label={`Fotos de ${product.name}`}>
+          <button type="button" onClick={() => setIsGalleryOpen(false)} className="absolute right-4 top-4 grid h-11 w-11 place-items-center rounded-full bg-white text-[#25262B]" aria-label="Cerrar fotos"><X size={20} /></button>
+          <div className="w-full max-w-3xl">
+            <OptimizedImage src={activeImage} alt={product.imageAlt} width={1000} height={1000} sizes="100vw" className="max-h-[78vh] w-full rounded-2xl object-contain" />
+            {productImages.length > 1 ? <div className="mt-3 flex justify-center gap-3">{productImages.map((url, index) => <button type="button" key={url} onClick={() => setActiveImage(url)} className={activeImage === url ? "rounded-xl ring-4 ring-[#FFB547]" : "rounded-xl opacity-70"}><OptimizedImage src={url} alt={`${product.name}, foto ${index + 1}`} width={72} height={72} sizes="72px" className="h-18 w-18 rounded-xl object-cover" /></button>)}</div> : null}
+          </div>
+        </div>
       ) : null}
     </article>
   );

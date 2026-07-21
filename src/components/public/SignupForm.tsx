@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowRight, Check, Loader2, Lock, Store } from "lucide-react";
+import { ArrowRight, Check, Eye, EyeOff, Loader2, Lock, Store } from "lucide-react";
 import { plans } from "@/lib/plans";
 import { AuthCaptcha } from "@/components/shared/AuthCaptcha";
 
@@ -29,6 +29,9 @@ export function SignupForm() {
   const [storeName, setStoreName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [whatsapp, setWhatsapp] = useState("");
   const [businessType, setBusinessType] = useState("fashion");
   const [isSaving, setIsSaving] = useState(false);
@@ -46,6 +49,12 @@ export function SignupForm() {
     setError("");
     setSuccess(null);
 
+    if (password !== confirmPassword) {
+      setError("Las contraseñas no coinciden.");
+      setIsSaving(false);
+      return;
+    }
+
     try {
       const response = await fetch("/api/signup", {
         method: "POST",
@@ -54,6 +63,7 @@ export function SignupForm() {
           storeName,
           email,
           password,
+          confirmPassword,
           whatsapp,
           businessType,
           captchaToken,
@@ -72,6 +82,7 @@ export function SignupForm() {
         requiresEmailConfirmation: Boolean(data.requiresEmailConfirmation),
       });
       setPassword("");
+      setConfirmPassword("");
       setCaptchaToken("");
     } catch (error: any) {
       setError(error.message || "No se pudo crear la cuenta.");
@@ -182,7 +193,7 @@ export function SignupForm() {
               />
             </label>
 
-            <label className="space-y-1">
+            <label className="relative space-y-1">
               <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
                 Rubro
               </span>
@@ -199,7 +210,7 @@ export function SignupForm() {
               </select>
             </label>
 
-            <label className="space-y-1">
+            <label className="relative space-y-1">
               <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
                 WhatsApp
               </span>
@@ -224,16 +235,39 @@ export function SignupForm() {
               />
             </label>
 
-            <label className="space-y-1">
+            <label className="relative space-y-1">
               <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
                 Contraseña
               </span>
               <input
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                type="password"
+                type={showPassword ? "text" : "password"}
                 placeholder="Mínimo 8 caracteres"
-                className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+                minLength={8}
+                className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 pr-12 text-sm font-bold outline-none focus:border-[#2E3A79]"
+              />
+              <PasswordToggle
+                isVisible={showPassword}
+                onClick={() => setShowPassword((current) => !current)}
+              />
+            </label>
+
+            <label className="relative space-y-1">
+              <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
+                Confirmar clave
+              </span>
+              <input
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                type={showConfirmPassword ? "text" : "password"}
+                placeholder="Repite tu clave"
+                minLength={8}
+                className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 pr-12 text-sm font-bold outline-none focus:border-[#2E3A79]"
+              />
+              <PasswordToggle
+                isVisible={showConfirmPassword}
+                onClick={() => setShowConfirmPassword((current) => !current)}
               />
             </label>
           </div>
@@ -265,5 +299,24 @@ export function SignupForm() {
         </section>
       </div>
     </main>
+  );
+}
+
+function PasswordToggle({
+  isVisible,
+  onClick,
+}: {
+  isVisible: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="absolute right-3 top-[38px] rounded-full p-1 text-[#746f69] hover:bg-[#F8F3E8] hover:text-[#2E3A79]"
+      aria-label={isVisible ? "Ocultar clave" : "Mostrar clave"}
+    >
+      {isVisible ? <EyeOff size={18} /> : <Eye size={18} />}
+    </button>
   );
 }

@@ -20,6 +20,7 @@ import {
   getSavedPanelToken,
   hasSavedPanelAuth,
 } from "@/lib/panel/client-auth";
+import { buildClientPublicUrl } from "@/lib/public-url";
 
 type StoreRow = {
   id: string;
@@ -150,8 +151,7 @@ export function AdminStoresManager() {
   }
 
   async function copyStoreLink(store: StoreRow) {
-    const origin = window.location.origin;
-    await navigator.clipboard.writeText(`${origin}/${store.slug}`);
+    await navigator.clipboard.writeText(buildClientPublicUrl(`/${store.slug}`));
     setMessage(`Link copiado: /${store.slug}`);
   }
 

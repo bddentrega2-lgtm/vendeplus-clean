@@ -1,13 +1,17 @@
 ﻿"use client";
 import { StoreBrandHeader } from "@/components/public/StoreBrandHeader";
 import type { CSSProperties } from "react";
-import { Clock, MessageCircle, Search, ShieldCheck } from "lucide-react";
+import { Clock, MessageCircle, Search, Share2, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { Store } from "@/types";
 import { CategoryTabs } from "@/components/public/CategoryTabs";
 import { ProductListItem } from "@/components/public/ProductCard";
 import { CartBar } from "@/components/public/CartBar";
 import { getCart } from "@/lib/cart";
+import { buildClientPublicUrl } from "@/lib/public-url";
+
+const FEATURED_PRODUCTS_LIMIT = 5;
+const CATEGORY_PREVIEW_LIMIT = 7;
 
 function getBrandStyle(store: any): CSSProperties {
   return {
@@ -20,6 +24,7 @@ export function CatalogClient({ store }: { store: Store }) {
   const [selectedCategoryId, setSelectedCategoryId] = useState("all");
   const [query, setQuery] = useState("");
   const [cartItems, setCartItems] = useState<ReturnType<typeof getCart>>([]);
+  const [shareStatus, setShareStatus] = useState("");
 
   const products = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -34,7 +39,7 @@ export function CatalogClient({ store }: { store: Store }) {
     () =>
       store.products
         .filter((product) => product.isFeatured)
-        .slice(0, 3),
+        .slice(0, FEATURED_PRODUCTS_LIMIT),
     [store.products]
   );
 
@@ -45,40 +50,67 @@ export function CatalogClient({ store }: { store: Store }) {
   const showPricesInBs = store.showPricesInBs !== false;
   const baseCurrency = store.baseCurrency || "USD";
   const showGroupedMenu = selectedCategoryId === "all";
+  const showCategoryPreviews = showGroupedMenu && !query.trim();
+  const whatsappUrl = store.whatsappPhone ? `https://wa.me/${store.whatsappPhone}` : "";
+
+  async function shareCatalog() {
+    const url = buildClientPublicUrl(`${window.location.pathname}${window.location.search}`);
+    const shareData = {
+      title: `${store.name} en Somos`,
+      text: `Mira el catálogo de ${store.name} en Somos.`,
+      url,
+    };
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+        return;
+      }
+
+      await navigator.clipboard.writeText(url);
+      setShareStatus("Link copiado");
+      window.setTimeout(() => setShareStatus(""), 2200);
+    } catch {
+      setShareStatus("No se pudo compartir");
+      window.setTimeout(() => setShareStatus(""), 2200);
+    }
+  }
 
   const categorySections = useMemo(() => {
-    const productsByCategory = new Map<string, typeof menuProducts>();
-    const uncategorized: typeof menuProducts = [];
+    const allProductsByCategory = new Map<string, typeof products>();
+    const allUncategorized: typeof products = [];
 
-    for (const product of menuProducts) {
+    for (const product of products) {
       if (!product.categoryId) {
-        uncategorized.push(product);
+        allUncategorized.push(product);
         continue;
       }
 
-      const current = productsByCategory.get(product.categoryId) || [];
+      const current = allProductsByCategory.get(product.categoryId) || [];
       current.push(product);
-      productsByCategory.set(product.categoryId, current);
+      allProductsByCategory.set(product.categoryId, current);
     }
 
     const sections = store.categories
       .map((category) => ({
         id: category.id,
         name: category.name,
-        products: productsByCategory.get(category.id) || [],
+        products: allProductsByCategory.get(category.id) || [],
+        totalProducts: allProductsByCategory.get(category.id)?.length || 0,
       }))
-      .filter((section) => section.products.length > 0);
+      .filter((section) => section.products.length > 0 || section.totalProducts > 0);
 
-    if (uncategorized.length > 0) {
+    if (allUncategorized.length > 0) {
       sections.push({
         id: "uncategorized",
         name: "Otros",
-        products: uncategorized,
+        products: allUncategorized,
+        totalProducts: allUncategorized.length,
       });
     }
 
     return sections;
-  }, [menuProducts, store.categories]);
+  }, [products, store.categories]);
 
   const cartQuantityByProduct = useMemo(() => {
     return cartItems.reduce<Record<string, number>>((acc, item) => {
@@ -119,11 +151,20 @@ export function CatalogClient({ store }: { store: Store }) {
             className="w-full bg-transparent text-sm font-bold text-[#25262B] outline-none placeholder:text-[#746f69]/70"
           />
         </div>
-        <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-          <div className="rounded-2xl bg-[#2E3A79] p-3 text-white">
+        <div className="mt-4 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
+          <a
+            href={whatsappUrl || undefined}
+            target={whatsappUrl ? "_blank" : undefined}
+            rel={whatsappUrl ? "noopener noreferrer" : undefined}
+            aria-disabled={!whatsappUrl}
+            className={[
+              "rounded-2xl bg-[#2E3A79] p-3 text-white transition",
+              whatsappUrl ? "hover:-translate-y-0.5 hover:shadow-lg hover:shadow-[#2E3A79]/15" : "pointer-events-none opacity-60",
+            ].join(" ")}
+          >
             <MessageCircle className="mx-auto mb-1 text-[#FFB547]" size={17} />
             <p className="text-sm font-black">WhatsApp</p>
-          </div>
+          </a>
           {showPricesInBs ? (
             <div className="rounded-2xl bg-[#FFB547] p-3 text-[#25262B]">
               <ShieldCheck className="mx-auto mb-1" size={17} />
@@ -139,6 +180,14 @@ export function CatalogClient({ store }: { store: Store }) {
             <Clock className="mx-auto mb-1 text-[#2E3A79]" size={17} />
             <p className="text-sm font-black">{store.deliveryEstimate || "Delivery"}</p>
           </div>
+          <button
+            type="button"
+            onClick={shareCatalog}
+            className="rounded-2xl bg-white p-3 text-[#25262B] ring-1 ring-[#25262B]/[0.06] transition hover:-translate-y-0.5 hover:shadow-lg hover:shadow-[#2E3A79]/10"
+          >
+            <Share2 className="mx-auto mb-1 text-[#2E3A79]" size={17} />
+            <p className="text-sm font-black">{shareStatus || "Compartir"}</p>
+          </button>
         </div>
       </section>
 
@@ -147,7 +196,10 @@ export function CatalogClient({ store }: { store: Store }) {
       {showFeatured ? (
         <section className="mb-6">
           <div className="mb-3 flex items-center justify-between gap-4">
-            <h2 className="text-2xl font-black text-[#25262B]">Favoritos</h2>
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#746f69]">Promocional</p>
+              <h2 className="text-2xl font-black text-[#25262B]">Favoritos del momento</h2>
+            </div>
           </div>
           <div className="-mx-4 overflow-x-auto px-4 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <div className="flex snap-x snap-mandatory gap-3">
@@ -180,11 +232,14 @@ export function CatalogClient({ store }: { store: Store }) {
               <div className="mb-2 flex items-center justify-between gap-3">
                 <h3 className="text-lg font-black text-[#25262B]">{section.name}</h3>
                 <span className="rounded-full bg-white px-3 py-1.5 text-[11px] font-black text-[#746f69] shadow-sm">
-                  {section.products.length}
+                  {section.totalProducts} producto{section.totalProducts === 1 ? "" : "s"}
                 </span>
               </div>
               <div className="grid gap-2">
-                {section.products.map((product) => (
+                {(showCategoryPreviews && section.products.length > CATEGORY_PREVIEW_LIMIT
+                  ? section.products.slice(0, CATEGORY_PREVIEW_LIMIT)
+                  : section.products
+                ).map((product) => (
                   <ProductListItem
                     key={product.id}
                     product={product}
@@ -196,6 +251,15 @@ export function CatalogClient({ store }: { store: Store }) {
                   />
                 ))}
               </div>
+              {showCategoryPreviews && section.totalProducts > CATEGORY_PREVIEW_LIMIT && section.id !== "uncategorized" ? (
+                <button
+                  type="button"
+                  onClick={() => setSelectedCategoryId(section.id)}
+                  className="mt-3 w-full rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#2E3A79] shadow-sm ring-1 ring-[#25262B]/[0.07]"
+                >
+                  Ver todos en {section.name} ({section.totalProducts})
+                </button>
+              ) : null}
             </section>
           ))}
         </div>

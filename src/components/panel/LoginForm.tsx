@@ -76,7 +76,7 @@ export function LoginForm() {
         </div>
 
         <p className="mt-5 text-sm font-black uppercase tracking-[0.18em] text-[#746f69]">
-          Panel VendeMas
+          Panel Somos
         </p>
         <h1 className="mt-2 text-4xl font-black">Iniciar sesión</h1>
         <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
@@ -92,7 +92,7 @@ export function LoginForm() {
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               type="email"
-              placeholder="admin@vendeplus.com"
+              placeholder="admin@somos.app"
               className="mt-1 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
             />
           </label>

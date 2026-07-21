@@ -1,6 +1,6 @@
 import { performance } from "node:perf_hooks";
 
-const baseUrl = process.env.LOAD_BASE_URL || "https://vendeplus-clean.vercel.app";
+const baseUrl = process.env.LOAD_BASE_URL || "https://somos-ve.com";
 const storeSlug = process.env.LOAD_STORE_SLUG || "armario";
 const concurrency = Number(process.env.LOAD_CONCURRENCY || 4);
 const hardBudgetMs = Number(process.env.LOAD_HARD_BUDGET_MS || 12000);

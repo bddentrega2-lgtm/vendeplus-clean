@@ -56,6 +56,36 @@ function optionalNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+export function normalizeAdminDeliverySettingsPayload(body: any) {
+  const provider = ["own_delivery", "entrega2", "manual_quote", "transport_agency", "disabled"].includes(
+    cleanText(body.admin_delivery_provider)
+  )
+    ? cleanText(body.admin_delivery_provider)
+    : "";
+
+  if (!provider) return null;
+
+  const deliveryEnabled = provider !== "disabled" && body.admin_delivery_enabled !== false;
+  const pickupEnabled = body.admin_pickup_enabled !== false;
+
+  return {
+    delivery_enabled: deliveryEnabled,
+    pickup_enabled: pickupEnabled,
+    delivery_provider: provider,
+    pricing_type:
+      provider === "entrega2"
+        ? "manual"
+        : provider === "manual_quote"
+          ? "manual"
+          : provider === "disabled"
+            ? "manual"
+            : "distance_ranges",
+    fixed_fee_usd: 0,
+    transport_agency_connection_id: null,
+    transport_agency_id: null,
+  };
+}
+
 function normalizePaymentMethods(value: unknown) {
   if (Array.isArray(value)) {
     return value.map((item) => cleanText(item)).filter(Boolean);

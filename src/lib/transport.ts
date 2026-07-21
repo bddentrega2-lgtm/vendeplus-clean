@@ -1,10 +1,32 @@
 import type { StoreDeliverySettings } from "@/types";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createSupabasePublicClient } from "@/lib/supabase/server";
+import { normalizePublicBrandText } from "@/lib/brand-copy";
 import { isTransportConnectionEnded } from "@/lib/transport/disengagement";
 
 export type TransportAgencyPricingType = "flat" | "zones" | "distance_ranges" | "manual";
 export type TransportAgencyStatus = "pending" | "active" | "paused" | "rejected";
 export type TransportAgencyModality = "open" | "exclusive" | "mixed";
 export type TransportAgencyRatesVisibility = "public" | "private";
+export type PublicTransportAgencyLogo = {
+  id: string;
+  name: string;
+  slug: string;
+  city: string | null;
+  state: string | null;
+  coverageNotes: string | null;
+  logoUrl: string;
+  initials: string;
+};
+
+function getTransportInitials(name: string) {
+  return name
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
 
 export function cleanTransportText(value: unknown, maxLength = 500) {
   return String(value || "").trim().slice(0, maxLength);
@@ -13,6 +35,87 @@ export function cleanTransportText(value: unknown, maxLength = 500) {
 export function transportMoney(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+}
+
+export async function getPublicTransportAgencyLogos(
+  limit = 10
+): Promise<PublicTransportAgencyLogo[]> {
+  const supabase = createSupabasePublicClient() || createSupabaseAdminClient();
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from("transport_agencies")
+    .select("id, name, slug, city, state, coverage_notes, logo_url")
+    .eq("status", "active")
+    .eq("is_active", true)
+    .not("logo_url", "is", null)
+    .order("name", { ascending: true })
+    .limit(limit);
+
+  if (error || !data?.length) {
+    if (error) {
+      console.warn("Could not load public transport agency logos:", error.message);
+    }
+    try {
+      const admin = createSupabaseAdminClient();
+      const fallback = await admin
+        .from("transport_agencies")
+        .select("id, name, slug, city, state, coverage_notes, logo_url")
+        .eq("status", "active")
+        .eq("is_active", true)
+        .not("logo_url", "is", null)
+        .order("name", { ascending: true })
+        .limit(limit);
+
+      if (fallback.error || !fallback.data?.length) return [];
+      return mapPublicTransportAgencyLogos(fallback.data);
+    } catch {
+      return [];
+    }
+  }
+
+  return mapPublicTransportAgencyLogos(data);
+}
+
+function mapPublicTransportAgencyLogos(data: any[]): PublicTransportAgencyLogo[] {
+  return data
+    .filter((agency) => agency.name && agency.slug && agency.logo_url)
+    .map((agency) => ({
+      id: String(agency.id),
+      name: String(agency.name),
+      slug: String(agency.slug),
+      city: agency.city || null,
+      state: agency.state || null,
+      coverageNotes: normalizePublicBrandText(agency.coverage_notes) || null,
+      logoUrl: String(agency.logo_url),
+      initials: getTransportInitials(String(agency.name)),
+    }));
+}
+
+export async function getEntrega2AppBrand() {
+  try {
+    const supabase = createSupabaseAdminClient();
+    const { data } = await supabase
+      .from("transport_agencies")
+      .select("id, name, slug, logo_url")
+      .eq("status", "active")
+      .eq("is_active", true)
+      .or("slug.eq.entrega2,name.ilike.%Entrega2%")
+      .order("name", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (!data?.logo_url) return null;
+
+    return {
+      id: String(data.id),
+      name: "Entrega2 App",
+      slug: String(data.slug || "entrega2"),
+      logoUrl: String(data.logo_url),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function optionalTransportNumber(value: unknown) {
@@ -154,7 +257,7 @@ export function mapTransportAgencyDeliverySettings(params: {
     deliveryPromoDiscountType: promoSettings.deliveryPromoDiscountType || "free",
     deliveryPromoDiscountValue: promoSettings.deliveryPromoDiscountValue || 0,
     maxDistanceKm: optionalTransportNumber(rate.max_distance_km),
-    distanceFactor: null,
+    distanceFactor: optionalTransportNumber(rate.distance_factor_usd),
     manualQuoteMessage: manualMessage,
     zones: (params.zones || [])
       .map((zone) => ({
@@ -179,6 +282,7 @@ export function mapTransportAgencyDeliverySettings(params: {
     transportAgencyConnectionId: params.connectionId || null,
     transportAgencyId: agency.id ? String(agency.id) : null,
     transportAgencyName: agency.name || null,
+    transportAgencyLogoUrl: agency.logo_url || null,
   };
 }
 

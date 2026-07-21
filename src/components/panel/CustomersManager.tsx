@@ -260,7 +260,7 @@ function CustomerDetail({
               <h3 className="text-lg font-black">Productos favoritos</h3>
               <div className="mt-3 space-y-2">
                 {(customer.favorite_products || []).length ? (
-                  customer.favorite_products.map((product) => (
+                  customer.favorite_products.slice(0, 5).map((product) => (
                     <div
                       key={product.name}
                       className="flex justify-between rounded-2xl bg-[#F8F3E8] px-3 py-2 text-sm font-black"
@@ -395,7 +395,12 @@ export function CustomersManager() {
   const [isLoading, setIsLoading] = useState(() => hasSavedPanelAuth());
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [summary, setSummary] = useState<any>(null);
-  const [page, setPage] = useState({ limit: 80, offset: 0, hasMore: false });
+  const [page, setPage] = useState({
+    limit: 80,
+    offset: 0,
+    nextOffset: 0,
+    hasMore: false,
+  });
   const [search, setSearch] = useState("");
   const [segment, setSegment] = useState("all");
   const [error, setError] = useState("");
@@ -431,7 +436,14 @@ export function CustomersManager() {
         nextOffset > 0 ? [...current, ...(data.customers || [])] : data.customers || []
       );
       setSummary(data.summary || null);
-      setPage(data.page || { limit: page.limit, offset: nextOffset, hasMore: false });
+      setPage(
+        data.page || {
+          limit: page.limit,
+          offset: nextOffset,
+          nextOffset: nextOffset + (data.customers || []).length,
+          hasMore: false,
+        }
+      );
       setIsUnlocked(true);
       savePanelPin(currentPin);
 
@@ -530,7 +542,7 @@ export function CustomersManager() {
       const date = new Date().toISOString().slice(0, 10);
 
       link.href = url;
-      link.download = `clientes-vendemas-${date}.csv`;
+      link.download = `clientes-somos-${date}.csv`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -790,7 +802,7 @@ export function CustomersManager() {
           <button
             type="button"
             onClick={() =>
-              loadCustomers(pin, search, segment, customers.length)
+              loadCustomers(pin, search, segment, page.nextOffset)
             }
             disabled={isLoading}
             className="mx-auto inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-5 py-3 text-sm font-black text-white disabled:opacity-60"

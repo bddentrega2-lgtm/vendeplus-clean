@@ -7,7 +7,7 @@ const baseUrl =
   process.env.PREDEPLOY_BASE_URL ||
   process.env.E2E_BASE_URL ||
   process.env.LOAD_BASE_URL ||
-  "https://vendeplus-clean.vercel.app";
+  "https://somos-ve.com";
 const storeSlug = process.env.PREDEPLOY_STORE_SLUG || process.env.E2E_STORE_SLUG || "armario";
 const skipHttp = String(process.env.PREDEPLOY_SKIP_HTTP || "").toLowerCase() === "true";
 const hardBudgetMs = Number(process.env.PREDEPLOY_HARD_BUDGET_MS || 15_000);
@@ -103,6 +103,77 @@ function runSourceContracts() {
     if (!assertFile(route)) continue;
     assertContains(route, /createApiRequestContext/, "API critica con request-id");
     assertContains(route, /logApi(Error|Event)/, "API critica con log estructurado");
+  }
+
+  const routeFiles = listFiles("src/app/api")
+    .filter((entry) => normalizePathForContract(entry).endsWith("/route.ts"))
+    .map(normalizePathForContract);
+
+  const publicApiRoutes = new Set([
+    "src/app/api/catalog/product-options/route.ts",
+    "src/app/api/orders/route.ts",
+    "src/app/api/signup/route.ts",
+    "src/app/api/transport/agencies/apply/route.ts",
+  ]);
+
+  for (const route of routeFiles) {
+    const normalizedRoute = normalizePathForContract(route);
+    const content = read(route);
+
+    if (publicApiRoutes.has(normalizedRoute)) continue;
+
+    if (normalizedRoute.startsWith("src/app/api/admin/auth-check/")) {
+      if (/auth\.getUser/.test(content) && /isFounderEmail/.test(content)) {
+        add("PASS", "Contrato admin auth-check", normalizedRoute);
+      } else {
+        add("FAIL", "Contrato admin auth-check", `${normalizedRoute} debe validar usuario fundador.`);
+      }
+      continue;
+    }
+
+    if (normalizedRoute.startsWith("src/app/api/admin/")) {
+      if (/requireAdminAuth/.test(content)) {
+        add("PASS", "Contrato admin protegido", normalizedRoute);
+      } else {
+        add("FAIL", "Contrato admin protegido", `${normalizedRoute} sin requireAdminAuth.`);
+      }
+      continue;
+    }
+
+    if (normalizedRoute.startsWith("src/app/api/panel/")) {
+      if (/requirePanelAuth/.test(content)) {
+        add("PASS", "Contrato panel protegido", normalizedRoute);
+      } else {
+        add("FAIL", "Contrato panel protegido", `${normalizedRoute} sin requirePanelAuth.`);
+      }
+      continue;
+    }
+
+    if (normalizedRoute.startsWith("src/app/api/transport/")) {
+      if (/requireTransportAgencyAuth/.test(content)) {
+        add("PASS", "Contrato transporte protegido", normalizedRoute);
+      } else {
+        add("FAIL", "Contrato transporte protegido", `${normalizedRoute} sin requireTransportAgencyAuth.`);
+      }
+      continue;
+    }
+
+    if (normalizedRoute.startsWith("src/app/api/cron/")) {
+      if (/CRON_SECRET/.test(content)) {
+        add("PASS", "Contrato cron protegido", normalizedRoute);
+      } else {
+        add("FAIL", "Contrato cron protegido", `${normalizedRoute} sin CRON_SECRET.`);
+      }
+      continue;
+    }
+
+    if (normalizedRoute.startsWith("src/app/api/integrations/")) {
+      if (/isValidEntrega2Webhook|webhook/i.test(content)) {
+        add("PASS", "Contrato webhook protegido", normalizedRoute);
+      } else {
+        add("FAIL", "Contrato webhook protegido", `${normalizedRoute} sin validacion de webhook.`);
+      }
+    }
   }
 
   const requiredMigrations = [

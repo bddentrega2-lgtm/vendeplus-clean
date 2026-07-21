@@ -1,11 +1,70 @@
-﻿import { notFound } from "next/navigation";
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { CatalogClient } from "@/components/public/CatalogClient";
 import {
   getPublicStoreBySlug,
+  getPublicStoreShellBySlug,
   getUnavailableStoreContactBySlug,
 } from "@/lib/supabase/catalog";
+import { buildPublicUrl } from "@/lib/public-url";
 
 export const revalidate = 30;
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ storeSlug: string }>;
+}): Promise<Metadata> {
+  const { storeSlug } = await params;
+  const store = await getPublicStoreShellBySlug(storeSlug);
+
+  if (!store) {
+    return {
+      title: "Catálogo no disponible | Somos",
+      description: "Este catálogo no está disponible temporalmente en Somos.",
+      alternates: {
+        canonical: buildPublicUrl(`/${storeSlug}`),
+      },
+    };
+  }
+
+  const title = `${store.name} | Catálogo Somos`;
+  const description =
+    store.description ||
+    `Mira el catálogo de ${store.name}, arma tu pedido y envíalo por WhatsApp.`;
+  const imageUrl = buildPublicUrl(`/${store.slug}/opengraph-image`);
+  const pageUrl = buildPublicUrl(`/${store.slug}`);
+
+  return {
+    title,
+    description,
+    alternates: {
+      canonical: pageUrl,
+    },
+    openGraph: {
+      title,
+      description,
+      url: pageUrl,
+      siteName: "Somos",
+      type: "website",
+      locale: "es_VE",
+      images: [
+        {
+          url: imageUrl,
+          width: 1200,
+          height: 630,
+          alt: `Catálogo de ${store.name} en Somos`,
+        },
+      ],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [imageUrl],
+    },
+  };
+}
 
 export default async function StorePage({
   params,

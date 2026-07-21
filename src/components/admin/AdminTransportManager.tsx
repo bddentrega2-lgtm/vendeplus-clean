@@ -124,7 +124,7 @@ export function AdminTransportManager() {
   return (
     <div className="space-y-5">
       <section className="grid gap-3 md:grid-cols-4">
-        <Metric label="Empresas activas" value={summary.activeAgencies || 0} />
+        <Metric label="Empresas aprobadas" value={summary.activeAgencies || 0} />
         <Metric label="Empresas pendientes" value={summary.pendingAgencies || 0} />
         <Metric label="Solicitudes pendientes" value={summary.pendingRequests || 0} />
         <Metric label="Delivery semana" value={`$${Number(summary.deliveryUsd || 0).toFixed(2)}`} />
@@ -162,6 +162,13 @@ export function AdminTransportManager() {
                   <p className="text-sm font-bold text-[#746f69]">
                     {agency.status} · {agency.contact_email} · {agency.city || "Sin ciudad"}
                   </p>
+                  <p className="mt-1 text-xs font-black text-[#2E3A79]">
+                    {agency.status === "active"
+                      ? agency.is_active
+                        ? "Visible para comercios"
+                        : "Acceso aprobado - falta configuracion para publicarse"
+                      : "Pendiente de aprobacion de acceso"}
+                  </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -169,7 +176,7 @@ export function AdminTransportManager() {
                     className="inline-flex items-center gap-2 rounded-full bg-green-100 px-4 py-2 text-xs font-black text-green-700"
                   >
                     <CheckCircle2 size={15} />
-                    Activar
+                    Aprobar acceso
                   </button>
                   <button
                     onClick={() => updateAgency(agency.id, "paused")}

@@ -23,7 +23,13 @@ function isIosDevice() {
   return /iphone|ipad|ipod/i.test(window.navigator.userAgent);
 }
 
-export function PwaInstallButton({ compact = false }: { compact?: boolean }) {
+export function PwaInstallButton({
+  compact = false,
+  label = "Instalar Somos",
+}: {
+  compact?: boolean;
+  label?: string;
+}) {
   const [installPrompt, setInstallPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(false);
@@ -91,7 +97,7 @@ export function PwaInstallButton({ compact = false }: { compact?: boolean }) {
         ].join(" ")}
       >
         {installPrompt ? <Download size={17} /> : <Smartphone size={17} />}
-        Instalar VendeMas
+        {label}
       </button>
 
       {showHelp ? (
@@ -114,7 +120,7 @@ export function PwaInstallButton({ compact = false }: { compact?: boolean }) {
           {isIos ? (
             <p className="pr-8">
               En iPhone: toca Compartir en Safari y luego Agregar a pantalla de
-              inicio. El acceso abrira VendeMas como app.
+              inicio. El acceso abrira Somos como app.
             </p>
           ) : (
             <p className="pr-8">

@@ -1,6 +1,6 @@
-# Vende+ Clean
+# Somos Clean
 
-Versión limpia del catálogo inteligente Vende+.
+Versión limpia de Somos.
 
 ## Ejecutar en local
 

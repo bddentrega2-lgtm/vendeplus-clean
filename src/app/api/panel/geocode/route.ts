@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
           "Accept-Language": "es",
           "User-Agent":
             process.env.GEOCODING_USER_AGENT ||
-            "VendePlus/1.0 (contacto@vendeplus.app)",
+            "Somos/1.0",
         },
         next: { revalidate: 60 * 60 },
       }

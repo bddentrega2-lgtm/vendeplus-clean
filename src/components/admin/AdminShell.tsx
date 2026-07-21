@@ -45,7 +45,7 @@ export function AdminShell({
               <ShieldCheck size={22} />
             </div>
             <div>
-              <p className="text-xl font-black leading-none text-[#25262B]">VendeMas</p>
+              <p className="text-xl font-black leading-none text-[#25262B]">Somos</p>
               <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-[#746f69]">
                 Admin
               </p>

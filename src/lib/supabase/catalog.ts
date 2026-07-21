@@ -9,7 +9,8 @@ import {
   mapStoreDeliverySettings,
 } from "@/lib/delivery";
 import { getStoreOpenState } from "@/lib/business-hours";
-import { loadTransportAgencyDeliverySettings } from "@/lib/transport";
+import { getEntrega2AppBrand, loadTransportAgencyDeliverySettings } from "@/lib/transport";
+import { normalizePublicBrandText } from "@/lib/brand-copy";
 
 type AnyRecord = Record<string, any>;
 
@@ -70,7 +71,7 @@ function toRecord(value: unknown) {
     : {};
 }
 
-function isStoreSubscriptionPastDue(row: AnyRecord) {
+export function isStoreSubscriptionPastDue(row: AnyRecord) {
   const status = String(row.subscription_status || "").toLowerCase();
   if (["past_due", "expired", "paused", "cancelled"].includes(status)) return true;
 
@@ -82,18 +83,22 @@ function isStoreSubscriptionPastDue(row: AnyRecord) {
   return Number.isFinite(dueTime) && dueTime < Date.now();
 }
 
-function mapVariant(row: AnyRecord, productPriceUsd: number): ProductVariant {
-  const variantPrice = toNumber(row.price_usd, productPriceUsd);
+function mapVariant(row: AnyRecord, productPriceUsd: number, discountPercent = 0): ProductVariant {
+  const originalVariantPrice = toNumber(row.price_usd, productPriceUsd);
+  const variantPrice = discountPercent > 0
+    ? Number((originalVariantPrice * (1 - discountPercent / 100)).toFixed(2))
+    : originalVariantPrice;
 
   return {
     id: String(row.id),
     name: row.name || "Presentación",
     priceDeltaUsd: Math.max(0, variantPrice - productPriceUsd),
+    originalPriceUsd: originalVariantPrice,
     isAvailable: row.is_available !== false,
   };
 }
 
-function mapOptionGroups(product: AnyRecord): ProductOptionGroup[] {
+export function mapOptionGroups(product: AnyRecord): ProductOptionGroup[] {
   const assignmentsRaw: AnyRecord[] = Array.isArray(product.product_option_group_products)
     ? product.product_option_group_products
     : [];
@@ -175,10 +180,17 @@ function mapStore(
     .filter((product) => product.is_available !== false)
     .sort((a, b) => toNumber(a.sort_order) - toNumber(b.sort_order))
     .map((product) => {
-      const priceUsd = toNumber(product.price_usd);
+      const originalPriceUsd = toNumber(product.price_usd);
+      const discountPercent = Math.max(0, Math.min(95, toNumber(product.discount_percent, 0)));
+      const priceUsd = discountPercent > 0
+        ? Number((originalPriceUsd * (1 - discountPercent / 100)).toFixed(2))
+        : originalPriceUsd;
       const variantsRaw: AnyRecord[] = Array.isArray(product.product_variants)
         ? product.product_variants
         : [];
+      const gallery = Array.isArray(product.product_images) ? product.product_images : [];
+      const imageUrls = [product.image_url, ...gallery.sort((a: AnyRecord, b: AnyRecord) => toNumber(a.sort_order) - toNumber(b.sort_order)).map((image: AnyRecord) => image.image_url)]
+        .map((url) => String(url || "").trim()).filter((url, index, urls) => Boolean(url) && urls.indexOf(url) === index).slice(0, 2);
 
       return {
         id: String(product.id),
@@ -186,19 +198,28 @@ function mapStore(
         categoryId: product.category_id ? String(product.category_id) : categories[0]?.id || "general",
         name: product.name || "Producto",
         slug: `${slugify(product.name || "producto")}-${String(product.id).slice(0, 6)}`,
-        description: product.description || "Producto disponible para pedir desde VendeMas.",
+        description: product.description || "Producto disponible para pedir desde Somos.",
         priceUsd,
-        imageUrl: product.image_url || row.cover_image_url || fallbackHeroImages[row.slug] || fallbackHeroImages["don-aniello"],
+        originalPriceUsd,
+        discountPercent,
+        imageUrl: imageUrls[0] || row.logo_url || row.cover_image_url || fallbackHeroImages[row.slug] || fallbackHeroImages["don-aniello"],
+        imageUrls,
         imageAlt: product.name || "Producto",
-        imageEmoji: "✨",
+        imageEmoji: "?",
         isAvailable: product.is_available !== false,
         isFeatured: Boolean(product.is_featured),
-        tags: product.is_featured ? ["Recomendado"] : [],
+        tags: [
+          ...(discountPercent > 0 ? [`-${discountPercent}%`] : []),
+          ...(product.is_featured ? ["Recomendado"] : []),
+        ],
         variants: variantsRaw
           .filter((variant) => variant.is_available !== false)
           .sort((a, b) => toNumber(a.sort_order) - toNumber(b.sort_order))
-          .map((variant) => mapVariant(variant, priceUsd)),
+          .map((variant) => mapVariant(variant, priceUsd, discountPercent)),
         optionGroups: mapOptionGroups(product),
+        hasOptionGroups: Array.isArray(product.product_option_group_products)
+          ? product.product_option_group_products.length > 0
+          : false,
       };
     });
 
@@ -208,8 +229,8 @@ function mapStore(
     id: String(row.id),
     name: row.name || fallback?.name || "Comercio",
     slug: row.slug,
-    category: row.business_type || fallback?.category || row.description || "Comercio aliado",
-    description: row.description || fallback?.description || "Catalogo disponible en VendeMas.",
+    category: normalizePublicBrandText(row.business_type || fallback?.category || row.description) || "Comercio aliado",
+    description: normalizePublicBrandText(row.description || fallback?.description) || "Catalogo disponible en Somos.",
     whatsappPhone: row.whatsapp || fallback?.whatsappPhone || "584245666025",
     address: row.address || fallback?.address || "Maracay, Aragua",
     latitude: toNumber(row.latitude, fallback?.latitude || 0),
@@ -217,7 +238,7 @@ function mapStore(
     openingHours: row.opening_hours || fallback?.openingHours || "Disponible hoy",
     deliveryEstimate: row.delivery_estimate || fallback?.deliveryEstimate || "25-40 min",
     pickupEstimate: row.pickup_estimate || fallback?.pickupEstimate || "15-25 min",
-    badge: fallback?.badge || "Aliado VendeMas",
+    badge: fallback?.badge || "Aliado Somos",
     heroImageUrl: row.cover_image_url || fallback?.heroImageUrl || fallbackHeroImages[row.slug] || fallbackHeroImages["don-aniello"],
     categories: categories.length ? categories : includeFallbackCatalog ? fallback?.categories || [] : [],
     products: products.length ? products : includeFallbackCatalog ? fallback?.products || [] : [],
@@ -241,6 +262,9 @@ function mapStore(
       businessHours: toRecord(row.business_hours),
       openingHoursText: row.opening_hours,
     }),
+    planType: row.plan_type || "monthly",
+    serviceFeePayer: row.service_fee_payer === "customer" ? "customer" : "merchant",
+    serviceFeeBillingCycle: row.service_fee_billing_cycle === "weekly" ? "weekly" : "monthly",
   };
 }
 
@@ -273,6 +297,9 @@ const storeSelect = `
   whatsapp_message_note,
   is_active,
   subscription_status,
+  plan_type,
+  service_fee_payer,
+  service_fee_billing_cycle,
   trial_ends_at,
   subscription_ends_at,
   next_payment_due_at,
@@ -322,6 +349,7 @@ const storeSelect = `
     name,
     description,
     price_usd,
+    discount_percent,
     image_url,
     is_available,
     is_featured,
@@ -334,37 +362,16 @@ const storeSelect = `
       sort_order
     ),
     product_option_group_products (
-      id,
-      sort_order,
-      product_option_groups (
-        id,
-        name,
-        description,
-        selection_type,
-        required,
-        min_select,
-        max_select,
-        is_active,
-        sort_order,
-        product_option_values (
-          id,
-          name,
-          description,
-          price_delta_usd,
-          is_active,
-          sort_order,
-          product_option_value_variant_prices (
-            variant_id,
-            price_delta_usd
-          )
-        )
-      )
+      id
     )
   )
 `;
 
 const baseStoreSelect = `
   id,
+  plan_type,
+  service_fee_payer,
+  service_fee_billing_cycle,
   slug,
   name,
   description,
@@ -406,6 +413,7 @@ const baseStoreSelect = `
     name,
     description,
     price_usd,
+    discount_percent,
     image_url,
     is_available,
     is_featured,
@@ -418,37 +426,16 @@ const baseStoreSelect = `
       sort_order
     ),
     product_option_group_products (
-      id,
-      sort_order,
-      product_option_groups (
-        id,
-        name,
-        description,
-        selection_type,
-        required,
-        min_select,
-        max_select,
-        is_active,
-        sort_order,
-        product_option_values (
-          id,
-          name,
-          description,
-          price_delta_usd,
-          is_active,
-          sort_order,
-          product_option_value_variant_prices (
-            variant_id,
-            price_delta_usd
-          )
-        )
-      )
+      id
     )
   )
 `;
 
 const storeShellSelect = `
   id,
+  plan_type,
+  service_fee_payer,
+  service_fee_billing_cycle,
   slug,
   name,
   description,
@@ -516,6 +503,9 @@ const storeShellSelect = `
 
 const storeShellCompatibleSelect = `
   id,
+  plan_type,
+  service_fee_payer,
+  service_fee_billing_cycle,
   slug,
   name,
   description,
@@ -581,6 +571,9 @@ const storeShellCompatibleSelect = `
 
 const deliveryCompatibleStoreSelect = `
   id,
+  plan_type,
+  service_fee_payer,
+  service_fee_billing_cycle,
   slug,
   name,
   description,
@@ -655,6 +648,7 @@ const deliveryCompatibleStoreSelect = `
     name,
     description,
     price_usd,
+    discount_percent,
     image_url,
     is_available,
     is_featured,
@@ -667,37 +661,16 @@ const deliveryCompatibleStoreSelect = `
       sort_order
     ),
     product_option_group_products (
-      id,
-      sort_order,
-      product_option_groups (
-        id,
-        name,
-        description,
-        selection_type,
-        required,
-        min_select,
-        max_select,
-        is_active,
-        sort_order,
-        product_option_values (
-          id,
-          name,
-          description,
-          price_delta_usd,
-          is_active,
-          sort_order,
-          product_option_value_variant_prices (
-            variant_id,
-            price_delta_usd
-          )
-        )
-      )
+      id
     )
   )
 `;
 
 const legacyStoreSelect = `
   id,
+  plan_type,
+  service_fee_payer,
+  service_fee_billing_cycle,
   slug,
   name,
   description,
@@ -733,6 +706,7 @@ const legacyStoreSelect = `
     name,
     description,
     price_usd,
+    discount_percent,
     image_url,
     is_available,
     is_featured,
@@ -768,6 +742,21 @@ async function applyTransportDeliverySettings(store: Store) {
         deliverySettings: transport.settings,
       };
     }
+
+    if (store.deliverySettings?.deliveryProvider === "entrega2") {
+      const entrega2Brand = await getEntrega2AppBrand();
+      if (entrega2Brand?.logoUrl) {
+        return {
+          ...store,
+          deliverySettings: {
+            ...store.deliverySettings,
+            transportAgencyId: entrega2Brand.id,
+            transportAgencyName: entrega2Brand.name,
+            transportAgencyLogoUrl: entrega2Brand.logoUrl,
+          },
+        };
+      }
+    }
   } catch {
     return store;
   }
@@ -778,6 +767,49 @@ async function applyTransportDeliverySettings(store: Store) {
     ...store,
     deliverySettings: disableUnavailableTransportAgencySettings(store.deliverySettings),
   };
+}
+
+async function hydrateStoreDeliveryRelations(row: AnyRecord | null): Promise<AnyRecord | null> {
+  if (!row?.id) return row;
+
+  try {
+    const supabase = createSupabaseAdminClient();
+    const [settingsResult, zonesResult, ratesResult] = await Promise.all([
+      supabase
+        .from("store_delivery_settings")
+        .select(
+          "delivery_enabled, pickup_enabled, delivery_provider, pricing_type, fixed_fee_usd, free_delivery_min_usd, delivery_promo_enabled, delivery_promo_min_subtotal_usd, delivery_promo_discount_type, delivery_promo_discount_value, max_distance_km, distance_factor, manual_quote_message, transport_agency_connection_id, transport_agency_id"
+        )
+        .eq("store_id", row.id)
+        .maybeSingle(),
+      supabase
+        .from("store_delivery_zones")
+        .select("id, name, description, fee_usd, is_active, sort_order")
+        .eq("store_id", row.id)
+        .order("sort_order", { ascending: true }),
+      supabase
+        .from("store_delivery_distance_rates")
+        .select("id, min_km, max_km, fee_usd, is_active, sort_order")
+        .eq("store_id", row.id)
+        .order("sort_order", { ascending: true }),
+    ]);
+
+    return {
+      ...row,
+      store_delivery_settings: settingsResult.data ? [settingsResult.data] : [],
+      store_delivery_zones: zonesResult.data || row.store_delivery_zones || [],
+      store_delivery_distance_rates:
+        ratesResult.data || row.store_delivery_distance_rates || [],
+    };
+  } catch {
+    return row;
+  }
+}
+
+async function hydrateStoresDeliveryRelations(rows: AnyRecord[]): Promise<AnyRecord[]> {
+  return Promise.all(
+    rows.map(async (row) => (await hydrateStoreDeliveryRelations(row)) || row)
+  );
 }
 
 export async function getPublicStores(): Promise<Store[]> {
@@ -820,9 +852,116 @@ export async function getPublicStores(): Promise<Store[]> {
     return allowDemoFallbacks() ? fallbackStores : [];
   }
 
-  return data
+  const hydratedData = await hydrateStoresDeliveryRelations(data as AnyRecord[]);
+
+  return hydratedData
     .filter((row) => !isStoreSubscriptionPastDue(row))
     .map((row) => mapStore(row, { includeFallbackCatalog: false }));
+}
+
+export async function getPublicTransportAgencyMarketplaceBySlug(slug: string): Promise<{
+  agency: {
+    id: string;
+    name: string;
+    slug: string;
+    logoUrl: string | null;
+    bannerImageUrl: string | null;
+    city: string | null;
+    state: string | null;
+    coverageNotes: string | null;
+  };
+  stores: Store[];
+} | null> {
+  const supabase = createSupabaseAdminClient();
+  const normalizedSlug = String(slug || "").trim().toLowerCase();
+  if (!normalizedSlug) return null;
+
+  let { data: agency, error: agencyError } = await supabase
+    .from("transport_agencies")
+    .select("id, name, slug, logo_url, banner_image_url, city, state, coverage_notes, status, is_active")
+    .eq("slug", normalizedSlug)
+    .eq("status", "active")
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (agencyError && /banner_image_url/i.test(agencyError.message || "")) {
+    const fallback = await supabase
+      .from("transport_agencies")
+      .select("id, name, slug, logo_url, city, state, coverage_notes, status, is_active")
+      .eq("slug", normalizedSlug)
+      .eq("status", "active")
+      .eq("is_active", true)
+      .maybeSingle();
+
+    agency = fallback.data ? { ...fallback.data, banner_image_url: null } : null;
+    agencyError = fallback.error;
+  }
+
+  if (agencyError || !agency?.id) return null;
+
+  const { data: connections, error: connectionsError } = await supabase
+    .from("store_transport_agency_connections")
+    .select("store_id, disengagement_effective_at")
+    .eq("agency_id", agency.id)
+    .eq("status", "active")
+    .order("connected_at", { ascending: false })
+    .limit(200);
+
+  if (connectionsError) return null;
+
+  const now = Date.now();
+  const storeIds = Array.from(
+    new Set(
+      (connections || [])
+        .filter((connection) => {
+          if (!connection.store_id) return false;
+          if (!connection.disengagement_effective_at) return true;
+          return new Date(connection.disengagement_effective_at).getTime() > now;
+        })
+        .map((connection) => connection.store_id)
+    )
+  );
+
+  if (!storeIds.length) {
+    return {
+      agency: {
+        id: String(agency.id),
+        name: agency.name,
+        slug: agency.slug,
+        logoUrl: agency.logo_url || null,
+        bannerImageUrl: agency.banner_image_url || null,
+        city: agency.city || null,
+        state: agency.state || null,
+        coverageNotes: normalizePublicBrandText(agency.coverage_notes) || null,
+      },
+      stores: [],
+    };
+  }
+
+  const { data: storesData, error: storesError } = await supabase
+    .from("stores")
+    .select(storeShellSelect)
+    .in("id", storeIds)
+    .eq("is_active", true)
+    .order("name", { ascending: true });
+
+  if (storesError) return null;
+
+  return {
+    agency: {
+      id: String(agency.id),
+      name: agency.name,
+      slug: agency.slug,
+      logoUrl: agency.logo_url || null,
+      bannerImageUrl: agency.banner_image_url || null,
+      city: agency.city || null,
+      state: agency.state || null,
+      coverageNotes: normalizePublicBrandText(agency.coverage_notes) || null,
+    },
+    stores: (await hydrateStoresDeliveryRelations((storesData || []) as AnyRecord[]))
+      .filter((row) => !isStoreSubscriptionPastDue(row))
+      .map((row) => mapStore(row, { includeFallbackCatalog: false })),
+  };
 }
 
 export async function getPublicStoreShellBySlug(slug: string): Promise<Store | null> {
@@ -888,6 +1027,8 @@ export async function getPublicStoreShellBySlug(slug: string): Promise<Store | n
       : null;
   }
 
+  data = await hydrateStoreDeliveryRelations(data);
+
   if (isStoreSubscriptionPastDue(data)) return null;
 
   return applyTransportDeliverySettings(mapStore(data, { includeFallbackCatalog: false }));
@@ -942,7 +1083,31 @@ export async function getPublicStoreBySlug(slug: string): Promise<Store | null> 
     return allowDemoFallbacks() ? getFallbackStoreBySlug(slug) || null : null;
   }
 
+  data = await hydrateStoreDeliveryRelations(data);
+
   if (isStoreSubscriptionPastDue(data)) return null;
+
+  const productIds = (data.products || []).map((product: AnyRecord) => product.id).filter(Boolean);
+  if (productIds.length) {
+    const imagesResult = await supabase.from("product_images")
+      .select("product_id, image_url, sort_order, is_active")
+      .in("product_id", productIds).eq("is_active", true).order("sort_order");
+    if (!imagesResult.error) {
+      const imagesByProductId = new Map<string, AnyRecord[]>();
+      for (const image of imagesResult.data || []) {
+        const productId = String((image as AnyRecord).product_id || "");
+        if (!productId) continue;
+        const currentImages = imagesByProductId.get(productId) || [];
+        currentImages.push(image as AnyRecord);
+        imagesByProductId.set(productId, currentImages);
+      }
+
+      data.products = (data.products || []).map((product: AnyRecord) => ({
+        ...product,
+        product_images: imagesByProductId.get(String(product.id)) || [],
+      }));
+    }
+  }
 
   return applyTransportDeliverySettings(mapStore(data));
 }
@@ -974,6 +1139,8 @@ export async function getPublicStoreSlugs() {
   const stores = await getPublicStores();
   return stores.map((store) => store.slug);
 }
+
+
 
 
 

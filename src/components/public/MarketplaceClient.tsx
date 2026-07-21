@@ -115,7 +115,35 @@ function StoreCard({ store }: { store: Store }) {
   );
 }
 
-export function MarketplaceClient({ stores }: { stores: Store[] }) {
+export function MarketplaceClient({
+  stores,
+  eyebrow = "Marketplace",
+  title = "Compra en comercios afiliados a Somos",
+  description = "Busca un comercio, arma tu pedido, elige delivery o retiro y confirma por WhatsApp.",
+  storesEyebrow = "Comercios disponibles",
+  storesTitle = "Elige donde comprar",
+  emptyTitle = "Pronto veras negocios disponibles aqui",
+  emptyText = "Mientras tanto, puedes volver al inicio para registrar un comercio o empresa delivery.",
+  footerText = "Marketplace de comercios afiliados.",
+  partnerName,
+  partnerLogoUrl,
+  partnerBannerImageUrl,
+  partnerLocation,
+}: {
+  stores: Store[];
+  eyebrow?: string;
+  title?: string;
+  description?: string;
+  storesEyebrow?: string;
+  storesTitle?: string;
+  emptyTitle?: string;
+  emptyText?: string;
+  footerText?: string;
+  partnerName?: string;
+  partnerLogoUrl?: string | null;
+  partnerBannerImageUrl?: string | null;
+  partnerLocation?: string;
+}) {
   const [query, setQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("Todos");
 
@@ -139,7 +167,7 @@ export function MarketplaceClient({ stores }: { stores: Store[] }) {
     <main className="min-h-screen bg-[#FFF8F0] text-[#25262B]">
       <header className="sticky top-0 z-30 border-b border-[#25262B]/[0.06] bg-[#FFF8F0]/95 backdrop-blur">
         <nav className="vp-container flex items-center justify-between gap-3 py-3">
-          <Link href="/" aria-label="Ir al inicio de VendeMas">
+          <Link href="/" aria-label="Ir al inicio de Somos">
             <BrandLogo compact />
           </Link>
           <div className="flex items-center gap-2">
@@ -161,15 +189,62 @@ export function MarketplaceClient({ stores }: { stores: Store[] }) {
 
       <section className="bg-white">
         <div className="vp-container py-8 sm:py-12">
+          {partnerName && partnerBannerImageUrl ? (
+            <div className="relative mb-6 h-44 overflow-hidden rounded-[32px] bg-[#2E3A79] shadow-2xl shadow-[#2E3A79]/15 sm:h-64">
+              <OptimizedImage
+                src={partnerBannerImageUrl}
+                alt={`Banner de ${partnerName}`}
+                fill
+                sizes="(max-width: 768px) 100vw, 1080px"
+                className="object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#25262B]/70 via-[#25262B]/10 to-transparent" />
+              <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between gap-4">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-white/75">
+                    Marketplace aliado
+                  </p>
+                  <p className="mt-1 text-3xl font-black text-white sm:text-5xl">{partnerName}</p>
+                </div>
+              </div>
+            </div>
+          ) : null}
           <p className="text-sm font-black uppercase tracking-[0.18em] text-[#2E3A79]">
-            Marketplace
+            {eyebrow}
           </p>
           <h1 className="mt-2 max-w-3xl text-4xl font-black leading-[1.03] sm:text-6xl">
-            Compra en comercios afiliados a VendeMas
+            {title}
           </h1>
           <p className="mt-4 max-w-2xl text-base font-bold leading-relaxed text-[#746f69]">
-            Busca un comercio, arma tu pedido, elige delivery o retiro y confirma por WhatsApp.
+            {description}
           </p>
+
+          {partnerName ? (
+            <div className="mt-6 flex max-w-2xl items-center gap-4 rounded-[28px] bg-[#FFF8F0] p-4 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
+              <OptimizedImage
+                src={partnerLogoUrl || ""}
+                alt={`${partnerName} logo`}
+                width={80}
+                height={80}
+                sizes="80px"
+                className="h-20 w-20 shrink-0 rounded-3xl bg-white object-cover shadow-lg shadow-[#2E3A79]/10 ring-1 ring-[#25262B]/10"
+                fallback={
+                  <span className="grid h-20 w-20 shrink-0 place-items-center rounded-3xl bg-[#2E3A79] text-2xl font-black text-[#FFB547]">
+                    {partnerName.slice(0, 1).toUpperCase()}
+                  </span>
+                }
+              />
+              <div className="min-w-0">
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
+                  Empresa delivery aliada
+                </p>
+                <p className="truncate text-2xl font-black text-[#25262B]">{partnerName}</p>
+                {partnerLocation ? (
+                  <p className="text-sm font-bold text-[#746f69]">{partnerLocation}</p>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
 
           <div className="mt-7 grid gap-3 md:grid-cols-3">
             {[
@@ -232,9 +307,9 @@ export function MarketplaceClient({ stores }: { stores: Store[] }) {
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
           <div>
             <p className="text-sm font-black uppercase tracking-[0.18em] text-[#2E3A79]">
-              Comercios disponibles
+              {storesEyebrow}
             </p>
-            <h2 className="mt-1 text-3xl font-black">Elige donde comprar</h2>
+            <h2 className="mt-1 text-3xl font-black">{storesTitle}</h2>
           </div>
           <p className="text-sm font-black text-[#746f69]">
             {filteredStores.length} resultado{filteredStores.length === 1 ? "" : "s"}
@@ -252,9 +327,9 @@ export function MarketplaceClient({ stores }: { stores: Store[] }) {
             <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#FFB547] text-[#25262B]">
               <StoreIcon size={24} />
             </div>
-            <h3 className="mt-4 text-2xl font-black">Pronto veras negocios disponibles aqui</h3>
+            <h3 className="mt-4 text-2xl font-black">{emptyTitle}</h3>
             <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
-              Mientras tanto, puedes volver al inicio para registrar un comercio o empresa delivery.
+              {emptyText}
             </p>
           </div>
         )}
@@ -265,7 +340,7 @@ export function MarketplaceClient({ stores }: { stores: Store[] }) {
           <div>
             <BrandLogo compact />
             <p className="mt-3 text-sm font-bold text-white/65">
-              Marketplace de comercios afiliados.
+              {footerText}
             </p>
           </div>
           <Link

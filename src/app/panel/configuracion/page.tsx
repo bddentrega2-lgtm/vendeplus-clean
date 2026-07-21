@@ -1,17 +1,8 @@
-﻿import { PanelShell } from "@/components/panel/PanelShell";
 import { ConfigManager } from "@/components/panel/ConfigManager";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function PanelSettingsPage() {
-  return (
-    <PanelShell
-      active="/panel/configuracion"
-      title="Configuración"
-      subtitle="Edita la información comercial y operativa de cada negocio asignado."
-    >
-      <ConfigManager />
-    </PanelShell>
-  );
+  return <ConfigManager />;
 }

@@ -109,6 +109,8 @@ export async function PATCH(request: NextRequest) {
     if (!agencyId) return badRequest("Falta la empresa delivery.");
 
     const supabase = createSupabaseAdminClient();
+    let shouldPublish = false;
+
     if (status === "active") {
       const { data: currentAgency, error: readinessError } = await supabase
         .from("transport_agencies")
@@ -132,16 +134,14 @@ export async function PATCH(request: NextRequest) {
         distanceRates: currentAgency.transport_agency_distance_rates || [],
       });
 
-      if (issues.length) {
-        return badRequest(`No se puede activar aun. Falta: ${issues.join(", ")}.`);
-      }
+      shouldPublish = issues.length === 0;
     }
 
     const { data: agency, error } = await supabase
       .from("transport_agencies")
       .update({
         status,
-        is_active: status === "active",
+        is_active: status === "active" ? shouldPublish : false,
         admin_notes: cleanTransportText(body.adminNotes, 500) || null,
         updated_at: new Date().toISOString(),
       })
@@ -150,6 +150,26 @@ export async function PATCH(request: NextRequest) {
       .single();
 
     if (error) throw error;
+
+    if (status === "active") {
+      const { data: agencyUsers, error: agencyUsersError } = await supabase
+        .from("transport_agency_users")
+        .select("user_id")
+        .eq("agency_id", agencyId);
+
+      if (agencyUsersError) throw agencyUsersError;
+
+      const confirmResults = await Promise.all(
+        (agencyUsers || [])
+          .map((entry: any) => String(entry.user_id || ""))
+          .filter(Boolean)
+          .map((userId: string) =>
+            supabase.auth.admin.updateUserById(userId, { email_confirm: true })
+          )
+      );
+      const confirmError = confirmResults.find((result) => result.error)?.error;
+      if (confirmError) throw confirmError;
+    }
 
     if (status !== "active") {
       await supabase

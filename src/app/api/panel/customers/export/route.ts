@@ -227,7 +227,7 @@ export async function GET(request: NextRequest) {
     return new NextResponse(`\uFEFF${csv}`, {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="clientes-vendemas-${date}.csv"`,
+        "Content-Disposition": `attachment; filename="clientes-somos-${date}.csv"`,
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
       },

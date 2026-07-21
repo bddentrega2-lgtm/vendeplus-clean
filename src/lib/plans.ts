@@ -8,7 +8,7 @@ export type PlanId =
   | "visionario";
 
 export const TRIAL_DAYS = 15;
-export const PER_SERVICE_FEE_USD = 0.07;
+export const PER_SERVICE_FEE_USD = 0.1;
 
 export type Plan = {
   id: PlanId;
@@ -58,7 +58,7 @@ const perServicePlan: Plan = {
   serviceFeeUsd: PER_SERVICE_FEE_USD,
   features: [
     "Sin mensualidad fija",
-    "$0.07 por servicio procesado",
+    "$0.10 por servicio procesado",
     "Corte mensual con lo acumulado",
     "Ideal para bajo volumen",
     "Hasta 50 productos",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Loader2, Send } from "lucide-react";
+import { CheckCircle2, Eye, EyeOff, Loader2, Send } from "lucide-react";
 import { AuthCaptcha } from "@/components/shared/AuthCaptcha";
 
 export function TransportRegistrationForm() {
@@ -12,7 +12,10 @@ export function TransportRegistrationForm() {
     contactEmail: "",
     contactPhone: "",
     password: "",
+    confirmPassword: "",
   });
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [captchaToken, setCaptchaToken] = useState("");
@@ -26,6 +29,12 @@ export function TransportRegistrationForm() {
     event.preventDefault();
     setIsSaving(true);
     setMessage("");
+
+    if (form.password !== form.confirmPassword) {
+      setMessage("Las claves no coinciden.");
+      setIsSaving(false);
+      return;
+    }
 
     try {
       const response = await fetch("/api/transport/agencies/apply", {
@@ -74,7 +83,34 @@ export function TransportRegistrationForm() {
         <Input label="Telefono" value={form.contactPhone} onChange={(value) => update("contactPhone", value)} required />
         <Input label="Responsable" value={form.contactName} onChange={(value) => update("contactName", value)} required />
         <Input label="Correo" type="email" value={form.contactEmail} onChange={(value) => update("contactEmail", value)} required />
-        <Input label="Clave de ingreso" type="password" value={form.password} onChange={(value) => update("password", value)} required />
+        <Input
+          label="Clave de ingreso"
+          type={showPassword ? "text" : "password"}
+          value={form.password}
+          onChange={(value) => update("password", value)}
+          required
+          minLength={8}
+          trailingButton={
+            <PasswordToggle
+              isVisible={showPassword}
+              onClick={() => setShowPassword((current) => !current)}
+            />
+          }
+        />
+        <Input
+          label="Confirmar clave"
+          type={showConfirmPassword ? "text" : "password"}
+          value={form.confirmPassword}
+          onChange={(value) => update("confirmPassword", value)}
+          required
+          minLength={8}
+          trailingButton={
+            <PasswordToggle
+              isVisible={showConfirmPassword}
+              onClick={() => setShowConfirmPassword((current) => !current)}
+            />
+          }
+        />
       </div>
 
       <AuthCaptcha action="transport_agency_apply" onToken={setCaptchaToken} />
@@ -99,24 +135,53 @@ function Input({
   onChange,
   type = "text",
   required = false,
+  minLength,
+  trailingButton,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   type?: string;
   required?: boolean;
+  minLength?: number;
+  trailingButton?: React.ReactNode;
 }) {
   return (
     <label className="space-y-1">
       <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">{label}</span>
-      <input
-        type={type}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        required={required}
-        minLength={type === "password" ? 8 : undefined}
-        className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-      />
+      <span className="relative block">
+        <input
+          type={type}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          required={required}
+          minLength={minLength}
+          className={[
+            "w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]",
+            trailingButton ? "pr-12" : "",
+          ].join(" ")}
+        />
+        {trailingButton}
+      </span>
     </label>
+  );
+}
+
+function PasswordToggle({
+  isVisible,
+  onClick,
+}: {
+  isVisible: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-[#746f69] hover:bg-[#F8F3E8] hover:text-[#2E3A79]"
+      aria-label={isVisible ? "Ocultar clave" : "Mostrar clave"}
+    >
+      {isVisible ? <EyeOff size={18} /> : <Eye size={18} />}
+    </button>
   );
 }

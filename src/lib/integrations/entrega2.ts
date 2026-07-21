@@ -46,13 +46,18 @@ function getEntrega2Config() {
 
   if (!baseUrl || !apiKey) {
     throw new Entrega2ConfigError(
-      "Faltan variables de entorno de Entrega2 en el servidor."
+      "Faltan variables de entorno de Entrega2 App en el servidor."
     );
   }
 
   return {
     baseUrl,
     apiKey,
+    createdByUserId:
+      process.env.ENTREGA2_CREATED_BY_USER_ID?.trim() ||
+      "somos@entrega2company.com",
+    defaultVehicleType:
+      process.env.ENTREGA2_DEFAULT_VEHICLE_TYPE?.trim() || "tapp",
   };
 }
 
@@ -70,12 +75,12 @@ async function parseResponse(response: Response) {
 
 export async function sendEntrega2Order(payload: Record<string, unknown>) {
   const config = getEntrega2Config();
-  const endpoint = `${config.baseUrl}/orders`;
+  const endpoint = `${config.baseUrl}/pedidos`;
 
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${config.apiKey}`,
+      "X-API-Key": config.apiKey,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
@@ -85,7 +90,7 @@ export async function sendEntrega2Order(payload: Record<string, unknown>) {
 
   if (!response.ok) {
     throw new Entrega2ApiError(
-      "Entrega2 rechazó el pedido.",
+      "Entrega2 App rechazó el pedido.",
       response.status,
       responsePayload
     );
@@ -98,6 +103,44 @@ export async function sendEntrega2Order(payload: Record<string, unknown>) {
   };
 }
 
+export async function quoteEntrega2Delivery(payload: Record<string, unknown>) {
+  const config = getEntrega2Config();
+  const endpoint = `${config.baseUrl}/cotiza2`;
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "X-API-Key": config.apiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+    cache: "no-store",
+  });
+  const responsePayload = await parseResponse(response);
+
+  if (!response.ok) {
+    throw new Entrega2ApiError(
+      "Entrega2 App no pudo cotizar el delivery.",
+      response.status,
+      responsePayload
+    );
+  }
+
+  return {
+    endpoint,
+    status: response.status,
+    payload: responsePayload,
+  };
+}
+
+export function getEntrega2CreatedByUserId() {
+  return getEntrega2Config().createdByUserId;
+}
+
+export function getEntrega2DefaultVehicleType() {
+  return getEntrega2Config().defaultVehicleType;
+}
+
 export function normalizeEntrega2OrderStatus(value: unknown) {
   const status = String(value || "").trim().toLowerCase();
 
@@ -105,15 +148,20 @@ export function normalizeEntrega2OrderStatus(value: unknown) {
 
   const map: Record<string, string> = {
     accepted: "accepted",
+    aceptado: "accepted",
     asignado: "accepted",
     assigned: "accepted",
     confirmado: "accepted",
+    pendiente: "sent",
+    retirando: "delivering",
+    llevando: "delivering",
     pickup: "delivering",
     picked_up: "delivering",
     collected: "delivering",
     en_camino: "delivering",
     on_route: "delivering",
     delivering: "delivering",
+    con_novedad: "issue",
     delivered: "completed",
     entregado: "completed",
     completed: "completed",

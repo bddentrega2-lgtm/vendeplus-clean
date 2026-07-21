@@ -38,20 +38,20 @@ export function PanelShell({
 }: {
   children: React.ReactNode;
   title: string;
-  subtitle: string;
+  subtitle?: string;
   active: string;
 }) {
   return (
     <main className="min-h-screen bg-[#F8F3E8] text-[#25262B]">
       <div className="mx-auto flex min-h-screen w-full max-w-[1440px]">
-        <aside className="hidden w-72 shrink-0 border-r border-[#25262B]/10 bg-white/70 p-5 backdrop-blur-xl lg:block">
+        <aside className="sticky top-0 hidden h-screen w-72 shrink-0 self-start overflow-y-auto border-r border-[#25262B]/10 bg-white/70 p-5 backdrop-blur-xl lg:block">
           <Link href="/panel" className="flex items-center gap-3">
             <div className="grid h-12 w-12 place-items-center rounded-3xl bg-[#2E3A79] text-[#FFB547] shadow-lg shadow-[#2E3A79]/20">
               <Sparkles size={22} />
             </div>
             <div>
               <p className="text-xl font-black leading-none text-[#2E3A79]">
-                VendeMas
+                Somos
               </p>
               <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-[#746f69]">
                 Panel
@@ -84,8 +84,11 @@ export function PanelShell({
 
           <PanelStoreIdentity />
 
-          <div className="mt-4">
-            <PwaInstallButton compact />
+          <div className="mt-4 rounded-[26px] bg-[#F8F3E8] p-3 ring-1 ring-[#25262B]/[0.06]">
+            <p className="mb-2 text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
+              Acceso rápido
+            </p>
+            <PwaInstallButton compact label="Descargar app" />
           </div>
 
           <div className="mt-4">
@@ -97,23 +100,19 @@ export function PanelShell({
           <header className="rounded-[36px] bg-[#2E3A79] p-6 text-white shadow-2xl shadow-[#2E3A79]/20">
             <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
               <div>
-                <p className="text-sm font-black uppercase tracking-[0.18em] text-[#FFB547]">
-                  VendeMas Panel de ventas
-                </p>
-                <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-5xl">
+                <h1 className="text-3xl font-black tracking-tight sm:text-5xl">
                   {title}
                 </h1>
-                <p className="mt-3 max-w-2xl text-sm font-semibold leading-relaxed text-white/75 sm:text-base">
-                  {subtitle}
-                </p>
+                {subtitle ? (
+                  <p className="mt-3 max-w-2xl text-sm font-semibold leading-relaxed text-white/75 sm:text-base">
+                    {subtitle}
+                  </p>
+                ) : null}
               </div>
 
               <div className="flex flex-col gap-3 sm:flex-row md:items-center">
-                <div className="rounded-3xl bg-white/10 px-4 py-3 text-sm font-black backdrop-blur">
-                  Datos guardados automáticamente
-                </div>
                 <div className="md:hidden">
-                  <PwaInstallButton compact />
+                  <PwaInstallButton compact label="Descargar app" />
                 </div>
               </div>
             </div>
@@ -129,14 +128,23 @@ export function PanelShell({
                   key={item.href}
                   href={item.href}
                   className={[
-                    "flex items-center justify-center gap-2 rounded-2xl px-3 py-3 text-xs font-black",
+                    "group flex items-center gap-3 rounded-[24px] p-4 text-sm font-black shadow-lg shadow-[#2E3A79]/[0.05] ring-1 ring-[#25262B]/[0.06] transition hover:-translate-y-0.5",
                     isActive
                       ? "bg-[#2E3A79] text-white"
-                      : "bg-white text-[#746f69]",
+                      : "bg-white text-[#746f69] hover:text-[#25262B]",
                   ].join(" ")}
                 >
-                  <Icon size={15} />
-                  {item.label}
+                  <span
+                    className={[
+                      "grid h-10 w-10 shrink-0 place-items-center rounded-2xl transition",
+                      isActive
+                        ? "bg-white/15 text-[#FFB547]"
+                        : "bg-[#F8F3E8] text-[#2E3A79] group-hover:bg-[#FFB547] group-hover:text-[#25262B]",
+                    ].join(" ")}
+                  >
+                    <Icon size={18} />
+                  </span>
+                  <span className="leading-tight">{item.label}</span>
                 </Link>
               );
             })}

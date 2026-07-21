@@ -4,7 +4,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, CheckCircle2, Copy, Loader2, MessageCircle, Navigation, ShieldCheck } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CheckoutFormData, DeliveryLocation, DeliveryQuote, SavedOrder, Store } from "@/types";
 import { clearCart, getCart, getCartSubtotal } from "@/lib/cart";
 import { formatBaseCurrency, formatBs } from "@/lib/currency";
@@ -19,6 +19,8 @@ import { isCashPaymentMethod } from "@/lib/payments";
 import { buildPaymentInfo } from "@/lib/payment-display";
 import { buildOrderMessage, buildWhatsAppUrl } from "@/lib/whatsapp";
 import { saveOrderToSupabase } from "@/lib/supabase/orders";
+import { PER_SERVICE_FEE_USD } from "@/lib/plans";
+import { OptimizedImage } from "@/components/shared/OptimizedImage";
 
 const LocationPicker = dynamic(
   () => import("@/components/public/LocationPicker").then((mod) => mod.LocationPicker),
@@ -101,10 +103,12 @@ export function CheckoutForm({ store }: { store: Store }) {
   const [copied, setCopied] = useState(false);
   const [copiedPaymentLine, setCopiedPaymentLine] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const lastQuoteRequestRef = useRef("");
 
   useEffect(() => {
     setItems(getCart(store.slug));
-  }, [store.slug]);
+    router.prefetch(`/${store.slug}/confirmacion`);
+  }, [router, store.slug]);
 
   const subtotalUsd = useMemo(() => getCartSubtotal(items), [items]);
   const deliverySettings = useMemo(
@@ -124,6 +128,7 @@ export function CheckoutForm({ store }: { store: Store }) {
   const needsZone =
     form.deliveryType === "delivery" &&
     deliverySettings.deliveryEnabled &&
+    deliverySettings.deliveryProvider !== "entrega2" &&
     deliverySettings.pricingType === "zones";
   const activeDeliveryZones = useMemo(
     () => deliverySettings.zones.filter((zone) => zone.isActive),
@@ -131,7 +136,7 @@ export function CheckoutForm({ store }: { store: Store }) {
   );
   const deliveryModeCopy = useMemo(() => {
     if (deliverySettings.deliveryProvider === "entrega2") {
-      return "Comparte tu ubicación para coordinar el delivery.";
+      return "Comparte tu ubicación para cotizar el delivery con Entrega2 App.";
     }
     if (deliverySettings.pricingType === "zones") {
       return "Selecciona tu zona y carga tu ubicación GPS para el repartidor.";
@@ -192,6 +197,60 @@ export function CheckoutForm({ store }: { store: Store }) {
       }
 
       setIsCalculating(true);
+      if (deliverySettings.deliveryProvider === "entrega2") {
+        const requestKey = [
+          store.id,
+          location.latitude.toFixed(6),
+          location.longitude.toFixed(6),
+          subtotalUsd.toFixed(2),
+        ].join(":");
+        lastQuoteRequestRef.current = requestKey;
+
+        try {
+          const response = await fetch("/api/delivery/quote", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              storeId: store.id,
+              latitude: location.latitude,
+              longitude: location.longitude,
+              subtotalUsd,
+            }),
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!active || lastQuoteRequestRef.current !== requestKey) return;
+          if (!response.ok || !data?.quote) {
+            setQuote({
+              distanceKm: null,
+              feeUsd: 0,
+              label: data?.error || "No pudimos cotizar el delivery con Entrega2 App.",
+              source: "pending",
+              available: false,
+              provider: "entrega2",
+              pricingType: "manual",
+              message: data?.error || "No pudimos cotizar el delivery con Entrega2 App.",
+            });
+            return;
+          }
+          setQuote(data.quote);
+        } catch {
+          if (!active || lastQuoteRequestRef.current !== requestKey) return;
+          setQuote({
+            distanceKm: null,
+            feeUsd: 0,
+            label: "No pudimos cotizar el delivery con Entrega2 App.",
+            source: "pending",
+            available: false,
+            provider: "entrega2",
+            pricingType: "manual",
+            message: "No pudimos cotizar el delivery con Entrega2 App. Intenta de nuevo.",
+          });
+        } finally {
+          if (active) setIsCalculating(false);
+        }
+        return;
+      }
+
       const result = await calculateRouteDistanceKm({
         originLat: store.latitude,
         originLng: store.longitude,
@@ -223,6 +282,7 @@ export function CheckoutForm({ store }: { store: Store }) {
     form.deliveryZoneId,
     location,
     needsLocation,
+    store.id,
     store.latitude,
     store.longitude,
     subtotalUsd,
@@ -231,26 +291,45 @@ export function CheckoutForm({ store }: { store: Store }) {
   const deliveryUsd = form.deliveryType === "delivery" ? quote.feeUsd : 0;
   const showPricesInBs = store.showPricesInBs !== false;
   const baseCurrency = store.baseCurrency || "USD";
+  const isEntrega2Provider = deliverySettings.deliveryProvider === "entrega2";
+  const isEntrega2Delivery =
+    form.deliveryType === "delivery" && isEntrega2Provider;
+  const deliveryBrandName = isEntrega2Provider
+    ? "Entrega2 App"
+    : deliverySettings.transportAgencyName || null;
+  const deliveryBrandLogoUrl = isEntrega2Provider
+    ? deliverySettings.transportAgencyLogoUrl || quote.transportAgencyLogoUrl || null
+    : deliverySettings.transportAgencyLogoUrl || null;
   const isManualQuoteDelivery =
     form.deliveryType === "delivery" &&
+    deliverySettings.deliveryProvider !== "entrega2" &&
     (deliverySettings.deliveryProvider === "manual_quote" ||
       deliverySettings.pricingType === "manual");
   const deliveryAmountLabel =
     form.deliveryType === "pickup"
       ? "Sin delivery"
+      : quote.available === false
+        ? "No disponible"
+      : isCalculating
+        ? "Calculando..."
       : quote.source === "pending"
-        ? "Por calcular"
+        ? isEntrega2Delivery
+          ? location
+            ? "Cotizando..."
+            : "Falta ubicación"
+          : "Por calcular"
         : isManualQuoteDelivery && deliveryUsd === 0
           ? "Por confirmar"
           : formatBaseCurrency(quote.originalFeeUsd ?? deliveryUsd, baseCurrency);
-  const totalUsd = subtotalUsd + deliveryUsd;
+  const serviceFeeUsd = store.planType === "per_service" && store.serviceFeePayer === "customer" ? PER_SERVICE_FEE_USD : 0;
+  const totalUsd = subtotalUsd + deliveryUsd + serviceFeeUsd;
   const totalBs = totalUsd * (store.usdToBs || 600);
   const isCashPayment = isCashPaymentMethod(form.paymentMethod);
   const paymentInfo = form.paymentMethod
     ? buildPaymentInfo({
         store,
         paymentMethod: form.paymentMethod,
-        totals: { subtotalUsd, deliveryUsd, totalUsd, totalBs },
+        totals: { subtotalUsd, deliveryUsd, serviceFeeUsd, totalUsd, totalBs },
         customerPaymentNote: form.notes,
         paymentReference: form.paymentReference,
       })
@@ -285,6 +364,9 @@ export function CheckoutForm({ store }: { store: Store }) {
     }
     if (needsZone && activeDeliveryZones.length > 0 && !form.deliveryZoneId) return "Selecciona tu zona de entrega.";
     if (needsLocation && !location) return "Selecciona la ubicación de entrega usando GPS o tocando el mapa.";
+    if (isEntrega2Delivery && (isCalculating || quote.source === "pending")) {
+      return "Espera unos segundos mientras cotizamos el delivery con Entrega2 App.";
+    }
     return "";
   }
 
@@ -296,7 +378,7 @@ export function CheckoutForm({ store }: { store: Store }) {
     }
 
     const orderId = createOrderId();
-    const totals = { subtotalUsd, deliveryUsd, totalUsd, totalBs };
+    const totals = { subtotalUsd, deliveryUsd, serviceFeeUsd, totalUsd, totalBs };
     const whatsappMessage = buildOrderMessage({
       orderId,
       store,
@@ -384,7 +466,7 @@ export function CheckoutForm({ store }: { store: Store }) {
 
         <section className="mb-5 overflow-hidden rounded-[36px] bg-[#2E3A79] text-white shadow-2xl shadow-[#2E3A79]/20">
           <div className="relative p-5 sm:p-7">
-            <div className="absolute right-5 top-5 rounded-full bg-[#FFB547] px-4 py-2 text-sm font-black text-[#25262B]">VendeMas</div>
+            <div className="absolute right-5 top-5 rounded-full bg-[#FFB547] px-4 py-2 text-sm font-black text-[#25262B]">Somos</div>
             <p className="text-sm font-bold text-white/65">{store.name}</p>
             <h1 className="mt-2 max-w-xl text-3xl font-black tracking-tight sm:text-5xl">Confirma tu pedido</h1>
             <p className="mt-3 max-w-xl text-sm font-semibold leading-relaxed text-white/72">
@@ -433,10 +515,27 @@ export function CheckoutForm({ store }: { store: Store }) {
                         : "bg-white text-[#746f69] ring-[#25262B]/10",
                     ].join(" ")}
                   >
-                    <span className="block">Delivery</span>
-                    {deliverySettings.transportAgencyName ? (
+                    <span className="flex items-center justify-center gap-2">
+                      {deliveryBrandLogoUrl ? (
+                        <OptimizedImage
+                          src={deliveryBrandLogoUrl}
+                          alt={`Logo de ${deliveryBrandName || "empresa delivery"}`}
+                          width={28}
+                          height={28}
+                          sizes="28px"
+                          className="h-7 w-7 rounded-full bg-white/90 object-cover ring-1 ring-black/5"
+                          fallback={
+                            <span className="grid h-7 w-7 place-items-center rounded-full bg-white/90 text-[10px] font-black text-[#2E3A79] ring-1 ring-black/5">
+                              {(deliveryBrandName || "D").slice(0, 1).toUpperCase()}
+                            </span>
+                          }
+                        />
+                      ) : null}
+                      <span>{isEntrega2Provider ? "Entrega2 App" : "Delivery"}</span>
+                    </span>
+                    {deliveryBrandName ? (
                       <span className="mt-0.5 block text-[10px] font-bold opacity-75">
-                        {deliverySettings.transportAgencyName}
+                        {isEntrega2Provider ? "Cotización automática" : deliveryBrandName}
                       </span>
                     ) : null}
                   </button>
@@ -672,6 +771,7 @@ export function CheckoutForm({ store }: { store: Store }) {
                       <span className="font-black">-{formatBaseCurrency(quote.discountUsd || 0, baseCurrency)}</span>
                     </div>
                   ) : null}
+                  {serviceFeeUsd > 0 ? <div className="flex justify-between"><span className="font-bold text-[#746f69]">Fee</span><span className="font-black">{formatBaseCurrency(serviceFeeUsd, baseCurrency)}</span></div> : null}
                   {showPricesInBs ? (
                     <div className="flex justify-between"><span className="font-bold text-[#746f69]">Tasa usada</span><span className="font-black">{formatBs(store.usdToBs || 600)}</span></div>
                   ) : null}

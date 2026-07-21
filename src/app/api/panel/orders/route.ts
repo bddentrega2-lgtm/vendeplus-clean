@@ -12,6 +12,7 @@ import { isMissingColumnError } from "@/lib/supabase/schema-compat";
 import { normalizePhone } from "@/lib/customers/normalize-phone";
 import { safeUpsertCustomerFromOrder } from "@/lib/customers/upsert-customer-from-order";
 import { getVenezuelaRelativeRange } from "@/lib/time/venezuela";
+import { PER_SERVICE_FEE_USD } from "@/lib/plans";
 
 const allowedStatuses = [
   "received",
@@ -135,6 +136,54 @@ const baseOrdersSelect = `
   )
 `;
 
+const compactOrdersSelect = `
+  id,
+  public_code,
+  store_id,
+  customer_id,
+  customer_name,
+  customer_phone,
+  delivery_type,
+  payment_method,
+  payment_status,
+  payment_reference,
+  payment_currency,
+  amount_paid,
+  payment_verified_at,
+  payment_notes,
+  payment_bank,
+  subtotal_usd,
+  delivery_usd,
+  delivery_provider,
+  delivery_fee_usd,
+  delivery_zone_id,
+  delivery_zone_name,
+  delivery_distance_km,
+  delivery_pricing_type,
+  delivery_status,
+  delivery_notes,
+  delivery_address,
+  transport_agency_id,
+  transport_agency_name,
+  transport_agency_fee_usd,
+  transport_agency_status,
+  total_usd,
+  total_bs,
+  distance_km,
+  delivery_lat,
+  delivery_lng,
+  delivery_reference,
+  status,
+  whatsapp_message,
+  created_at,
+  stores (
+    name,
+    latitude,
+    longitude,
+    usd_to_bs
+  )
+`;
+
 function createManualPublicCode() {
   const now = new Date();
   const dayCode = `${String(now.getMonth() + 1).padStart(2, "0")}${String(
@@ -146,6 +195,13 @@ function createManualPublicCode() {
 
 function cleanText(value: unknown) {
   return String(value || "").trim();
+}
+
+function cleanOrderSearch(value: unknown) {
+  return cleanText(value)
+    .replace(/[,.%()]/g, " ")
+    .replace(/\s+/g, " ")
+    .slice(0, 80);
 }
 
 function toSafeNumber(value: unknown, fallback = 0) {
@@ -244,15 +300,25 @@ async function attachOrderIntegrations(supabase: any, orders: any[]) {
   }
 }
 
-async function attachTransportOrders(supabase: any, orders: any[]) {
+async function attachTransportOrders(supabase: any, orders: any[], options: { includeEvents?: boolean } = {}) {
   if (!orders.length) return orders;
 
   try {
     const orderIds = orders.map((order) => order.id).filter(Boolean);
-    const { data, error } = await supabase
-      .from("transport_orders")
-      .select(
-        `
+    const selectColumns = options.includeEvents === false
+      ? `
+        id,
+        order_id,
+        agency_id,
+        agency_name_snapshot,
+        agency_whatsapp_snapshot,
+        status,
+        delivery_fee_usd,
+        agency_status_note,
+        rejection_reason,
+        updated_at
+      `
+      : `
         id,
         order_id,
         agency_id,
@@ -273,8 +339,10 @@ async function attachTransportOrders(supabase: any, orders: any[]) {
           actor_name,
           created_at
         )
-      `
-      )
+      `;
+    const { data, error } = await supabase
+      .from("transport_orders")
+      .select(selectColumns)
       .in("order_id", orderIds)
       .order("updated_at", { ascending: false });
 
@@ -372,12 +440,24 @@ export async function GET(request: NextRequest) {
     const paymentStatus = searchParams.get("paymentStatus");
     const deliveryType = searchParams.get("deliveryType");
     const date = searchParams.get("date");
+    const search = cleanOrderSearch(searchParams.get("search"));
+    const compact = searchParams.get("compact") === "true";
+    const requestedLimit = Number(searchParams.get("limit") || (compact ? 40 : 80));
+    const limit = Math.min(80, Math.max(10, Number.isFinite(requestedLimit) ? requestedLimit : 40));
+    const requestedOffset = Number(searchParams.get("offset") || 0);
+    const offset = Math.max(0, Number.isFinite(requestedOffset) ? Math.floor(requestedOffset) : 0);
+    const to = offset + limit;
 
     const buildQuery = (includePaymentFields: boolean) => {
       const client = supabase as any;
+      const selectColumns = compact
+        ? compactOrdersSelect
+        : includePaymentFields
+          ? ordersSelect
+          : baseOrdersSelect;
       let query = client
         .from("orders")
-        .select(includePaymentFields ? ordersSelect : baseOrdersSelect)
+        .select(selectColumns)
         .order("created_at", { ascending: false });
 
       if (auth.storeIds !== null) {
@@ -403,6 +483,19 @@ export async function GET(request: NextRequest) {
 
       if (deliveryType && deliveryType !== "all") {
         query = query.eq("delivery_type", deliveryType);
+      }
+
+      if (search) {
+        const pattern = `%${search}%`;
+        query = query.or(
+          [
+            `public_code.ilike.${pattern}`,
+            `customer_name.ilike.${pattern}`,
+            `customer_phone.ilike.${pattern}`,
+            `payment_method.ilike.${pattern}`,
+            `delivery_reference.ilike.${pattern}`,
+          ].join(",")
+        );
       }
 
       return query;
@@ -438,35 +531,49 @@ export async function GET(request: NextRequest) {
         supabase,
         data ? [withPaymentFallback(data)] : []
       );
-      const [order] = await attachTransportOrders(supabase, integratedOrderRows);
+      const [order] = await attachTransportOrders(supabase, integratedOrderRows, {
+        includeEvents: true,
+      });
 
       return NextResponse.json({ order: order || null });
     }
 
     query = applyDateFilter(query);
 
-    let { data, error } = await query.limit(80);
+    let { data, error } = await query.range(offset, to);
 
     if (error) {
       let fallbackQuery = buildQuery(false);
 
       fallbackQuery = applyDateFilter(fallbackQuery);
 
-      const fallbackResult = await fallbackQuery.limit(80);
+      const fallbackResult = await fallbackQuery.range(offset, to);
       data = (fallbackResult.data || []).map(withPaymentFallback);
       error = fallbackResult.error;
     }
 
     if (error) throw error;
 
+    const pageRows = data || [];
+    const hasMore = pageRows.length > limit;
+    const visibleRows = hasMore ? pageRows.slice(0, limit) : pageRows;
+
     const orders = await attachOrderIntegrations(
       supabase,
-      (data || []).map(withPaymentFallback)
+      visibleRows.map(withPaymentFallback)
     );
-    const ordersWithTransport = await attachTransportOrders(supabase, orders);
+    const ordersWithTransport = await attachTransportOrders(supabase, orders, {
+      includeEvents: !compact,
+    });
 
     return NextResponse.json({
       orders: ordersWithTransport,
+      page: {
+        limit,
+        offset,
+        nextOffset: offset + ordersWithTransport.length,
+        hasMore,
+      },
       auth: {
         mode: auth.mode,
         email: auth.email || null,
@@ -511,7 +618,7 @@ export async function POST(request: NextRequest) {
 
     const { data: store, error: storeError } = await supabase
       .from("stores")
-      .select("id, name, usd_to_bs")
+      .select("id, name, usd_to_bs, plan_type, service_fee_payer, service_fee_billing_cycle")
       .eq("id", storeId)
       .single();
 
@@ -563,7 +670,10 @@ export async function POST(request: NextRequest) {
     );
     const deliveryUsd =
       deliveryType === "delivery" ? Math.max(0, toSafeNumber(body.deliveryUsd, 0)) : 0;
-    const totalUsd = subtotalUsd + deliveryUsd;
+    const platformServiceFeeUsd = (store as any).plan_type === "per_service" ? PER_SERVICE_FEE_USD : 0;
+    const platformServiceFeePayer = (store as any).service_fee_payer === "customer" ? "customer" : "merchant";
+    const platformServiceFeeCustomerUsd = platformServiceFeePayer === "customer" ? platformServiceFeeUsd : 0;
+    const totalUsd = subtotalUsd + deliveryUsd + platformServiceFeeCustomerUsd;
     const usdToBs = toSafeNumber((store as any)?.usd_to_bs, 600);
     const totalBs = totalUsd * usdToBs;
     const orderId = randomUUID();
@@ -608,6 +718,10 @@ export async function POST(request: NextRequest) {
       delivery_address: deliveryType === "delivery" ? deliveryReference || null : null,
       total_usd: totalUsd,
       total_bs: totalBs,
+      platform_service_fee_usd: platformServiceFeeUsd,
+      platform_service_fee_payer: platformServiceFeeUsd > 0 ? platformServiceFeePayer : null,
+      platform_service_fee_customer_usd: platformServiceFeeCustomerUsd,
+      platform_service_fee_billing_cycle: platformServiceFeeUsd > 0 ? ((store as any).service_fee_billing_cycle === "weekly" ? "weekly" : "monthly") : null,
       distance_km: null,
       delivery_lat: null,
       delivery_lng: null,
@@ -626,11 +740,15 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
 
-    if (orderError && isMissingColumnError(orderError, ["payment_", "customer_", "delivery_"])) {
+    if (orderError && isMissingColumnError(orderError, ["payment_", "customer_", "delivery_", "platform_service_"])) {
       const {
         payment_status: _paymentStatus,
         payment_currency: _paymentCurrency,
         customer_phone_normalized: _customerPhoneNormalized,
+        platform_service_fee_usd: _platformServiceFeeUsd,
+        platform_service_fee_payer: _platformServiceFeePayer,
+        platform_service_fee_customer_usd: _platformServiceFeeCustomerUsd,
+        platform_service_fee_billing_cycle: _platformServiceFeeBillingCycle,
         delivery_provider: _deliveryProvider,
         delivery_fee_usd: _deliveryFeeUsd,
         delivery_zone_id: _deliveryZoneId,

@@ -1,6 +1,6 @@
 import { chromium } from "playwright";
 
-const baseUrl = process.env.E2E_BASE_URL || "https://vendeplus-clean.vercel.app";
+const baseUrl = process.env.E2E_BASE_URL || "https://somos-ve.com";
 const storeSlug = process.env.E2E_STORE_SLUG || "armario";
 const orderPayload = process.env.E2E_ORDER_PAYLOAD;
 

@@ -18,6 +18,42 @@ type StoreIdentity = {
   next_payment_due_at?: string | null;
 };
 
+const PANEL_STORE_IDENTITY_CACHE_KEY = "somos_panel_store_identity";
+const PANEL_STORE_IDENTITY_CACHE_TTL_MS = 60_000;
+
+function readCachedStoreIdentity() {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const cached = sessionStorage.getItem(PANEL_STORE_IDENTITY_CACHE_KEY);
+    if (!cached) return null;
+
+    const parsed = JSON.parse(cached) as { savedAt: number; store: StoreIdentity };
+    if (!parsed?.store || Date.now() - parsed.savedAt > PANEL_STORE_IDENTITY_CACHE_TTL_MS) {
+      sessionStorage.removeItem(PANEL_STORE_IDENTITY_CACHE_KEY);
+      return null;
+    }
+
+    return parsed.store;
+  } catch {
+    sessionStorage.removeItem(PANEL_STORE_IDENTITY_CACHE_KEY);
+    return null;
+  }
+}
+
+function writeCachedStoreIdentity(store: StoreIdentity) {
+  if (typeof window === "undefined") return;
+
+  try {
+    sessionStorage.setItem(
+      PANEL_STORE_IDENTITY_CACHE_KEY,
+      JSON.stringify({ savedAt: Date.now(), store })
+    );
+  } catch {
+    // If storage is unavailable, keep the panel working without cache.
+  }
+}
+
 function isExpired(store: StoreIdentity) {
   if (store.subscription_status === "expired" || store.subscription_status === "past_due") return true;
   const due = store.subscription_ends_at || store.next_payment_due_at;
@@ -25,12 +61,18 @@ function isExpired(store: StoreIdentity) {
 }
 
 export function PanelStoreIdentity() {
-  const [store, setStore] = useState<StoreIdentity | null>(null);
+  const [store, setStore] = useState<StoreIdentity | null>(() => readCachedStoreIdentity());
 
   useEffect(() => {
     let active = true;
 
     async function loadIdentity() {
+      const cachedStore = readCachedStoreIdentity();
+      if (cachedStore) {
+        setStore(cachedStore);
+        return;
+      }
+
       const savedPin = getSavedPanelPin();
       const savedToken = await getPanelAccessToken();
 
@@ -44,7 +86,7 @@ export function PanelStoreIdentity() {
         const firstStore = data.stores?.[0];
 
         if (active && firstStore) {
-          setStore({
+          const nextStore = {
             name: firstStore.name || "Tu negocio",
             slug: firstStore.slug || "",
             logo_url: firstStore.logo_url || null,
@@ -52,7 +94,10 @@ export function PanelStoreIdentity() {
             subscription_status: firstStore.subscription_status || null,
             subscription_ends_at: firstStore.subscription_ends_at || null,
             next_payment_due_at: firstStore.next_payment_due_at || null,
-          });
+          };
+
+          writeCachedStoreIdentity(nextStore);
+          setStore(nextStore);
         }
       } catch {
         if (active) setStore(null);
@@ -69,7 +114,7 @@ export function PanelStoreIdentity() {
   if (!store) {
     return (
       <div className="mt-8 rounded-[32px] bg-[#25262B] p-5 text-white">
-        <p className="text-sm font-black text-[#FFB547]">Panel de ventas</p>
+        <p className="text-sm font-black text-[#FFB547]">Somos</p>
         <p className="mt-2 text-sm font-semibold leading-relaxed text-white/75">
           Gestiona productos, pedidos, ventas y configuración de tu negocio en un solo lugar.
         </p>

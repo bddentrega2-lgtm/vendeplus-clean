@@ -15,6 +15,8 @@ import {
   WalletCards,
 } from "lucide-react";
 import type { Store } from "@/types";
+import type { PublicTransportAgencyLogo } from "@/lib/transport";
+import { AffiliatedDeliveryLogos } from "@/components/public/AffiliatedDeliveryLogos";
 import { BrandLogo } from "@/components/public/BrandLogo";
 import { PwaInstallButton } from "@/components/pwa/PwaInstallButton";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
@@ -41,18 +43,30 @@ const quickActions = [
     text: "Ver comercios afiliados y hacer pedidos desde el marketplace.",
     href: "/marketplace",
     icon: ShoppingBag,
+    tone: "from-[#FFB547] via-[#FF8A1F] to-[#FF5C35]",
+    iconTone: "bg-white/22 text-white",
+    textTone: "text-white/88",
+    footTone: "text-white",
   },
   {
     title: "Tengo un comercio",
     text: "Crear catalogo, recibir pedidos, controlar pagos y operar con facilidad y orden.",
     href: "/registro",
     icon: StoreIcon,
+    tone: "from-[#2E3A79] via-[#2446B8] to-[#1267E8]",
+    iconTone: "bg-white/18 text-[#FFB547]",
+    textTone: "text-white/84",
+    footTone: "text-[#FFB547]",
   },
   {
     title: "Soy empresa delivery",
     text: "Afiliate gratis y obtén beneficios por referir comercios.",
     href: "/transporte",
     icon: Truck,
+    tone: "from-[#17A765] via-[#0799A6] to-[#2E3A79]",
+    iconTone: "bg-white/18 text-white",
+    textTone: "text-white/84",
+    footTone: "text-white",
   },
 ];
 
@@ -120,7 +134,13 @@ function mapAffiliatedStores(stores: Store[]): AffiliatedStore[] {
   return storesWithImages.length ? storesWithImages : fallbackAffiliatedStores;
 }
 
-export function HomeClient({ stores = [] }: { stores?: Store[] }) {
+export function HomeClient({
+  stores = [],
+  transportAgencies = [],
+}: {
+  stores?: Store[];
+  transportAgencies?: PublicTransportAgencyLogo[];
+}) {
   const affiliatedStores = mapAffiliatedStores(stores);
 
   function homePlanFeature(feature: string) {
@@ -133,7 +153,7 @@ export function HomeClient({ stores = [] }: { stores?: Store[] }) {
     <main className="min-h-screen bg-[#F6F4EF] text-[#25262B]">
       <header className="sticky top-0 z-30 border-b border-[#25262B]/[0.06] bg-[#F6F4EF]/95 backdrop-blur">
         <nav className="vp-container flex items-center justify-between gap-3 py-3">
-          <Link href="/" aria-label="Ir al inicio de VendeMas">
+          <Link href="/" aria-label="Ir al inicio de Somos">
             <BrandLogo compact />
           </Link>
           <div className="hidden items-center gap-5 text-sm font-black text-[#5F635E] md:flex">
@@ -151,7 +171,7 @@ export function HomeClient({ stores = [] }: { stores?: Store[] }) {
             </Link>
             <Link
               href="/registro"
-              className="inline-flex items-center gap-2 rounded-full bg-[#FFB547] px-4 py-2 text-sm font-black text-[#25262B]"
+              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#FFB547] to-[#FF7A1A] px-4 py-2 text-sm font-black text-[#25262B] shadow-lg shadow-[#FFB547]/25 transition hover:-translate-y-0.5"
             >
               Vender
               <ArrowRight size={15} />
@@ -166,11 +186,11 @@ export function HomeClient({ stores = [] }: { stores?: Store[] }) {
             <p className="inline-flex rounded-full bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-[#2E3A79] ring-1 ring-[#25262B]/10">
               Ecosistema que conecta comercios y empresas delivery
             </p>
-            <h1 className="mt-5 max-w-3xl text-4xl font-black leading-[1.04] text-[#25262B] sm:text-5xl">
-              Control total de tus pedidos, pagos y delivery desde un solo panel.
+            <h1 className="mt-5 max-w-3xl text-3xl font-black leading-[1.08] text-[#25262B] sm:text-4xl lg:text-[2.65rem]">
+              SOMOS es el ecosistema que conecta tus comercios favoritos con las mejores empresas delivery de tu ciudad para brindarte el mejor servicio.
             </h1>
             <p className="mt-4 max-w-2xl text-base font-bold leading-relaxed text-[#5F635E] sm:text-lg">
-              VendeMas ordena los pedidos, centraliza la informacion y convierte cada venta en una experiencia mas automatizada, controlada y profesional.
+              Somos une catalogo, carrito, pedidos, pagos, delivery, clientes y recompra en un solo panel simple para tu comercio.
             </p>
 
             <div className="mt-7 grid gap-3 sm:grid-cols-3">
@@ -180,20 +200,22 @@ export function HomeClient({ stores = [] }: { stores?: Store[] }) {
                   <Link
                     key={item.title}
                     href={item.href}
-                    className="group rounded-[22px] bg-white p-4 shadow-lg shadow-[#2E3A79]/[0.05] ring-1 ring-[#25262B]/[0.07] transition hover:-translate-y-0.5"
+                    className={`group relative overflow-hidden rounded-[26px] bg-gradient-to-br ${item.tone} p-4 text-white shadow-xl shadow-[#2E3A79]/15 ring-1 ring-white/40 transition hover:-translate-y-1 hover:shadow-2xl hover:shadow-[#2E3A79]/25`}
                   >
+                    <span className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-white/20 blur-2xl transition group-hover:scale-125" />
+                    <span className="pointer-events-none absolute bottom-0 left-0 h-16 w-16 rounded-full bg-black/10 blur-2xl" />
                     <div className="flex items-center gap-3">
-                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[#2E3A79] text-[#FFB547]">
+                      <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${item.iconTone} ring-1 ring-white/25`}>
                         <Icon size={20} />
                       </span>
-                      <span className="text-lg font-black leading-tight sm:text-xl">{item.title}</span>
+                      <span className="relative text-lg font-black leading-tight sm:text-xl">{item.title}</span>
                     </div>
-                    <p className="mt-3 min-h-14 text-xs font-bold leading-relaxed text-[#5F635E]">
+                    <p className={`relative mt-3 min-h-14 text-xs font-bold leading-relaxed ${item.textTone}`}>
                       {item.text}
                     </p>
-                    <span className="mt-3 inline-flex items-center gap-2 text-xs font-black text-[#2E3A79]">
+                    <span className={`relative mt-3 inline-flex items-center gap-2 rounded-full bg-white/16 px-3 py-2 text-xs font-black ${item.footTone} ring-1 ring-white/20`}>
                       Continuar
-                      <ArrowRight size={14} />
+                      <ArrowRight size={14} className="transition group-hover:translate-x-1" />
                     </span>
                   </Link>
                 );
@@ -205,7 +227,7 @@ export function HomeClient({ stores = [] }: { stores?: Store[] }) {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-[#FFB547]">
-                  Red VendeMas
+                  Red Somos
                 </p>
                 <h2 className="mt-2 text-2xl font-black leading-tight">
                   Comercios afiliados operando desde un mismo ecosistema
@@ -271,6 +293,13 @@ export function HomeClient({ stores = [] }: { stores?: Store[] }) {
               </div>
             </div>
 
+            <AffiliatedDeliveryLogos
+              agencies={transportAgencies}
+              className="mt-4 overflow-hidden rounded-[26px] bg-white p-3 text-[#25262B]"
+              cardClassName="bg-[#F6F4EF]"
+              label="Empresas delivery afiliadas"
+            />
+
             <div className="mt-4 grid grid-cols-3 gap-2">
               {[
                 ["15", "dias gratis"],
@@ -302,14 +331,14 @@ export function HomeClient({ stores = [] }: { stores?: Store[] }) {
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <Link
                 href="/registro"
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-6 py-4 text-sm font-black text-[#25262B]"
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#FFB547] to-[#FF7A1A] px-6 py-4 text-sm font-black text-[#25262B] shadow-lg shadow-[#FFB547]/25 transition hover:-translate-y-0.5"
               >
                 Registrar comercio
                 <ArrowRight size={17} />
               </Link>
               <a
                 href="#planes"
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F6F4EF] px-6 py-4 text-sm font-black text-[#2E3A79]"
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-6 py-4 text-sm font-black text-white shadow-lg shadow-[#2E3A79]/20 transition hover:-translate-y-0.5"
               >
                 Ver planes
               </a>
@@ -341,7 +370,7 @@ export function HomeClient({ stores = [] }: { stores?: Store[] }) {
             </div>
             <Link
               href="/registro"
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-black text-[#2E3A79]"
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#FFB547] to-[#FF7A1A] px-5 py-3 text-sm font-black text-[#25262B] shadow-lg shadow-[#FFB547]/20 transition hover:-translate-y-0.5"
             >
               Crear comercio
               <ArrowRight size={16} />
@@ -385,8 +414,8 @@ export function HomeClient({ stores = [] }: { stores?: Store[] }) {
                   className={[
                     "mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-black",
                     plan.id === "monthly"
-                      ? "bg-[#25262B] text-white"
-                      : "bg-white text-[#2E3A79]",
+                      ? "bg-[#25262B] text-white shadow-lg shadow-[#25262B]/20 transition hover:-translate-y-0.5"
+                      : "bg-gradient-to-r from-white to-[#F8F3E8] text-[#2E3A79] shadow-lg shadow-black/10 transition hover:-translate-y-0.5",
                   ].join(" ")}
                 >
                   {plan.id === "custom" ? "Solicitar propuesta" : "Empezar"}
@@ -412,7 +441,7 @@ export function HomeClient({ stores = [] }: { stores?: Store[] }) {
             </p>
             <Link
               href="/transporte"
-              className="mt-5 inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-6 py-4 text-sm font-black text-[#25262B]"
+              className="mt-5 inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#17A765] via-[#0799A6] to-[#2E3A79] px-6 py-4 text-sm font-black text-white shadow-lg shadow-[#0799A6]/25 transition hover:-translate-y-0.5"
             >
               Afiliar mi empresa
               <ArrowRight size={17} />
@@ -468,7 +497,7 @@ export function HomeClient({ stores = [] }: { stores?: Store[] }) {
           <div>
             <BrandLogo compact />
             <p className="mt-3 max-w-xl text-sm font-bold leading-relaxed text-white/65">
-              VendeMas ayuda a comercios y empresas delivery a operar ventas con mas orden, control y seguimiento.
+              Somos ayuda a comercios y empresas delivery a operar ventas con mas orden, control y seguimiento.
             </p>
           </div>
           <div className="grid gap-2 text-sm font-black text-white/72 sm:grid-cols-2">
@@ -481,14 +510,14 @@ export function HomeClient({ stores = [] }: { stores?: Store[] }) {
             <PwaInstallButton />
             <Link
               href="/registro"
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#FFB547] to-[#FF7A1A] px-5 py-3 text-sm font-black text-[#25262B] shadow-lg shadow-[#FFB547]/20 transition hover:-translate-y-0.5"
             >
               Crear comercio
               <BadgeDollarSign size={17} />
             </Link>
             <Link
               href="/transporte"
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-black text-[#2E3A79]"
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-white to-[#DCEBFF] px-5 py-3 text-sm font-black text-[#2E3A79] shadow-lg shadow-white/10 transition hover:-translate-y-0.5"
             >
               Afiliar empresa
               <Truck size={17} />

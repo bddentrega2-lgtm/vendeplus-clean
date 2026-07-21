@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Nunito_Sans } from "next/font/google";
 import { RegisterServiceWorker } from "@/components/pwa/RegisterServiceWorker";
+import { PUBLIC_SITE_URL } from "@/lib/public-url";
 import "./globals.css";
 
 const nunito = Nunito_Sans({
@@ -10,13 +11,19 @@ const nunito = Nunito_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "VendeMas | Compra en negocios locales",
-  description: "Explora negocios, arma tu pedido y confirma por WhatsApp.",
+  metadataBase: new URL(PUBLIC_SITE_URL),
+  title: "Somos | Comercios y logistica en tu ciudad",
+  description:
+    "Somos conecta a los venezolanos con sus comercios favoritos y las mejores empresas logisticas de su ciudad.",
   manifest: "/manifest.webmanifest",
-  applicationName: "VendeMas",
+  applicationName: "Somos",
+  icons: {
+    icon: "/favicon.png",
+    apple: "/icons/somos-apple-touch-icon.png",
+  },
   appleWebApp: {
     capable: true,
-    title: "VendeMas",
+    title: "Somos",
     statusBarStyle: "black-translucent",
   },
 };

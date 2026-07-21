@@ -103,7 +103,7 @@ export function TransportMarketplaceSection({ pin, onChanged }: Props) {
   const visibleAgencies = useMemo(() => {
     if (!activeExclusiveConnection?.agency_id) return agencies;
     return agencies.filter((agency: any) => agency.id === activeExclusiveConnection.agency_id);
-  }, [agencies, activeExclusiveConnection]);
+  }, [agencies, activeExclusiveConnection?.agency_id]);
 
   function pricingLabel(agency: any) {
     const rate = getTransportAgencyRateFromRelation(agency.transport_agency_rates) || {};
@@ -240,11 +240,12 @@ export function TransportMarketplaceSection({ pin, onChanged }: Props) {
 
       {activeExclusiveConnection ? (
         <div className="mt-4 rounded-2xl bg-white/10 p-4 text-sm font-bold leading-relaxed text-white/75">
-          Este comercio trabaja con una empresa delivery en modalidad exclusiva. Las demas empresas quedan ocultas hasta finalizar esa afiliacion.
+          Este comercio tiene una afiliacion exclusiva activa. Por proteccion de esa alianza,
+          solo se muestra la empresa delivery afiliada actualmente.
         </div>
       ) : null}
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
         {visibleAgencies.map((agency: any) => {
           const status = byAgency.get(agency.id) || {};
           const connection = status.connection;
@@ -254,41 +255,60 @@ export function TransportMarketplaceSection({ pin, onChanged }: Props) {
           const canResendRequest = request && ["rejected", "cancelled"].includes(request.status);
           const wasJustRequested = recentlyRequestedAgencyIds.includes(agency.id);
           const canSeeRates = agency.rates_visibility !== "private" || (connection && !isEnded);
-
+          const isReady = agency.is_ready !== false;
+          const configIssues = agency.config_issues || [];
           return (
-            <div key={agency.id} className="rounded-[28px] bg-white p-4 text-[#25262B]">
-              <div className="flex gap-3">
+            <details key={agency.id} className="group rounded-[22px] bg-white p-2 text-[#25262B]">
+              <summary className="flex cursor-pointer list-none flex-col items-center gap-2 text-center">
                 {agency.logo_url ? (
                   <OptimizedImage
                     src={agency.logo_url}
                     alt={agency.name}
-                    width={48}
-                    height={48}
-                    sizes="48px"
-                    className="h-12 w-12 shrink-0 rounded-2xl bg-[#F8F3E8] object-cover"
+                    width={56}
+                    height={56}
+                    sizes="56px"
+                    className="h-14 w-14 rounded-2xl bg-[#F8F3E8] object-cover"
                     fallback={
-                      <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#F8F3E8] text-sm font-black text-[#2E3A79]">
+                      <div className="grid h-14 w-14 place-items-center rounded-2xl bg-[#F8F3E8] text-sm font-black text-[#2E3A79]">
                         {agency.name?.slice(0, 1).toUpperCase() || "D"}
                       </div>
                     }
                   />
                 ) : (
-                  <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#2E3A79] text-[#FFB547]">
+                  <div className="grid h-14 w-14 place-items-center rounded-2xl bg-[#2E3A79] text-[#FFB547]">
                     <Truck size={20} />
                   </div>
                 )}
-                <div className="min-w-0 flex-1">
-                  <h3 className="truncate text-lg font-black">{agency.name}</h3>
-                  <p className="text-xs font-bold text-[#746f69]">
-                    {agency.city || "Cobertura configurable"} - {agency.modality === "exclusive" ? "exclusiva" : agency.modality === "mixed" ? "mixta" : "abierta"}
+                <span className="line-clamp-2 min-h-[2rem] text-xs font-black leading-tight">
+                  {agency.name}
+                </span>
+                <span className="rounded-full bg-[#F8F3E8] px-2 py-1 text-[10px] font-black text-[#746f69]">
+                  {connection && !isEnded
+                    ? "Afiliada"
+                    : request && !canResendRequest
+                      ? "Solicitada"
+                      : isReady
+                        ? "Disponible"
+                        : "Por completar"}
+                </span>
+              </summary>
+
+              <div className="mt-3 rounded-[20px] bg-[#F8F3E8] p-3">
+                <h3 className="text-base font-black">{agency.name}</h3>
+                <p className="mt-1 text-xs font-bold text-[#746f69]">
+                  {agency.city || "Cobertura configurable"} · {agency.modality === "exclusive" ? "exclusiva" : agency.modality === "mixed" ? "mixta" : "abierta"}
+                </p>
+                {connection && !isEnded ? (
+                  <p className="mt-1 text-[11px] font-black text-[#2E3A79]">
+                    Afiliacion {connection.is_exclusive ? "exclusiva" : "mixta"}
                   </p>
-                  {connection && !isEnded ? (
-                    <p className="mt-1 text-[11px] font-black text-[#2E3A79]">
-                      Afiliacion {connection.is_exclusive ? "exclusiva" : "mixta"}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
+                ) : null}
+
+                {!isReady ? (
+                  <p className="mt-3 rounded-2xl bg-amber-50 p-3 text-xs font-black leading-relaxed text-amber-800">
+                    Falta configurar: {configIssues.join(", ") || "datos de la empresa"}.
+                  </p>
+                ) : null}
 
               {canSeeRates ? (
                 <p className="mt-3 text-sm font-bold text-[#746f69]">{pricingLabel(agency)}</p>
@@ -298,7 +318,7 @@ export function TransportMarketplaceSection({ pin, onChanged }: Props) {
                 </p>
               )}
 
-              <details className="mt-3 rounded-2xl bg-[#F8F3E8] p-3">
+              <details className="mt-3 rounded-2xl bg-white p-3">
                 <summary className="cursor-pointer list-none text-xs font-black text-[#2E3A79]">
                   Ver detalle
                 </summary>
@@ -431,6 +451,10 @@ export function TransportMarketplaceSection({ pin, onChanged }: Props) {
                       {wasJustRequested ? "Solicitud enviada" : "Enviar solicitud de nuevo"}
                     </button>
                   </div>
+                ) : !isReady ? (
+                  <div className="rounded-2xl bg-amber-50 px-4 py-3 text-center text-sm font-black text-amber-800">
+                    Esta empresa debe completar su configuracion antes de recibir solicitudes.
+                  </div>
                 ) : (
                   <button
                     onClick={() => requestAgency(agency.id)}
@@ -442,7 +466,8 @@ export function TransportMarketplaceSection({ pin, onChanged }: Props) {
                   </button>
                 )}
               </div>
-            </div>
+              </div>
+            </details>
           );
         })}
       </div>

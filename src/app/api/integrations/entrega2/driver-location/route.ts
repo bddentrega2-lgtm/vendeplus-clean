@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
     });
   } catch {
     return NextResponse.json(
-      { error: "Error procesando ubicacion de Entrega2." },
+      { error: "Error procesando ubicacion de Entrega2 App." },
       { status: 500 }
     );
   }

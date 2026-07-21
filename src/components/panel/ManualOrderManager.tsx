@@ -514,7 +514,7 @@ export function ManualOrderManager() {
               <div>
                 <h2 className="text-xl font-black">Mensaje recibido</h2>
                 <p className="mt-1 text-sm font-bold text-[#746f69]">
-                  Pega el chat y VendeMas intentara llenar el pedido.
+                  Pega el chat y Somos intentara llenar el pedido.
                 </p>
               </div>
               <button

@@ -325,7 +325,7 @@ function buildInterpretationSchema(products: ProductRow[], paymentMethods: strin
 
 function buildSystemPrompt() {
   return [
-    "Eres el extractor de pedidos de VendeMas para comercios en Venezuela.",
+    "Eres el extractor de pedidos de Somos para comercios en Venezuela.",
     "Tu tarea es convertir mensajes libres de WhatsApp en un pedido estructurado.",
     "Reglas estrictas:",
     "- Usa solamente productId del catalogo recibido. Nunca inventes productos.",

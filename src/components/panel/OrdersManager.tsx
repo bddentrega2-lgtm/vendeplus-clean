@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   CircleDollarSign,
@@ -328,6 +328,11 @@ function OrderDetail({
                   <span>Delivery</span>
                   <span>{formatUsd(Number(order.delivery_usd || 0))}</span>
                 </div>
+                {order.delivery_notes ? (
+                  <p className="rounded-2xl bg-[#F8F3E8] p-3 text-xs font-bold leading-relaxed text-[#746f69]">
+                    Regla de tarifa: {order.delivery_notes}
+                  </p>
+                ) : null}
                 <div className="flex justify-between border-t border-[#25262B]/10 pt-3 text-lg font-black">
                   <span>Total</span>
                   <span>{formatUsd(Number(order.total_usd || 0))}</span>
@@ -498,36 +503,96 @@ export function OrdersManager() {
   const [selectedDeliveryType, setSelectedDeliveryType] = useState("all");
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<OrderRow | null>(null);
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => shouldShowPanelInitialAccessGate());
   const [isLoading, setIsLoading] = useState(() => hasSavedPanelAuth());
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMoreOrders, setHasMoreOrders] = useState(false);
+  const [nextOrdersOffset, setNextOrdersOffset] = useState(0);
   const [savingPaymentId, setSavingPaymentId] = useState<string | null>(null);
   const [sendingDeliveryId, setSendingDeliveryId] = useState<string | null>(null);
   const [savingStatusOrderId, setSavingStatusOrderId] = useState<string | null>(null);
+  const [loadingDetailOrderId, setLoadingDetailOrderId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => Date.now());
   const [realtimeStoreIds, setRealtimeStoreIds] = useState<string[]>([]);
+  const requestCacheRef = useRef(new Map<string, { expiresAt: number; data: any }>());
+  const inflightRequestsRef = useRef(new Map<string, Promise<any>>());
+  const authScopeRef = useRef("");
+  const latestRequestIdRef = useRef(0);
 
   const { currentFilters, filterSignature } = useOrderFilters({
-      status: selectedStatus,
-      paymentStatus: selectedPaymentStatus,
-      date: selectedDate,
-      paymentMethod: selectedPaymentMethod,
-      deliveryType: selectedDeliveryType,
-    });
+    status: selectedStatus,
+    paymentStatus: selectedPaymentStatus,
+    date: selectedDate,
+    paymentMethod: selectedPaymentMethod,
+    deliveryType: selectedDeliveryType,
+    search: debouncedSearch,
+  });
 
   const loadOrders = useCallback(async (
     currentPin: string,
-    filters: OrderFilters = currentFilters
+    filters: OrderFilters = currentFilters,
+    options: { force?: boolean; append?: boolean; offset?: number } = {}
   ) => {
-    setIsLoading(true);
+    const requestId = ++latestRequestIdRef.current;
+    const append = Boolean(options.append);
+    const offset = Math.max(0, Number(options.offset || 0));
+    if (append) setIsLoadingMore(true);
+    else setIsLoading(true);
     setError("");
 
     try {
-      const queryString = buildOrdersQueryString(filters);
-      const data = await apiRequest(currentPin, `/api/panel/orders${queryString}`);
+      const accessToken = await getPanelAccessToken();
+      const authScope = accessToken || `legacy:${currentPin}`;
+      if (authScopeRef.current !== authScope) {
+        authScopeRef.current = authScope;
+        requestCacheRef.current.clear();
+        inflightRequestsRef.current.clear();
+      }
 
-      setOrders(data.orders || []);
+      const queryString = buildOrdersQueryString(filters, {
+        compact: true,
+        limit: 40,
+        offset,
+      });
+      const cacheKey = queryString;
+      const now = Date.now();
+      const cached = requestCacheRef.current.get(cacheKey);
+      let data: any;
+
+      if (!options.force && cached && cached.expiresAt > now) {
+        data = cached.data;
+      } else {
+        let request = inflightRequestsRef.current.get(cacheKey);
+        if (!request) {
+          request = apiRequest(currentPin, `/api/panel/orders${queryString}`);
+          inflightRequestsRef.current.set(cacheKey, request);
+        }
+        try {
+          data = await request;
+          if (authScopeRef.current === authScope) {
+            requestCacheRef.current.set(cacheKey, { data, expiresAt: Date.now() + 10_000 });
+          }
+        } finally {
+          if (inflightRequestsRef.current.get(cacheKey) === request) {
+            inflightRequestsRef.current.delete(cacheKey);
+          }
+        }
+      }
+
+      if (requestId !== latestRequestIdRef.current) return;
+
+      const nextOrders = Array.isArray(data.orders) ? data.orders : [];
+      setOrders((current) => {
+        if (!append) return nextOrders;
+
+        const seen = new Set(current.map((order) => order.id));
+        return [...current, ...nextOrders.filter((order: OrderRow) => !seen.has(order.id))];
+      });
+      setHasMoreOrders(Boolean(data.page?.hasMore));
+      setNextOrdersOffset(Number(data.page?.nextOffset || offset + nextOrders.length));
       setRealtimeStoreIds(
         Array.isArray(data.auth?.storeIds)
           ? data.auth.storeIds.filter((storeId: unknown): storeId is string => typeof storeId === "string")
@@ -536,31 +601,50 @@ export function OrdersManager() {
       setIsUnlocked(true);
       savePanelPin(currentPin);
     } catch (error: any) {
+      if (requestId !== latestRequestIdRef.current) return;
+      requestCacheRef.current.clear();
       setError(error.message || "No se pudieron cargar los pedidos.");
       setIsUnlocked(false);
     } finally {
-      setIsLoading(false);
-      setIsCheckingAccess(false);
+      if (requestId === latestRequestIdRef.current) {
+        setIsLoading(false);
+        setIsLoadingMore(false);
+        setIsCheckingAccess(false);
+      }
     }
   }, [currentFilters]);
 
-  const filteredOrders = useMemo(() => {
-    const needle = search.trim().toLowerCase();
+  const invalidateOrderCache = useCallback(() => {
+    requestCacheRef.current.clear();
+  }, []);
 
-    if (!needle) return orders;
-
-    return orders.filter((order) => {
-      return [
-        order.public_code,
-        order.customer_name,
-        order.customer_phone,
-        order.stores?.name,
-        order.payment_method,
-      ]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(needle));
+  const loadMoreOrders = useCallback(() => {
+    if (isLoadingMore || isLoading || !hasMoreOrders) return;
+    void loadOrders(pin, currentFilters, {
+      append: true,
+      offset: nextOrdersOffset,
     });
-  }, [orders, search]);
+  }, [currentFilters, hasMoreOrders, isLoading, isLoadingMore, loadOrders, nextOrdersOffset, pin]);
+
+  const openOrderDetail = useCallback(async (order: OrderRow) => {
+    setLoadingDetailOrderId(order.id);
+    setError("");
+
+    try {
+      const data = await apiRequest(
+        pin,
+        `/api/panel/orders?orderId=${encodeURIComponent(order.id)}`
+      );
+      setSelectedOrder(data.order || order);
+    } catch (error: any) {
+      setError(error.message || "No se pudo cargar el detalle del pedido.");
+      setSelectedOrder(order);
+    } finally {
+      setLoadingDetailOrderId(null);
+    }
+  }, [pin]);
+
+  const visibleOrders = orders;
 
   const paymentMethodOptions = useMemo(() => {
     const values = Array.from(
@@ -586,13 +670,14 @@ export function OrdersManager() {
         window.open(result.whatsappUrl, "_blank", "noopener,noreferrer");
       }
 
-      await loadOrders(pin);
+      invalidateOrderCache();
+      await loadOrders(pin, currentFilters, { force: true });
     } catch (error: any) {
       setError(error.message || "No se pudo enviar el pedido a delivery.");
     } finally {
       setSendingDeliveryId(null);
     }
-  }, [loadOrders, pin]);
+  }, [currentFilters, invalidateOrderCache, loadOrders, pin]);
 
   const changeOrderStatus = useCallback(async (order: OrderRow, nextStatus: string) => {
     setSavingStatusOrderId(order.id);
@@ -615,12 +700,13 @@ export function OrdersManager() {
       setSelectedOrder((currentOrder) =>
         currentOrder?.id === order.id ? { ...currentOrder, status: nextStatus } : currentOrder
       );
+      invalidateOrderCache();
     } catch (error: any) {
       setError(error.message || "No se pudo actualizar el estado.");
     } finally {
       setSavingStatusOrderId(null);
     }
-  }, [pin]);
+  }, [invalidateOrderCache, pin]);
 
   const markPaymentVerified = useCallback(async (order: OrderRow) => {
     setSavingPaymentId(order.id);
@@ -666,12 +752,13 @@ export function OrdersManager() {
             }
           : currentOrder
       );
+      invalidateOrderCache();
     } catch (error: any) {
       setError(error.message || "No se pudo marcar el pago como verificado.");
     } finally {
       setSavingPaymentId(null);
     }
-  }, [pin]);
+  }, [invalidateOrderCache, pin]);
 
   useEffect(() => {
     let active = true;
@@ -705,6 +792,20 @@ export function OrdersManager() {
   }, []);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search.trim());
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    if (!isUnlocked) return;
+    invalidateOrderCache();
+    void loadOrders(pin, currentFilters, { force: true });
+  }, [isUnlocked, pin, filterSignature, currentFilters, loadOrders, invalidateOrderCache]);
+
+  useEffect(() => {
     if (!isUnlocked) return;
 
     const refresh = () => {
@@ -730,7 +831,10 @@ export function OrdersManager() {
     const refreshOrders = () => {
       if (!active || document.visibilityState !== "visible") return;
       if (refreshTimer) window.clearTimeout(refreshTimer);
-      refreshTimer = window.setTimeout(() => void loadOrders(pin), 120);
+      refreshTimer = window.setTimeout(() => {
+        invalidateOrderCache();
+        void loadOrders(pin, currentFilters, { force: true });
+      }, 120);
     };
 
     void (async () => {
@@ -756,7 +860,7 @@ export function OrdersManager() {
     };
     // The API remains the source of truth; Broadcast only invalidates the list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isUnlocked, pin, realtimeStoreIds.join(","), loadOrders, filterSignature]);
+  }, [isUnlocked, pin, realtimeStoreIds.join(","), loadOrders, filterSignature, currentFilters, invalidateOrderCache]);
 
   if (isCheckingAccess) {
     return <PanelAccessGate />;
@@ -797,14 +901,17 @@ export function OrdersManager() {
           <div>
             <h2 className="text-xl font-black">Pedidos operativos</h2>
             <p className="text-sm font-bold text-[#746f69]">
-              {selectedDate === "today" ? "Hoy" : "Filtro activo"} · {filteredOrders.length} visibles
+              {selectedDate === "today" ? "Hoy" : "Filtro activo"} · {visibleOrders.length} visibles
             </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => loadOrders(pin)}
+              onClick={() => {
+                invalidateOrderCache();
+                void loadOrders(pin, currentFilters, { force: true });
+              }}
               className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-5 py-3 text-sm font-black text-white"
             >
               <RefreshCcw size={16} />
@@ -840,7 +947,6 @@ export function OrdersManager() {
             onChange={(event) => {
               const value = event.target.value;
               setSelectedDate(value);
-              loadOrders(pin, { status: selectedStatus, paymentStatus: selectedPaymentStatus, date: value, paymentMethod: selectedPaymentMethod, deliveryType: selectedDeliveryType });
             }}
             className="rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
           >
@@ -859,7 +965,6 @@ export function OrdersManager() {
             onChange={(event) => {
               const value = event.target.value;
               setSelectedStatus(value);
-              loadOrders(pin, { status: value, paymentStatus: selectedPaymentStatus, date: selectedDate, paymentMethod: selectedPaymentMethod, deliveryType: selectedDeliveryType });
             }}
             className="rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
           >
@@ -875,7 +980,6 @@ export function OrdersManager() {
             onChange={(event) => {
               const value = event.target.value;
               setSelectedPaymentStatus(value);
-              loadOrders(pin, { status: selectedStatus, paymentStatus: value, date: selectedDate, paymentMethod: selectedPaymentMethod, deliveryType: selectedDeliveryType });
             }}
             className="rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
           >
@@ -891,7 +995,6 @@ export function OrdersManager() {
             onChange={(event) => {
               const value = event.target.value;
               setSelectedPaymentMethod(value);
-              loadOrders(pin, { status: selectedStatus, paymentStatus: selectedPaymentStatus, date: selectedDate, paymentMethod: value, deliveryType: selectedDeliveryType });
             }}
             className="rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
           >
@@ -907,7 +1010,6 @@ export function OrdersManager() {
             onChange={(event) => {
               const value = event.target.value;
               setSelectedDeliveryType(value);
-              loadOrders(pin, { status: selectedStatus, paymentStatus: selectedPaymentStatus, date: selectedDate, paymentMethod: selectedPaymentMethod, deliveryType: value });
             }}
             className="rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
           >
@@ -926,13 +1028,13 @@ export function OrdersManager() {
           </div>
         )}
 
-        {!isLoading && filteredOrders.length === 0 && (
+        {!isLoading && visibleOrders.length === 0 && (
           <div className="rounded-[32px] bg-white p-6 text-sm font-bold text-[#746f69] shadow-xl shadow-[#2E3A79]/[0.07]">
             Todavía no hay pedidos en este período.
           </div>
         )}
 
-        {filteredOrders.map((order) => {
+        {visibleOrders.map((order) => {
           const whatsappUrl = getWhatsappUrl(order.customer_phone);
           const entrega2Integration = getEntrega2Integration(order);
           const transportAgencyIntegration = getTransportAgencyIntegration(order);
@@ -959,6 +1061,7 @@ export function OrdersManager() {
           const isSendingDelivery = sendingDeliveryId === order.id;
           const isSavingPayment = savingPaymentId === order.id;
           const isSavingStatus = savingStatusOrderId === order.id;
+          const isLoadingDetail = loadingDetailOrderId === order.id;
           const isNewOrder = order.status === "received";
           const paymentStatus = getOrderPaymentStatus(order);
 
@@ -987,6 +1090,11 @@ export function OrdersManager() {
                   <p className="truncate text-[11px] font-bold text-[#746f69]">
                     {formatDate(order.created_at)} · {formatOrderAge(order.created_at, now)} · {getDeliverySummary(order)}
                   </p>
+                  {order.delivery_notes ? (
+                    <p className="truncate text-[11px] font-bold text-[#2E3A79]">
+                      Tarifa: {order.delivery_notes}
+                    </p>
+                  ) : null}
                 </div>
 
                 <p className="text-sm font-black">{formatUsd(Number(order.total_usd || 0))}</p>
@@ -1068,7 +1176,7 @@ export function OrdersManager() {
                               "bg-[#F8F3E8] text-[#746f69]",
                           ].join(" ")}
                         >
-                          Entrega2:{" "}
+                          Entrega2 App:{" "}
                           {entrega2StatusLabels[entrega2Status] ||
                             entrega2Status ||
                             "Registrado"}
@@ -1087,7 +1195,7 @@ export function OrdersManager() {
                           ) : (
                             <Truck size={16} />
                           )}
-                          {entrega2Integration ? "Reintentar Entrega2" : "Enviar a Entrega2"}
+                          {entrega2Integration ? "Reintentar Entrega2 App" : "Enviar a Entrega2 App"}
                         </button>
                       )}
 
@@ -1153,10 +1261,11 @@ export function OrdersManager() {
 
                   <button
                     type="button"
-                    onClick={() => setSelectedOrder(order)}
+                    onClick={() => void openOrderDetail(order)}
+                    disabled={isLoadingDetail}
                     className="rounded-full bg-[#FFB547] px-3 py-1.5 text-[11px] font-black text-[#25262B]"
                   >
-                    Ver
+                    {isLoadingDetail ? "..." : "Ver"}
                   </button>
                 </div>
               </div>
@@ -1165,12 +1274,29 @@ export function OrdersManager() {
         })}
       </section>
 
+      {hasMoreOrders ? (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={loadMoreOrders}
+            disabled={isLoadingMore || isLoading}
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#25262B] px-5 py-3 text-sm font-black text-white shadow-lg shadow-[#25262B]/10 disabled:opacity-60"
+          >
+            {isLoadingMore ? <Loader2 size={17} className="animate-spin" /> : null}
+            {isLoadingMore ? "Cargando más pedidos..." : "Cargar más pedidos"}
+          </button>
+        </div>
+      ) : null}
+
       {selectedOrder && (
         <OrderDetail
           order={selectedOrder}
           pin={pin}
           onClose={() => setSelectedOrder(null)}
-          onUpdated={() => loadOrders(pin)}
+          onUpdated={() => {
+            invalidateOrderCache();
+            void loadOrders(pin, currentFilters, { force: true });
+          }}
         />
       )}
     </div>

@@ -6,78 +6,94 @@ import {
 } from "@/lib/transport/access";
 import { getCurrentWeekRange } from "@/lib/transport";
 
+const agencySelect = `
+  id,
+  name,
+  slug,
+  status,
+  is_active,
+  pricing_type,
+  modality,
+  rates_visibility,
+  logo_url,
+  banner_image_url,
+  legal_name,
+  rif,
+  contact_name,
+  contact_email,
+  contact_phone,
+  whatsapp_phone,
+  city,
+  state,
+  coverage_notes,
+  capacity_dimensions_cm,
+  capacity_weight_kg,
+  max_wait_time_minutes,
+  charges_cash_return,
+  cash_return_fee_usd,
+  billing_currency,
+  billing_rate_bs,
+  payment_terms,
+  credit_terms,
+  additional_conditions,
+  created_at,
+  transport_agency_rates (
+    agency_id,
+    flat_fee_usd,
+    max_distance_km,
+    distance_factor_usd,
+    minimum_order_usd,
+    manual_quote_message,
+    is_active
+  ),
+  transport_agency_zones (
+    id,
+    agency_id,
+    name,
+    description,
+    fee_usd,
+    is_active,
+    sort_order
+  ),
+  transport_agency_distance_rates (
+    id,
+    agency_id,
+    min_km,
+    max_km,
+    fee_usd,
+    is_active,
+    sort_order
+  )
+`;
+
+const agencySelectWithoutBanner = agencySelect.replace("banner_image_url,", "");
+
 export async function GET(request: NextRequest) {
   const startedAt = performance.now();
   try {
     const auth = await requireTransportAgencyAuth(request);
     const supabase = createSupabaseAdminClient();
+    const includeBilling = request.nextUrl.searchParams.get("includeBilling") !== "false";
+    const includeRelations = request.nextUrl.searchParams.get("includeRelations") !== "false";
 
-    let agencyQuery = supabase
-      .from("transport_agencies")
-      .select(
-        `
-        id,
-        name,
-        slug,
-        status,
-        is_active,
-        pricing_type,
-        modality,
-        rates_visibility,
-        logo_url,
-        legal_name,
-        rif,
-        contact_name,
-        contact_email,
-        contact_phone,
-        whatsapp_phone,
-        city,
-        state,
-        coverage_notes,
-        capacity_dimensions_cm,
-        capacity_weight_kg,
-        max_wait_time_minutes,
-        charges_cash_return,
-        cash_return_fee_usd,
-        billing_currency,
-        billing_rate_bs,
-        payment_terms,
-        credit_terms,
-        additional_conditions,
-        created_at,
-        transport_agency_rates (
-          agency_id,
-          flat_fee_usd,
-          max_distance_km,
-          minimum_order_usd,
-          manual_quote_message,
-          is_active
-        ),
-        transport_agency_zones (
-          id,
-          agency_id,
-          name,
-          description,
-          fee_usd,
-          is_active,
-          sort_order
-        ),
-        transport_agency_distance_rates (
-          id,
-          agency_id,
-          min_km,
-          max_km,
-          fee_usd,
-          is_active,
-          sort_order
-        )
-      `
-      )
-      .order("created_at", { ascending: false });
+    const buildAgencyQuery = (selectClause: string) => {
+      let query = supabase
+        .from("transport_agencies")
+        .select(selectClause)
+        .order("created_at", { ascending: false });
 
-    if (auth.agencyIds !== null) agencyQuery = agencyQuery.in("id", auth.agencyIds);
+      if (auth.agencyIds !== null) query = query.in("id", auth.agencyIds);
+      return query;
+    };
 
-    const { data: agencies, error: agenciesError } = await agencyQuery;
+    let { data: agencies, error: agenciesError } = await buildAgencyQuery(agencySelect);
+
+    if (agenciesError && /banner_image_url/i.test(agenciesError.message || "")) {
+      const fallback = await buildAgencyQuery(agencySelectWithoutBanner);
+      agencies = (fallback.data || []).map((agency: any) => ({ ...agency, banner_image_url: null }));
+      agenciesError = fallback.error;
+    }
+
     if (agenciesError) throw agenciesError;
 
     const agencyIds = (agencies || []).map((agency: any) => agency.id);
@@ -86,7 +102,7 @@ export async function GET(request: NextRequest) {
     const [requestsResult, connectionsResult, ordersResult] =
       agencyIds.length
         ? await Promise.all([
-            supabase
+            includeRelations ? supabase
               .from("store_transport_agency_requests")
               .select(
                 `
@@ -111,8 +127,8 @@ export async function GET(request: NextRequest) {
               )
               .in("agency_id", agencyIds)
               .order("created_at", { ascending: false })
-              .limit(200),
-            supabase
+              .limit(200) : Promise.resolve({ data: [], error: null }),
+            includeRelations ? supabase
               .from("store_transport_agency_connections")
               .select(
                 `
@@ -135,15 +151,41 @@ export async function GET(request: NextRequest) {
               )
               .in("agency_id", agencyIds)
               .order("connected_at", { ascending: false })
-              .limit(200),
-            supabase
-              .from("transport_orders")
-              .select("id, order_id, store_id, agency_id, status, delivery_fee_usd, created_at, stores(name), orders(public_code, total_usd, delivery_usd)")
-              .in("agency_id", agencyIds)
-              .gte("created_at", week.start)
-              .lt("created_at", week.end)
-              .order("created_at", { ascending: false })
-              .limit(200),
+              .limit(200) : Promise.resolve({ data: [], error: null }),
+            includeBilling
+              ? supabase
+                  .from("transport_orders")
+                  .select(
+                    `
+                    id,
+                    order_id,
+                    store_id,
+                    agency_id,
+                    status,
+                    store_name_snapshot,
+                    customer_name_snapshot,
+                    customer_phone_snapshot,
+                    delivery_zone_name,
+                    delivery_fee_usd,
+                    created_at,
+                    stores(name),
+                    orders(
+                      public_code,
+                      total_usd,
+                      delivery_usd,
+                      delivery_zone_name,
+                      delivery_distance_km,
+                      distance_km,
+                      created_at
+                    )
+                  `
+                  )
+                  .in("agency_id", agencyIds)
+                  .gte("created_at", week.start)
+                  .lt("created_at", week.end)
+                  .order("created_at", { ascending: false })
+                  .limit(200)
+              : Promise.resolve({ data: [], error: null }),
           ])
         : [
             { data: [], error: null },
@@ -159,7 +201,8 @@ export async function GET(request: NextRequest) {
       agencies: agencies || [],
       requests: requestsResult.data || [],
       connections: connectionsResult.data || [],
-      billing: {
+      relationsLoaded: includeRelations,
+      billing: includeBilling ? {
         week,
         orders: ordersResult.data || [],
         totalUsd: (ordersResult.data || []).reduce(
@@ -169,7 +212,7 @@ export async function GET(request: NextRequest) {
               : sum,
           0
         ),
-      },
+      } : null,
     });
     const durationMs = (performance.now() - startedAt).toFixed(1);
     response.headers.set("Server-Timing", `transport-me;dur=${durationMs}`);

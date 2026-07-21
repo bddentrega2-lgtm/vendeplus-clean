@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { CartItem, Store } from "@/types";
@@ -28,6 +29,7 @@ function formatSelectedOptions(item: CartItem, baseCurrency: "USD" | "EUR" | str
 }
 
 export function CartPageClient({ store }: { store: Store }) {
+  const router = useRouter();
   const [items, setItems] = useState<CartItem[]>([]);
 
   useEffect(() => {
@@ -43,6 +45,12 @@ export function CartPageClient({ store }: { store: Store }) {
       window.removeEventListener("storage", sync);
     };
   }, [store.slug]);
+
+  useEffect(() => {
+    if (items.length > 0) {
+      router.prefetch(`/${store.slug}/checkout`);
+    }
+  }, [items.length, router, store.slug]);
 
   const subtotal = getCartSubtotal(items);
   const exchangeRate = store.usdToBs || 600;

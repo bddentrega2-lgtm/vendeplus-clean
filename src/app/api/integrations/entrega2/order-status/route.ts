@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
     });
   } catch {
     return NextResponse.json(
-      { error: "Error procesando webhook de Entrega2." },
+      { error: "Error procesando webhook de Entrega2 App." },
       { status: 500 }
     );
   }

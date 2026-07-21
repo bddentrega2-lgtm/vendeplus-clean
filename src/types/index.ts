@@ -43,6 +43,7 @@ export type ProductVariant = {
   id: string;
   name: string;
   priceDeltaUsd: number;
+  originalPriceUsd?: number;
   isAvailable: boolean;
 };
 
@@ -83,7 +84,10 @@ export type Product = {
   slug: string;
   description: string;
   priceUsd: number;
+  originalPriceUsd?: number;
+  discountPercent?: number;
   imageUrl: string;
+  imageUrls?: string[];
   imageAlt: string;
   imageEmoji?: string;
   isAvailable: boolean;
@@ -91,6 +95,7 @@ export type Product = {
   tags?: string[];
   variants?: ProductVariant[];
   optionGroups?: ProductOptionGroup[];
+  hasOptionGroups?: boolean;
 };
 
 export type Store = {
@@ -125,6 +130,9 @@ export type Store = {
   manualOpenStatus?: ManualOpenStatus;
   manualOpenNote?: string;
   openState?: StoreOpenState;
+  planType?: string;
+  serviceFeePayer?: "merchant" | "customer";
+  serviceFeeBillingCycle?: "weekly" | "monthly";
 };
 
 export type StoreDeliveryZone = {
@@ -164,6 +172,7 @@ export type StoreDeliverySettings = {
   transportAgencyConnectionId?: string | null;
   transportAgencyId?: string | null;
   transportAgencyName?: string | null;
+  transportAgencyLogoUrl?: string | null;
 };
 
 export type StorePaymentDetails = {
@@ -227,7 +236,9 @@ export type DeliveryQuote = {
   zoneName?: string | null;
   transportAgencyId?: string | null;
   transportAgencyName?: string | null;
+  transportAgencyLogoUrl?: string | null;
   message?: string;
+  ruleSummary?: string | null;
 };
 
 export type CheckoutFormData = {
@@ -245,6 +256,7 @@ export type CheckoutFormData = {
 export type OrderTotals = {
   subtotalUsd: number;
   deliveryUsd: number;
+  serviceFeeUsd?: number;
   totalUsd: number;
   totalBs: number;
 };

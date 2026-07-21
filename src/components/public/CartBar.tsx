@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ShoppingBag } from "lucide-react";
 import { useEffect, useState } from "react";
 import { formatBaseCurrency, formatBs } from "@/lib/currency";
@@ -17,6 +18,7 @@ export function CartBar({
   baseCurrency?: "USD" | "EUR" | string;
   showPricesInBs?: boolean;
 }) {
+  const router = useRouter();
   const [count, setCount] = useState(0);
   const [subtotal, setSubtotal] = useState(0);
 
@@ -35,6 +37,12 @@ export function CartBar({
       window.removeEventListener("storage", sync);
     };
   }, [storeSlug]);
+
+  useEffect(() => {
+    if (count > 0) {
+      router.prefetch(`/${storeSlug}/carrito`);
+    }
+  }, [count, router, storeSlug]);
 
   if (count === 0) return null;
 

@@ -199,18 +199,34 @@ function withPaymentFallback(order: any) {
   };
 }
 
+function asArray<T = any>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
+function isCancelledStatus(value: unknown) {
+  return ["cancelled", "canceled", "cancelado"].includes(
+    String(value || "").toLowerCase()
+  );
+}
+
+function strongest(rows: any[]) {
+  return [...asArray(rows)].sort((a, b) => toNumber(b?.value) - toNumber(a?.value))[0] || null;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const auth = await requirePanelAuth(request);
     const supabase = createSupabaseAdminClient();
     const { searchParams } = new URL(request.url);
+    const mode = searchParams.get("mode") === "summary" ? "summary" : "full";
     const requestedStoreId = searchParams.get("storeId");
     const selectedStoreId =
       requestedStoreId && requestedStoreId !== "all" ? requestedStoreId : null;
     const dateRange = getDateRange(request);
+    const defaultOrdersLimit = mode === "summary" ? 150 : 500;
     const ordersLimit = Math.min(
       1000,
-      Math.max(100, Number(searchParams.get("limit") || 500))
+      Math.max(50, Number(searchParams.get("limit") || defaultOrdersLimit))
     );
 
     if (selectedStoreId) {
@@ -219,6 +235,92 @@ export async function GET(request: NextRequest) {
         selectedStoreId,
         "No tienes permiso para consultar este comercio."
       );
+    }
+
+    let rpcStoresQuery = supabase
+      .from("stores")
+      .select("id, slug, name, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
+      .order("name", { ascending: true });
+
+    if (auth.storeIds !== null) {
+      rpcStoresQuery = rpcStoresQuery.in("id", auth.storeIds);
+    }
+
+    const [rpcStoresResult, rpcStatsResult] = await Promise.all([
+      rpcStoresQuery,
+      supabase
+        .rpc("panel_store_stats", {
+          p_store_ids: auth.storeIds,
+          p_store_id: selectedStoreId,
+          p_start: dateRange.start.toISOString(),
+          p_end: dateRange.end.toISOString(),
+          p_recent_limit: 8,
+        })
+        .maybeSingle(),
+    ]);
+
+    if (!rpcStoresResult.error && !rpcStatsResult.error && rpcStatsResult.data) {
+      const stats = rpcStatsResult.data as any;
+      const ordersByHour = asArray(stats.orders_by_hour);
+      const ordersByWeekday = asArray(stats.orders_by_weekday);
+
+      if (mode === "summary") {
+        return NextResponse.json({
+          stores: rpcStoresResult.data || [],
+          selectedStoreId,
+          range: {
+            key: dateRange.range,
+            start: dateRange.start.toISOString(),
+            end: dateRange.end.toISOString(),
+            days: countDays(dateRange.start, dateRange.end),
+            capped: false,
+          },
+          summary: stats.summary || {},
+          topProducts: asArray(stats.top_products).slice(0, 5),
+          customers: stats.customers || { total: 0, frequent: 0, contact: 0 },
+          auth: {
+            mode: auth.mode,
+            email: auth.email || null,
+            role: auth.role || null,
+          },
+        });
+      }
+
+      return NextResponse.json({
+        stores: rpcStoresResult.data || [],
+        selectedStoreId,
+        range: {
+          key: dateRange.range,
+          start: dateRange.start.toISOString(),
+          end: dateRange.end.toISOString(),
+          days: countDays(dateRange.start, dateRange.end),
+          capped: false,
+        },
+        summary: stats.summary || {},
+        topProducts: asArray(stats.top_products),
+        topCustomers: asArray(stats.top_customers),
+        customers: stats.customers || { total: 0, frequent: 0, contact: 0 },
+        salesByDay: asArray(stats.sales_by_day),
+        ordersByDay: asArray(stats.orders_by_day),
+        salesByWeek: asArray(stats.sales_by_week),
+        salesByMonth: asArray(stats.sales_by_month),
+        ordersByHour,
+        ordersByWeekday,
+        ordersByStatus: asArray(stats.orders_by_status),
+        ordersByPaymentMethod: asArray(stats.orders_by_payment_method),
+        ordersByDeliveryType: asArray(stats.orders_by_delivery_type),
+        revenueByStore: asArray(stats.revenue_by_store),
+        peak: {
+          strongestHour: strongest(ordersByHour),
+          strongestWeekday: strongest(ordersByWeekday),
+        },
+        recentOrders: asArray(stats.recent_orders),
+        auth: {
+          mode: auth.mode,
+          email: auth.email || null,
+          role: auth.role || null,
+        },
+      });
     }
 
     let storesQuery = supabase
@@ -286,7 +388,7 @@ export async function GET(request: NextRequest) {
 
     const safeStores = stores || [];
     const safeOrders = (orders || []).map(withPaymentFallback);
-    const billableOrders = safeOrders.filter((order: any) => order.status !== "cancelled");
+    const billableOrders = safeOrders.filter((order: any) => !isCancelledStatus(order.status));
     const safeProducts = products || [];
     let customerSummary = {
       total: 0,
@@ -336,9 +438,9 @@ export async function GET(request: NextRequest) {
     }
 
     const completedOrders = safeOrders.filter((order: any) => order.status === "completed");
-    const cancelledOrders = safeOrders.filter((order: any) => order.status === "cancelled");
+    const cancelledOrders = safeOrders.filter((order: any) => isCancelledStatus(order.status));
     const inProgressOrders = safeOrders.filter(
-      (order: any) => !["completed", "cancelled"].includes(order.status)
+      (order: any) => order.status !== "completed" && !isCancelledStatus(order.status)
     );
     const deliveryOrders = billableOrders.filter((order: any) => order.delivery_type === "delivery");
     const pickupOrders = billableOrders.filter((order: any) => order.delivery_type === "pickup");
@@ -363,8 +465,8 @@ export async function GET(request: NextRequest) {
     const averageTicketUsd = billableOrders.length
       ? totalRevenueUsd / billableOrders.length
       : 0;
-    const operationalConversionRate = safeOrders.length
-      ? (completedOrders.length / safeOrders.length) * 100
+    const operationalConversionRate = billableOrders.length
+      ? (completedOrders.length / billableOrders.length) * 100
       : 0;
     const averageRevenuePerDayUsd =
       totalRevenueUsd / countDays(dateRange.start, dateRange.end);
@@ -499,7 +601,7 @@ export async function GET(request: NextRequest) {
       )
     );
 
-    const ordersByStatus = groupCount(safeOrders, (order: any) => order.status);
+    const ordersByStatus = groupCount(billableOrders, (order: any) => order.status);
 
     const ordersByPaymentMethod = groupCount(
       billableOrders,
@@ -522,6 +624,49 @@ export async function GET(request: NextRequest) {
     const strongestHour = [...ordersByHour].sort((a, b) => b.value - a.value)[0] || null;
     const strongestWeekday = ordersByWeekday[0] || null;
 
+    if (mode === "summary") {
+      return NextResponse.json({
+        stores: safeStores,
+        selectedStoreId,
+        range: {
+          key: dateRange.range,
+          start: dateRange.start.toISOString(),
+          end: dateRange.end.toISOString(),
+          days: countDays(dateRange.start, dateRange.end),
+          capped: billableOrders.length === ordersLimit,
+        },
+        summary: {
+          totalOrders: billableOrders.length,
+          completedOrders: completedOrders.length,
+          inProgressOrders: inProgressOrders.length,
+          cancelledOrders: cancelledOrders.length,
+          totalRevenueUsd,
+          averageTicketUsd,
+          averageRevenuePerDayUsd,
+          operationalConversionRate,
+          averageDeliveryUsd,
+          averageDistanceKm,
+          deliveryRevenueUsd,
+          pickupRevenueUsd,
+          deliveryOrders: deliveryOrders.length,
+          pickupOrders: pickupOrders.length,
+          pendingPayments: pendingPaymentOrders.length,
+          reviewPayments: reviewPaymentOrders.length,
+          verifiedPaymentsToday: verifiedPaymentsToday.length,
+          pendingPaymentUsd,
+          activeProducts: activeProducts.length,
+          inactiveProducts: inactiveProducts.length,
+        },
+        topProducts: topProducts.slice(0, 5),
+        customers: customerSummary,
+        auth: {
+          mode: auth.mode,
+          email: auth.email || null,
+          role: auth.role || null,
+        },
+      });
+    }
+
     return NextResponse.json({
       stores: safeStores,
       selectedStoreId,
@@ -530,10 +675,10 @@ export async function GET(request: NextRequest) {
         start: dateRange.start.toISOString(),
         end: dateRange.end.toISOString(),
         days: countDays(dateRange.start, dateRange.end),
-        capped: safeOrders.length === ordersLimit,
+        capped: billableOrders.length === ordersLimit,
       },
       summary: {
-        totalOrders: safeOrders.length,
+        totalOrders: billableOrders.length,
         completedOrders: completedOrders.length,
         inProgressOrders: inProgressOrders.length,
         cancelledOrders: cancelledOrders.length,
@@ -571,7 +716,7 @@ export async function GET(request: NextRequest) {
         strongestHour,
         strongestWeekday,
       },
-      recentOrders: safeOrders.slice(0, 8),
+      recentOrders: billableOrders.slice(0, 8),
       auth: {
         mode: auth.mode,
         email: auth.email || null,

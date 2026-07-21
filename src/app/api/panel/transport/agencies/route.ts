@@ -7,8 +7,8 @@ import {
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   getCurrentWeekRange,
+  getTransportAgencyConfigIssues,
   getTransportAgencyRateFromRelation,
-  isTransportAgencyReady,
 } from "@/lib/transport";
 import { isTransportConnectionEnded } from "@/lib/transport/disengagement";
 
@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
       requestsResult,
       connectionsResult,
       ordersResult,
+      deliverySettingsResult,
     ] = await Promise.all([
       supabase
         .from("transport_agencies")
@@ -139,28 +140,82 @@ export async function GET(request: NextRequest) {
             .gte("created_at", week.start)
             .lt("created_at", week.end)
         : Promise.resolve({ data: [], error: null }),
+      storeIds.length
+        ? supabase
+            .from("store_delivery_settings")
+            .select("store_id, delivery_provider")
+            .in("store_id", storeIds)
+        : Promise.resolve({ data: [], error: null }),
     ]);
 
     if (agenciesResult.error) throw agenciesResult.error;
     if (requestsResult.error) throw requestsResult.error;
     if (connectionsResult.error) throw connectionsResult.error;
     if (ordersResult.error) throw ordersResult.error;
+    if (deliverySettingsResult.error) throw deliverySettingsResult.error;
 
-    const readyAgencies = (agenciesResult.data || []).filter((agency: any) =>
-      isTransportAgencyReady({
+    const entrega2StoreIds = new Set(
+      (deliverySettingsResult.data || [])
+        .filter((settings: any) => settings.delivery_provider === "entrega2")
+        .map((settings: any) => settings.store_id)
+    );
+    const isEntrega2AppLocked =
+      (selectedStoreId && entrega2StoreIds.has(selectedStoreId)) ||
+      (!selectedStoreId && storeIds.length === 1 && entrega2StoreIds.has(storeIds[0]));
+
+    if (isEntrega2AppLocked) {
+      const response = NextResponse.json({
+        stores: storesResult.data || [],
+        agencies: [],
+        requests: [],
+        connections: [],
+        deliveryAppLocked: true,
+        message:
+          "Este comercio está conectado a Entrega2 App. Las afiliaciones a otras empresas delivery están bloqueadas.",
+        billing: {
+          week,
+          ordersCount: 0,
+          totalUsd: 0,
+        },
+      });
+      const durationMs = (performance.now() - startedAt).toFixed(1);
+      response.headers.set("Server-Timing", `panel-transport-agencies;dur=${durationMs}`);
+      response.headers.set("X-Endpoint-Duration-Ms", durationMs);
+      return response;
+    }
+
+    const activeAgencies = (agenciesResult.data || []).map((agency: any) => {
+      const configIssues = getTransportAgencyConfigIssues({
         agency,
         rate: getTransportAgencyRateFromRelation(agency.transport_agency_rates),
         zones: agency.transport_agency_zones || [],
         distanceRates: agency.transport_agency_distance_rates || [],
-      })
-    );
+      });
 
-    const activeConnectionAgencyIds = new Set(
-      (connectionsResult.data || [])
-        .filter((connection: any) => connection.status === "active" && !isTransportConnectionEnded(connection))
-        .map((connection: any) => connection.agency_id)
+      return {
+        ...agency,
+        config_issues: configIssues,
+        is_ready: configIssues.length === 0,
+      };
+    });
+
+    const activeConnections = (connectionsResult.data || []).filter(
+      (connection: any) => connection.status === "active" && !isTransportConnectionEnded(connection)
     );
-    const agencies = readyAgencies.map((agency: any) => {
+    const activeConnectionAgencyIds = new Set(activeConnections.map((connection: any) => connection.agency_id));
+    const scopedExclusiveConnection =
+      (selectedStoreId || storeIds.length === 1)
+        ? activeConnections.find(
+            (connection: any) =>
+              connection.is_exclusive &&
+              connection.store_id === (selectedStoreId || storeIds[0])
+          )
+        : null;
+    const visibleActiveAgencies = scopedExclusiveConnection?.agency_id
+      ? activeAgencies.filter((agency: any) => agency.id === scopedExclusiveConnection.agency_id)
+      : activeAgencies;
+
+    const agencies = visibleActiveAgencies.map((agency: any) => {
       if (agency.rates_visibility !== "private" || activeConnectionAgencyIds.has(agency.id)) {
         return agency;
       }

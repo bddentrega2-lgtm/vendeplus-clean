@@ -82,6 +82,13 @@ export async function ensureStoreAccessUser({
     if (error) throw error;
     user = data.user;
     createdUser = true;
+  } else if (!user.email_confirmed_at) {
+    const { data, error } = await supabase.auth.admin.updateUserById(user.id, {
+      email_confirm: true,
+    });
+
+    if (error) throw error;
+    user = data.user || user;
   }
 
   if (!user?.id) {

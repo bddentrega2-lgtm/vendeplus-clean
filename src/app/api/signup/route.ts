@@ -114,6 +114,34 @@ async function insertStore(supabase: any, payload: Record<string, any>) {
   return { data, error };
 }
 
+async function canRecoverOrphanCommerceUser(supabase: any, user: any) {
+  const source = String(user?.user_metadata?.source || "");
+  const accountType = String(user?.user_metadata?.account_type || "");
+  if (accountType && accountType !== "commerce") return false;
+  if (source && source !== "vendeplus_signup") return false;
+
+  const [storeUserResult, agencyUserResult] = await Promise.all([
+    supabase
+      .from("store_users")
+      .select("id")
+      .eq("user_id", user.id)
+      .limit(1),
+    supabase
+      .from("transport_agency_users")
+      .select("id")
+      .eq("user_id", user.id)
+      .limit(1),
+  ]);
+
+  if (storeUserResult.error) throw storeUserResult.error;
+  if (agencyUserResult.error) throw agencyUserResult.error;
+
+  return (
+    (storeUserResult.data || []).length === 0 &&
+    (agencyUserResult.data || []).length === 0
+  );
+}
+
 export async function POST(request: NextRequest) {
   const apiContext = createApiRequestContext(request, "signup");
   const observed = (response: NextResponse) =>
@@ -150,12 +178,14 @@ export async function POST(request: NextRequest) {
 
   let createdUserId = "";
   let createdStoreId = "";
+  let shouldDeleteAuthUserOnFailure = false;
 
   try {
     const body = await request.json();
     const storeName = cleanText(body.storeName);
     const email = normalizeAccessEmail(body.email);
     const password = cleanText(body.password);
+    const confirmPassword = cleanText(body.confirmPassword);
     const whatsapp = cleanText(body.whatsapp).replace(/[^0-9]/g, "");
     const businessType = cleanText(body.businessType) || "general";
     const captchaToken = cleanText(body.captchaToken);
@@ -165,6 +195,9 @@ export async function POST(request: NextRequest) {
     if (password.length < 8) {
       return observed(badRequest("La contrasena debe tener al menos 8 caracteres."));
     }
+    if (confirmPassword && password !== confirmPassword) {
+      return observed(badRequest("Las contrasenas no coinciden."));
+    }
     if (!whatsapp || whatsapp.length < 10) {
       return observed(badRequest("Ingresa un WhatsApp valido."));
     }
@@ -173,7 +206,13 @@ export async function POST(request: NextRequest) {
     const existingUser = await findUserByEmail(supabase, email);
 
     if (existingUser) {
-      return observed(conflict("Ya existe una cuenta con ese email. Inicia sesion o usa otro correo."));
+      const canRecover = await canRecoverOrphanCommerceUser(supabase, existingUser);
+
+      if (!canRecover) {
+        return observed(conflict("Ya existe una cuenta con ese email. Inicia sesion o usa otro correo."));
+      }
+
+      createdUserId = existingUser.id;
     }
 
     const now = new Date();
@@ -185,25 +224,31 @@ export async function POST(request: NextRequest) {
       throw new Error("Faltan variables publicas de Supabase.");
     }
 
-    const userResult = await publicAuth.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: buildPublicSiteUrl(request, "/panel/login"),
-        captchaToken: captchaToken || undefined,
-        data: {
-          name: storeName,
-          source: "vendeplus_signup",
-          selected_plan: "trial",
+    let requiresEmailConfirmation = true;
+
+    if (!createdUserId) {
+      const userResult = await publicAuth.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: buildPublicSiteUrl(request, "/panel/login"),
+          captchaToken: captchaToken || undefined,
+          data: {
+            name: storeName,
+            source: "vendeplus_signup",
+            selected_plan: "trial",
+          },
         },
-      },
-    });
+      });
 
-    if (userResult.error) {
-      return observed(authSignupError(userResult.error.message || ""));
+      if (userResult.error) {
+        return observed(authSignupError(userResult.error.message || ""));
+      }
+
+      createdUserId = userResult.data.user?.id || "";
+      shouldDeleteAuthUserOnFailure = Boolean(createdUserId);
+      requiresEmailConfirmation = !userResult.data.session;
     }
-
-    createdUserId = userResult.data.user?.id || "";
 
     if (!createdUserId) {
       throw new Error("No se pudo crear el usuario.");
@@ -212,7 +257,7 @@ export async function POST(request: NextRequest) {
     const storePayload = {
       slug,
       name: storeName,
-      description: "Catalogo creado en VendeMas",
+      description: "Catalogo creado en Somos",
       business_type: businessType,
       whatsapp,
       address: null,
@@ -255,7 +300,8 @@ export async function POST(request: NextRequest) {
 
     logApiEvent(apiContext, "signup_created", {
       storeId: createdStoreId,
-      requiresEmailConfirmation: !userResult.data.session,
+      recoveredOrphanUser: Boolean(existingUser),
+      requiresEmailConfirmation,
     });
 
     return observed(
@@ -264,8 +310,8 @@ export async function POST(request: NextRequest) {
           store: storeResult.data,
           trialEndsAt: trialEndsAt.toISOString(),
           selectedPlan: "trial",
-          requiresEmailConfirmation: !userResult.data.session,
-          message: userResult.data.session
+          requiresEmailConfirmation,
+          message: !requiresEmailConfirmation
             ? "Cuenta creada. Ya puedes entrar al panel."
             : "Cuenta creada. Revisa tu correo para confirmar el acceso antes de entrar al panel.",
         },
@@ -281,7 +327,7 @@ export async function POST(request: NextRequest) {
     try {
       const supabase = createSupabaseAdminClient();
       if (createdStoreId) await supabase.from("stores").delete().eq("id", createdStoreId);
-      if (createdUserId) await supabase.auth.admin.deleteUser(createdUserId);
+      if (shouldDeleteAuthUserOnFailure && createdUserId) await supabase.auth.admin.deleteUser(createdUserId);
     } catch {
       // Best-effort cleanup only.
     }

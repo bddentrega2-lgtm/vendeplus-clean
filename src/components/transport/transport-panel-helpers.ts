@@ -1,11 +1,13 @@
 export type Agency = {
   id: string;
   name: string;
+  slug?: string;
   status: string;
   pricing_type: string;
   modality: string;
   rates_visibility?: "public" | "private" | string | null;
   logo_url?: string;
+  banner_image_url?: string | null;
   legal_name?: string;
   rif?: string;
   contact_name?: string;
