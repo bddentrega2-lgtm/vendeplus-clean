@@ -69,6 +69,7 @@ type DeliverySettingsRow = {
 
 type DeliveryBillingOrder = {
   id: string;
+  orderId?: string | null;
   publicCode?: string | null;
   provider: "entrega2" | "transport_agency" | string;
   providerName?: string | null;
@@ -81,6 +82,14 @@ type DeliveryBillingOrder = {
   createdAt?: string | null;
   billable?: boolean;
 };
+
+const deliveryBillingRangeOptions = [
+  { value: "this_week", label: "Esta semana" },
+  { value: "last_week", label: "Semana pasada" },
+  { value: "today", label: "Hoy" },
+  { value: "yesterday", label: "Ayer" },
+  { value: "custom", label: "Personalizado" },
+];
 
 async function deliveryRequest(pin: string, options?: RequestInit) {
   const response = await fetch("/api/panel/delivery-settings", {
@@ -120,6 +129,10 @@ function deliveryDetail(order: DeliveryBillingOrder) {
   return "Sin km/zona";
 }
 
+function shortServiceId(order: DeliveryBillingOrder) {
+  return order.publicCode || order.orderId?.slice(0, 8) || order.id.slice(0, 8);
+}
+
 function DeliveryBillingSection({
   rows,
   pin,
@@ -129,18 +142,29 @@ function DeliveryBillingSection({
 }) {
   const [billing, setBilling] = useState<any>(null);
   const [selectedStoreId, setSelectedStoreId] = useState("");
+  const [range, setRange] = useState("this_week");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [showDetail, setShowDetail] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState("");
 
   const activeStoreId = selectedStoreId || rows[0]?.store.id || "";
   const orders: DeliveryBillingOrder[] = billing?.orders || [];
 
-  async function loadBilling(storeId = activeStoreId) {
+  async function loadBilling(storeId = activeStoreId, overrideRange = range) {
     setIsLoading(true);
     setMessage("");
     try {
-      const params = storeId ? `?storeId=${encodeURIComponent(storeId)}` : "";
-      const response = await fetch(`/api/panel/transport/billing${params}`, {
+      const params = new URLSearchParams();
+      if (storeId) params.set("storeId", storeId);
+      params.set("range", overrideRange);
+      if (overrideRange === "custom") {
+        if (startDate) params.set("start", startDate);
+        if (endDate) params.set("end", endDate);
+      }
+
+      const response = await fetch(`/api/panel/transport/billing?${params.toString()}`, {
         headers: await getPanelAuthHeaders(pin),
       });
       const next = await response.json();
@@ -164,14 +188,14 @@ function DeliveryBillingSection({
       <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
         <div>
           <p className="text-sm font-black uppercase tracking-[0.18em] text-[#2E3A79]">
-            Facturación semanal
+            Facturación delivery
           </p>
           <h2 className="mt-1 text-2xl font-black text-[#25262B]">Cuenta de delivery</h2>
           <p className="mt-1 text-sm font-bold text-[#746f69]">
-            Detalle por cliente, empresa, precio, km/zona, fecha y hora.
+            Servicios no cancelados. El delivery se cobra separado de las ventas del comercio.
           </p>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
           {rows.length > 1 ? (
             <select
               value={activeStoreId}
@@ -185,6 +209,21 @@ function DeliveryBillingSection({
               ))}
             </select>
           ) : null}
+          <select
+            value={range}
+            onChange={(event) => {
+              const nextRange = event.target.value;
+              setRange(nextRange);
+              if (nextRange !== "custom") void loadBilling(activeStoreId, nextRange);
+            }}
+            className="rounded-full border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black text-[#25262B]"
+          >
+            {deliveryBillingRangeOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
           <button
             type="button"
             onClick={() => loadBilling(activeStoreId)}
@@ -197,11 +236,37 @@ function DeliveryBillingSection({
         </div>
       </div>
 
+      {range === "custom" ? (
+        <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+          <input
+            type="date"
+            value={startDate}
+            onChange={(event) => setStartDate(event.target.value)}
+            className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-black outline-none"
+          />
+          <input
+            type="date"
+            value={endDate}
+            onChange={(event) => setEndDate(event.target.value)}
+            className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-black outline-none"
+          />
+          <button
+            type="button"
+            onClick={() => loadBilling(activeStoreId, "custom")}
+            disabled={isLoading}
+            className="rounded-2xl bg-[#2E3A79] px-5 py-3 text-sm font-black text-white disabled:opacity-60"
+          >
+            Aplicar fechas
+          </button>
+        </div>
+      ) : null}
+
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <div className="rounded-2xl bg-[#F8F3E8] p-4">
-          <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Semana</p>
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Período</p>
           <p className="mt-1 text-sm font-black text-[#25262B]">
-            {billing?.week?.startDate || "--"} a {billing?.week?.endDate || "--"}
+            {billing?.range?.startDate || billing?.week?.startDate || "--"} a{" "}
+            {billing?.range?.endDate || billing?.week?.endDate || "--"}
           </p>
         </div>
         <div className="rounded-2xl bg-[#F8F3E8] p-4">
@@ -216,37 +281,44 @@ function DeliveryBillingSection({
         </div>
       </div>
 
-      <div className="mt-4 space-y-2">
-        {orders.slice(0, 12).map((order) => (
-          <article
-            key={`${order.provider}-${order.id}`}
-            className="grid gap-3 rounded-2xl bg-[#F8F3E8] p-4 text-sm md:grid-cols-[1.1fr_0.9fr_auto]"
-          >
-            <div>
-              <p className="font-black text-[#25262B]">
-                {order.customerName || "Cliente"} · {order.publicCode || "Pedido"}
-              </p>
-              <p className="mt-1 font-bold text-[#746f69]">
-                {order.providerName || "Delivery"} · {formatDateTime(order.createdAt)}
-              </p>
-            </div>
-            <div>
-              <p className="font-black text-[#25262B]">{deliveryDetail(order)}</p>
-              <p className="mt-1 font-bold text-[#746f69]">Estado: {order.status || "pendiente"}</p>
-            </div>
-            <div className="text-left md:text-right">
-              <p className="text-lg font-black text-[#2E3A79]">{moneyLabel(order.feeUsd)}</p>
-              <p className="text-xs font-black text-[#746f69]">
-                {order.billable ? "Facturable" : "Referencia"}
-              </p>
-            </div>
-          </article>
-        ))}
-      </div>
+      <button
+        type="button"
+        onClick={() => setShowDetail((current) => !current)}
+        className="mt-4 inline-flex items-center justify-center gap-2 rounded-full bg-[#F8F3E8] px-5 py-3 text-sm font-black text-[#25262B]"
+      >
+        {showDetail ? "Ocultar detalle" : "Ver detalle"}
+      </button>
+
+      {showDetail ? (
+        <div className="mt-4 overflow-x-auto rounded-2xl ring-1 ring-[#25262B]/10">
+          <table className="min-w-[760px] w-full text-left text-sm">
+            <thead className="bg-[#F8F3E8] text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
+              <tr>
+                <th className="px-4 py-3">ID</th>
+                <th className="px-4 py-3">Fecha y hora</th>
+                <th className="px-4 py-3">Cliente</th>
+                <th className="px-4 py-3">Precio</th>
+                <th className="px-4 py-3">Zona o km</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#25262B]/10 bg-white">
+              {orders.map((order) => (
+                <tr key={`${order.provider}-${order.id}`} className="font-bold text-[#25262B]">
+                  <td className="px-4 py-3">{shortServiceId(order)}</td>
+                  <td className="px-4 py-3">{formatDateTime(order.createdAt)}</td>
+                  <td className="px-4 py-3">{order.customerName || "Cliente"}</td>
+                  <td className="px-4 py-3 font-black text-[#2E3A79]">{moneyLabel(order.feeUsd)}</td>
+                  <td className="px-4 py-3">{deliveryDetail(order)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
 
       {!orders.length && !isLoading ? (
         <p className="mt-4 rounded-2xl bg-[#F8F3E8] p-4 text-sm font-bold text-[#746f69]">
-          Aún no hay servicios delivery registrados esta semana.
+          Aún no hay servicios delivery registrados en este período.
         </p>
       ) : null}
 

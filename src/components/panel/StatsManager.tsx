@@ -57,6 +57,7 @@ type StatsData = {
     averageRevenuePerDayUsd: number;
     operationalConversionRate: number;
     averageDeliveryUsd: number;
+    deliveryFeesUsd: number;
     averageDistanceKm: number;
     deliveryRevenueUsd: number;
     pickupRevenueUsd: number;
@@ -336,10 +337,16 @@ export function StatsManager() {
 
   const cards = [
     {
-      label: "Ventas totales",
+      label: "Ventas del comercio",
       value: formatUsd(stats.summary.totalRevenueUsd),
-      detail: `${stats.range.days} días analizados`,
+      detail: `Sin delivery · ${stats.range.days} días`,
       icon: DollarSign,
+    },
+    {
+      label: "Delivery cobrado",
+      value: formatUsd(stats.summary.deliveryFeesUsd),
+      detail: "Separado de las ventas",
+      icon: Bike,
     },
     {
       label: "Cantidad de pedidos",

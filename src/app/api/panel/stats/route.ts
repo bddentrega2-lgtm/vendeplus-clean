@@ -199,18 +199,18 @@ function withPaymentFallback(order: any) {
   };
 }
 
-function asArray<T = any>(value: unknown): T[] {
-  return Array.isArray(value) ? (value as T[]) : [];
-}
-
 function isCancelledStatus(value: unknown) {
   return ["cancelled", "canceled", "cancelado"].includes(
     String(value || "").toLowerCase()
   );
 }
 
-function strongest(rows: any[]) {
-  return [...asArray(rows)].sort((a, b) => toNumber(b?.value) - toNumber(a?.value))[0] || null;
+function getMerchantRevenueUsd(order: any) {
+  if (order?.subtotal_usd !== null && order?.subtotal_usd !== undefined) {
+    return Math.max(0, toNumber(order.subtotal_usd));
+  }
+
+  return Math.max(0, toNumber(order?.total_usd) - toNumber(order?.delivery_usd));
 }
 
 export async function GET(request: NextRequest) {
@@ -235,92 +235,6 @@ export async function GET(request: NextRequest) {
         selectedStoreId,
         "No tienes permiso para consultar este comercio."
       );
-    }
-
-    let rpcStoresQuery = supabase
-      .from("stores")
-      .select("id, slug, name, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
-      .order("name", { ascending: true });
-
-    if (auth.storeIds !== null) {
-      rpcStoresQuery = rpcStoresQuery.in("id", auth.storeIds);
-    }
-
-    const [rpcStoresResult, rpcStatsResult] = await Promise.all([
-      rpcStoresQuery,
-      supabase
-        .rpc("panel_store_stats", {
-          p_store_ids: auth.storeIds,
-          p_store_id: selectedStoreId,
-          p_start: dateRange.start.toISOString(),
-          p_end: dateRange.end.toISOString(),
-          p_recent_limit: 8,
-        })
-        .maybeSingle(),
-    ]);
-
-    if (!rpcStoresResult.error && !rpcStatsResult.error && rpcStatsResult.data) {
-      const stats = rpcStatsResult.data as any;
-      const ordersByHour = asArray(stats.orders_by_hour);
-      const ordersByWeekday = asArray(stats.orders_by_weekday);
-
-      if (mode === "summary") {
-        return NextResponse.json({
-          stores: rpcStoresResult.data || [],
-          selectedStoreId,
-          range: {
-            key: dateRange.range,
-            start: dateRange.start.toISOString(),
-            end: dateRange.end.toISOString(),
-            days: countDays(dateRange.start, dateRange.end),
-            capped: false,
-          },
-          summary: stats.summary || {},
-          topProducts: asArray(stats.top_products).slice(0, 5),
-          customers: stats.customers || { total: 0, frequent: 0, contact: 0 },
-          auth: {
-            mode: auth.mode,
-            email: auth.email || null,
-            role: auth.role || null,
-          },
-        });
-      }
-
-      return NextResponse.json({
-        stores: rpcStoresResult.data || [],
-        selectedStoreId,
-        range: {
-          key: dateRange.range,
-          start: dateRange.start.toISOString(),
-          end: dateRange.end.toISOString(),
-          days: countDays(dateRange.start, dateRange.end),
-          capped: false,
-        },
-        summary: stats.summary || {},
-        topProducts: asArray(stats.top_products),
-        topCustomers: asArray(stats.top_customers),
-        customers: stats.customers || { total: 0, frequent: 0, contact: 0 },
-        salesByDay: asArray(stats.sales_by_day),
-        ordersByDay: asArray(stats.orders_by_day),
-        salesByWeek: asArray(stats.sales_by_week),
-        salesByMonth: asArray(stats.sales_by_month),
-        ordersByHour,
-        ordersByWeekday,
-        ordersByStatus: asArray(stats.orders_by_status),
-        ordersByPaymentMethod: asArray(stats.orders_by_payment_method),
-        ordersByDeliveryType: asArray(stats.orders_by_delivery_type),
-        revenueByStore: asArray(stats.revenue_by_store),
-        peak: {
-          strongestHour: strongest(ordersByHour),
-          strongestWeekday: strongest(ordersByWeekday),
-        },
-        recentOrders: asArray(stats.recent_orders),
-        auth: {
-          mode: auth.mode,
-          email: auth.email || null,
-          role: auth.role || null,
-        },
-      });
     }
 
     let storesQuery = supabase
@@ -458,7 +372,11 @@ export async function GET(request: NextRequest) {
     });
 
     const totalRevenueUsd = billableOrders.reduce(
-      (sum: number, order: any) => sum + toNumber(order.total_usd),
+      (sum: number, order: any) => sum + getMerchantRevenueUsd(order),
+      0
+    );
+    const deliveryFeesUsd = deliveryOrders.reduce(
+      (sum: number, order: any) => sum + toNumber(order.delivery_usd),
       0
     );
 
@@ -485,18 +403,18 @@ export async function GET(request: NextRequest) {
         ) / deliveryOrders.length
       : 0;
     const deliveryRevenueUsd = deliveryOrders.reduce(
-      (sum: number, order: any) => sum + toNumber(order.total_usd),
+      (sum: number, order: any) => sum + getMerchantRevenueUsd(order),
       0
     );
     const pickupRevenueUsd = pickupOrders.reduce(
-      (sum: number, order: any) => sum + toNumber(order.total_usd),
+      (sum: number, order: any) => sum + getMerchantRevenueUsd(order),
       0
     );
     const pendingPaymentUsd = billableOrders
       .filter((order: any) =>
         ["pending", "review", "incomplete"].includes(order.payment_status || "pending")
       )
-      .reduce((sum: number, order: any) => sum + toNumber(order.total_usd), 0);
+      .reduce((sum: number, order: any) => sum + getMerchantRevenueUsd(order), 0);
 
     const allItems = billableOrders.flatMap((order: any) =>
       (order.order_items || []).map((item: any) => ({
@@ -556,7 +474,7 @@ export async function GET(request: NextRequest) {
       };
 
       current.orders += 1;
-      current.revenue += toNumber(order.total_usd);
+      current.revenue += getMerchantRevenueUsd(order);
       if (new Date(order.created_at) > new Date(current.lastOrderAt)) {
         current.lastOrderAt = order.created_at;
       }
@@ -571,7 +489,7 @@ export async function GET(request: NextRequest) {
     const salesByDay = groupSum(
       billableOrders,
       (order: any) => toDateKey(order.created_at),
-      (order: any) => toNumber(order.total_usd)
+      (order: any) => getMerchantRevenueUsd(order)
     );
 
     const ordersByDay = groupCount(billableOrders, (order: any) =>
@@ -582,13 +500,13 @@ export async function GET(request: NextRequest) {
     const salesByWeek = groupSum(
       billableOrders,
       (order: any) => getWeekKey(order.created_at),
-      (order: any) => toNumber(order.total_usd)
+      (order: any) => getMerchantRevenueUsd(order)
     ).slice(-8);
 
     const salesByMonth = groupSum(
       billableOrders,
       (order: any) => toMonthKey(order.created_at),
-      (order: any) => toNumber(order.total_usd)
+      (order: any) => getMerchantRevenueUsd(order)
     ).slice(-6);
 
     const ordersByHour = groupCount(billableOrders, (order: any) =>
@@ -616,7 +534,7 @@ export async function GET(request: NextRequest) {
     const revenueByStore = groupSum(
       billableOrders,
       (order: any) => order.stores?.name || "Comercio",
-      (order: any) => toNumber(order.total_usd)
+      (order: any) => getMerchantRevenueUsd(order)
     ).sort((a, b) => b.value - a.value);
 
     const activeProducts = safeProducts.filter((product: any) => product.is_available);
@@ -645,6 +563,7 @@ export async function GET(request: NextRequest) {
           averageRevenuePerDayUsd,
           operationalConversionRate,
           averageDeliveryUsd,
+          deliveryFeesUsd,
           averageDistanceKm,
           deliveryRevenueUsd,
           pickupRevenueUsd,
@@ -687,6 +606,7 @@ export async function GET(request: NextRequest) {
         averageRevenuePerDayUsd,
         operationalConversionRate,
         averageDeliveryUsd,
+        deliveryFeesUsd,
         averageDistanceKm,
         deliveryRevenueUsd,
         pickupRevenueUsd,

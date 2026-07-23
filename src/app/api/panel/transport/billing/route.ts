@@ -6,10 +6,12 @@ import {
   requirePanelAuth,
 } from "@/lib/panel/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { cleanTransportText, getCurrentWeekRange } from "@/lib/transport";
+import { cleanTransportText, getTransportBillingRange } from "@/lib/transport";
 
 function isCancelledStatus(value: unknown) {
-  return ["cancelled", "canceled", "cancelado"].includes(String(value || "").toLowerCase());
+  return ["cancelled", "canceled", "cancelado", "agency_rejected", "delivery_failed"].includes(
+    String(value || "").toLowerCase()
+  );
 }
 
 function toAmount(value: unknown) {
@@ -31,7 +33,7 @@ export async function GET(request: NextRequest) {
     if (storeId) assertStoreManager(auth, storeId, "No tienes permiso para este comercio.");
 
     const supabase = createSupabaseAdminClient();
-    const week = getCurrentWeekRange();
+    const range = getTransportBillingRange(searchParams);
 
     let transportQuery = supabase
       .from("transport_orders")
@@ -57,8 +59,8 @@ export async function GET(request: NextRequest) {
           status
         )
       `)
-      .gte("created_at", week.start)
-      .lt("created_at", week.end)
+      .gte("created_at", range.start)
+      .lt("created_at", range.end)
       .order("created_at", { ascending: false });
 
     let entrega2Query = supabase
@@ -78,8 +80,8 @@ export async function GET(request: NextRequest) {
         created_at
       `)
       .eq("delivery_provider", "entrega2")
-      .gte("created_at", week.start)
-      .lt("created_at", week.end)
+      .gte("created_at", range.start)
+      .lt("created_at", range.end)
       .order("created_at", { ascending: false });
 
     if (storeId) {
@@ -99,29 +101,32 @@ export async function GET(request: NextRequest) {
     if (transportResult.error) throw transportResult.error;
     if (entrega2Result.error) throw entrega2Result.error;
 
-    const transportOrders = (transportResult.data || []).map((order: any) => {
-      const nestedOrder = Array.isArray(order.orders) ? order.orders[0] : order.orders || {};
-      const feeUsd = toAmount(order.delivery_fee_usd ?? nestedOrder.delivery_usd);
+    const transportOrders = (transportResult.data || [])
+      .map((order: any) => {
+        const nestedOrder = Array.isArray(order.orders) ? order.orders[0] : order.orders || {};
+        const feeUsd = toAmount(order.delivery_fee_usd ?? nestedOrder.delivery_usd);
+        const status = order.status || nestedOrder.status || "";
 
-      return {
-        id: String(order.id),
-        orderId: order.order_id ? String(order.order_id) : null,
-        publicCode: nestedOrder.public_code || "Pedido",
-        provider: "transport_agency",
-        providerName: order.agency_name_snapshot || "Empresa delivery",
-        customerName: order.customer_name_snapshot || nestedOrder.customer_name || "Cliente",
-        customerPhone: order.customer_phone_snapshot || nestedOrder.customer_phone || "",
-        feeUsd,
-        deliveryDistanceKm: nestedOrder.delivery_distance_km ?? null,
-        deliveryZoneName: order.delivery_zone_name || nestedOrder.delivery_zone_name || null,
-        status: order.status || nestedOrder.status || "",
-        createdAt: order.created_at,
-        billable: ["delivered", "completed"].includes(String(order.status || "").toLowerCase()),
-      };
-    });
+        return {
+          id: String(order.id),
+          orderId: order.order_id ? String(order.order_id) : null,
+          publicCode: nestedOrder.public_code || "Pedido",
+          provider: "transport_agency",
+          providerName: order.agency_name_snapshot || "Empresa delivery",
+          customerName: order.customer_name_snapshot || nestedOrder.customer_name || "Cliente",
+          customerPhone: order.customer_phone_snapshot || nestedOrder.customer_phone || "",
+          feeUsd,
+          deliveryDistanceKm: nestedOrder.delivery_distance_km ?? null,
+          deliveryZoneName: order.delivery_zone_name || nestedOrder.delivery_zone_name || null,
+          status,
+          createdAt: order.created_at,
+          billable: feeUsd > 0,
+        };
+      })
+      .filter((order: any) => !isCancelledStatus(order.status));
 
     const entrega2Orders = (entrega2Result.data || [])
-      .filter((order: any) => !isCancelledStatus(order.status))
+      .filter((order: any) => !isCancelledStatus(order.status) && !isCancelledStatus(order.delivery_status))
       .map((order: any) => {
         const feeUsd = toAmount(order.delivery_usd);
 
@@ -138,7 +143,7 @@ export async function GET(request: NextRequest) {
           deliveryZoneName: order.delivery_zone_name || null,
           status: order.delivery_status || order.status || "",
           createdAt: order.created_at,
-          billable: !isCancelledStatus(order.status) && feeUsd > 0,
+          billable: feeUsd > 0,
         };
       });
 
@@ -147,7 +152,8 @@ export async function GET(request: NextRequest) {
     );
 
     return NextResponse.json({
-      week,
+      range,
+      week: range,
       orders,
       ordersCount: orders.length,
       totalUsd: orders.reduce((sum: number, order: any) => order.billable ? sum + order.feeUsd : sum, 0),

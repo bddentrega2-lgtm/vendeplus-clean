@@ -4,7 +4,7 @@ import {
   requireTransportAgencyAuth,
   transportErrorResponse,
 } from "@/lib/transport/access";
-import { getCurrentWeekRange } from "@/lib/transport";
+import { getTransportBillingRange } from "@/lib/transport";
 
 const agencySelect = `
   id,
@@ -68,6 +68,17 @@ const agencySelect = `
 
 const agencySelectWithoutBanner = agencySelect.replace("banner_image_url,", "");
 
+function isCancelledBillingStatus(value: unknown) {
+  return ["cancelled", "canceled", "cancelado", "agency_rejected", "delivery_failed"].includes(
+    String(value || "").toLowerCase()
+  );
+}
+
+function getBillingAmount(order: any) {
+  const parsed = Number(order?.delivery_fee_usd ?? order?.orders?.delivery_usd ?? 0);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+}
+
 export async function GET(request: NextRequest) {
   const startedAt = performance.now();
   try {
@@ -97,7 +108,7 @@ export async function GET(request: NextRequest) {
     if (agenciesError) throw agenciesError;
 
     const agencyIds = (agencies || []).map((agency: any) => agency.id);
-    const week = getCurrentWeekRange();
+    const billingRange = getTransportBillingRange(request.nextUrl.searchParams);
 
     const [requestsResult, connectionsResult, ordersResult] =
       agencyIds.length
@@ -176,13 +187,14 @@ export async function GET(request: NextRequest) {
                       delivery_zone_name,
                       delivery_distance_km,
                       distance_km,
+                      status,
                       created_at
                     )
                   `
                   )
                   .in("agency_id", agencyIds)
-                  .gte("created_at", week.start)
-                  .lt("created_at", week.end)
+                  .gte("created_at", billingRange.start)
+                  .lt("created_at", billingRange.end)
                   .order("created_at", { ascending: false })
                   .limit(200)
               : Promise.resolve({ data: [], error: null }),
@@ -203,12 +215,18 @@ export async function GET(request: NextRequest) {
       connections: connectionsResult.data || [],
       relationsLoaded: includeRelations,
       billing: includeBilling ? {
-        week,
-        orders: ordersResult.data || [],
+        range: billingRange,
+        week: billingRange,
+        orders: (ordersResult.data || []).filter(
+          (order: any) =>
+            !isCancelledBillingStatus(order.status) &&
+            !isCancelledBillingStatus(order.orders?.status)
+        ),
         totalUsd: (ordersResult.data || []).reduce(
           (sum: number, order: any) =>
-            order.status === "delivered"
-              ? sum + Number(order.delivery_fee_usd ?? order.orders?.delivery_usd ?? 0)
+            !isCancelledBillingStatus(order.status) &&
+            !isCancelledBillingStatus(order.orders?.status)
+              ? sum + getBillingAmount(order)
               : sum,
           0
         ),

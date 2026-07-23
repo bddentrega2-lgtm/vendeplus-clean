@@ -3,6 +3,11 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabasePublicClient } from "@/lib/supabase/server";
 import { normalizePublicBrandText } from "@/lib/brand-copy";
 import { isTransportConnectionEnded } from "@/lib/transport/disengagement";
+import {
+  addVenezuelaDays,
+  getVenezuelaDateKey,
+  getVenezuelaDayRange,
+} from "@/lib/time/venezuela";
 
 export type TransportAgencyPricingType = "flat" | "zones" | "distance_ranges" | "manual";
 export type TransportAgencyStatus = "pending" | "active" | "paused" | "rejected";
@@ -407,5 +412,74 @@ export function getCurrentWeekRange(now = new Date()) {
     end: end.toISOString(),
     startDate: start.toISOString().slice(0, 10),
     endDate: new Date(end.getTime() - 1).toISOString().slice(0, 10),
+  };
+}
+
+export type TransportBillingRangeKey =
+  | "today"
+  | "yesterday"
+  | "this_week"
+  | "last_week"
+  | "custom";
+
+export function getTransportBillingRange(
+  searchParams: URLSearchParams,
+  now = new Date()
+) {
+  const requestedRange = searchParams.get("range") || "this_week";
+  const range: TransportBillingRangeKey = [
+    "today",
+    "yesterday",
+    "this_week",
+    "last_week",
+    "custom",
+  ].includes(requestedRange)
+    ? (requestedRange as TransportBillingRangeKey)
+    : "this_week";
+  const today = getVenezuelaDayRange(now);
+  const todayDay = today.start.getUTCDay();
+  const mondayOffset = todayDay === 0 ? -6 : 1 - todayDay;
+  const thisWeekStart = addVenezuelaDays(today.start, mondayOffset);
+
+  let start = thisWeekStart;
+  let endExclusive = addVenezuelaDays(thisWeekStart, 7);
+
+  if (range === "today") {
+    start = today.start;
+    endExclusive = addVenezuelaDays(today.start, 1);
+  }
+
+  if (range === "yesterday") {
+    start = addVenezuelaDays(today.start, -1);
+    endExclusive = today.start;
+  }
+
+  if (range === "last_week") {
+    start = addVenezuelaDays(thisWeekStart, -7);
+    endExclusive = thisWeekStart;
+  }
+
+  if (range === "custom") {
+    const fallbackStart = addVenezuelaDays(today.start, -6);
+    const startDate = cleanTransportText(searchParams.get("start"), 20);
+    const endDate = cleanTransportText(searchParams.get("end"), 20);
+    start = startDate ? getVenezuelaDayRange(startDate).start : fallbackStart;
+    endExclusive = endDate
+      ? addVenezuelaDays(getVenezuelaDayRange(endDate).start, 1)
+      : addVenezuelaDays(today.start, 1);
+
+    if (endExclusive <= start) {
+      endExclusive = addVenezuelaDays(start, 1);
+    }
+  }
+
+  const endInclusive = new Date(endExclusive.getTime() - 1);
+
+  return {
+    key: range,
+    start: start.toISOString(),
+    end: endExclusive.toISOString(),
+    startDate: getVenezuelaDateKey(start),
+    endDate: getVenezuelaDateKey(endInclusive),
   };
 }
