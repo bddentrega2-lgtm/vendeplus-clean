@@ -29,6 +29,10 @@ function isCommercialPlan(value: unknown) {
   return plan === "monthly" || plan === "per_service";
 }
 
+function isCancelledOrderStatus(value: unknown) {
+  return ["cancelled", "canceled", "cancelado"].includes(cleanText(value).toLowerCase());
+}
+
 async function getServiceUsage(supabase: any, store: any) {
   const periodStart =
     store.last_payment_at ||
@@ -37,16 +41,22 @@ async function getServiceUsage(supabase: any, store: any) {
     store.created_at ||
     new Date().toISOString();
 
-  const { count, error } = await supabase
+  const { data, error } = await supabase
     .from("orders")
-    .select("id", { count: "exact", head: true })
+    .select("id, status, platform_service_fee_usd")
     .eq("store_id", store.id)
-    .gte("created_at", periodStart);
+    .gte("created_at", periodStart)
+    .gt("platform_service_fee_usd", 0);
 
   if (error) throw error;
 
-  const serviceCount = count || 0;
-  const amountUsd = Number((serviceCount * PER_SERVICE_FEE_USD).toFixed(2));
+  const billableOrders = (data || []).filter((order: any) => !isCancelledOrderStatus(order.status));
+  const serviceCount = billableOrders.length;
+  const amountUsd = Number(
+    billableOrders
+      .reduce((sum: number, order: any) => sum + money(order.platform_service_fee_usd || PER_SERVICE_FEE_USD), 0)
+      .toFixed(2)
+  );
 
   return {
     serviceCount,

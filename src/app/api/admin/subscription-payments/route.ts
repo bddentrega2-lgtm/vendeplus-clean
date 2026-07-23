@@ -67,7 +67,7 @@ export async function PATCH(request: NextRequest) {
       const planType = cleanText((payment as any).plan_type) || "monthly";
       const currentEnd = store.subscription_ends_at || store.next_payment_due_at;
       const baseDate =
-        currentEnd && new Date(currentEnd).getTime() > Date.now()
+        planType !== "per_service" && currentEnd && new Date(currentEnd).getTime() > Date.now()
           ? new Date(currentEnd)
           : new Date();
       const months = (payment as any).billing_period === "annual" ? 12 : 1;

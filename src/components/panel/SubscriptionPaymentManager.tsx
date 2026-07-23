@@ -304,6 +304,12 @@ export function SubscriptionPaymentManager() {
               Servicios acumulados este periodo: {serviceUsage.serviceCount}. Total del corte:{" "}
               {formatUsd(serviceUsage.amountUsd)}.
             </p>
+            <p className="mt-2 text-xs font-black uppercase tracking-[0.12em] text-[#2E3A79]">
+              Pago completo acumulado. No se aceptan abonos parciales.
+            </p>
+            <p className="mt-1 text-xs font-bold text-[#746f69]">
+              Cuando el pago sea aprobado por admin, el acumulado vuelve a cero y comienza un nuevo mes de corte.
+            </p>
           </section>
         ) : null}
 
@@ -341,7 +347,7 @@ export function SubscriptionPaymentManager() {
         </label>
         <button type="button" onClick={submitPayment} disabled={isLoading || !selectedStore} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B] disabled:opacity-60">
           {isLoading ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} />}
-          {isPerService ? "Enviar corte a revisión" : "Enviar pago adelantado"}
+          {isPerService ? "Enviar pago acumulado completo" : "Enviar pago adelantado"}
         </button>
         </>
         ) : null}

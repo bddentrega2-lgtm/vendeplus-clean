@@ -77,9 +77,9 @@ export function buildPaymentInfo({
   } else if (key === "transferencia") {
     const data = details.transferencia || {};
     addLine(lines, "Banco", firstValue(data, ["bank", "banco"]));
-    addLine(lines, "Cuenta", firstValue(data, ["accountNumber", "cuenta", "account", "numeroCuenta"]));
-    addLine(lines, "Cedula/RIF", firstValue(data, ["idNumber", "cedula", "cédula", "rif", "document", "documento"]));
-    addLine(lines, "Titular", firstValue(data, ["holder", "titular", "name", "nombre"]), true);
+    addLine(lines, "Numero de cuenta", firstValue(data, ["accountNumber", "cuenta", "account", "numeroCuenta"]), true);
+    addLine(lines, "Cedula/RIF", firstValue(data, ["idNumber", "cedula", "cédula", "rif", "document", "documento"]), true);
+    addLine(lines, "Titular", firstValue(data, ["holder", "titular", "name", "nombre"]));
     addLine(lines, "Monto", formatBs(totals.totalBs), true);
     addLine(lines, "Tasa usada", formatBs(exchangeRate));
   } else if (key === "zelle") {

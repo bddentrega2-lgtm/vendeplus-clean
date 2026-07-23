@@ -18,6 +18,7 @@ import {
   getSavedPanelToken,
   hasSavedPanelAuth,
 } from "@/lib/panel/client-auth";
+import { PER_SERVICE_FEE_USD } from "@/lib/plans";
 
 type StoreDraft = {
   name: string;
@@ -243,7 +244,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
       }
       if (field === "plan_type") {
         if (value === "monthly") next.monthly_price_usd = "20";
-        if (value === "per_service") next.monthly_price_usd = "0.07";
+        if (value === "per_service") next.monthly_price_usd = PER_SERVICE_FEE_USD.toFixed(2);
         if (value === "trial" || value === "founder") next.monthly_price_usd = "0";
         next.subscription_status = value === "trial" ? "trial" : "active";
       }
@@ -579,7 +580,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
             <select value={draft.plan_type} onChange={(event) => updateField("plan_type", event.target.value)} className={inputClass}>
               <option value="trial">Trial</option>
               <option value="monthly">Mensual $20 / tienda</option>
-              <option value="per_service">Por servicio $0.07</option>
+              <option value="per_service">{`Por servicio $${PER_SERVICE_FEE_USD.toFixed(2)}`}</option>
               <option value="founder">Founder</option>
             </select>
           </Field>
