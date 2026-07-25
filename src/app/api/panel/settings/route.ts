@@ -111,6 +111,7 @@ function normalizeStorePayload(body: any) {
     button_text_color: body.button_text_color ? String(body.button_text_color).trim() : "#25262B",
     accepts_delivery: Boolean(body.accepts_delivery),
     accepts_pickup: Boolean(body.accepts_pickup),
+    accepts_national_shipping: Boolean(body.accepts_national_shipping),
     is_active: Boolean(body.is_active),
     service_fee_payer: body.service_fee_payer === "customer" ? "customer" : "merchant",
     service_fee_billing_cycle: body.service_fee_billing_cycle === "weekly" ? "weekly" : "monthly",
@@ -151,6 +152,7 @@ const storeSelect = `
   button_text_color,
   accepts_delivery,
   accepts_pickup,
+  accepts_national_shipping,
   is_active
   ,service_fee_payer
   ,service_fee_billing_cycle
@@ -228,6 +230,7 @@ export async function GET(request: NextRequest) {
       "manual_open_note",
       "exchange_rate_source",
         "exchange_rate_updated_at",
+        "accepts_national_shipping",
       ])
     ) {
       paymentDetailsAvailable = false;
@@ -310,6 +313,7 @@ export async function PATCH(request: NextRequest) {
         auto_update_exchange_rate: _autoUpdateExchangeRate,
         exchange_rate_source: _exchangeRateSource,
         exchange_rate_updated_at: _exchangeRateUpdatedAt,
+        accepts_national_shipping: _acceptsNationalShipping,
         ...basePayload
       } = payload;
       const fallbackResult = await supabase
@@ -326,6 +330,25 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (error) throw error;
+
+    if ("accepts_national_shipping" in payload) {
+      const settingsSync = await supabase
+        .from("store_delivery_settings")
+        .upsert(
+          {
+            store_id: body.id,
+            national_shipping_enabled: payload.accepts_national_shipping,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "store_id" }
+        );
+      if (
+        settingsSync.error &&
+        !isMissingColumnError(settingsSync.error, ["national_shipping_enabled"])
+      ) {
+        throw settingsSync.error;
+      }
+    }
 
     return NextResponse.json({
       store: data,

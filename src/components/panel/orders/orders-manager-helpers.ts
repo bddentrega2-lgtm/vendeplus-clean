@@ -60,7 +60,7 @@ export type OrderRow = {
   customer_id?: string | null;
   customer_name: string;
   customer_phone: string;
-  delivery_type: "delivery" | "pickup";
+  delivery_type: "delivery" | "pickup" | "national_shipping";
   payment_method: string;
   payment_status: PaymentStatus | string | null;
   payment_reference: string | null;
@@ -404,6 +404,7 @@ export function getStatusOptionsForOrder(order: OrderRow) {
 
 export function getDeliverySummary(order: OrderRow) {
   if (order.delivery_type === "pickup") return "Retiro";
+  if (order.delivery_type === "national_shipping") return "Envio nacional";
   if (order.delivery_zone_name) return `Delivery · ${order.delivery_zone_name}`;
   if (order.delivery_provider === "entrega2") return "Delivery · Entrega2 App";
   if (order.delivery_provider === "transport_agency") {

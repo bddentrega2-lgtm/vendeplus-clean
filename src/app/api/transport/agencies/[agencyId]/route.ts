@@ -30,8 +30,10 @@ export async function PATCH(
     const body = await request.json();
     const supabase = createSupabaseAdminClient();
 
+    let savedProfileAgency: any = null;
+
     if (body.action === "profile") {
-      const payload = {
+      const payload: Record<string, any> = {
         name: cleanTransportText(body.name, 140),
         legal_name: cleanTransportText(body.legalName, 160) || null,
         rif: cleanTransportText(body.rif, 40) || null,
@@ -57,6 +59,7 @@ export async function PATCH(
         payment_terms: cleanTransportText(body.paymentTerms, 1000) || null,
         credit_terms: cleanTransportText(body.creditTerms, 1000) || null,
         additional_conditions: cleanTransportText(body.additionalConditions, 1000) || null,
+        driver_whatsapp_dispatch_enabled: Boolean(body.driverWhatsappDispatchEnabled),
         modality: normalizeAgencyModality(body.modality),
         rates_visibility: normalizeRatesVisibility(body.ratesVisibility),
         pricing_type: ["flat", "zones", "distance_ranges", "manual"].includes(
@@ -71,11 +74,15 @@ export async function PATCH(
         return badRequest("Completa nombre, responsable, correo y telefono.");
       }
 
-      const { error } = await supabase
+      const { data: updatedAgency, error } = await supabase
         .from("transport_agencies")
         .update(payload)
-        .eq("id", agencyId);
+        .eq("id", agencyId)
+        .select("*")
+        .maybeSingle();
       if (error) throw error;
+      if (!updatedAgency) return badRequest("No se pudo confirmar el guardado de la empresa delivery.");
+      savedProfileAgency = updatedAgency;
     } else if (body.action === "rates") {
       const pricingType = ["flat", "zones", "distance_ranges", "manual"].includes(
         cleanTransportText(body.pricingType)
@@ -168,6 +175,11 @@ export async function PATCH(
 
     return NextResponse.json({
       ok: true,
+      agency: savedProfileAgency
+        ? { ...savedProfileAgency, is_active: shouldPublish }
+        : agencyResult.data
+          ? { ...agencyResult.data, is_active: shouldPublish }
+          : null,
       isActive: shouldPublish,
       configIssues,
     });

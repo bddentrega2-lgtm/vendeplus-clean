@@ -63,14 +63,16 @@ export function buildOrderMessage(params: {
 
   const deliveryBlock =
     form.deliveryType === "pickup"
-      ? `🛍️ Retiro (pick up)`
-      : `🚚 Delivery: ${deliveryPriceText} | ${
-          quote.zoneName ||
-          quote.message ||
-          (quote.distanceKm !== null
-            ? `${quote.distanceKm.toFixed(2)} km`
-            : quote.label || "por confirmar")
-        }\n📍 ${mapsUrl || "Ubicación pendiente"}${reference}`;
+      ? `Retiro (pick up)`
+      : form.deliveryType === "national_shipping"
+        ? `Envio nacional\nCedula: ${cleanText(form.nationalIdNumber) || "por confirmar"}\nCiudad: ${cleanText(form.nationalShippingCity) || "por confirmar"}`
+        : `Delivery: ${deliveryPriceText} | ${
+            quote.zoneName ||
+            quote.message ||
+            (quote.distanceKm !== null
+              ? `${quote.distanceKm.toFixed(2)} km`
+              : quote.label || "por confirmar")
+          }\nUbicacion: ${mapsUrl || "Ubicacion pendiente"}${reference}`;
 
   return `Hola, ya realicé mi pedido y sería lo siguiente:
 

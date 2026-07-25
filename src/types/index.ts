@@ -1,4 +1,4 @@
-﻿export type DeliveryType = "delivery" | "pickup";
+export type DeliveryType = "delivery" | "pickup" | "national_shipping";
 export type DeliverySource = "none" | "current" | "map";
 export type DeliveryProvider =
   | "own_delivery"
@@ -156,6 +156,7 @@ export type StoreDeliveryDistanceRate = {
 export type StoreDeliverySettings = {
   deliveryEnabled: boolean;
   pickupEnabled: boolean;
+  nationalShippingEnabled: boolean;
   deliveryProvider: DeliveryProvider;
   pricingType: DeliveryPricingType;
   fixedFeeUsd: number;
@@ -228,7 +229,7 @@ export type DeliveryQuote = {
   originalFeeUsd?: number;
   discountUsd?: number;
   label: string;
-  source: "route" | "fallback" | "manual" | "pickup" | "pending";
+  source: "route" | "fallback" | "manual" | "pickup" | "national_shipping" | "pending";
   available?: boolean;
   provider?: DeliveryProvider;
   pricingType?: DeliveryPricingType;
@@ -249,6 +250,8 @@ export type CheckoutFormData = {
   paymentReference: string;
   deliveryReference: string;
   deliveryZoneId: string;
+  nationalIdNumber: string;
+  nationalShippingCity: string;
   orderDetails: string;
   notes: string;
 };

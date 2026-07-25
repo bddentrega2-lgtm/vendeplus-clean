@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import {
@@ -45,12 +45,23 @@ import {
   type PricingType,
 } from "@/components/transport/transport-panel-helpers";
 import { describeDistanceRangeFee } from "@/lib/delivery";
+import {
+  playNewOrderSound,
+  unlockOrderNotificationSound,
+} from "@/lib/panel/order-notification-sound";
+import {
+  NewOrderToast,
+  type NewOrderToastData,
+} from "@/components/panel/NewOrderToast";
 
 const TransportOrdersTab = dynamic(() =>
   import("@/components/transport/TransportOrdersTab").then((module) => module.TransportOrdersTab)
 );
 const TransportBillingTab = dynamic(() =>
   import("@/components/transport/TransportBillingTab").then((module) => module.TransportBillingTab)
+);
+const TransportDriversTab = dynamic(() =>
+  import("@/components/transport/TransportDriversTab").then((module) => module.TransportDriversTab)
 );
 
 let transportPanelCache: PanelCache | null = null;
@@ -61,16 +72,43 @@ function optionalPanelNumber(value: unknown) {
   return Number.isFinite(parsed) ? Math.max(0, parsed) : null;
 }
 
+function mergeAgenciesPreservingPremium(previous: Agency[], next: Agency[]) {
+  const previousById = new Map(previous.map((entry) => [entry.id, entry]));
+  return next.map((entry) => ({
+    ...entry,
+    premium_dispatch_enabled: Object.prototype.hasOwnProperty.call(
+      entry,
+      "premium_dispatch_enabled"
+    )
+      ? entry.premium_dispatch_enabled
+      : previousById.get(entry.id)?.premium_dispatch_enabled,
+    driver_whatsapp_dispatch_enabled: Object.prototype.hasOwnProperty.call(
+      entry,
+      "driver_whatsapp_dispatch_enabled"
+    )
+      ? entry.driver_whatsapp_dispatch_enabled
+      : previousById.get(entry.id)?.driver_whatsapp_dispatch_enabled,
+  }));
+}
+
 export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: string }) {
+  const hasUsableInitialCache = Boolean(
+    transportPanelCache?.hasSession && transportPanelCache.agencies?.length
+  );
   const [pin, setPin] = useState("");
   const [tab, setTab] = useState(initialTab);
-  const [agencies, setAgencies] = useState<Agency[]>(transportPanelCache?.agencies || []);
+  const [agencies, setAgencies] = useState<Agency[]>(
+    hasUsableInitialCache ? transportPanelCache?.agencies || [] : []
+  );
+  const [selectedAgencyId, setSelectedAgencyId] = useState("");
   const [requests, setRequests] = useState<any[]>(transportPanelCache?.requests || []);
   const [connections, setConnections] = useState<any[]>(transportPanelCache?.connections || []);
   const [billing, setBilling] = useState<any>(transportPanelCache?.billing || null);
   const [message, setMessage] = useState("");
-  const [isLoading, setIsLoading] = useState(!transportPanelCache);
-  const [hasSession, setHasSession] = useState(Boolean(transportPanelCache?.hasSession));
+  const [newOrderToast, setNewOrderToast] = useState<NewOrderToastData | null>(null);
+  const [isLoading, setIsLoading] = useState(!hasUsableInitialCache);
+  const [hasSession, setHasSession] = useState(Boolean(hasUsableInitialCache));
+  const [hasCheckedSession, setHasCheckedSession] = useState(Boolean(hasUsableInitialCache));
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [showLoginPassword, setShowLoginPassword] = useState(false);
@@ -94,16 +132,34 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
   const [transportOrderPage, setTransportOrderPage] = useState(1);
   const [transportOrdersHasMore, setTransportOrdersHasMore] = useState(false);
   const [savingTransportOrderId, setSavingTransportOrderId] = useState<string | null>(null);
+  const [loadingTransportOrderDetailId, setLoadingTransportOrderDetailId] = useState<string | null>(null);
+  const [transportDrivers, setTransportDrivers] = useState<any[]>([]);
+  const [isTransportDriversLoading, setIsTransportDriversLoading] = useState(false);
+  const [savingTransportDriverId, setSavingTransportDriverId] = useState<string | null>(null);
+  const [transportDriversSchemaReady, setTransportDriversSchemaReady] = useState(true);
+  const [hasLoadedTransportDrivers, setHasLoadedTransportDrivers] = useState(false);
   const [savingConnectionModeId, setSavingConnectionModeId] = useState<string | null>(null);
   const [requestRelationshipModes, setRequestRelationshipModes] = useState<Record<string, "exclusive" | "mixed">>({});
   const [marketplaceCopied, setMarketplaceCopied] = useState(false);
   const [nowMs, setNowMs] = useState(0);
-  const [hasLoadedRelations, setHasLoadedRelations] = useState(Boolean(transportPanelCache));
-  const [hasLoadedBilling, setHasLoadedBilling] = useState(Boolean(transportPanelCache?.billing));
+  const [hasLoadedRelations, setHasLoadedRelations] = useState(Boolean(hasUsableInitialCache));
+  const [hasLoadedBilling, setHasLoadedBilling] = useState(
+    Boolean(hasUsableInitialCache && transportPanelCache?.billing)
+  );
+  const transportOrdersLoadedRef = useRef(false);
 
-  const agency = agencies[0] || null;
+  const agency =
+    agencies.find((entry) => entry.id === selectedAgencyId) ||
+    (["pedidos", "repartidores", "facturacion"].includes(tab)
+      ? agencies.find((entry) => entry.premium_dispatch_enabled === true)
+      : null) ||
+    agencies[0] ||
+    null;
   const agencyId = agency?.id || "";
   const agencyPricingType = agency?.pricing_type || "";
+  const premiumDispatchEnabled = agency?.premium_dispatch_enabled === true;
+  const driverWhatsappDispatchEnabled =
+    agency?.driver_whatsapp_dispatch_enabled === true;
   const billingCurrency = agency?.billing_currency === "EUR" ? "EUR" : "USD";
   const billingSymbol = billingCurrency === "EUR" ? "€" : "$";
   const {
@@ -200,6 +256,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       setPin(savedPin);
       if (!savedPin && !token) {
         setMessage("Inicia sesion para entrar al panel de empresa delivery.");
+        setHasCheckedSession(true);
         setIsLoading(false);
         return;
       }
@@ -223,6 +280,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
           setHasLoadedBilling(false);
           setHasLoadedRelations(false);
           transportPanelCache = null;
+          setHasCheckedSession(true);
           setMessage("Sesion vencida o invalida. Inicia sesion como empresa delivery.");
           return;
         }
@@ -236,13 +294,18 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
           setHasLoadedBilling(false);
           setHasLoadedRelations(false);
           transportPanelCache = null;
+          setHasCheckedSession(true);
           setMessage(`${detail} Entra con el correo asignado a la empresa delivery.`);
           return;
         }
 
         throw new Error(detail);
       }
-      setAgencies(data.agencies || []);
+      let nextAgencies: Agency[] = [];
+      setAgencies((current) => {
+        nextAgencies = mergeAgenciesPreservingPremium(current, data.agencies || []);
+        return nextAgencies;
+      });
       if (data.relationsLoaded) {
         setRequests(data.requests || []);
         setConnections(data.connections || []);
@@ -253,8 +316,9 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
         setHasLoadedBilling(true);
       }
       setHasSession(true);
+      setHasCheckedSession(true);
       transportPanelCache = {
-        agencies: data.agencies || [],
+        agencies: nextAgencies,
         requests: data.relationsLoaded ? data.requests || [] : transportPanelCache?.requests || [],
         connections: data.relationsLoaded ? data.connections || [] : transportPanelCache?.connections || [],
         billing: data.billing || transportPanelCache?.billing || null,
@@ -263,6 +327,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     } catch (error: any) {
       setMessage(error.message || "No se pudo cargar.");
     } finally {
+      setHasCheckedSession(true);
       setIsLoading(false);
     }
   }
@@ -270,6 +335,32 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
   useEffect(() => {
     setTab(initialTab);
   }, [initialTab]);
+
+  useEffect(() => {
+    const unlock = () => void unlockOrderNotificationSound();
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!agencies.length) {
+      if (selectedAgencyId) setSelectedAgencyId("");
+      return;
+    }
+
+    const currentStillExists = agencies.some((entry) => entry.id === selectedAgencyId);
+    if (currentStillExists) return;
+
+    const preferredAgency =
+      ["pedidos", "repartidores", "facturacion"].includes(tab)
+        ? agencies.find((entry) => entry.premium_dispatch_enabled === true)
+        : null;
+    setSelectedAgencyId((preferredAgency || agencies[0]).id);
+  }, [agencies, selectedAgencyId, tab]);
 
   useEffect(() => {
     setNowMs(Date.now());
@@ -297,6 +388,16 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, hasSession, hasLoadedRelations, hasLoadedBilling]);
 
+  useEffect(() => {
+    setTransportDrivers([]);
+    setTransportOrders([]);
+    setTransportOrderStores([]);
+    setTransportOrderPage(1);
+    setTransportOrdersHasMore(false);
+    setHasLoadedTransportDrivers(false);
+    setHasLoadedBilling(false);
+  }, [selectedAgencyId]);
+
   async function loadTransportOrders(overrides: Record<string, string> = {}) {
     setIsTransportOrdersLoading(true);
     setMessage("");
@@ -306,6 +407,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       const params = new URLSearchParams({
         period: overrides.period || transportOrderPeriod,
         status: overrides.status || transportOrderStatusFilter,
+        agencyId,
         page: String(page),
         limit: "40",
       });
@@ -317,7 +419,33 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "No se pudieron cargar pedidos.");
-      setTransportOrders((current) => (append ? [...current, ...(data.orders || [])] : data.orders || []));
+      const nextOrders = data.orders || [];
+      const shouldNotifyNew = overrides.notifyNew === "true" && !append;
+      setTransportOrders((current) => {
+        if (shouldNotifyNew && transportOrdersLoadedRef.current) {
+          const currentIds = new Set(current.map((order) => order.id));
+          const newOrder = nextOrders.find((order: any) => order?.id && !currentIds.has(order.id));
+          if (newOrder) {
+            void playNewOrderSound();
+            setNewOrderToast({
+              id: `${newOrder.id}-${Date.now()}`,
+              title: newOrder.orders?.public_code || newOrder.order_id?.slice(0, 8) || "Servicio recibido",
+              subtitle: [
+                newOrder.store_name_snapshot || newOrder.stores?.name || "Comercio",
+                newOrder.customer_name_snapshot || "Cliente",
+              ].filter(Boolean).join(" · "),
+            });
+          }
+        }
+
+        if (append) {
+          const seen = new Set(current.map((order) => order.id));
+          return [...current, ...nextOrders.filter((order: any) => !seen.has(order.id))];
+        }
+
+        return nextOrders;
+      });
+      transportOrdersLoadedRef.current = true;
       setTransportOrderStores(data.stores || []);
       setTransportOrderPage(page);
       setTransportOrdersHasMore(Boolean(data.pagination?.hasMore));
@@ -328,12 +456,78 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     }
   }
 
+  async function loadTransportDrivers() {
+    if (!agencyId) return;
+    setIsTransportDriversLoading(true);
+    setMessage("");
+    try {
+      const params = new URLSearchParams({ agencyId });
+      const response = await fetch(`/api/transport/panel/drivers?${params.toString()}`, {
+        headers: await authHeaders(),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudieron cargar repartidores.");
+      setTransportDrivers(data.drivers || []);
+      setTransportDriversSchemaReady(data.schemaReady !== false);
+      if (data.premiumDispatchEnabled === true) {
+        setAgencies((current) =>
+          current.map((entry) =>
+            entry.id === (data.agencyId || agencyId)
+              ? { ...entry, premium_dispatch_enabled: true }
+              : entry
+          )
+        );
+      }
+      setHasLoadedTransportDrivers(true);
+    } catch (error: any) {
+      setMessage(error.message || "No se pudieron cargar repartidores.");
+    } finally {
+      setIsTransportDriversLoading(false);
+    }
+  }
+
+  async function loadTransportOrderDetail(orderId: string) {
+    if (!agencyId) return;
+    setLoadingTransportOrderDetailId(orderId);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/transport/panel/orders/${orderId}`, {
+        headers: await authHeaders(),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudo cargar el detalle del pedido.");
+      setTransportOrders((current) =>
+        current.map((order) =>
+          order.id === orderId
+            ? {
+                ...order,
+                ...(data.order || {}),
+                __detailsLoaded: true,
+              }
+            : order
+        )
+      );
+    } catch (error: any) {
+      setMessage(error.message || "No se pudo cargar el detalle del pedido.");
+    } finally {
+      setLoadingTransportOrderDetailId(null);
+    }
+  }
+
   useEffect(() => {
-    if (tab === "pedidos" && hasSession) {
+    if (tab === "pedidos" && hasSession && agencyId) {
       loadTransportOrders();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, hasSession]);
+  }, [tab, hasSession, agencyId]);
+
+  useEffect(() => {
+    if (!hasSession || !agencyId) return;
+    if (!["pedidos", "repartidores", "facturacion"].includes(tab)) return;
+    if (hasLoadedTransportDrivers) return;
+    void loadTransportDrivers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, hasSession, agencyId, hasLoadedTransportDrivers]);
 
   useEffect(() => {
     if (tab !== "pedidos" || !hasSession || !agencyId) return;
@@ -348,7 +542,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     const refreshOrders = () => {
       if (!active || document.visibilityState !== "visible") return;
       if (refreshTimer) window.clearTimeout(refreshTimer);
-      refreshTimer = window.setTimeout(() => void loadTransportOrders(), 120);
+      refreshTimer = window.setTimeout(() => void loadTransportOrders({ notifyNew: "true" }), 120);
     };
 
     void (async () => {
@@ -368,6 +562,24 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       if (channel) void supabase.removeChannel(channel);
     };
     // Broadcast invalidates the protected API view; it never carries order details.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, hasSession, agencyId, transportOrderPeriod, transportOrderStatusFilter, transportOrderStoreFilter]);
+
+  useEffect(() => {
+    if (!newOrderToast) return;
+    const timer = window.setTimeout(() => setNewOrderToast(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [newOrderToast]);
+
+  useEffect(() => {
+    if (tab !== "pedidos" || !hasSession || !agencyId) return;
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void loadTransportOrders({ notifyNew: "true" });
+    }, 30_000);
+
+    return () => window.clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, hasSession, agencyId, transportOrderPeriod, transportOrderStatusFilter, transportOrderStoreFilter]);
 
@@ -639,13 +851,27 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
           paymentTerms: form.get("paymentTerms"),
           creditTerms: form.get("creditTerms"),
           additionalConditions: form.get("additionalConditions"),
+          driverWhatsappDispatchEnabled: form.get("driverWhatsappDispatchEnabled") === "on",
         }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "No se pudo guardar la configuracion.");
+      if (data.agency) {
+        setAgencies((current) => {
+          const nextAgencies = current.map((entry) =>
+            entry.id === data.agency.id ? { ...entry, ...data.agency } : entry
+          );
+          if (!nextAgencies.some((entry) => entry.id === data.agency.id)) {
+            nextAgencies.push(data.agency);
+          }
+          transportPanelCache = transportPanelCache
+            ? { ...transportPanelCache, agencies: nextAgencies }
+            : transportPanelCache;
+          return nextAgencies;
+        });
+      }
       setHasUnsavedChanges(false);
       setMessage("Configuracion guardada.");
-      load();
     } catch (error: any) {
       setMessage(error.message || "No se pudo guardar la configuracion.");
     } finally {
@@ -805,6 +1031,74 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     }
   }
 
+  async function createTransportDriver(draft: any) {
+    setSavingTransportDriverId("new");
+    setMessage("");
+    try {
+      const response = await fetch("/api/transport/panel/drivers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ ...draft, agencyId }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudo crear el repartidor.");
+      setTransportDrivers((current) => [...current, data.driver].filter(Boolean));
+      setMessage("Repartidor creado.");
+    } catch (error: any) {
+      setMessage(error.message || "No se pudo crear el repartidor.");
+    } finally {
+      setSavingTransportDriverId(null);
+    }
+  }
+
+  async function updateTransportDriver(driverId: string, draft: any) {
+    setSavingTransportDriverId(driverId);
+    setMessage("");
+    try {
+      const response = await fetch("/api/transport/panel/drivers", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ ...draft, id: driverId }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudo actualizar el repartidor.");
+      setTransportDrivers((current) =>
+        current.map((driver) => (driver.id === driverId ? data.driver || driver : driver))
+      );
+      setMessage("Repartidor actualizado.");
+    } catch (error: any) {
+      setMessage(error.message || "No se pudo actualizar el repartidor.");
+    } finally {
+      setSavingTransportDriverId(null);
+    }
+  }
+
+  async function assignTransportOrderDriver(orderId: string, driverId: string) {
+    setSavingTransportOrderId(orderId);
+    setMessage("");
+
+    try {
+      const response = await fetch(`/api/transport/panel/orders/${orderId}/driver`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ driverId: driverId || null }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudo asignar el repartidor.");
+      setTransportOrders((current) =>
+        current.map((order) => (order.id === orderId ? { ...order, ...(data.order || {}) } : order))
+      );
+      setMessage(driverId ? "Repartidor asignado." : "Repartidor removido.");
+      if (hasLoadedBilling) {
+        void load({ silent: true, includeBilling: true, includeRelations: false });
+      }
+    } catch (error: any) {
+      setMessage(error.message || "No se pudo asignar el repartidor.");
+    } finally {
+      setSavingTransportOrderId(null);
+    }
+  }
+
   const totals = useMemo(() => {
     const orders = billing?.orders || [];
     return {
@@ -813,7 +1107,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     };
   }, [billing]);
 
-  if (isLoading) {
+  if (isLoading || !hasCheckedSession || (hasSession && !agency)) {
     return <div className="rounded-[32px] bg-white p-6 font-black">Cargando empresa delivery...</div>;
   }
 
@@ -895,6 +1189,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
 
   return (
     <div className="space-y-5">
+      <NewOrderToast notification={newOrderToast} onClose={() => setNewOrderToast(null)} />
       <section className="rounded-[34px] bg-[#25262B] p-5 text-white shadow-xl shadow-[#25262B]/20">
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
           <div>
@@ -922,6 +1217,25 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
             <p className="mt-2 text-sm font-semibold text-white/70">
               Estado: {agency.status} · Modalidad: {agency.modality}
             </p>
+            {agencies.length > 1 ? (
+              <label className="mt-4 block max-w-sm">
+                <span className="text-xs font-black uppercase tracking-[0.14em] text-white/60">
+                  Empresa activa
+                </span>
+                <select
+                  value={agency.id}
+                  onChange={(event) => setSelectedAgencyId(event.target.value)}
+                  className="mt-1 w-full rounded-2xl border border-white/20 bg-white px-4 py-3 text-sm font-black text-[#25262B] outline-none focus:border-[#FFB547]"
+                >
+                  {agencies.map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {entry.name}
+                      {entry.premium_dispatch_enabled ? " · Premium" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
             {agency?.slug ? (
@@ -1026,9 +1340,14 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       {tab === "pedidos" ? (
         <TransportOrdersTab
           billingSymbol={billingSymbol}
+          drivers={transportDrivers}
           hasMore={transportOrdersHasMore}
           isLoading={isTransportOrdersLoading}
+          loadingDetailOrderId={loadingTransportOrderDetailId}
           loadOrders={loadTransportOrders}
+          onLoadOrderDetail={loadTransportOrderDetail}
+          onAssignDriver={assignTransportOrderDriver}
+          driverWhatsappDispatchEnabled={driverWhatsappDispatchEnabled}
           onPeriodChange={(value) => {
             setTransportOrderPeriod(value);
             void loadTransportOrders({ period: value });
@@ -1049,6 +1368,20 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
           statusFilter={transportOrderStatusFilter}
           storeFilter={transportOrderStoreFilter}
           stores={transportOrderStores}
+          premiumDispatchEnabled={premiumDispatchEnabled}
+        />
+      ) : null}
+
+      {tab === "repartidores" ? (
+        <TransportDriversTab
+          drivers={transportDrivers}
+          isLoading={isTransportDriversLoading}
+          onCreateDriver={createTransportDriver}
+          onRefresh={loadTransportDrivers}
+          onUpdateDriver={updateTransportDriver}
+          premiumDispatchEnabled={premiumDispatchEnabled}
+          savingDriverId={savingTransportDriverId}
+          schemaReady={transportDriversSchemaReady}
         />
       ) : null}
 
@@ -1559,6 +1892,23 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
               />
               <span className="text-sm font-black text-[#25262B]">
                 Cobra retorno de efectivo
+              </span>
+            </label>
+
+            <label className="mt-3 flex items-start gap-3 rounded-3xl bg-[#F8F3E8] p-4">
+              <input
+                name="driverWhatsappDispatchEnabled"
+                type="checkbox"
+                defaultChecked={Boolean(agency.driver_whatsapp_dispatch_enabled)}
+                className="mt-1 h-5 w-5 accent-[#2E3A79]"
+              />
+              <span>
+                <span className="block text-sm font-black text-[#25262B]">
+                  Permitir enviar comanda al repartidor por WhatsApp
+                </span>
+                <span className="mt-1 block text-xs font-bold leading-relaxed text-[#746f69]">
+                  Si esta activo, al asignar un repartidor con WhatsApp aparecera un boton para enviarle una comanda simple.
+                </span>
               </span>
             </label>
 

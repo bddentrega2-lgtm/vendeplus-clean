@@ -42,6 +42,8 @@ const initialForm: CheckoutFormData = {
   paymentReference: "",
   deliveryReference: "",
   deliveryZoneId: "",
+  nationalIdNumber: "",
+  nationalShippingCity: "",
   orderDetails: "",
   notes: "",
 };
@@ -134,9 +136,15 @@ export function CheckoutForm({ store }: { store: Store }) {
     () => deliverySettings.zones.filter((zone) => zone.isActive),
     [deliverySettings.zones]
   );
+  const deliveryPartnerName =
+    deliverySettings.transportAgencyName ||
+    (deliverySettings.deliveryProvider === "entrega2" ? "Entrega2 App" : "");
+  const deliveryOptionLabel = deliveryPartnerName
+    ? `Delivery — ${deliveryPartnerName}`
+    : "Delivery";
   const deliveryModeCopy = useMemo(() => {
     if (deliverySettings.deliveryProvider === "entrega2") {
-      return "Comparte tu ubicación para cotizar el delivery con Entrega2 App.";
+      return `Comparte tu ubicación para cotizar el delivery con ${deliveryPartnerName || "la empresa delivery"}.`;
     }
     if (deliverySettings.pricingType === "zones") {
       return "Selecciona tu zona y carga tu ubicación GPS para el repartidor.";
@@ -148,25 +156,33 @@ export function CheckoutForm({ store }: { store: Store }) {
       return "Comparte tu ubicación o toca el mapa.";
     }
     return "Indica una referencia clara para facilitar la entrega.";
-  }, [deliverySettings.deliveryProvider, deliverySettings.pricingType]);
+  }, [deliveryPartnerName, deliverySettings.deliveryProvider, deliverySettings.pricingType]);
 
   useEffect(() => {
     setForm((current) => {
-      if (!deliverySettings.deliveryEnabled && deliverySettings.pickupEnabled) {
-        return { ...current, deliveryType: "pickup" };
+      const availableTypes: CheckoutFormData["deliveryType"][] = [
+        deliverySettings.deliveryEnabled ? "delivery" : null,
+        deliverySettings.pickupEnabled ? "pickup" : null,
+        deliverySettings.nationalShippingEnabled ? "national_shipping" : null,
+      ].filter(Boolean) as CheckoutFormData["deliveryType"][];
+
+      if (!availableTypes.length || availableTypes.includes(current.deliveryType)) {
+        return current;
       }
-      if (deliverySettings.deliveryEnabled && !deliverySettings.pickupEnabled) {
-        return { ...current, deliveryType: "delivery" };
-      }
-      return current;
+
+      return { ...current, deliveryType: availableTypes[0] };
     });
-  }, [deliverySettings.deliveryEnabled, deliverySettings.pickupEnabled]);
+  }, [
+    deliverySettings.deliveryEnabled,
+    deliverySettings.pickupEnabled,
+    deliverySettings.nationalShippingEnabled,
+  ]);
 
   useEffect(() => {
     let active = true;
 
     async function calculate() {
-      if (form.deliveryType === "pickup" || !needsLocation) {
+      if (form.deliveryType !== "delivery" || !needsLocation) {
         setQuote(
           calculateDeliveryQuoteFromSettings({
             settings: deliverySettings,
@@ -174,7 +190,12 @@ export function CheckoutForm({ store }: { store: Store }) {
             subtotalUsd,
             distanceKm: null,
             zoneId: form.deliveryZoneId || null,
-            source: form.deliveryType === "pickup" ? "pickup" : "manual",
+            source:
+              form.deliveryType === "pickup"
+                ? "pickup"
+                : form.deliveryType === "national_shipping"
+                  ? "national_shipping"
+                  : "manual",
           })
         );
         setIsCalculating(false);
@@ -292,21 +313,30 @@ export function CheckoutForm({ store }: { store: Store }) {
   const showPricesInBs = store.showPricesInBs !== false;
   const baseCurrency = store.baseCurrency || "USD";
   const isEntrega2Provider = deliverySettings.deliveryProvider === "entrega2";
+  const fulfillmentOptions = [
+    deliverySettings.deliveryEnabled
+      ? { value: "delivery" as const, label: deliveryOptionLabel }
+      : null,
+    deliverySettings.pickupEnabled ? { value: "pickup" as const, label: "Retiro (pick up)" } : null,
+    deliverySettings.nationalShippingEnabled
+      ? { value: "national_shipping" as const, label: "Envio nacional" }
+      : null,
+  ].filter(Boolean) as Array<{ value: CheckoutFormData["deliveryType"]; label: string }>;
+  const fulfillmentLabel =
+    form.deliveryType === "delivery"
+      ? deliveryOptionLabel
+      : form.deliveryType === "national_shipping"
+        ? "Envio nacional"
+        : "Retiro (pick up)";
   const isEntrega2Delivery =
     form.deliveryType === "delivery" && isEntrega2Provider;
-  const deliveryBrandName = isEntrega2Provider
-    ? "Entrega2 App"
-    : deliverySettings.transportAgencyName || null;
-  const deliveryBrandLogoUrl = isEntrega2Provider
-    ? deliverySettings.transportAgencyLogoUrl || quote.transportAgencyLogoUrl || null
-    : deliverySettings.transportAgencyLogoUrl || null;
   const isManualQuoteDelivery =
     form.deliveryType === "delivery" &&
     deliverySettings.deliveryProvider !== "entrega2" &&
     (deliverySettings.deliveryProvider === "manual_quote" ||
       deliverySettings.pricingType === "manual");
   const deliveryAmountLabel =
-    form.deliveryType === "pickup"
+    form.deliveryType !== "delivery"
       ? "Sin delivery"
       : quote.available === false
         ? "No disponible"
@@ -361,6 +391,12 @@ export function CheckoutForm({ store }: { store: Store }) {
     if (!form.paymentMethod.trim()) return "Selecciona un método de pago.";
     if (form.deliveryType === "delivery" && quote.available === false) {
       return quote.message || quote.label || "Delivery no disponible.";
+    }
+    if (form.deliveryType === "national_shipping" && !form.nationalIdNumber.trim()) {
+      return "Escribe la cedula para el envio nacional.";
+    }
+    if (form.deliveryType === "national_shipping" && !form.nationalShippingCity.trim()) {
+      return "Escribe la ciudad de destino para el envio nacional.";
     }
     if (needsZone && activeDeliveryZones.length > 0 && !form.deliveryZoneId) return "Selecciona tu zona de entrega.";
     if (needsLocation && !location) return "Selecciona la ubicación de entrega usando GPS o tocando el mapa.";
@@ -503,62 +539,27 @@ export function CheckoutForm({ store }: { store: Store }) {
 
             <section className="vp-card p-4 sm:p-5">
               <span className="vp-label">2. ¿Cómo deseas recibir tu pedido?</span>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                {deliverySettings.deliveryEnabled ? (
-                  <button
-                    type="button"
-                    onClick={() => updateField("deliveryType", "delivery")}
-                    className={[
-                      "rounded-2xl px-4 py-3 text-sm font-black ring-1",
-                      form.deliveryType === "delivery"
-                        ? "bg-[#2E3A79] text-white ring-[#2E3A79]"
-                        : "bg-white text-[#746f69] ring-[#25262B]/10",
-                    ].join(" ")}
-                  >
-                    <span className="flex items-center justify-center gap-2">
-                      {deliveryBrandLogoUrl ? (
-                        <OptimizedImage
-                          src={deliveryBrandLogoUrl}
-                          alt={`Logo de ${deliveryBrandName || "empresa delivery"}`}
-                          width={28}
-                          height={28}
-                          sizes="28px"
-                          className="h-7 w-7 rounded-full bg-white/90 object-cover ring-1 ring-black/5"
-                          fallback={
-                            <span className="grid h-7 w-7 place-items-center rounded-full bg-white/90 text-[10px] font-black text-[#2E3A79] ring-1 ring-black/5">
-                              {(deliveryBrandName || "D").slice(0, 1).toUpperCase()}
-                            </span>
-                          }
-                        />
-                      ) : null}
-                      <span>{isEntrega2Provider ? "Entrega2 App" : "Delivery"}</span>
-                    </span>
-                    {deliveryBrandName ? (
-                      <span className="mt-0.5 block text-[10px] font-bold opacity-75">
-                        {isEntrega2Provider ? "Cotización automática" : deliveryBrandName}
-                      </span>
-                    ) : null}
-                  </button>
-                ) : null}
-                {deliverySettings.pickupEnabled ? (
-                  <button
-                    type="button"
-                    onClick={() => updateField("deliveryType", "pickup")}
-                    className={[
-                      "rounded-2xl px-4 py-3 text-sm font-black ring-1",
-                      form.deliveryType === "pickup"
-                        ? "bg-[#2E3A79] text-white ring-[#2E3A79]"
-                        : "bg-white text-[#746f69] ring-[#25262B]/10",
-                    ].join(" ")}
-                  >
-                    Retiro (pick up)
-                  </button>
-                ) : null}
+              <div className="mt-2">
+                <select
+                  className="vp-input"
+                  value={form.deliveryType}
+                  onChange={(event) =>
+                    updateField("deliveryType", event.target.value as CheckoutFormData["deliveryType"])
+                  }
+                >
+                  {fulfillmentOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </div>
               <p className="mt-3 rounded-2xl bg-[#FFF8F0] p-3 text-sm font-bold text-[#746f69]">
                 {form.deliveryType === "delivery"
                   ? deliveryModeCopy
-                  : "Retiras directamente en el comercio."}
+                  : form.deliveryType === "national_shipping"
+                    ? "Indica cedula y ciudad. El comercio coordinara el envio nacional por WhatsApp."
+                    : "Retiras directamente en el comercio."}
               </p>
             </section>
 
@@ -593,6 +594,37 @@ export function CheckoutForm({ store }: { store: Store }) {
                     El comercio no tiene zonas activas. Confirma el delivery por WhatsApp.
                   </p>
                 ) : null}
+                {deliveryPartnerName ? (
+                  <div className="mt-4 flex items-center gap-3 rounded-3xl border border-[#EFE6D6] bg-[#FFF8F0] p-3">
+                    {deliverySettings.transportAgencyLogoUrl ? (
+                      <OptimizedImage
+                        src={deliverySettings.transportAgencyLogoUrl}
+                        alt={deliveryPartnerName}
+                        width={44}
+                        height={44}
+                        sizes="44px"
+                        className="h-11 w-11 rounded-2xl bg-white object-contain p-1"
+                        fallback={
+                          <div className="grid h-11 w-11 place-items-center rounded-2xl bg-white text-sm font-black text-[#2E3A79]">
+                            {deliveryPartnerName.slice(0, 1).toUpperCase()}
+                          </div>
+                        }
+                      />
+                    ) : (
+                      <div className="grid h-11 w-11 place-items-center rounded-2xl bg-white text-sm font-black text-[#2E3A79]">
+                        {deliveryPartnerName.slice(0, 1).toUpperCase()}
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-sm font-black text-[#25262B]">
+                        Delivery gestionado por {deliveryPartnerName}
+                      </p>
+                      <p className="mt-0.5 text-xs font-bold text-[#746f69]">
+                        La empresa delivery recibirá los datos necesarios para coordinar la entrega.
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
                 {canShareLocation ? (
                   <div className="mt-4">
                     <LocationPicker
@@ -623,11 +655,28 @@ export function CheckoutForm({ store }: { store: Store }) {
                   </p>
                 ) : null}
               </section>
+            ) : form.deliveryType === "national_shipping" ? (
+              <section className="vp-card p-4 sm:p-5">
+                <h2 className="text-xl font-black text-[#25262B]">3. Envio nacional</h2>
+                <p className="mt-2 rounded-[24px] bg-[#FFF8F0] p-4 text-sm font-bold leading-relaxed text-[#746f69]">
+                  El comercio coordinara agencia, costo y detalles finales por WhatsApp. Por ahora deja estos datos para identificar el envio.
+                </p>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <label>
+                    <span className="vp-label">Cedula</span>
+                    <input className="vp-input" value={form.nationalIdNumber} onChange={(event) => updateField("nationalIdNumber", event.target.value)} placeholder="Ej: V-12345678" />
+                  </label>
+                  <label>
+                    <span className="vp-label">Ciudad de destino</span>
+                    <input className="vp-input" value={form.nationalShippingCity} onChange={(event) => updateField("nationalShippingCity", event.target.value)} placeholder="Ej: Valencia" />
+                  </label>
+                </div>
+              </section>
             ) : (
               <section className="vp-card p-4 sm:p-5">
                 <h2 className="text-xl font-black text-[#25262B]">3. Retiro (pick up)</h2>
                 <p className="mt-2 rounded-[24px] bg-[#FFF8F0] p-4 text-sm font-bold leading-relaxed text-[#746f69]">
-                  Retiras directamente en {store.name}. Dirección: {store.address || "por confirmar"}.
+                  Retiras directamente en {store.name}. Direccion: {store.address || "por confirmar"}.
                 </p>
               </section>
             )}
@@ -759,7 +808,7 @@ export function CheckoutForm({ store }: { store: Store }) {
                   <div className="flex justify-between"><span className="font-bold text-[#746f69]">Subtotal</span><span className="font-black">{formatBaseCurrency(subtotalUsd, baseCurrency)}</span></div>
                   <div className="flex justify-between">
                     <span className="font-bold text-[#746f69]">
-                      {form.deliveryType === "delivery" ? "Delivery" : "Retiro (pick up)"}
+                      {fulfillmentLabel}
                     </span>
                     <span className="font-black">
                       {deliveryAmountLabel}

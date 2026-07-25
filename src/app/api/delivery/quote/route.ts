@@ -73,7 +73,12 @@ async function loadStoreDeliverySettings(
     store.id,
     settings.pickupEnabled
   );
-  if (transportSettings) settings = transportSettings.settings;
+  if (transportSettings) {
+    settings = {
+      ...transportSettings.settings,
+      nationalShippingEnabled: settings.nationalShippingEnabled === true,
+    };
+  }
   else settings = disableUnavailableTransportAgencySettings(settings);
 
   return settings;

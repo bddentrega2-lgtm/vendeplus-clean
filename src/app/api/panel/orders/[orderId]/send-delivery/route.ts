@@ -103,6 +103,34 @@ function buildTransportAgencyMessage(order: any, agency: any, transportOrder?: a
     optionalNumber(order.delivery_lat) !== null && optionalNumber(order.delivery_lng) !== null
       ? `https://www.google.com/maps/search/?api=1&query=${order.delivery_lat},${order.delivery_lng}`
       : "";
+  const paymentMethodForDelivery = cleanText(order.payment_method) || "No indicado";
+  const shouldReceiveCash = /efectivo|cash/i.test(paymentMethodForDelivery);
+  const simpleMessage = [
+    "*Nuevo servicio delivery*",
+    order.public_code ? `Pedido: ${order.public_code}` : null,
+    "",
+    `Empresa: ${agency.name || "Delivery"}`,
+    `Comercio: ${order.stores?.name || "Comercio"}`,
+    `Telefono comercio: ${order.stores?.whatsapp || "No indicado"}`,
+    "",
+    `Cliente recibe: ${order.customer_name || "Cliente"}`,
+    `Telefono cliente: ${order.customer_phone || "No indicado"}`,
+    mapsUrl ? `Ubicacion GPS: ${mapsUrl}` : "Ubicacion GPS: no indicada",
+    order.delivery_reference || order.delivery_address
+      ? `Referencia: ${order.delivery_reference || order.delivery_address}`
+      : null,
+    "",
+    shouldReceiveCash
+      ? `Pago: efectivo. El cliente puede entregar efectivo. Total pedido: $${Number(optionalNumber(order.total_usd) || 0).toFixed(2)}`
+      : `Pago: ${paymentMethodForDelivery}. No recibir efectivo salvo confirmacion del comercio.`,
+    "",
+    transportOrder?.id ? `Panel: ${buildPublicUrl("/transporte/panel/pedidos")}` : null,
+  ]
+    .filter((line) => line !== null && line !== undefined)
+    .join("\n");
+
+  return simpleMessage;
+
   const paymentStatus = cleanText(order.payment_status) || "pending";
   const deliveryFee = Number(
     optionalNumber(order.transport_agency_fee_usd) ?? optionalNumber(order.delivery_usd) ?? 0

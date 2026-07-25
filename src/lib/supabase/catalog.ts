@@ -305,9 +305,11 @@ const storeSelect = `
   next_payment_due_at,
   accepts_delivery,
   accepts_pickup,
+  accepts_national_shipping,
   store_delivery_settings (
     delivery_enabled,
     pickup_enabled,
+    national_shipping_enabled,
     delivery_provider,
     pricing_type,
     fixed_fee_usd,
@@ -468,9 +470,11 @@ const storeShellSelect = `
   next_payment_due_at,
   accepts_delivery,
   accepts_pickup,
+  accepts_national_shipping,
   store_delivery_settings (
     delivery_enabled,
     pickup_enabled,
+    national_shipping_enabled,
     delivery_provider,
     pricing_type,
     fixed_fee_usd,
@@ -739,7 +743,10 @@ async function applyTransportDeliverySettings(store: Store) {
     if (transport) {
       return {
         ...store,
-        deliverySettings: transport.settings,
+        deliverySettings: {
+            ...transport.settings,
+            nationalShippingEnabled: store.deliverySettings?.nationalShippingEnabled === true,
+          },
       };
     }
 
@@ -778,7 +785,7 @@ async function hydrateStoreDeliveryRelations(row: AnyRecord | null): Promise<Any
       supabase
         .from("store_delivery_settings")
         .select(
-          "delivery_enabled, pickup_enabled, delivery_provider, pricing_type, fixed_fee_usd, free_delivery_min_usd, delivery_promo_enabled, delivery_promo_min_subtotal_usd, delivery_promo_discount_type, delivery_promo_discount_value, max_distance_km, distance_factor, manual_quote_message, transport_agency_connection_id, transport_agency_id"
+          "delivery_enabled, pickup_enabled, national_shipping_enabled, delivery_provider, pricing_type, fixed_fee_usd, free_delivery_min_usd, delivery_promo_enabled, delivery_promo_min_subtotal_usd, delivery_promo_discount_type, delivery_promo_discount_value, max_distance_km, distance_factor, manual_quote_message, transport_agency_connection_id, transport_agency_id"
         )
         .eq("store_id", row.id)
         .maybeSingle(),

@@ -15,6 +15,10 @@ interface TransportBillingOrder {
   customer_phone_snapshot?: string | null;
   delivery_fee_usd?: number | string | null;
   delivery_zone_name?: string | null;
+  driver_commission_percent?: number | string | null;
+  driver_id?: string | null;
+  driver_name_snapshot?: string | null;
+  driver_payout_usd?: number | string | null;
   id: string;
   order_id?: string | null;
   orders?: {
@@ -32,7 +36,16 @@ interface TransportBillingOrder {
   stores?: { name?: string | null } | null;
 }
 
+interface TransportDriverPayout {
+  deliveryTotalUsd?: number | string | null;
+  driverId?: string | null;
+  driverName: string;
+  ordersCount: number;
+  payoutUsd?: number | string | null;
+}
+
 interface TransportBilling {
+  driverPayouts?: TransportDriverPayout[];
   orders?: TransportBillingOrder[];
   range?: { endDate?: string | null; startDate?: string | null } | null;
   totalUsd?: number | string | null;
@@ -78,6 +91,11 @@ function getDeliveryDetail(order: TransportBillingOrder) {
 
 function getServiceId(order: TransportBillingOrder) {
   return order.orders?.public_code || order.order_id?.slice(0, 8) || order.id.slice(0, 8);
+}
+
+function getPayoutAmount(entry: TransportDriverPayout) {
+  const parsed = Number(entry.payoutUsd || 0);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 }
 
 export function TransportBillingTab({ billing, currency, symbol }: TransportBillingTabProps) {
@@ -175,6 +193,11 @@ export function TransportBillingTab({ billing, currency, symbol }: TransportBill
       totalUsd: Number(billingData?.totalUsd || 0),
     };
   }, [billingData, statusFilter, storeFilter]);
+
+  const driverPayouts = useMemo(
+    () => (billingData?.driverPayouts || []).filter((entry) => getPayoutAmount(entry) > 0),
+    [billingData]
+  );
 
   return (
     <section className="space-y-4">
@@ -342,6 +365,50 @@ export function TransportBillingTab({ billing, currency, symbol }: TransportBill
       <div className="rounded-[32px] bg-white p-5 shadow-xl shadow-[#25262B]/10">
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
           <div>
+            <h3 className="text-lg font-black">Pagos a repartidores</h3>
+            <p className="mt-1 text-sm font-bold text-[#746f69]">
+              Calculado con el porcentaje fijo de cada repartidor al momento de asignar el servicio.
+            </p>
+          </div>
+          <p className="rounded-2xl bg-[#F8F3E8] px-4 py-3 text-lg font-black text-[#2E3A79]">
+            {symbol}
+            {driverPayouts.reduce((sum, entry) => sum + getPayoutAmount(entry), 0).toFixed(2)}
+          </p>
+        </div>
+
+        {driverPayouts.length ? (
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {driverPayouts.map((entry) => (
+              <article
+                key={entry.driverId || entry.driverName}
+                className="rounded-2xl border border-[#25262B]/10 p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h4 className="font-black">{entry.driverName}</h4>
+                    <p className="mt-1 text-sm font-bold text-[#746f69]">
+                      {entry.ordersCount} servicios · total delivery {symbol}
+                      {Number(entry.deliveryTotalUsd || 0).toFixed(2)}
+                    </p>
+                  </div>
+                  <p className="text-xl font-black text-[#2E3A79]">
+                    {symbol}
+                    {getPayoutAmount(entry).toFixed(2)}
+                  </p>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-4 rounded-2xl bg-[#F8F3E8] p-4 text-sm font-black text-[#746f69]">
+            Aun no hay pagos de repartidores calculados en este periodo.
+          </p>
+        )}
+      </div>
+
+      <div className="rounded-[32px] bg-white p-5 shadow-xl shadow-[#25262B]/10">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+          <div>
             <h3 className="text-lg font-black">Detalle de servicios</h3>
             <p className="mt-1 text-sm font-bold text-[#746f69]">
               ID, fecha, cliente, precio y zona/km.
@@ -358,13 +425,15 @@ export function TransportBillingTab({ billing, currency, symbol }: TransportBill
 
         {showDetail ? (
           <div className="mt-4 overflow-x-auto rounded-2xl ring-1 ring-[#25262B]/10">
-            <table className="min-w-[760px] w-full text-left text-sm">
+            <table className="min-w-[920px] w-full text-left text-sm">
               <thead className="bg-[#F8F3E8] text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
                 <tr>
                   <th className="px-4 py-3">ID</th>
                   <th className="px-4 py-3">Fecha y hora</th>
                   <th className="px-4 py-3">Cliente</th>
+                  <th className="px-4 py-3">Repartidor</th>
                   <th className="px-4 py-3">Precio</th>
+                  <th className="px-4 py-3">Pago rep.</th>
                   <th className="px-4 py-3">Zona o km</th>
                 </tr>
               </thead>
@@ -374,9 +443,14 @@ export function TransportBillingTab({ billing, currency, symbol }: TransportBill
                     <td className="px-4 py-3">{getServiceId(order)}</td>
                     <td className="px-4 py-3">{formatServiceDate(order.created_at || order.orders?.created_at)}</td>
                     <td className="px-4 py-3">{order.customer_name_snapshot || "Cliente"}</td>
+                    <td className="px-4 py-3">{order.driver_name_snapshot || "Sin asignar"}</td>
                     <td className="px-4 py-3 font-black text-[#2E3A79]">
                       {symbol}
                       {getAmount(order).toFixed(2)}
+                    </td>
+                    <td className="px-4 py-3 font-black text-[#2E3A79]">
+                      {symbol}
+                      {Number(order.driver_payout_usd || 0).toFixed(2)}
                     </td>
                     <td className="px-4 py-3">{getDeliveryDetail(order)}</td>
                   </tr>

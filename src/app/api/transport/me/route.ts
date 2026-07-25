@@ -5,6 +5,7 @@ import {
   transportErrorResponse,
 } from "@/lib/transport/access";
 import { getTransportBillingRange } from "@/lib/transport";
+import { isPremiumDispatchSchemaMissing } from "@/lib/transport/driver-dispatch";
 
 const agencySelect = `
   id,
@@ -36,6 +37,8 @@ const agencySelect = `
   payment_terms,
   credit_terms,
   additional_conditions,
+  premium_dispatch_enabled,
+  driver_whatsapp_dispatch_enabled,
   created_at,
   transport_agency_rates (
     agency_id,
@@ -67,6 +70,68 @@ const agencySelect = `
 `;
 
 const agencySelectWithoutBanner = agencySelect.replace("banner_image_url,", "");
+const agencySelectWithoutPremium = agencySelect
+  .replace("premium_dispatch_enabled,", "")
+  .replace("driver_whatsapp_dispatch_enabled,", "");
+const agencySelectWithoutBannerAndPremium = agencySelectWithoutBanner.replace(
+  "premium_dispatch_enabled,",
+  ""
+).replace("driver_whatsapp_dispatch_enabled,", "");
+
+const billingOrdersSelect = `
+  id,
+  order_id,
+  store_id,
+  agency_id,
+  status,
+  store_name_snapshot,
+  customer_name_snapshot,
+  customer_phone_snapshot,
+  delivery_zone_name,
+  delivery_fee_usd,
+  driver_id,
+  driver_name_snapshot,
+  driver_commission_percent,
+  driver_payout_usd,
+  driver_assigned_at,
+  created_at,
+  stores(name),
+  orders(
+    public_code,
+    total_usd,
+    delivery_usd,
+    delivery_zone_name,
+    delivery_distance_km,
+    distance_km,
+    status,
+    created_at
+  )
+`;
+
+const billingOrdersSelectWithoutDrivers = `
+  id,
+  order_id,
+  store_id,
+  agency_id,
+  status,
+  store_name_snapshot,
+  customer_name_snapshot,
+  customer_phone_snapshot,
+  delivery_zone_name,
+  delivery_fee_usd,
+  created_at,
+  stores(name),
+  orders(
+    public_code,
+    total_usd,
+    delivery_usd,
+    delivery_zone_name,
+    delivery_distance_km,
+    distance_km,
+    status,
+    created_at
+  )
+`;
 
 function isCancelledBillingStatus(value: unknown) {
   return ["cancelled", "canceled", "cancelado", "agency_rejected", "delivery_failed"].includes(
@@ -77,6 +142,42 @@ function isCancelledBillingStatus(value: unknown) {
 function getBillingAmount(order: any) {
   const parsed = Number(order?.delivery_fee_usd ?? order?.orders?.delivery_usd ?? 0);
   return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+}
+
+function getDriverPayoutAmount(order: any) {
+  const parsed = Number(order?.driver_payout_usd || 0);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+}
+
+function aggregateDriverPayouts(orders: any[]) {
+  const map = new Map<
+    string,
+    {
+      driverId: string | null;
+      driverName: string;
+      ordersCount: number;
+      deliveryTotalUsd: number;
+      payoutUsd: number;
+    }
+  >();
+
+  for (const order of orders) {
+    const driverId = order.driver_id || "unassigned";
+    const current = map.get(driverId) || {
+      driverId: order.driver_id || null,
+      driverName: order.driver_name_snapshot || "Sin repartidor asignado",
+      ordersCount: 0,
+      deliveryTotalUsd: 0,
+      payoutUsd: 0,
+    };
+
+    current.ordersCount += 1;
+    current.deliveryTotalUsd += getBillingAmount(order);
+    current.payoutUsd += getDriverPayoutAmount(order);
+    map.set(driverId, current);
+  }
+
+  return Array.from(map.values()).sort((a, b) => b.payoutUsd - a.payoutUsd);
 }
 
 export async function GET(request: NextRequest) {
@@ -99,9 +200,22 @@ export async function GET(request: NextRequest) {
 
     let { data: agencies, error: agenciesError } = await buildAgencyQuery(agencySelect);
 
-    if (agenciesError && /banner_image_url/i.test(agenciesError.message || "")) {
-      const fallback = await buildAgencyQuery(agencySelectWithoutBanner);
-      agencies = (fallback.data || []).map((agency: any) => ({ ...agency, banner_image_url: null }));
+    if (
+      agenciesError &&
+      (/banner_image_url/i.test(agenciesError.message || "") ||
+        isPremiumDispatchSchemaMissing(agenciesError))
+    ) {
+      const fallbackSelect = /banner_image_url/i.test(agenciesError.message || "")
+        ? isPremiumDispatchSchemaMissing(agenciesError)
+          ? agencySelectWithoutBannerAndPremium
+          : agencySelectWithoutBanner
+        : agencySelectWithoutPremium;
+      const fallback = await buildAgencyQuery(fallbackSelect);
+      agencies = (fallback.data || []).map((agency: any) => ({
+        ...agency,
+        banner_image_url: agency.banner_image_url || null,
+        premium_dispatch_enabled: Boolean(agency.premium_dispatch_enabled),
+      }));
       agenciesError = fallback.error;
     }
 
@@ -110,7 +224,10 @@ export async function GET(request: NextRequest) {
     const agencyIds = (agencies || []).map((agency: any) => agency.id);
     const billingRange = getTransportBillingRange(request.nextUrl.searchParams);
 
-    const [requestsResult, connectionsResult, ordersResult] =
+    let requestsResult: any;
+    let connectionsResult: any;
+    let ordersResult: any;
+    [requestsResult, connectionsResult, ordersResult] =
       agencyIds.length
         ? await Promise.all([
             includeRelations ? supabase
@@ -166,32 +283,7 @@ export async function GET(request: NextRequest) {
             includeBilling
               ? supabase
                   .from("transport_orders")
-                  .select(
-                    `
-                    id,
-                    order_id,
-                    store_id,
-                    agency_id,
-                    status,
-                    store_name_snapshot,
-                    customer_name_snapshot,
-                    customer_phone_snapshot,
-                    delivery_zone_name,
-                    delivery_fee_usd,
-                    created_at,
-                    stores(name),
-                    orders(
-                      public_code,
-                      total_usd,
-                      delivery_usd,
-                      delivery_zone_name,
-                      delivery_distance_km,
-                      distance_km,
-                      status,
-                      created_at
-                    )
-                  `
-                  )
+                  .select(billingOrdersSelect)
                   .in("agency_id", agencyIds)
                   .gte("created_at", billingRange.start)
                   .lt("created_at", billingRange.end)
@@ -207,7 +299,24 @@ export async function GET(request: NextRequest) {
 
     if (requestsResult.error) throw requestsResult.error;
     if (connectionsResult.error) throw connectionsResult.error;
+    if (ordersResult.error && isPremiumDispatchSchemaMissing(ordersResult.error)) {
+      ordersResult = includeBilling
+        ? await supabase
+            .from("transport_orders")
+            .select(billingOrdersSelectWithoutDrivers)
+            .in("agency_id", agencyIds)
+            .gte("created_at", billingRange.start)
+            .lt("created_at", billingRange.end)
+            .order("created_at", { ascending: false })
+            .limit(200)
+        : { data: [], error: null };
+    }
     if (ordersResult.error) throw ordersResult.error;
+    const billableOrders = (ordersResult.data || []).filter(
+      (order: any) =>
+        !isCancelledBillingStatus(order.status) &&
+        !isCancelledBillingStatus(order.orders?.status)
+    );
 
     const response = NextResponse.json({
       agencies: agencies || [],
@@ -217,19 +326,12 @@ export async function GET(request: NextRequest) {
       billing: includeBilling ? {
         range: billingRange,
         week: billingRange,
-        orders: (ordersResult.data || []).filter(
-          (order: any) =>
-            !isCancelledBillingStatus(order.status) &&
-            !isCancelledBillingStatus(order.orders?.status)
-        ),
-        totalUsd: (ordersResult.data || []).reduce(
-          (sum: number, order: any) =>
-            !isCancelledBillingStatus(order.status) &&
-            !isCancelledBillingStatus(order.orders?.status)
-              ? sum + getBillingAmount(order)
-              : sum,
+        orders: billableOrders,
+        totalUsd: billableOrders.reduce(
+          (sum: number, order: any) => sum + getBillingAmount(order),
           0
         ),
+        driverPayouts: aggregateDriverPayouts(billableOrders),
       } : null,
     });
     const durationMs = (performance.now() - startedAt).toFixed(1);

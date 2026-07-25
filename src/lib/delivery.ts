@@ -87,6 +87,7 @@ export function createDefaultDeliverySettings(): StoreDeliverySettings {
   return {
     deliveryEnabled: false,
     pickupEnabled: true,
+    nationalShippingEnabled: false,
     deliveryProvider: "disabled",
     pricingType: "manual",
     fixedFeeUsd: 0,
@@ -127,6 +128,14 @@ export function mapStoreDeliverySettings(row: any): StoreDeliverySettings {
     typeof settings.pickup_enabled === "boolean"
       ? settings.pickup_enabled
       : legacyPickupEnabled;
+  const legacyNationalShippingEnabled =
+    typeof row?.accepts_national_shipping === "boolean"
+      ? row.accepts_national_shipping
+      : fallback.nationalShippingEnabled;
+  const nationalShippingEnabled =
+    (typeof settings.national_shipping_enabled === "boolean"
+      ? settings.national_shipping_enabled
+      : false) || legacyNationalShippingEnabled;
   const settingsDisabledBoth =
     hasSettings && settingsDeliveryEnabled === false && settingsPickupEnabled === false;
   const deliveryEnabled = hasSettings
@@ -193,6 +202,7 @@ export function mapStoreDeliverySettings(row: any): StoreDeliverySettings {
   return {
     deliveryEnabled,
     pickupEnabled,
+    nationalShippingEnabled,
     deliveryProvider: normalizedProvider,
     pricingType: deliveryEnabled ? inferredPricingType : "manual",
     fixedFeeUsd: Math.max(0, toNumber(settings.fixed_fee_usd, fallback.fixedFeeUsd)),
@@ -346,7 +356,7 @@ export function describeDistanceRangeFee(params: {
 
 export function calculateDeliveryQuoteFromSettings(params: {
   settings?: StoreDeliverySettings | null;
-  deliveryType: "delivery" | "pickup";
+  deliveryType: "delivery" | "pickup" | "national_shipping";
   subtotalUsd: number;
   distanceKm?: number | null;
   zoneId?: string | null;
@@ -359,6 +369,21 @@ export function calculateDeliveryQuoteFromSettings(params: {
     transportAgencyName: settings.transportAgencyName || null,
     transportAgencyLogoUrl: settings.transportAgencyLogoUrl || null,
   };
+
+  if (params.deliveryType === "national_shipping") {
+    return {
+      distanceKm: 0,
+      feeUsd: 0,
+      label: "Envio nacional por coordinar",
+      source: "national_shipping",
+      available: settings.nationalShippingEnabled,
+      provider: "disabled",
+      pricingType: "manual",
+      message: settings.nationalShippingEnabled
+        ? "El comercio coordinara? los datos finales del envio nacional por WhatsApp."
+        : "Este comercio no tiene envio nacional activo en este momento.",
+    };
+  }
 
   if (params.deliveryType === "pickup") {
     return {

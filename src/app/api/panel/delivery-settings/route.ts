@@ -57,6 +57,7 @@ function normalizeSettingsPayload(body: any, storeId: string) {
     store_id: storeId,
     delivery_enabled: deliveryEnabled,
     pickup_enabled: Boolean(body.pickupEnabled),
+    national_shipping_enabled: Boolean(body.nationalShippingEnabled),
     delivery_provider: deliveryProvider,
     pricing_type:
       deliveryProvider === "entrega2"
@@ -138,7 +139,12 @@ async function loadRows(supabase: any, storeIds: string[] | null) {
       store.id,
       settings.pickupEnabled
     );
-    if (transportSettings) settings = transportSettings.settings;
+    if (transportSettings) {
+      settings = {
+        ...transportSettings.settings,
+        nationalShippingEnabled: settings.nationalShippingEnabled === true,
+      };
+    }
     else settings = disableUnavailableTransportAgencySettings(settings);
 
     return {
@@ -266,6 +272,7 @@ export async function PATCH(request: NextRequest) {
           "delivery_promo_min_subtotal_usd",
           "delivery_promo_discount_type",
           "delivery_promo_discount_value",
+          "national_shipping_enabled",
         ])
       ) {
         const {
@@ -273,6 +280,7 @@ export async function PATCH(request: NextRequest) {
           delivery_promo_min_subtotal_usd: _min,
           delivery_promo_discount_type: _type,
           delivery_promo_discount_value: _value,
+          national_shipping_enabled: _nationalShippingEnabled,
           ...legacyPayload
         } = payload;
         const fallback = await supabase
@@ -283,13 +291,23 @@ export async function PATCH(request: NextRequest) {
 
       if (error) throw error;
 
-      const storeUpdate = await supabase
+      let storeUpdate = await supabase
         .from("stores")
         .update({
           accepts_delivery: payload.delivery_enabled,
           accepts_pickup: payload.pickup_enabled,
+          accepts_national_shipping: payload.national_shipping_enabled,
         })
         .eq("id", storeId);
+      if (storeUpdate.error && isMissingColumnError(storeUpdate.error, ["accepts_national_shipping"])) {
+        storeUpdate = await supabase
+          .from("stores")
+          .update({
+            accepts_delivery: payload.delivery_enabled,
+            accepts_pickup: payload.pickup_enabled,
+          })
+          .eq("id", storeId);
+      }
       if (storeUpdate.error) throw storeUpdate.error;
     }
 

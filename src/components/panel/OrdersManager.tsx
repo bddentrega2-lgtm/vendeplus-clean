@@ -25,6 +25,14 @@ import {
   savePanelPin,
   shouldShowPanelInitialAccessGate,
 } from "@/lib/panel/client-auth";
+import {
+  playNewOrderSound,
+  unlockOrderNotificationSound,
+} from "@/lib/panel/order-notification-sound";
+import {
+  NewOrderToast,
+  type NewOrderToastData,
+} from "@/components/panel/NewOrderToast";
 import { PanelAccessGate, PanelModuleSkeleton } from "@/components/panel/PanelLoadingState";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
@@ -261,7 +269,7 @@ function OrderDetail({
                 <p>Cliente: {order.customer_name}</p>
                 <p>Teléfono: {order.customer_phone}</p>
                 <p>Pago: {order.payment_method}</p>
-                <p>Modalidad: {order.delivery_type === "delivery" ? "Delivery" : "Retiro (pick up)"}</p>
+                <p>Modalidad: {order.delivery_type === "delivery" ? "Delivery" : order.delivery_type === "national_shipping" ? "Envio nacional" : "Retiro (pick up)"}</p>
               </div>
             </section>
 
@@ -515,12 +523,14 @@ export function OrdersManager() {
   const [savingStatusOrderId, setSavingStatusOrderId] = useState<string | null>(null);
   const [loadingDetailOrderId, setLoadingDetailOrderId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [newOrderToast, setNewOrderToast] = useState<NewOrderToastData | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [realtimeStoreIds, setRealtimeStoreIds] = useState<string[]>([]);
   const requestCacheRef = useRef(new Map<string, { expiresAt: number; data: any }>());
   const inflightRequestsRef = useRef(new Map<string, Promise<any>>());
   const authScopeRef = useRef("");
   const latestRequestIdRef = useRef(0);
+  const hasLoadedOrdersRef = useRef(false);
 
   const { currentFilters, filterSignature } = useOrderFilters({
     status: selectedStatus,
@@ -534,7 +544,7 @@ export function OrdersManager() {
   const loadOrders = useCallback(async (
     currentPin: string,
     filters: OrderFilters = currentFilters,
-    options: { force?: boolean; append?: boolean; offset?: number } = {}
+    options: { force?: boolean; append?: boolean; offset?: number; notifyNew?: boolean } = {}
   ) => {
     const requestId = ++latestRequestIdRef.current;
     const append = Boolean(options.append);
@@ -586,11 +596,30 @@ export function OrdersManager() {
 
       const nextOrders = Array.isArray(data.orders) ? data.orders : [];
       setOrders((current) => {
-        if (!append) return nextOrders;
+        if (!append) {
+          if (options.notifyNew && hasLoadedOrdersRef.current) {
+            const currentIds = new Set(current.map((order) => order.id));
+            const newOrder = nextOrders.find((order: OrderRow) => order?.id && !currentIds.has(order.id));
+            if (newOrder) {
+              void playNewOrderSound();
+              setNewOrderToast({
+                id: `${newOrder.id}-${Date.now()}`,
+                title: newOrder.public_code || newOrder.id?.slice(0, 8) || "Pedido recibido",
+                subtitle: [
+                  newOrder.customer_name || "Cliente",
+                  newOrder.customer_phone || "",
+                ].filter(Boolean).join(" · "),
+              });
+            }
+          }
+
+          return nextOrders;
+        }
 
         const seen = new Set(current.map((order) => order.id));
         return [...current, ...nextOrders.filter((order: OrderRow) => !seen.has(order.id))];
       });
+      if (!append) hasLoadedOrdersRef.current = true;
       setHasMoreOrders(Boolean(data.page?.hasMore));
       setNextOrdersOffset(Number(data.page?.nextOffset || offset + nextOrders.length));
       setRealtimeStoreIds(
@@ -787,6 +816,16 @@ export function OrdersManager() {
   }, []);
 
   useEffect(() => {
+    const unlock = () => void unlockOrderNotificationSound();
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, []);
+
+  useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60000);
     return () => window.clearInterval(timer);
   }, []);
@@ -809,14 +848,32 @@ export function OrdersManager() {
     if (!isUnlocked) return;
 
     const refresh = () => {
-      if (document.visibilityState === "visible") void loadOrders(pin);
+      if (document.visibilityState === "visible") void loadOrders(pin, currentFilters, { force: true, notifyNew: true });
     };
     document.addEventListener("visibilitychange", refresh);
 
     return () => {
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [isUnlocked, pin, loadOrders, filterSignature]);
+  }, [isUnlocked, pin, loadOrders, filterSignature, currentFilters]);
+
+  useEffect(() => {
+    if (!isUnlocked) return;
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      invalidateOrderCache();
+      void loadOrders(pin, currentFilters, { force: true, notifyNew: true });
+    }, 30_000);
+
+    return () => window.clearInterval(interval);
+  }, [isUnlocked, pin, currentFilters, loadOrders, invalidateOrderCache]);
+
+  useEffect(() => {
+    if (!newOrderToast) return;
+    const timer = window.setTimeout(() => setNewOrderToast(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [newOrderToast]);
 
   useEffect(() => {
     if (!isUnlocked || !realtimeStoreIds.length) return;
@@ -833,7 +890,7 @@ export function OrdersManager() {
       if (refreshTimer) window.clearTimeout(refreshTimer);
       refreshTimer = window.setTimeout(() => {
         invalidateOrderCache();
-        void loadOrders(pin, currentFilters, { force: true });
+        void loadOrders(pin, currentFilters, { force: true, notifyNew: true });
       }, 120);
     };
 
@@ -896,6 +953,7 @@ export function OrdersManager() {
 
   return (
     <div className="space-y-5">
+      <NewOrderToast notification={newOrderToast} onClose={() => setNewOrderToast(null)} />
       <section className="rounded-2xl bg-white p-4 shadow-lg shadow-[#2E3A79]/[0.05] ring-1 ring-[#25262B]/[0.06]">
         <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
           <div>
@@ -1013,9 +1071,10 @@ export function OrdersManager() {
             }}
             className="rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
           >
-            <option value="all">Delivery y Retiro (pick up)</option>
+            <option value="all">Todas las modalidades</option>
             <option value="delivery">Solo Delivery</option>
             <option value="pickup">Solo Retiro (pick up)</option>
+            <option value="national_shipping">Solo Envio nacional</option>
           </select>
         </div>
         )}

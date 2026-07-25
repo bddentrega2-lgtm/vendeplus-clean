@@ -26,6 +26,8 @@ export type Agency = {
   payment_terms?: string;
   credit_terms?: string;
   additional_conditions?: string;
+  premium_dispatch_enabled?: boolean | null;
+  driver_whatsapp_dispatch_enabled?: boolean | null;
   transport_agency_rates?: any[] | any;
   transport_agency_zones?: any[];
   transport_agency_distance_rates?: any[];
@@ -44,6 +46,7 @@ export type PanelCache = {
 export const panelNavItems = [
   { key: "resumen", label: "Resumen", href: "/transporte/panel" },
   { key: "pedidos", label: "Pedidos", href: "/transporte/panel/pedidos" },
+  { key: "repartidores", label: "Repartidores", href: "/transporte/panel/repartidores" },
   { key: "tarifas", label: "Tarifas", href: "/transporte/panel/tarifas" },
   { key: "configuracion", label: "Configuracion", href: "/transporte/panel/configuracion" },
   { key: "solicitudes", label: "Solicitudes", href: "/transporte/panel/solicitudes" },

@@ -37,6 +37,7 @@ type DeliverySettingsRow = {
   settings: {
     deliveryEnabled: boolean;
     pickupEnabled: boolean;
+    nationalShippingEnabled: boolean;
     deliveryProvider: DeliveryProvider;
     pricingType: PricingType;
     fixedFeeUsd: number;
@@ -625,7 +626,7 @@ function DeliveryStoreCard({
           </p>
           <h2 className="mt-1 text-2xl font-black">{row.store.name}</h2>
           <p className="mt-2 max-w-2xl text-sm font-bold text-[#746f69]">
-            Configura retiro, delivery propio, empresas delivery afiliadas, zonas, rangos y promociones
+            Configura retiro, delivery propio, envio nacional, empresas delivery afiliadas, zonas, rangos y promociones
             de delivery desde un solo modulo.
           </p>
         </div>
@@ -640,7 +641,7 @@ function DeliveryStoreCard({
         </button>
       </div>
 
-      <div className="mt-5 grid gap-3 lg:grid-cols-2">
+      <div className="mt-5 grid gap-3 lg:grid-cols-3">
         <button
           type="button"
           onClick={() => updateDraft("deliveryEnabled", !draft.deliveryEnabled)}
@@ -660,6 +661,15 @@ function DeliveryStoreCard({
           } disabled:opacity-60`}
         >
           {draft.pickupEnabled ? "Retiro activo" : "Retiro oculto"}
+        </button>
+        <button
+          type="button"
+          onClick={() => updateDraft("nationalShippingEnabled", !draft.nationalShippingEnabled)}
+          className={`rounded-2xl px-4 py-3 text-sm font-black ${
+            draft.nationalShippingEnabled ? "bg-[#F8F3E8] text-[#7C5D45]" : "bg-red-100 text-red-700"
+          }`}
+        >
+          {draft.nationalShippingEnabled ? "Envio nacional activo" : "Envio nacional oculto"}
         </button>
       </div>
 

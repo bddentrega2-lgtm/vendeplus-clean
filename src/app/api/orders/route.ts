@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { PER_SERVICE_FEE_USD } from "@/lib/plans";
 import { NextRequest, NextResponse } from "next/server";
-import type { CartItem, SavedOrder, Store } from "@/types";
+import type { CartItem, CheckoutFormData, SavedOrder, Store } from "@/types";
 import { getInitialPaymentStatus, getSuggestedPaymentCurrency } from "@/lib/payments";
 import { buildOrderMessage, buildWhatsAppUrl } from "@/lib/whatsapp";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -172,12 +172,14 @@ async function loadStoreDeliverySettings(
   legacy?: {
     acceptsDelivery?: boolean | null;
     acceptsPickup?: boolean | null;
+    acceptsNationalShipping?: boolean | null;
   }
 ) {
   const row: any = {
     id: storeId,
     accepts_delivery: legacy?.acceptsDelivery,
     accepts_pickup: legacy?.acceptsPickup,
+    accepts_national_shipping: legacy?.acceptsNationalShipping,
   };
 
   try {
@@ -290,10 +292,18 @@ export async function POST(request: NextRequest) {
       return requestBadRequest("Selecciona un método de pago.");
     }
 
+
+    const requestedDeliveryType: CheckoutFormData["deliveryType"] =
+      order.form?.deliveryType === "pickup"
+        ? "pickup"
+        : order.form?.deliveryType === "national_shipping"
+          ? "national_shipping"
+          : "delivery";
+    order.form.deliveryType = requestedDeliveryType;
     const supabase = createSupabaseAdminClient();
     let storeResult = await supabase
       .from("stores")
-      .select("id, slug, name, whatsapp, usd_to_bs, base_currency, is_active, latitude, longitude, opening_hours, business_hours, manual_open_status, manual_open_note, accepts_delivery, accepts_pickup, plan_type, service_fee_payer, service_fee_billing_cycle")
+      .select("id, slug, name, whatsapp, usd_to_bs, base_currency, is_active, latitude, longitude, opening_hours, business_hours, manual_open_status, manual_open_note, accepts_delivery, accepts_pickup, accepts_national_shipping, plan_type, service_fee_payer, service_fee_billing_cycle")
       .eq("id", storeId)
       .single();
 
@@ -304,6 +314,7 @@ export async function POST(request: NextRequest) {
         "manual_open_status",
         "manual_open_note",
         "base_currency",
+        "accepts_national_shipping",
       ])
     ) {
       storeResult = await supabase
@@ -491,14 +502,36 @@ export async function POST(request: NextRequest) {
     let deliverySettings = await loadStoreDeliverySettings(supabase, storeId, {
       acceptsDelivery: (store as any).accepts_delivery,
       acceptsPickup: (store as any).accepts_pickup,
+      acceptsNationalShipping: (store as any).accepts_national_shipping,
     });
     const transportSettings = await loadTransportAgencyDeliverySettings(
       supabase,
       storeId,
       deliverySettings.pickupEnabled
     );
-    if (transportSettings) deliverySettings = transportSettings.settings;
+    if (transportSettings) {
+      deliverySettings = {
+        ...transportSettings.settings,
+        nationalShippingEnabled: deliverySettings.nationalShippingEnabled === true,
+      };
+    }
     else deliverySettings = disableUnavailableTransportAgencySettings(deliverySettings);
+
+    if (order.form.deliveryType === "delivery" && !deliverySettings.deliveryEnabled) {
+      return requestBadRequest("Este comercio no tiene delivery activo en este momento.");
+    }
+    if (order.form.deliveryType === "pickup" && !deliverySettings.pickupEnabled) {
+      return requestBadRequest("Este comercio no tiene retiro activo en este momento.");
+    }
+    if (order.form.deliveryType === "national_shipping" && !deliverySettings.nationalShippingEnabled) {
+      return requestBadRequest("Este comercio no tiene envio nacional activo en este momento.");
+    }
+    if (order.form.deliveryType === "national_shipping" && !cleanText(order.form.nationalIdNumber)) {
+      return requestBadRequest("Escribe la cedula para el envio nacional.");
+    }
+    if (order.form.deliveryType === "national_shipping" && !cleanText(order.form.nationalShippingCity)) {
+      return requestBadRequest("Escribe la ciudad de destino para el envio nacional.");
+    }
 
     if (
       order.form.deliveryType === "delivery" &&
@@ -521,7 +554,7 @@ export async function POST(request: NextRequest) {
     const serverDistanceKm = serverDistance?.distanceKm ?? null;
     let serverQuote = calculateDeliveryQuoteFromSettings({
       settings: deliverySettings,
-      deliveryType: order.form.deliveryType === "pickup" ? "pickup" : "delivery",
+      deliveryType: order.form.deliveryType,
       subtotalUsd,
       distanceKm: serverDistanceKm,
       zoneId: order.form.deliveryZoneId || order.quote.zoneId || null,
@@ -645,7 +678,7 @@ export async function POST(request: NextRequest) {
       customer_name: cleanText(order.form.customerName),
       customer_phone: cleanText(order.form.customerPhone),
       customer_phone_normalized: normalizePhone(order.form.customerPhone) || null,
-      delivery_type: order.form.deliveryType === "pickup" ? "pickup" : "delivery",
+      delivery_type: order.form.deliveryType,
       payment_method: cleanText(order.form.paymentMethod),
       payment_status:
         paymentReference && initialPaymentStatus !== "cash_on_delivery"
@@ -673,7 +706,10 @@ export async function POST(request: NextRequest) {
         order.form.deliveryType === "delivery" && order.location
           ? order.location.longitude
           : null,
-      delivery_reference: order.form.deliveryReference || null,
+      delivery_reference:
+        order.form.deliveryType === "national_shipping"
+          ? cleanText(order.form.nationalIdNumber) || null
+          : order.form.deliveryReference || null,
       delivery_provider: order.form.deliveryType === "delivery" ? serverQuote.provider || null : null,
       delivery_fee_usd: deliveryUsd,
       delivery_zone_id: serverQuote.zoneId || null,
@@ -681,15 +717,23 @@ export async function POST(request: NextRequest) {
       delivery_distance_km: serverQuote.distanceKm,
       delivery_pricing_type: serverQuote.pricingType || null,
       delivery_status:
-        order.form.deliveryType === "delivery"
+        order.form.deliveryType === "national_shipping"
+          ? "national_shipping"
+          : order.form.deliveryType === "delivery"
           ? serverQuote.provider === "entrega2"
             ? "pending_entrega2"
             : serverQuote.provider === "transport_agency"
               ? "pending_agency"
             : "pending"
           : "pickup",
-      delivery_notes: serverQuote.ruleSummary || serverQuote.message || null,
-      delivery_address: order.form.deliveryReference || null,
+      delivery_notes:
+        order.form.deliveryType === "national_shipping"
+          ? `Envio nacional. Cedula: ${cleanText(order.form.nationalIdNumber)}. Ciudad: ${cleanText(order.form.nationalShippingCity)}. Detalles por WhatsApp.`
+          : serverQuote.ruleSummary || serverQuote.message || null,
+      delivery_address:
+        order.form.deliveryType === "national_shipping"
+          ? cleanText(order.form.nationalShippingCity) || null
+          : order.form.deliveryReference || null,
       transport_agency_id:
         order.form.deliveryType === "delivery" ? serverQuote.transportAgencyId || null : null,
       transport_agency_name:
@@ -756,9 +800,12 @@ export async function POST(request: NextRequest) {
       store_id: storeId,
       customer_name: cleanText(order.form.customerName),
       customer_phone: cleanText(order.form.customerPhone),
-      delivery_type: order.form.deliveryType === "pickup" ? "pickup" : "delivery",
+      delivery_type: order.form.deliveryType,
       payment_method: cleanText(order.form.paymentMethod),
-      delivery_reference: order.form.deliveryReference || null,
+      delivery_reference:
+        order.form.deliveryType === "national_shipping"
+          ? cleanText(order.form.nationalIdNumber) || null
+          : order.form.deliveryReference || null,
       total_usd: totalUsd,
       created_at: new Date().toISOString(),
     });

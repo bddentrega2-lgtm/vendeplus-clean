@@ -67,6 +67,7 @@ type StoreRow = {
   button_text_color: string | null;
   accepts_delivery: boolean;
   accepts_pickup: boolean;
+  accepts_national_shipping?: boolean;
   is_active: boolean;
   service_fee_payer?: "merchant" | "customer";
   service_fee_billing_cycle?: "weekly" | "monthly";
@@ -261,6 +262,7 @@ function StoreSettingsCard({
     button_text_color: store.button_text_color || "#25262B",
     accepts_delivery: store.accepts_delivery === true,
     accepts_pickup: store.accepts_pickup !== false,
+    accepts_national_shipping: store.accepts_national_shipping === true,
     is_active: store.is_active !== false,
     service_fee_payer: store.service_fee_payer === "customer" ? "customer" : "merchant",
     service_fee_billing_cycle: store.service_fee_billing_cycle === "weekly" ? "weekly" : "monthly",
@@ -357,14 +359,28 @@ function StoreSettingsCard({
     setIsSaving(true);
     setMessage("");
 
+    const colorFields = [
+      ["primary_color", "Color principal"],
+      ["accent_color", "Color secundario"],
+      ["button_text_color", "Texto del botón"],
+    ] as const;
+    const invalidColor = colorFields.find(
+      ([field]) => !/^#[0-9a-f]{6}$/i.test(String(draft[field] || ""))
+    );
+    if (invalidColor) {
+      setMessage(`${invalidColor[1]} debe tener formato HEX. Ejemplo: #2E3A79.`);
+      setIsSaving(false);
+      return;
+    }
+
     try {
       const data = await apiRequest(pin, {
         method: "PATCH",
         body: JSON.stringify({
           ...draft,
-          primary_color: "#2E3A79",
-          accent_color: "#FFB547",
-          button_text_color: "#25262B",
+          primary_color: draft.primary_color || "#2E3A79",
+          accent_color: draft.accent_color || "#FFB547",
+          button_text_color: draft.button_text_color || "#25262B",
           payment_methods: draft.payment_methods,
           payment_details: draft.payment_details,
           usd_to_bs: Number(draft.usd_to_bs || 600),
@@ -705,6 +721,101 @@ function StoreSettingsCard({
           ) : null}
         </div>
       </div>
+
+      <section className="mt-4 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
+        <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
+          <div>
+            <h3 className="text-lg font-black text-[#25262B]">Identidad visual</h3>
+            <p className="mt-1 text-sm font-bold text-[#746f69]">
+              Ajusta los colores principales que verá el cliente en el catálogo público.
+            </p>
+          </div>
+          <div
+            className="rounded-2xl px-4 py-3 text-sm font-black shadow-sm"
+            style={{
+              backgroundColor: draft.accent_color || "#FFB547",
+              color: draft.button_text_color || "#25262B",
+            }}
+          >
+            Vista botón
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4 xl:grid-cols-3">
+          {([
+            {
+              field: "primary_color",
+              label: "Color principal",
+              hint: "Encabezados, bloques destacados y acentos fuertes.",
+            },
+            {
+              field: "accent_color",
+              label: "Color secundario",
+              hint: "Botones principales y llamados a la acción.",
+            },
+            {
+              field: "button_text_color",
+              label: "Texto del botón",
+              hint: "Color del texto sobre el botón secundario.",
+            },
+          ] as const).map((item) => {
+            const colorValue = String(draft[item.field] || "");
+            const colorInputValue = /^#[0-9a-f]{6}$/i.test(colorValue)
+              ? colorValue
+              : "#000000";
+
+            return (
+            <label key={item.field} className="rounded-[24px] bg-white p-4">
+              <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
+                {item.label}
+              </span>
+              <div className="mt-3 flex items-center gap-3">
+                <input
+                  type="color"
+                  value={colorInputValue}
+                  onChange={(event) => updateField(item.field, event.target.value)}
+                  className="h-12 w-16 rounded-2xl border border-[#25262B]/10 bg-white px-2 py-2 outline-none"
+                />
+                <input
+                  value={colorValue}
+                  onChange={(event) => updateField(item.field, event.target.value)}
+                  placeholder="#2E3A79"
+                  maxLength={7}
+                  className="min-w-0 flex-1 rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold uppercase outline-none focus:border-[#2E3A79]"
+                />
+              </div>
+              <p className="mt-2 text-xs font-bold leading-relaxed text-[#746f69]">
+                {item.hint}
+              </p>
+            </label>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 overflow-hidden rounded-[24px] bg-white shadow-sm ring-1 ring-[#25262B]/[0.06]">
+          <div
+            className="p-4 text-white"
+            style={{ backgroundColor: draft.primary_color || "#2E3A79" }}
+          >
+            <p className="text-xs font-black uppercase tracking-[0.16em] opacity-80">
+              Vista previa catálogo
+            </p>
+            <h4 className="mt-1 text-xl font-black">{draft.name || "Tu comercio"}</h4>
+          </div>
+          <div className="p-4">
+            <button
+              type="button"
+              className="rounded-full px-5 py-3 text-sm font-black"
+              style={{
+                backgroundColor: draft.accent_color || "#FFB547",
+                color: draft.button_text_color || "#25262B",
+              }}
+            >
+              Agregar al carrito
+            </button>
+          </div>
+        </div>
+      </section>
 
       <section className="mt-4 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
         <div className="grid gap-4 md:grid-cols-[120px_1fr] md:items-center">
@@ -1165,6 +1276,17 @@ function StoreSettingsCard({
           ].join(" ")}
         >
           {draft.accepts_pickup ? "Retiro (pick up) activo" : "Retiro (pick up) inactivo"}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => updateField("accepts_national_shipping", !draft.accepts_national_shipping)}
+          className={[
+            "rounded-full px-4 py-2 text-xs font-black",
+            draft.accepts_national_shipping ? "bg-[#F8F3E8] text-[#7C5D45]" : "bg-red-100 text-red-700",
+          ].join(" ")}
+        >
+          {draft.accepts_national_shipping ? "Envio nacional activo" : "Envio nacional inactivo"}
         </button>
 
         <button

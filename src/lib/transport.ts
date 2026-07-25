@@ -248,6 +248,7 @@ export function mapTransportAgencyDeliverySettings(params: {
   return {
     deliveryEnabled: agency.status === "active" && agency.is_active !== false,
     pickupEnabled: params.pickupEnabled !== false,
+    nationalShippingEnabled: promoSettings.nationalShippingEnabled === true,
     deliveryProvider: "transport_agency",
     pricingType:
       pricingType === "flat"

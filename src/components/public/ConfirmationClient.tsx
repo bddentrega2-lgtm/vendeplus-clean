@@ -95,7 +95,11 @@ export function ConfirmationClient({ store }: { store: Store }) {
               <div className="flex justify-between gap-4 rounded-2xl bg-[#FFF8F0] p-3 text-sm">
                 <span className="font-bold text-[#746f69]">Modalidad</span>
                 <span className="font-black text-[#25262B]">
-                  {order.form.deliveryType === "delivery" ? "Delivery" : "Retiro (pick up)"}
+                  {order.form.deliveryType === "delivery"
+                    ? "Delivery"
+                    : order.form.deliveryType === "national_shipping"
+                      ? "Envio nacional"
+                      : "Retiro (pick up)"}
                 </span>
               </div>
               <div className="flex justify-between gap-4 rounded-2xl bg-[#FFF8F0] p-3 text-sm">
@@ -111,7 +115,18 @@ export function ConfirmationClient({ store }: { store: Store }) {
                   {order.form.paymentMethod || "Por confirmar"}
                 </span>
               </div>
-              {order.form.deliveryType === "delivery" ? (
+              {order.form.deliveryType === "national_shipping" ? (
+                <div className="space-y-2 rounded-2xl bg-[#FFF8F0] p-3 text-sm">
+                  <div className="flex justify-between gap-4">
+                    <span className="font-bold text-[#746f69]">Cedula</span>
+                    <span className="font-black text-[#25262B]">{order.form.nationalIdNumber || "Por confirmar"}</span>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <span className="font-bold text-[#746f69]">Ciudad</span>
+                    <span className="font-black text-[#25262B]">{order.form.nationalShippingCity || "Por confirmar"}</span>
+                  </div>
+                </div>
+              ) : order.form.deliveryType === "delivery" ? (
                 <div className="flex justify-between gap-4 rounded-2xl bg-[#FFF8F0] p-3 text-sm">
                   <span className="font-bold text-[#746f69]">Entrega</span>
                   <span className="font-black text-[#25262B]">

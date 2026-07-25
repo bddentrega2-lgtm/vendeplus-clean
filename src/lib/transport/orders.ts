@@ -33,10 +33,10 @@ export const transportOrderStatusLabels: Record<TransportOrderStatus, string> = 
 };
 
 const allowedTransitions: Record<TransportOrderStatus, TransportOrderStatus[]> = {
-  pending_agency: ["sent_to_agency", "agency_received", "agency_accepted", "delivered", "cancelled"],
-  sent_to_agency: ["agency_received", "agency_accepted", "agency_rejected", "delivered", "issue_reported", "cancelled"],
-  agency_received: ["agency_accepted", "agency_rejected", "delivered", "issue_reported", "cancelled"],
-  agency_accepted: ["picked_up", "pickup_pending", "on_the_way", "delivered", "issue_reported", "cancelled"],
+  pending_agency: ["sent_to_agency", "agency_received", "agency_accepted", "driver_assigned", "delivered", "cancelled"],
+  sent_to_agency: ["agency_received", "agency_accepted", "agency_rejected", "driver_assigned", "delivered", "issue_reported", "cancelled"],
+  agency_received: ["agency_accepted", "agency_rejected", "driver_assigned", "delivered", "issue_reported", "cancelled"],
+  agency_accepted: ["driver_assigned", "picked_up", "pickup_pending", "on_the_way", "delivered", "issue_reported", "cancelled"],
   agency_rejected: [],
   driver_assigned: ["pickup_pending", "picked_up", "issue_reported", "cancelled"],
   pickup_pending: ["picked_up", "on_the_way", "delivered", "issue_reported", "cancelled"],
