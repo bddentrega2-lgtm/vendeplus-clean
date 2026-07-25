@@ -396,6 +396,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     setTransportOrdersHasMore(false);
     setHasLoadedTransportDrivers(false);
     setHasLoadedBilling(false);
+    setHasUnsavedChanges(false);
   }, [selectedAgencyId]);
 
   async function loadTransportOrders(overrides: Record<string, string> = {}) {
@@ -1387,7 +1388,12 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
 
       {tab === "tarifas" ? (
         <section className="space-y-4">
-          <form onSubmit={saveRates} onChangeCapture={markDirty} className="rounded-[32px] bg-white p-5 shadow-xl shadow-[#25262B]/10">
+          <form
+            key={`rates-${agency.id}`}
+            onSubmit={saveRates}
+            onChangeCapture={markDirty}
+            className="rounded-[32px] bg-white p-5 shadow-xl shadow-[#25262B]/10"
+          >
             <div className="grid gap-3 lg:grid-cols-[1fr_220px]">
               <label className="space-y-1">
                 <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
@@ -1698,7 +1704,12 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
             </div>
           </div>
 
-          <form onSubmit={saveProfile} onChangeCapture={markDirty} className="rounded-[32px] bg-white p-5 shadow-xl shadow-[#25262B]/10">
+          <form
+            key={`profile-${agency.id}`}
+            onSubmit={saveProfile}
+            onChangeCapture={markDirty}
+            className="rounded-[32px] bg-white p-5 shadow-xl shadow-[#25262B]/10"
+          >
             <h2 className="text-xl font-black">Datos operativos</h2>
             <p className="mt-1 text-sm font-bold text-[#746f69]">
               Estos datos son obligatorios para que los comercios puedan solicitar afiliacion.
