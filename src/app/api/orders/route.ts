@@ -5,6 +5,7 @@ import type { CartItem, CheckoutFormData, SavedOrder, Store } from "@/types";
 import { getInitialPaymentStatus, getSuggestedPaymentCurrency } from "@/lib/payments";
 import { buildOrderMessage, buildWhatsAppUrl } from "@/lib/whatsapp";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { isStoreSubscriptionPastDue } from "@/lib/supabase/catalog";
 import { isMissingColumnError } from "@/lib/supabase/schema-compat";
 import { normalizePhone } from "@/lib/customers/normalize-phone";
 import { safeUpsertCustomerFromOrder } from "@/lib/customers/upsert-customer-from-order";
@@ -303,7 +304,7 @@ export async function POST(request: NextRequest) {
     const supabase = createSupabaseAdminClient();
     let storeResult = await supabase
       .from("stores")
-      .select("id, slug, name, whatsapp, usd_to_bs, base_currency, is_active, latitude, longitude, opening_hours, business_hours, manual_open_status, manual_open_note, accepts_delivery, accepts_pickup, accepts_national_shipping, plan_type, service_fee_payer, service_fee_billing_cycle")
+      .select("id, slug, name, whatsapp, usd_to_bs, base_currency, is_active, latitude, longitude, opening_hours, business_hours, manual_open_status, manual_open_note, accepts_delivery, accepts_pickup, accepts_national_shipping, plan_type, service_fee_payer, service_fee_billing_cycle, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
       .eq("id", storeId)
       .single();
 
@@ -315,11 +316,15 @@ export async function POST(request: NextRequest) {
         "manual_open_note",
         "base_currency",
         "accepts_national_shipping",
+        "subscription_status",
+        "trial_ends_at",
+        "subscription_ends_at",
+        "next_payment_due_at",
       ])
     ) {
       storeResult = await supabase
         .from("stores")
-        .select("id, slug, name, whatsapp, usd_to_bs, is_active, latitude, longitude, accepts_delivery, accepts_pickup")
+        .select("id, slug, name, whatsapp, usd_to_bs, is_active, latitude, longitude, accepts_delivery, accepts_pickup, plan_type, service_fee_payer, service_fee_billing_cycle")
         .eq("id", storeId)
         .single();
     }
@@ -329,6 +334,10 @@ export async function POST(request: NextRequest) {
     if (storeError) throw storeError;
     if (!store || (store as any).is_active === false) {
       return requestBadRequest("El comercio no está disponible.");
+    }
+
+    if (isStoreSubscriptionPastDue(store as any)) {
+      return requestBadRequest("El catalogo de este comercio esta inactivo temporalmente.");
     }
 
     const openState = getStoreOpenState({
@@ -693,7 +702,7 @@ export async function POST(request: NextRequest) {
       platform_service_fee_usd: platformServiceFeeUsd,
       platform_service_fee_payer: platformServiceFeeUsd > 0 ? platformServiceFeePayer : null,
       platform_service_fee_customer_usd: platformServiceFeeCustomerUsd,
-      platform_service_fee_billing_cycle: platformServiceFeeUsd > 0 ? ((store as any).service_fee_billing_cycle === "weekly" ? "weekly" : "monthly") : null,
+      platform_service_fee_billing_cycle: platformServiceFeeUsd > 0 ? "monthly" : null,
       distance_km:
         order.form.deliveryType === "delivery" && serverQuote.distanceKm !== null
           ? serverQuote.distanceKm

@@ -11,6 +11,7 @@ import {
 import { getStoreOpenState } from "@/lib/business-hours";
 import { getEntrega2AppBrand, loadTransportAgencyDeliverySettings } from "@/lib/transport";
 import { normalizePublicBrandText } from "@/lib/brand-copy";
+import { isSubscriptionPastDue } from "@/lib/subscription-status";
 
 type AnyRecord = Record<string, any>;
 
@@ -72,15 +73,7 @@ function toRecord(value: unknown) {
 }
 
 export function isStoreSubscriptionPastDue(row: AnyRecord) {
-  const status = String(row.subscription_status || "").toLowerCase();
-  if (["past_due", "expired", "paused", "cancelled"].includes(status)) return true;
-
-  const dueAt =
-    row.next_payment_due_at || row.subscription_ends_at || row.trial_ends_at || null;
-  if (!dueAt) return false;
-
-  const dueTime = new Date(dueAt).getTime();
-  return Number.isFinite(dueTime) && dueTime < Date.now();
+  return isSubscriptionPastDue(row);
 }
 
 function mapVariant(row: AnyRecord, productPriceUsd: number, discountPercent = 0): ProductVariant {
@@ -264,7 +257,7 @@ function mapStore(
     }),
     planType: row.plan_type || "monthly",
     serviceFeePayer: row.service_fee_payer === "customer" ? "customer" : "merchant",
-    serviceFeeBillingCycle: row.service_fee_billing_cycle === "weekly" ? "weekly" : "monthly",
+    serviceFeeBillingCycle: "monthly",
   };
 }
 

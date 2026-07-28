@@ -1,7 +1,15 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { PanelShell } from "@/components/panel/PanelShell";
+import {
+  getPanelAccessToken,
+  getPanelAuthHeaders,
+  getSavedPanelPin,
+} from "@/lib/panel/client-auth";
+import { isSubscriptionPastDue } from "@/lib/subscription-status";
 
 const panelRouteMeta: Record<string, { active: string; title: string; subtitle: string }> = {
   "/panel": {
@@ -62,19 +70,95 @@ const panelRouteMeta: Record<string, { active: string; title: string; subtitle: 
 };
 
 const routesWithoutPanelShell = new Set(["/panel/login", "/panel/update-password"]);
+const routesAllowedWhenExpired = new Set(["/panel/suscripcion"]);
+
+type PanelStoreSubscriptionState = {
+  subscription_status?: string | null;
+  subscription_ends_at?: string | null;
+  next_payment_due_at?: string | null;
+  trial_ends_at?: string | null;
+};
+
+function isStorePastDue(store?: PanelStoreSubscriptionState | null) {
+  return isSubscriptionPastDue(store);
+}
+
+function getRelevantSubscriptionStore(stores: PanelStoreSubscriptionState[]) {
+  return stores.find(isStorePastDue) || stores[0] || null;
+}
+
+function ExpiredPanelBlock() {
+  return (
+    <section className="rounded-[34px] bg-white p-6 text-center shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-red-100">
+      <div className="mx-auto grid h-14 w-14 place-items-center rounded-3xl bg-red-50 text-red-600">
+        !
+      </div>
+      <h2 className="mt-4 text-2xl font-black text-[#25262B]">Tu periodo vencio</h2>
+      <p className="mx-auto mt-2 max-w-xl text-sm font-bold leading-relaxed text-[#746f69]">
+        Para proteger tu catalogo y evitar pedidos sin plan activo, este panel queda limitado a Suscripcion.
+        Elige mensualidad o fee por pedido para reactivar la operacion.
+      </p>
+      <Link
+        href="/panel/suscripcion"
+        className="mt-5 inline-flex rounded-full bg-[#FFB547] px-6 py-3 text-sm font-black text-[#25262B]"
+      >
+        Ir a Suscripcion
+      </Link>
+    </section>
+  );
+}
 
 export function PanelFrame({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [isExpired, setIsExpired] = useState(false);
+
+  const meta = panelRouteMeta[pathname] || panelRouteMeta["/panel"];
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadSubscriptionState() {
+      if (routesWithoutPanelShell.has(pathname)) {
+        if (active) setIsExpired(false);
+        return;
+      }
+
+      const savedPin = getSavedPanelPin();
+      const savedToken = await getPanelAccessToken();
+
+      if (!savedPin && !savedToken) {
+        if (active) setIsExpired(false);
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/panel/settings", {
+          headers: await getPanelAuthHeaders(savedPin),
+        });
+        const data = await response.json();
+        const relevantStore = getRelevantSubscriptionStore(Array.isArray(data.stores) ? data.stores : []);
+        if (active) setIsExpired(isStorePastDue(relevantStore));
+      } catch {
+        if (active) setIsExpired(false);
+      }
+    }
+
+    loadSubscriptionState();
+
+    return () => {
+      active = false;
+    };
+  }, [pathname]);
 
   if (routesWithoutPanelShell.has(pathname)) {
     return <>{children}</>;
   }
 
-  const meta = panelRouteMeta[pathname] || panelRouteMeta["/panel"];
+  const shouldBlockContent = isExpired && !routesAllowedWhenExpired.has(pathname);
 
   return (
     <PanelShell active={meta.active} title={meta.title} subtitle={meta.subtitle}>
-      {children}
+      {shouldBlockContent ? <ExpiredPanelBlock /> : children}
     </PanelShell>
   );
 }

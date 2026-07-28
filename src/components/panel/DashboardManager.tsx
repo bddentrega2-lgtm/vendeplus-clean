@@ -18,6 +18,7 @@ import Link from "next/link";
 import { formatUsd } from "@/lib/currency";
 import { buildClientPublicUrl } from "@/lib/public-url";
 import { buildStoreWelcomeMessage } from "@/lib/store-share";
+import { isSubscriptionPastDue } from "@/lib/subscription-status";
 import { PanelAccessGate, PanelModuleSkeleton } from "@/components/panel/PanelLoadingState";
 import {
   getPanelAccessToken,
@@ -72,24 +73,32 @@ function MetricCard({
 function getSubscriptionReminder(store: any) {
   if (!store) return null;
 
+  const status = String(store.subscription_status || "").toLowerCase();
   const dueValue =
     store.next_payment_due_at || store.subscription_ends_at || store.trial_ends_at || null;
-  if (!dueValue) return null;
+  const formattedDate = dueValue
+    ? new Intl.DateTimeFormat("es-VE", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }).format(new Date(dueValue))
+    : "sin fecha registrada";
 
-  const dueTime = new Date(dueValue).getTime();
-  if (!Number.isFinite(dueTime)) return null;
+  if (["past_due", "expired", "paused", "cancelled"].includes(status)) {
+    return {
+      tone: "danger",
+      title: "Pago vencido",
+      text: `Tu comercio esta vencido desde ${formattedDate}. Ve a Suscripcion para reactivarlo.`,
+    };
+  }
+
+  if (!dueValue) return null;
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const dueDate = new Date(dueTime);
+  const dueDate = new Date(`${String(dueValue).slice(0, 10)}T00:00:00`);
   dueDate.setHours(0, 0, 0, 0);
   const days = Math.ceil((dueDate.getTime() - today.getTime()) / 86400000);
-  const formattedDate = new Intl.DateTimeFormat("es-VE", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(dueValue));
-
   if (days < 0) {
     return {
       tone: "danger",
@@ -111,6 +120,12 @@ function getSubscriptionReminder(store: any) {
     title: `${days} dia${days === 1 ? "" : "s"} para tu proximo pago`,
     text: `Fecha de pago: ${formattedDate}.`,
   };
+}
+
+function getRelevantStore(stores: any[]) {
+  return (
+    stores.find((store) => isSubscriptionPastDue(store)) || stores[0]
+  );
 }
 
 export function DashboardManager() {
@@ -203,7 +218,7 @@ export function DashboardManager() {
 
   const summary = stats.summary || {};
   const stores = Array.isArray(stats.stores) ? stats.stores : [];
-  const primaryStore = stores[0];
+  const primaryStore = getRelevantStore(stores);
   const subscriptionReminder = getSubscriptionReminder(primaryStore);
   const publicCatalogUrl =
     primaryStore?.slug

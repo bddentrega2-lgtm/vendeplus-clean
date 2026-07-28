@@ -265,7 +265,7 @@ function StoreSettingsCard({
     accepts_national_shipping: store.accepts_national_shipping === true,
     is_active: store.is_active !== false,
     service_fee_payer: store.service_fee_payer === "customer" ? "customer" : "merchant",
-    service_fee_billing_cycle: store.service_fee_billing_cycle === "weekly" ? "weekly" : "monthly",
+    service_fee_billing_cycle: "monthly",
   });
 
   const [isSaving, setIsSaving] = useState(false);
@@ -1313,12 +1313,13 @@ function StoreSettingsCard({
                 <option value="customer">Se agrega al pedido del cliente</option>
               </select>
             </label>
-            <label className="text-xs font-black text-[#746f69]">Frecuencia de liquidación
-              <select value={draft.service_fee_billing_cycle} onChange={(event) => updateField("service_fee_billing_cycle", event.target.value)} className="mt-1 w-full rounded-xl bg-white px-3 py-3 text-sm text-[#25262B]">
-                <option value="weekly">Semanal</option>
-                <option value="monthly">Mensual</option>
-              </select>
-            </label>
+            <div className="rounded-xl bg-white px-3 py-3">
+              <p className="text-xs font-black text-[#746f69]">Frecuencia de liquidación</p>
+              <p className="mt-1 text-sm font-black text-[#25262B]">Mensual</p>
+              <p className="mt-1 text-xs font-bold text-[#746f69]">
+                Solo se aceptan pagos completos del acumulado. No hay abonos parciales.
+              </p>
+            </div>
           </div>
         </section>
       ) : null}

@@ -13,8 +13,14 @@ import {
 } from "@/lib/panel/client-auth";
 import { formatBs, formatUsd } from "@/lib/currency";
 import { plans, getPlan, type PlanId, PER_SERVICE_FEE_USD } from "@/lib/plans";
+import { isDateBeforeToday, isSubscriptionPastDue } from "@/lib/subscription-status";
 
 const selfServicePlans = plans.filter((plan) => plan.id !== "custom");
+const somosPaymentDetails = [
+  { label: "Cedula/RIF", value: "20890442" },
+  { label: "Telefono", value: "04245666025" },
+  { label: "Banco", value: "Provincial" },
+];
 
 type StoreRow = {
   id: string;
@@ -27,6 +33,8 @@ type StoreRow = {
   monthly_price_usd?: number | null;
   usd_to_bs?: number | null;
   trial_ends_at?: string | null;
+  service_fee_payer?: "merchant" | "customer" | null;
+  service_fee_billing_cycle?: "weekly" | "monthly" | null;
 };
 
 type ServiceUsage = {
@@ -72,6 +80,15 @@ function formatDate(value?: string | null) {
   }).format(new Date(value));
 }
 
+function isStorePastDue(store?: StoreRow | null) {
+  return isSubscriptionPastDue(store);
+}
+
+function getDefaultStoreId(stores: StoreRow[], currentStoreId: string) {
+  if (currentStoreId && stores.some((store) => store.id === currentStoreId)) return currentStoreId;
+  return stores.find((store) => isStorePastDue(store))?.id || stores[0]?.id || "";
+}
+
 export function SubscriptionPaymentManager() {
   const [pin, setPin] = useState("");
   const [stores, setStores] = useState<StoreRow[]>([]);
@@ -84,6 +101,7 @@ export function SubscriptionPaymentManager() {
   const [paymentBank, setPaymentBank] = useState("");
   const [paidAt, setPaidAt] = useState("");
   const [notes, setNotes] = useState("");
+  const [serviceFeePayer, setServiceFeePayer] = useState<"merchant" | "customer">("merchant");
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => shouldShowPanelInitialAccessGate());
   const [isLoading, setIsLoading] = useState(() => hasSavedPanelAuth());
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -96,15 +114,23 @@ export function SubscriptionPaymentManager() {
   const serviceUsage = selectedStore
     ? serviceUsageByStore[selectedStore.id] || { serviceCount: 0, amountUsd: 0, periodStart: null }
     : { serviceCount: 0, amountUsd: 0, periodStart: null };
-  const trialDueAt = selectedStore?.trial_ends_at || selectedStore?.subscription_ends_at;
+  const dueAt =
+    selectedStore?.next_payment_due_at || selectedStore?.subscription_ends_at || selectedStore?.trial_ends_at;
   const isTrial = selectedStore?.subscription_status === "trial" || selectedStore?.plan_type === "trial";
+  const isPastDueStatus = ["past_due", "expired", "paused", "cancelled"].includes(
+    String(selectedStore?.subscription_status || "").toLowerCase()
+  );
+  const isPastDueByDate = Boolean(
+    dueAt && currentTimeMs !== null && isDateBeforeToday(dueAt, new Date(currentTimeMs))
+  );
   const isTrialExpired = Boolean(
-    isTrial && trialDueAt && currentTimeMs !== null && new Date(trialDueAt).getTime() < currentTimeMs
+    isTrial && dueAt && currentTimeMs !== null && isDateBeforeToday(dueAt, new Date(currentTimeMs))
   );
   const isPerService = selectedStore?.plan_type === "per_service";
+  const needsPlanChoice = Boolean(selectedStore && !isPerService && (isTrialExpired || isPastDueStatus || isPastDueByDate));
   const amountUsd = useMemo(() => {
-    if (isTrialExpired && selectedPlanId === "monthly") return 20;
-    if (isTrialExpired && selectedPlanId === "per_service") return 0;
+    if (needsPlanChoice && selectedPlanId === "monthly") return 20;
+    if (needsPlanChoice && selectedPlanId === "per_service") return 0;
     if (isPerService) return serviceUsage.amountUsd;
     const monthly = Number(selectedStore?.monthly_price_usd || 0) || currentPlan.priceUsd;
     return billingPeriod === "annual" ? monthly * 12 : monthly;
@@ -112,23 +138,29 @@ export function SubscriptionPaymentManager() {
     billingPeriod,
     currentPlan.priceUsd,
     isPerService,
-    isTrialExpired,
+    needsPlanChoice,
     selectedPlanId,
     selectedStore?.monthly_price_usd,
     serviceUsage.amountUsd,
   ]);
   const amountBs = amountUsd * Number(selectedStore?.usd_to_bs || 600);
+  const shouldShowPaymentForm = Boolean(
+    selectedStore && ((!isTrial && !needsPlanChoice) || (needsPlanChoice && selectedPlan.id === "monthly"))
+  );
+  const currentServiceFeePayerLabel =
+    selectedStore?.service_fee_payer === "customer" ? "lo paga el cliente" : "lo asume el comercio";
 
-  async function load(currentPin: string) {
+  async function load(currentPin: string, options?: { keepMessage?: boolean }) {
     setIsLoading(true);
-    setMessage("");
+    if (!options?.keepMessage) setMessage("");
 
     try {
       const data = await subscriptionRequest(currentPin);
-      setStores(data.stores || []);
+      const nextStores = data.stores || [];
+      setStores(nextStores);
       setPayments(data.payments || []);
       setServiceUsageByStore(data.serviceUsageByStore || {});
-      setStoreId((current) => current || data.stores?.[0]?.id || "");
+      setStoreId((current) => getDefaultStoreId(nextStores, current));
       setIsUnlocked(true);
       savePanelPin(currentPin);
     } catch (error: any) {
@@ -151,8 +183,8 @@ export function SubscriptionPaymentManager() {
         method: "POST",
         body: JSON.stringify({
           storeId: selectedStore.id,
-          action: isTrialExpired ? "choose_plan" : "submit_payment",
-          planId: isTrialExpired ? selectedPlanId : selectedStore.plan_type,
+          action: needsPlanChoice ? "choose_plan" : "submit_payment",
+          planId: needsPlanChoice ? selectedPlanId : selectedStore.plan_type,
           billingPeriod,
           paymentReference,
           paymentBank,
@@ -160,12 +192,14 @@ export function SubscriptionPaymentManager() {
           notes,
         }),
       });
-      setMessage(data.message || "Pago enviado.");
+      const successMessage =
+        data.message || "Pago enviado a revisión. Queda pendiente de aprobación por Somos.";
       setPaymentReference("");
       setPaymentBank("");
       setPaidAt("");
       setNotes("");
-      await load(pin);
+      await load(pin, { keepMessage: true });
+      setMessage(successMessage);
     } catch (error: any) {
       setMessage(error.message || "No se pudo enviar el pago.");
     } finally {
@@ -196,6 +230,10 @@ export function SubscriptionPaymentManager() {
     };
   }, []);
 
+  useEffect(() => {
+    setServiceFeePayer(selectedStore?.service_fee_payer === "customer" ? "customer" : "merchant");
+  }, [selectedStore?.id, selectedStore?.service_fee_payer]);
+
   if (isCheckingAccess) return <PanelAccessGate />;
   if (isLoading && !isUnlocked) return <PanelModuleSkeleton label="Cargando suscripción..." />;
   if (!isUnlocked) return <PanelAccessGate />;
@@ -213,10 +251,12 @@ export function SubscriptionPaymentManager() {
           storeId: selectedStore.id,
           action: "choose_plan",
           planId: "per_service",
+          serviceFeePayer,
         }),
       });
-      setMessage(data.message || "Plan por servicio activado.");
-      await load(pin);
+      const successMessage = data.message || "Plan por servicio activado.";
+      await load(pin, { keepMessage: true });
+      setMessage(successMessage);
     } catch (error: any) {
       setMessage(error.message || "No se pudo activar el plan.");
     } finally {
@@ -256,18 +296,18 @@ export function SubscriptionPaymentManager() {
 
         <div className="mt-4 grid gap-3 rounded-[24px] bg-[#F8F3E8] p-4 sm:grid-cols-3">
           <div><p className="text-xs font-black text-[#746f69]">Plan</p><p className="font-black">{isTrial ? "Prueba gratis" : currentPlan.name}</p></div>
-          <div><p className="text-xs font-black text-[#746f69]">Vence</p><p className="font-black">{formatDate(trialDueAt || selectedStore?.next_payment_due_at)}</p></div>
+          <div><p className="text-xs font-black text-[#746f69]">Vence</p><p className="font-black">{formatDate(dueAt)}</p></div>
           <div><p className="text-xs font-black text-[#746f69]">Monto</p><p className="font-black">{formatUsd(amountUsd)} / {formatBs(amountBs)}</p></div>
         </div>
 
-        {isTrial ? (
+        {(isTrial || needsPlanChoice) ? (
           <section className="mt-4 rounded-[24px] bg-[#FFF8F0] p-4">
             <p className="text-sm font-black text-[#25262B]">
-              {isTrialExpired
-                ? "Tu prueba gratis venció. Elige un plan para continuar."
-                : `Estás en prueba gratis hasta ${formatDate(trialDueAt)}.`}
+              {needsPlanChoice
+                ? "Tu periodo vencio. Elige como deseas continuar: mensualidad o fee por pedido."
+                : `Estas en prueba gratis hasta ${formatDate(dueAt)}.`}
             </p>
-            {isTrialExpired ? (
+            {needsPlanChoice ? (
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 {selfServicePlans.map((plan) => (
                   <button
@@ -297,12 +337,56 @@ export function SubscriptionPaymentManager() {
           </section>
         ) : null}
 
+        {needsPlanChoice && selectedPlan.id === "per_service" ? (
+          <section className="mt-4 rounded-[24px] bg-[#F8F3E8] p-4">
+            <p className="text-sm font-black text-[#25262B]">Antes de activar: quien paga el fee?</p>
+            <p className="mt-1 text-sm font-bold text-[#746f69]">
+              El fee es de {formatUsd(PER_SERVICE_FEE_USD)} por pedido y el corte sera mensual.
+            </p>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setServiceFeePayer("merchant")}
+                className={[
+                  "rounded-[20px] p-4 text-left ring-1",
+                  serviceFeePayer === "merchant"
+                    ? "bg-[#2E3A79] text-white ring-[#2E3A79]"
+                    : "bg-white text-[#25262B] ring-[#25262B]/10",
+                ].join(" ")}
+              >
+                <p className="font-black">Lo asume el comercio</p>
+                <p className="mt-1 text-xs font-bold opacity-75">
+                  El cliente no ve este cargo; se acumula para el corte mensual.
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setServiceFeePayer("customer")}
+                className={[
+                  "rounded-[20px] p-4 text-left ring-1",
+                  serviceFeePayer === "customer"
+                    ? "bg-[#2E3A79] text-white ring-[#2E3A79]"
+                    : "bg-white text-[#25262B] ring-[#25262B]/10",
+                ].join(" ")}
+              >
+                <p className="font-black">Lo paga el cliente</p>
+                <p className="mt-1 text-xs font-bold opacity-75">
+                  Se suma al total del pedido como fee de plataforma.
+                </p>
+              </button>
+            </div>
+          </section>
+        ) : null}
+
         {isPerService ? (
           <section className="mt-4 rounded-[24px] bg-[#FFF8F0] p-4">
             <p className="text-sm font-black text-[#25262B]">Corte por servicio</p>
             <p className="mt-1 text-sm font-bold text-[#746f69]">
               Servicios acumulados este periodo: {serviceUsage.serviceCount}. Total del corte:{" "}
               {formatUsd(serviceUsage.amountUsd)}.
+            </p>
+            <p className="mt-1 text-sm font-bold text-[#746f69]">
+              Fee configurado: {currentServiceFeePayerLabel}.
             </p>
             <p className="mt-2 text-xs font-black uppercase tracking-[0.12em] text-[#2E3A79]">
               Pago completo acumulado. No se aceptan abonos parciales.
@@ -313,7 +397,7 @@ export function SubscriptionPaymentManager() {
           </section>
         ) : null}
 
-        {isTrialExpired && selectedPlan.id === "per_service" ? (
+        {needsPlanChoice && selectedPlan.id === "per_service" ? (
           <button
             type="button"
             onClick={activatePerServicePlan}
@@ -325,8 +409,25 @@ export function SubscriptionPaymentManager() {
           </button>
         ) : null}
 
-        {(!isTrial || (isTrialExpired && selectedPlan.id === "monthly")) ? (
+        {shouldShowPaymentForm ? (
         <>
+        <section className="mt-4 rounded-[24px] bg-[#EEF7FF] p-4">
+          <p className="text-sm font-black text-[#25262B]">Pago Movil Somos</p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            {somosPaymentDetails.map((detail) => (
+              <div key={detail.label} className="rounded-2xl bg-white px-4 py-3">
+                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69]">{detail.label}</p>
+                <p className="mt-1 text-sm font-black text-[#25262B]">{detail.value}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-sm font-black text-[#2E3A79]">
+            Monto a pagar: {formatUsd(amountUsd)} / {formatBs(amountBs)}
+          </p>
+          <p className="mt-1 text-xs font-bold text-[#746f69]">
+            Con este pago, admin revisa la referencia y activa el plan.
+          </p>
+        </section>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
           <label className="space-y-1">
             <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Referencia</span>

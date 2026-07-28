@@ -18,9 +18,9 @@ function money(value: unknown) {
   return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 }
 
-function addMonths(date: Date, months: number) {
+function addDays(date: Date, days: number) {
   const next = new Date(date);
-  next.setMonth(next.getMonth() + months);
+  next.setDate(next.getDate() + days);
   return next;
 }
 
@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
 
     let storesQuery = supabase
       .from("stores")
-      .select("id, name, slug, plan_type, subscription_status, trial_ends_at, subscription_started_at, subscription_ends_at, next_payment_due_at, monthly_price_usd, usd_to_bs, last_payment_at, created_at")
+      .select("id, name, slug, plan_type, subscription_status, trial_ends_at, subscription_started_at, subscription_ends_at, next_payment_due_at, monthly_price_usd, usd_to_bs, last_payment_at, created_at, service_fee_payer, service_fee_billing_cycle")
       .order("name", { ascending: true });
 
     let paymentsQuery = supabase
@@ -135,14 +135,21 @@ export async function POST(request: NextRequest) {
     const supabase = createSupabaseAdminClient();
     const { data: store, error: storeError } = await supabase
       .from("stores")
-      .select("id, plan_type, subscription_status, trial_ends_at, subscription_started_at, subscription_ends_at, next_payment_due_at, monthly_price_usd, usd_to_bs, last_payment_at, created_at")
+      .select("id, plan_type, subscription_status, trial_ends_at, subscription_started_at, subscription_ends_at, next_payment_due_at, monthly_price_usd, usd_to_bs, last_payment_at, created_at, service_fee_payer, service_fee_billing_cycle")
       .eq("id", storeId)
       .single();
 
     if (storeError) throw storeError;
 
     if (action === "choose_plan" && selectedPlanId === "per_service") {
-      const nextDue = addMonths(new Date(), 1).toISOString();
+      const serviceFeePayer =
+        body.serviceFeePayer === "customer" ? "customer" : body.serviceFeePayer === "merchant" ? "merchant" : "";
+
+      if (!serviceFeePayer) {
+        return badRequest("Elige si el fee por pedido lo paga el comercio o el cliente.");
+      }
+
+      const nextDue = addDays(new Date(), 30).toISOString();
       const { data, error } = await supabase
         .from("stores")
         .update({
@@ -152,16 +159,21 @@ export async function POST(request: NextRequest) {
           subscription_ends_at: nextDue,
           next_payment_due_at: nextDue,
           monthly_price_usd: PER_SERVICE_FEE_USD,
+          service_fee_payer: serviceFeePayer,
+          service_fee_billing_cycle: "monthly",
         })
         .eq("id", storeId)
-        .select("id, plan_type, subscription_status, next_payment_due_at")
+        .select("id, plan_type, subscription_status, next_payment_due_at, service_fee_payer, service_fee_billing_cycle")
         .single();
 
       if (error) throw error;
 
       return NextResponse.json({
         store: data,
-        message: "Plan por servicio activado. Se hará corte mensual con lo acumulado.",
+        message:
+          serviceFeePayer === "customer"
+            ? "Plan por servicio activado. El fee se cobrara al cliente en cada pedido."
+            : "Plan por servicio activado. El comercio asumira el fee en el corte mensual.",
       });
     }
 

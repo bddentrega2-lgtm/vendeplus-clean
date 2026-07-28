@@ -7,6 +7,7 @@ import {
   getSavedPanelPin,
 } from "@/lib/panel/client-auth";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
+import { isSubscriptionPastDue } from "@/lib/subscription-status";
 
 type StoreIdentity = {
   name: string;
@@ -16,10 +17,11 @@ type StoreIdentity = {
   subscription_status?: string | null;
   subscription_ends_at?: string | null;
   next_payment_due_at?: string | null;
+  trial_ends_at?: string | null;
 };
 
 const PANEL_STORE_IDENTITY_CACHE_KEY = "somos_panel_store_identity";
-const PANEL_STORE_IDENTITY_CACHE_TTL_MS = 60_000;
+const PANEL_STORE_IDENTITY_CACHE_TTL_MS = 5_000;
 
 function readCachedStoreIdentity() {
   if (typeof window === "undefined") return null;
@@ -55,9 +57,13 @@ function writeCachedStoreIdentity(store: StoreIdentity) {
 }
 
 function isExpired(store: StoreIdentity) {
-  if (store.subscription_status === "expired" || store.subscription_status === "past_due") return true;
-  const due = store.subscription_ends_at || store.next_payment_due_at;
-  return Boolean(due && new Date(due).getTime() < Date.now());
+  return isSubscriptionPastDue(store);
+}
+
+function getRelevantIdentityStore(stores: any[]) {
+  return (
+    stores.find((store) => isSubscriptionPastDue(store)) || stores[0]
+  );
 }
 
 export function PanelStoreIdentity() {
@@ -67,12 +73,6 @@ export function PanelStoreIdentity() {
     let active = true;
 
     async function loadIdentity() {
-      const cachedStore = readCachedStoreIdentity();
-      if (cachedStore) {
-        setStore(cachedStore);
-        return;
-      }
-
       const savedPin = getSavedPanelPin();
       const savedToken = await getPanelAccessToken();
 
@@ -83,7 +83,7 @@ export function PanelStoreIdentity() {
           headers: await getPanelAuthHeaders(savedPin),
         });
         const data = await response.json();
-        const firstStore = data.stores?.[0];
+        const firstStore = getRelevantIdentityStore(Array.isArray(data.stores) ? data.stores : []);
 
         if (active && firstStore) {
           const nextStore = {
@@ -94,6 +94,7 @@ export function PanelStoreIdentity() {
             subscription_status: firstStore.subscription_status || null,
             subscription_ends_at: firstStore.subscription_ends_at || null,
             next_payment_due_at: firstStore.next_payment_due_at || null,
+            trial_ends_at: firstStore.trial_ends_at || null,
           };
 
           writeCachedStoreIdentity(nextStore);

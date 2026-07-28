@@ -7,6 +7,7 @@ import {
 } from "@/lib/admin/metrics-fallback";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getPlan } from "@/lib/plans";
+import { isDateBeforeToday } from "@/lib/subscription-status";
 
 function toNumber(value: unknown) {
   const parsed = Number(value || 0);
@@ -73,7 +74,7 @@ export async function GET(request: NextRequest) {
     const alerts = stores.flatMap((store: any) => {
       const storeAlerts: Array<{ type: string; storeId: string; storeName: string; message: string }> = [];
       const trialEndsAt = store.trial_ends_at ? new Date(store.trial_ends_at).getTime() : null;
-      const paymentDueAt = store.next_payment_due_at ? new Date(store.next_payment_due_at).getTime() : null;
+      const paymentDueAt = store.next_payment_due_at || null;
 
       if (trialEndsAt && trialEndsAt >= now && trialEndsAt <= threeDaysFromNow) {
         storeAlerts.push({
@@ -83,7 +84,11 @@ export async function GET(request: NextRequest) {
           message: "Trial vence en 3 dias o menos.",
         });
       }
-      if (store.subscription_status === "expired" || (paymentDueAt && paymentDueAt < now)) {
+      if (
+        store.subscription_status === "expired" ||
+        store.subscription_status === "past_due" ||
+        isDateBeforeToday(paymentDueAt, new Date(now))
+      ) {
         storeAlerts.push({
           type: "expired",
           storeId: store.id,
@@ -125,7 +130,12 @@ export async function GET(request: NextRequest) {
         activeStores: stores.filter((store: any) => store.is_active !== false).length,
         inactiveStores: stores.filter((store: any) => store.is_active === false).length,
         trialStores: stores.filter((store: any) => store.plan_type === "trial" || store.subscription_status === "trial").length,
-        expiredStores: stores.filter((store: any) => store.subscription_status === "expired" || store.subscription_status === "past_due").length,
+        expiredStores: stores.filter(
+          (store: any) =>
+            store.subscription_status === "expired" ||
+            store.subscription_status === "past_due" ||
+            isDateBeforeToday(store.next_payment_due_at || store.trial_ends_at)
+        ).length,
         totalOrders: toNumber(summaryMetrics.total_orders),
         ordersToday: toNumber(summaryMetrics.orders_today),
         ordersLast7Days: toNumber(summaryMetrics.orders_last_7_days),
@@ -133,7 +143,11 @@ export async function GET(request: NextRequest) {
         totalAssignments: toNumber(summaryMetrics.total_assignments),
         totalCustomers: toNumber(summaryMetrics.total_customers),
         estimatedMrrUsd: stores.reduce((sum: number, store: any) => {
-          if (store.is_active === false || ["cancelled", "paused", "expired"].includes(store.subscription_status)) return sum;
+          if (
+            store.is_active === false ||
+            ["cancelled", "paused", "expired", "past_due"].includes(store.subscription_status) ||
+            isDateBeforeToday(store.next_payment_due_at || store.trial_ends_at)
+          ) return sum;
           const configuredPrice = Number(store.monthly_price_usd || 0);
           return sum + (configuredPrice || getPlan(store.plan_type).priceUsd);
         }, 0),

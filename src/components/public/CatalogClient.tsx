@@ -52,6 +52,7 @@ export function CatalogClient({ store }: { store: Store }) {
   const showGroupedMenu = selectedCategoryId === "all";
   const showCategoryPreviews = showGroupedMenu && !query.trim();
   const whatsappUrl = store.whatsappPhone ? `https://wa.me/${store.whatsappPhone}` : "";
+  const isStoreOpen = store.openState?.isOpen !== false;
 
   async function shareCatalog() {
     const url = buildClientPublicUrl(`${window.location.pathname}${window.location.search}`);
@@ -212,6 +213,7 @@ export function CatalogClient({ store }: { store: Store }) {
                     baseCurrency={baseCurrency}
                     showPricesInBs={showPricesInBs}
                     cartQuantity={cartQuantityByProduct[product.id] || 0}
+                    isStoreOpen={isStoreOpen}
                   />
                 </div>
               ))}
@@ -248,6 +250,7 @@ export function CatalogClient({ store }: { store: Store }) {
                     baseCurrency={baseCurrency}
                     showPricesInBs={showPricesInBs}
                     cartQuantity={cartQuantityByProduct[product.id] || 0}
+                    isStoreOpen={isStoreOpen}
                   />
                 ))}
               </div>
@@ -274,6 +277,7 @@ export function CatalogClient({ store }: { store: Store }) {
               baseCurrency={baseCurrency}
               showPricesInBs={showPricesInBs}
               cartQuantity={cartQuantityByProduct[product.id] || 0}
+              isStoreOpen={isStoreOpen}
             />
           ))}
         </div>
@@ -287,7 +291,7 @@ export function CatalogClient({ store }: { store: Store }) {
       ) : null}
 
       <div className="mobile-cart-safe-space h-44 md:h-10" aria-hidden="true" />
-      <CartBar storeSlug={store.slug} usdToBs={store.usdToBs || 600} baseCurrency={baseCurrency} showPricesInBs={showPricesInBs} />
+      <CartBar storeSlug={store.slug} usdToBs={store.usdToBs || 600} baseCurrency={baseCurrency} showPricesInBs={showPricesInBs} isStoreOpen={isStoreOpen} />
     </main>
   );
 }

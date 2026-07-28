@@ -46,17 +46,18 @@ export function CartPageClient({ store }: { store: Store }) {
     };
   }, [store.slug]);
 
-  useEffect(() => {
-    if (items.length > 0) {
-      router.prefetch(`/${store.slug}/checkout`);
-    }
-  }, [items.length, router, store.slug]);
-
   const subtotal = getCartSubtotal(items);
   const exchangeRate = store.usdToBs || 600;
   const baseCurrency = store.baseCurrency || "USD";
   const showPricesInBs = store.showPricesInBs !== false;
   const subtotalBs = subtotal * exchangeRate;
+  const isStoreOpen = store.openState?.isOpen !== false;
+
+  useEffect(() => {
+    if (isStoreOpen && items.length > 0) {
+      router.prefetch(`/${store.slug}/checkout`);
+    }
+  }, [isStoreOpen, items.length, router, store.slug]);
 
   function setQuantity(index: number, quantity: number) {
     updateCartItemQuantity(store.slug, index, quantity);
@@ -93,8 +94,20 @@ export function CartPageClient({ store }: { store: Store }) {
           </div>
         </section>
 
+        {!isStoreOpen ? (
+          <section className="mt-5 rounded-[32px] bg-red-50 p-5 text-center text-red-700 ring-1 ring-red-100">
+            <h2 className="text-xl font-black">Comercio cerrado por horario</h2>
+            <p className="mt-2 text-sm font-bold">
+              {store.openState?.label || "Cerrado"}. Puedes revisar el catalogo, pero no abrir carrito ni finalizar pedidos ahora.
+            </p>
+            <Link href={`/${store.slug}`} className="vp-button-soft mt-5 w-full">
+              Volver al catalogo
+            </Link>
+          </section>
+        ) : null}
+
         <section className="mt-5 space-y-3">
-          {items.length === 0 ? (
+          {!isStoreOpen ? null : items.length === 0 ? (
             <div className="rounded-[32px] bg-white p-8 text-center shadow-sm ring-1 ring-[#25262B]/[0.06]">
               <div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl bg-[#FFF8F0] text-[#2E3A79]">
                 <ShoppingBag size={28} />
@@ -166,7 +179,7 @@ export function CartPageClient({ store }: { store: Store }) {
           )}
         </section>
 
-        {items.length > 0 ? (
+        {isStoreOpen && items.length > 0 ? (
           <section className="sticky bottom-4 z-20 mt-5 rounded-[32px] bg-[#25262B] p-3 text-white shadow-2xl shadow-[#25262B]/25">
             <div className="rounded-[26px] bg-white p-4 text-[#25262B]">
               <div className="flex items-center justify-between">

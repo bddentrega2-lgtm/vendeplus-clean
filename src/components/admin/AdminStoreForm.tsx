@@ -44,6 +44,7 @@ type StoreDraft = {
   accepts_pickup: boolean;
   is_active: boolean;
   plan_type: string;
+  service_fee_payer: string;
   trial_started_at: string;
   trial_ends_at: string;
   subscription_status: string;
@@ -86,6 +87,7 @@ const initialDraft: StoreDraft = {
   accepts_pickup: true,
   is_active: true,
   plan_type: "monthly",
+  service_fee_payer: "merchant",
   trial_started_at: "",
   trial_ends_at: "",
   subscription_status: "active",
@@ -135,6 +137,105 @@ function addDaysToDateInput(value: string, days: number) {
   return base.toISOString().slice(0, 10);
 }
 
+function todayDateInput() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function yesterdayDateInput() {
+  const date = new Date();
+  date.setDate(date.getDate() - 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function getPrimarySubscriptionDate(draft: StoreDraft) {
+  return draft.next_payment_due_at || draft.subscription_ends_at || draft.trial_ends_at;
+}
+
+function getDaysLeft(dateInput: string) {
+  if (!dateInput) return null;
+  const date = new Date(`${dateInput}T23:59:59`);
+  const diff = date.getTime() - Date.now();
+  return Math.ceil(diff / (1000 * 60 * 60 * 24));
+}
+
+function formatAdminDate(value: string) {
+  if (!value) return "Sin fecha";
+  return new Intl.DateTimeFormat("es-VE", {
+    timeZone: "America/Caracas",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(`${value}T12:00:00`));
+}
+
+function planLabel(value: string) {
+  if (value === "trial") return "Prueba gratis";
+  if (value === "monthly") return "Mensualidad";
+  if (value === "per_service") return "Fee por pedido";
+  if (value === "founder") return "Founder";
+  return value || "Sin plan";
+}
+
+function subscriptionSummary(draft: StoreDraft) {
+  const status = String(draft.subscription_status || "").toLowerCase();
+  const dueDate = getPrimarySubscriptionDate(draft);
+  const daysLeft = getDaysLeft(dueDate);
+  const isExpired =
+    ["expired", "past_due", "cancelled"].includes(status) ||
+    (daysLeft !== null && daysLeft < 0);
+  const isPaused = status === "paused" || draft.is_active === false;
+
+  if (isPaused) {
+    return {
+      label: "Pausado",
+      detail: "El comercio no deberia operar hasta reactivarlo.",
+      badgeClass: "bg-slate-100 text-slate-700",
+      daysLabel: dueDate ? `Fecha registrada: ${formatAdminDate(dueDate)}` : "Sin fecha registrada",
+    };
+  }
+
+  if (isExpired) {
+    return {
+      label: "Vencido",
+      detail: "Debe elegir mensualidad o fee por pedido para volver a operar.",
+      badgeClass: "bg-red-100 text-red-700",
+      daysLabel:
+        daysLeft === null
+          ? "Sin fecha de vencimiento"
+          : `Vencido hace ${Math.abs(daysLeft)} dia${Math.abs(daysLeft) === 1 ? "" : "s"}`,
+    };
+  }
+
+  if (draft.plan_type === "trial") {
+    return {
+      label: "En prueba gratis",
+      detail: "Al vencer, el comercio debe elegir mensualidad o fee por pedido.",
+      badgeClass: "bg-amber-100 text-amber-800",
+      daysLabel:
+        daysLeft === null
+          ? "Sin fin de prueba"
+          : daysLeft === 0
+            ? "Vence hoy"
+            : `Quedan ${daysLeft} dia${daysLeft === 1 ? "" : "s"}`,
+    };
+  }
+
+  return {
+    label: "Activo",
+    detail:
+      draft.plan_type === "per_service"
+        ? "Opera con fee por pedido y corte mensual."
+        : "Opera con mensualidad activa.",
+    badgeClass: "bg-green-100 text-green-700",
+    daysLabel:
+      daysLeft === null
+        ? "Sin proximo cobro"
+        : daysLeft === 0
+          ? "Vence hoy"
+          : `Quedan ${daysLeft} dia${daysLeft === 1 ? "" : "s"}`,
+  };
+}
+
 function mapStoreToDraft(store: any, deliverySettings?: any): StoreDraft {
   return {
     ...initialDraft,
@@ -170,6 +271,7 @@ function mapStoreToDraft(store: any, deliverySettings?: any): StoreDraft {
       deliverySettings?.pickup_enabled ?? store.accepts_pickup !== false,
     is_active: store.is_active !== false,
     plan_type: store.plan_type || "trial",
+    service_fee_payer: store.service_fee_payer === "customer" ? "customer" : "merchant",
     trial_started_at: toDateInput(store.trial_started_at),
     trial_ends_at: toDateInput(store.trial_ends_at),
     subscription_status: store.subscription_status || (store.plan_type === "trial" ? "trial" : "active"),
@@ -247,6 +349,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
         if (value === "per_service") next.monthly_price_usd = PER_SERVICE_FEE_USD.toFixed(2);
         if (value === "trial" || value === "founder") next.monthly_price_usd = "0";
         next.subscription_status = value === "trial" ? "trial" : "active";
+        if (value === "per_service" && !current.service_fee_payer) next.service_fee_payer = "merchant";
       }
       if (field === "admin_delivery_provider") {
         next.admin_delivery_enabled = value !== "disabled";
@@ -335,7 +438,23 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
     }
   }
 
-  async function saveSubscription() {
+  function buildSubscriptionPayload(source: StoreDraft) {
+    return {
+      plan_type: source.plan_type,
+      service_fee_payer: source.service_fee_payer,
+      subscription_status: source.subscription_status,
+      trial_started_at: source.trial_started_at,
+      trial_ends_at: source.trial_ends_at,
+      subscription_started_at: source.subscription_started_at,
+      subscription_ends_at: source.subscription_ends_at,
+      next_payment_due_at: source.next_payment_due_at,
+      monthly_price_usd: Number(source.monthly_price_usd || 0),
+      billing_notes: source.billing_notes,
+      last_payment_at: source.last_payment_at,
+    };
+  }
+
+  async function saveSubscriptionDraft(source: StoreDraft, successMessage = "Suscripcion actualizada.") {
     if (!isEditing || !storeId) return;
 
     setIsSaving(true);
@@ -345,19 +464,15 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
     try {
       const data = await adminRequest(`/api/admin/stores/${storeId}/subscription`, "", {
         method: "PATCH",
-        body: JSON.stringify({
-          plan_type: draft.plan_type,
-          subscription_status: draft.subscription_status,
-          trial_started_at: draft.trial_started_at,
-          trial_ends_at: draft.trial_ends_at,
-          subscription_started_at: draft.subscription_started_at,
-          subscription_ends_at: draft.subscription_ends_at,
-          next_payment_due_at: draft.next_payment_due_at,
-          monthly_price_usd: Number(draft.monthly_price_usd || 0),
-          billing_notes: draft.billing_notes,
-          last_payment_at: draft.last_payment_at,
-        }),
+        body: JSON.stringify(buildSubscriptionPayload(source)),
       });
+
+      if (
+        source.subscription_status === "past_due" &&
+        !["past_due", "expired"].includes(String(data.store?.subscription_status || ""))
+      ) {
+        throw new Error("Supabase no devolvio el comercio como vencido. Recarga y vuelve a intentar.");
+      }
 
       setDraft((current) => ({
         ...mapStoreToDraft(data.store),
@@ -365,7 +480,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
         admin_delivery_enabled: current.admin_delivery_enabled,
         admin_pickup_enabled: current.admin_pickup_enabled,
       }));
-      setMessage(data.message || "Suscripcion actualizada.");
+      setMessage(successMessage || data.message || "Suscripcion actualizada.");
     } catch (error: any) {
       setError(error.message || "No se pudo guardar la suscripcion.");
     } finally {
@@ -373,19 +488,75 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
     }
   }
 
-  function extendPlan(days: number) {
-    const nextDate = addDaysToDateInput(
-      draft.subscription_ends_at || draft.next_payment_due_at,
-      days
-    );
+  async function saveSubscription() {
+    await saveSubscriptionDraft(draft);
+  }
+
+  function startTrial(days = 15) {
+    const today = todayDateInput();
+    const endsAt = addDaysToDateInput(today, days);
     setDraft((current) => ({
       ...current,
-      subscription_status: "active",
-      subscription_started_at: current.subscription_started_at || new Date().toISOString().slice(0, 10),
-      subscription_ends_at: nextDate,
-      next_payment_due_at: nextDate,
-      last_payment_at: new Date().toISOString().slice(0, 10),
+      plan_type: "trial",
+      subscription_status: "trial",
+      trial_started_at: today,
+      trial_ends_at: endsAt,
+      subscription_started_at: "",
+      subscription_ends_at: "",
+      next_payment_due_at: endsAt,
+      monthly_price_usd: "0",
     }));
+  }
+
+  function activateMonthly(days = 30) {
+    const today = todayDateInput();
+    const endsAt = addDaysToDateInput(today, days);
+    setDraft((current) => ({
+      ...current,
+      plan_type: "monthly",
+      subscription_status: "active",
+      subscription_started_at: current.subscription_started_at || today,
+      subscription_ends_at: endsAt,
+      next_payment_due_at: endsAt,
+      monthly_price_usd: "20",
+      last_payment_at: today,
+    }));
+  }
+
+  function activatePerService() {
+    const today = todayDateInput();
+    const endsAt = addDaysToDateInput(today, 30);
+    setDraft((current) => ({
+      ...current,
+      plan_type: "per_service",
+      subscription_status: "active",
+      subscription_started_at: current.subscription_started_at || today,
+      subscription_ends_at: endsAt,
+      next_payment_due_at: endsAt,
+      monthly_price_usd: PER_SERVICE_FEE_USD.toFixed(2),
+      service_fee_payer: current.service_fee_payer || "merchant",
+      last_payment_at: today,
+    }));
+  }
+
+  async function markPastDue() {
+    const yesterday = yesterdayDateInput();
+    const nextDraft = {
+      ...draft,
+      subscription_status: "past_due",
+      trial_ends_at: draft.plan_type === "trial" ? yesterday : draft.trial_ends_at,
+      subscription_ends_at:
+        draft.plan_type === "monthly" || draft.plan_type === "per_service"
+          ? yesterday
+          : draft.subscription_ends_at,
+      next_payment_due_at: yesterday,
+    };
+
+    setDraft(nextDraft);
+
+    if (isEditing && storeId) {
+      await saveSubscriptionDraft(nextDraft, "Comercio marcado como vencido.");
+    }
   }
 
   async function toggleActive() {
@@ -485,6 +656,11 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
     );
   }
 
+  const subscription = subscriptionSummary(draft);
+  const primarySubscriptionDate = getPrimarySubscriptionDate(draft);
+  const feePayerLabel =
+    draft.service_fee_payer === "customer" ? "lo paga el cliente" : "lo asume el comercio";
+
   return (
     <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
       <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
@@ -543,25 +719,11 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
               Plan y suscripcion
             </h3>
             <p className="mt-1 text-sm font-bold text-[#746f69]">
-              Control manual de trial, vencimiento, monto y estado comercial.
+              Vista simple para saber si el comercio puede operar y que falta por cobrar o aprobar.
             </p>
           </div>
           {isEditing ? (
             <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => extendPlan(30)}
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-green-100 px-4 py-3 text-sm font-black text-green-700"
-              >
-                Extender 30 días
-              </button>
-              <button
-                type="button"
-                onClick={() => extendPlan(365)}
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-blue-100 px-4 py-3 text-sm font-black text-blue-700"
-              >
-                Extender 1 año
-              </button>
             <button
               type="button"
               onClick={saveSubscription}
@@ -575,6 +737,125 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
           ) : null}
         </div>
 
+        <div className="mt-4 grid gap-3 xl:grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr]">
+          <div className="rounded-[24px] bg-white p-4 ring-1 ring-[#25262B]/[0.06]">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={["rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.12em]", subscription.badgeClass].join(" ")}>
+                {subscription.label}
+              </span>
+              <span className="rounded-full bg-[#F8F3E8] px-3 py-1 text-xs font-black text-[#746f69]">
+                {planLabel(draft.plan_type)}
+              </span>
+            </div>
+            <p className="mt-3 text-2xl font-black text-[#25262B]">{subscription.daysLabel}</p>
+            <p className="mt-1 text-sm font-bold text-[#746f69]">{subscription.detail}</p>
+          </div>
+          <div className="rounded-[24px] bg-white p-4 ring-1 ring-[#25262B]/[0.06]">
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Plan elegido</p>
+            <p className="mt-2 text-lg font-black text-[#25262B]">{planLabel(draft.plan_type)}</p>
+            <p className="mt-1 text-sm font-bold text-[#746f69]">
+              {draft.plan_type === "per_service"
+                ? `${formatAdminDate(primarySubscriptionDate)} - ${feePayerLabel}`
+                : formatAdminDate(primarySubscriptionDate)}
+            </p>
+          </div>
+          <div className="rounded-[24px] bg-white p-4 ring-1 ring-[#25262B]/[0.06]">
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
+              {draft.plan_type === "per_service" ? "Fee" : "Monto"}
+            </p>
+            <p className="mt-2 text-lg font-black text-[#25262B]">
+              ${Number(draft.monthly_price_usd || 0).toFixed(2)}
+            </p>
+            <p className="mt-1 text-sm font-bold text-[#746f69]">
+              {draft.plan_type === "per_service" ? "por pedido" : "mensual"}
+            </p>
+          </div>
+          <div className="rounded-[24px] bg-white p-4 ring-1 ring-[#25262B]/[0.06]">
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Pago pendiente</p>
+            <p className="mt-2 text-lg font-black text-[#25262B]">Revisar pagos</p>
+            <p className="mt-1 text-sm font-bold text-[#746f69]">
+              Las referencias se aprueban en Suscripciones.
+            </p>
+            <Link href="/admin/suscripciones" className="mt-3 inline-flex rounded-full bg-[#2E3A79] px-4 py-2 text-xs font-black text-white">
+              Abrir pagos
+            </Link>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-4">
+          <button
+            type="button"
+            onClick={() => startTrial(15)}
+            className="rounded-2xl bg-white px-4 py-3 text-left text-sm font-black text-[#25262B] ring-1 ring-[#25262B]/10"
+          >
+            Dar prueba 15 dias
+            <span className="mt-1 block text-xs font-bold text-[#746f69]">Reinicia el periodo gratis.</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => activateMonthly(30)}
+            className="rounded-2xl bg-green-100 px-4 py-3 text-left text-sm font-black text-green-800"
+          >
+            Activar mensual 30 dias
+            <span className="mt-1 block text-xs font-bold text-green-700">Usar despues de aprobar pago.</span>
+          </button>
+          <button
+            type="button"
+            onClick={activatePerService}
+            className="rounded-2xl bg-[#2E3A79] px-4 py-3 text-left text-sm font-black text-white"
+          >
+            Activar fee por pedido
+            <span className="mt-1 block text-xs font-bold text-white/75">Corte mensual automatico.</span>
+          </button>
+          <button
+            type="button"
+            onClick={markPastDue}
+            disabled={isSaving}
+            className="rounded-2xl bg-red-100 px-4 py-3 text-left text-sm font-black text-red-700"
+          >
+            Marcar vencido y guardar
+            <span className="mt-1 block text-xs font-bold text-red-600">Bloquea de inmediato hasta elegir plan.</span>
+          </button>
+        </div>
+
+        {draft.plan_type === "per_service" ? (
+          <div className="mt-4 rounded-[24px] bg-white p-4 ring-1 ring-[#25262B]/[0.06]">
+            <p className="text-sm font-black text-[#25262B]">Quien paga el fee por pedido?</p>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => updateField("service_fee_payer", "merchant")}
+                className={[
+                  "rounded-2xl px-4 py-3 text-left text-sm font-black ring-1",
+                  draft.service_fee_payer === "merchant"
+                    ? "bg-[#2E3A79] text-white ring-[#2E3A79]"
+                    : "bg-[#F8F3E8] text-[#25262B] ring-[#25262B]/10",
+                ].join(" ")}
+              >
+                Lo asume el comercio
+                <span className="mt-1 block text-xs font-bold opacity-75">No se muestra al cliente; se acumula al comercio.</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => updateField("service_fee_payer", "customer")}
+                className={[
+                  "rounded-2xl px-4 py-3 text-left text-sm font-black ring-1",
+                  draft.service_fee_payer === "customer"
+                    ? "bg-[#2E3A79] text-white ring-[#2E3A79]"
+                    : "bg-[#F8F3E8] text-[#25262B] ring-[#25262B]/10",
+                ].join(" ")}
+              >
+                Lo paga el cliente
+                <span className="mt-1 block text-xs font-bold opacity-75">Se suma al total del pedido.</span>
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <details className="mt-4 rounded-[24px] bg-white p-4 ring-1 ring-[#25262B]/[0.06]">
+          <summary className="cursor-pointer text-sm font-black text-[#2E3A79]">
+            Ajustes avanzados de fechas y cobro
+          </summary>
         <div className="mt-4 grid gap-4 xl:grid-cols-4">
           <Field label="Plan">
             <select value={draft.plan_type} onChange={(event) => updateField("plan_type", event.target.value)} className={inputClass}>
@@ -616,6 +897,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
         <Field label="Notas internas de facturacion">
           <textarea value={draft.billing_notes} onChange={(event) => updateField("billing_notes", event.target.value)} rows={2} className={inputClass} />
         </Field>
+        </details>
       </section>
 
       {!isEditing ? (

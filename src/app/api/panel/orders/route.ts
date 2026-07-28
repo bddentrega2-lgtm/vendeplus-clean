@@ -8,6 +8,7 @@ import {
   requirePanelAuth,
 } from "@/lib/panel/access";
 import { getInitialPaymentStatus, getSuggestedPaymentCurrency, isPaymentStatus } from "@/lib/payments";
+import { isStoreSubscriptionPastDue } from "@/lib/supabase/catalog";
 import { isMissingColumnError } from "@/lib/supabase/schema-compat";
 import { normalizePhone } from "@/lib/customers/normalize-phone";
 import { safeUpsertCustomerFromOrder } from "@/lib/customers/upsert-customer-from-order";
@@ -618,11 +619,14 @@ export async function POST(request: NextRequest) {
 
     const { data: store, error: storeError } = await supabase
       .from("stores")
-      .select("id, name, usd_to_bs, plan_type, service_fee_payer, service_fee_billing_cycle")
+      .select("id, name, usd_to_bs, plan_type, service_fee_payer, service_fee_billing_cycle, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
       .eq("id", storeId)
       .single();
 
     if (storeError) throw storeError;
+    if (isStoreSubscriptionPastDue(store as any)) {
+      return badRequest("La suscripcion de este comercio esta vencida. Elige un plan en Suscripcion para volver a crear pedidos.");
+    }
 
     const productIds = Array.from(
       new Set(requestedItems.map((item) => item.productId))
@@ -721,7 +725,7 @@ export async function POST(request: NextRequest) {
       platform_service_fee_usd: platformServiceFeeUsd,
       platform_service_fee_payer: platformServiceFeeUsd > 0 ? platformServiceFeePayer : null,
       platform_service_fee_customer_usd: platformServiceFeeCustomerUsd,
-      platform_service_fee_billing_cycle: platformServiceFeeUsd > 0 ? ((store as any).service_fee_billing_cycle === "weekly" ? "weekly" : "monthly") : null,
+      platform_service_fee_billing_cycle: platformServiceFeeUsd > 0 ? "monthly" : null,
       distance_km: null,
       delivery_lat: null,
       delivery_lng: null,

@@ -114,7 +114,7 @@ function normalizeStorePayload(body: any) {
     accepts_national_shipping: Boolean(body.accepts_national_shipping),
     is_active: Boolean(body.is_active),
     service_fee_payer: body.service_fee_payer === "customer" ? "customer" : "merchant",
-    service_fee_billing_cycle: body.service_fee_billing_cycle === "weekly" ? "weekly" : "monthly",
+    service_fee_billing_cycle: "monthly",
   };
 }
 
@@ -183,6 +183,7 @@ const baseStoreSelect = `
   accepts_pickup,
   is_active,
   subscription_status,
+  trial_ends_at,
   subscription_ends_at,
   next_payment_due_at,
   monthly_price_usd,

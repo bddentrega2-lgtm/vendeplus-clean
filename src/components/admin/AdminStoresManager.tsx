@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
-  Building2,
   CheckCircle2,
   Copy,
   ExternalLink,
@@ -32,9 +31,16 @@ type StoreRow = {
   accepts_delivery: boolean;
   accepts_pickup: boolean;
   plan_type?: string | null;
+  service_fee_payer?: string | null;
   subscription_status?: string | null;
+  trial_started_at?: string | null;
   trial_ends_at?: string | null;
+  subscription_started_at?: string | null;
+  subscription_ends_at?: string | null;
   next_payment_due_at?: string | null;
+  monthly_price_usd?: number | null;
+  billing_notes?: string | null;
+  last_payment_at?: string | null;
   created_at?: string | null;
   product_count: number;
   active_product_count: number;
@@ -61,23 +67,88 @@ async function apiRequest(pin: string, path = "/api/admin/stores", options?: Req
 
 function formatDate(value?: string | null) {
   if (!value) return "Sin fecha";
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T12:00:00`) : new Date(value);
   return new Intl.DateTimeFormat("es-VE", {
     timeZone: "America/Caracas",
     day: "2-digit",
     month: "short",
     year: "numeric",
-  }).format(new Date(value));
+  }).format(date);
 }
 
-function statusBadge(store: StoreRow) {
-  if (!store.is_active) return { label: "Pausado", className: "bg-red-100 text-red-700" };
-  if (store.subscription_status === "expired" || store.subscription_status === "past_due") {
-    return { label: "Vencido", className: "bg-amber-100 text-amber-700" };
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function getTodayDateOnly() {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function getStoreCutoff(store: StoreRow) {
+  return store.next_payment_due_at || store.subscription_ends_at || store.trial_ends_at || null;
+}
+
+function toDateInput(value?: string | null) {
+  if (!value) return "";
+  return value.slice(0, 10);
+}
+
+function dateInputToDate(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function getCutoffStatus(value?: string | null) {
+  if (!value) {
+    return {
+      label: "Sin fecha",
+      daysLabel: "Configurar",
+      daysRemaining: null,
+      className: "bg-amber-50 text-amber-700 ring-amber-200",
+      isUrgent: true,
+    };
   }
-  if (store.plan_type === "trial" || store.subscription_status === "trial") {
-    return { label: "Trial", className: "bg-blue-100 text-blue-700" };
+
+  const daysRemaining = Math.round((dateInputToDate(toDateInput(value)).getTime() - getTodayDateOnly().getTime()) / DAY_MS);
+
+  if (daysRemaining < 0) {
+    return {
+      label: "Vencido",
+      daysLabel: `${Math.abs(daysRemaining)} días vencido`,
+      daysRemaining,
+      className: "bg-red-50 text-red-700 ring-red-200",
+      isUrgent: true,
+    };
   }
-  return { label: "Activo", className: "bg-green-100 text-green-700" };
+
+  if (daysRemaining === 0) {
+    return {
+      label: "Activo",
+      daysLabel: "Vence hoy",
+      daysRemaining,
+      className: "bg-red-50 text-red-700 ring-red-200",
+      isUrgent: true,
+    };
+  }
+
+  if (daysRemaining < 3) {
+    return {
+      label: "Activo",
+      daysLabel: `${daysRemaining} días`,
+      daysRemaining,
+      className: "bg-red-50 text-red-700 ring-red-200",
+      isUrgent: true,
+    };
+  }
+
+  return {
+    label: "Activo",
+    daysLabel: `${daysRemaining} días`,
+    daysRemaining,
+    className: "bg-green-50 text-green-700 ring-green-200",
+    isUrgent: false,
+  };
 }
 
 export function AdminStoresManager() {
@@ -90,6 +161,8 @@ export function AdminStoresManager() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [recentThresholdMs, setRecentThresholdMs] = useState(0);
+  const [cutoffDrafts, setCutoffDrafts] = useState<Record<string, string>>({});
+  const [savingCutoffId, setSavingCutoffId] = useState("");
 
   const filteredStores = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -123,7 +196,13 @@ export function AdminStoresManager() {
 
     try {
       const data = await apiRequest("");
-      setStores(data.stores || []);
+      const loadedStores = data.stores || [];
+      setStores(loadedStores);
+      setCutoffDrafts(
+        Object.fromEntries(
+          loadedStores.map((store: StoreRow) => [store.id, toDateInput(getStoreCutoff(store))])
+        )
+      );
       setIsUnlocked(true);
     } catch (error: any) {
       setError(error.message || "No se pudo cargar comercios.");
@@ -153,6 +232,66 @@ export function AdminStoresManager() {
   async function copyStoreLink(store: StoreRow) {
     await navigator.clipboard.writeText(buildClientPublicUrl(`/${store.slug}`));
     setMessage(`Link copiado: /${store.slug}`);
+  }
+
+  async function saveCutoffDate(store: StoreRow) {
+    const cutoffDate = cutoffDrafts[store.id];
+    setMessage("");
+    setError("");
+
+    if (!cutoffDate) {
+      setError("Elige una fecha de corte para guardar.");
+      return;
+    }
+
+    setSavingCutoffId(store.id);
+
+    try {
+      const status = dateInputToDate(cutoffDate).getTime() < getTodayDateOnly().getTime() ? "past_due" : "active";
+      const planType = store.plan_type || "monthly";
+      const data = await apiRequest("", `/api/admin/stores/${store.id}/subscription`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          plan_type: planType,
+          service_fee_payer: store.service_fee_payer || "merchant",
+          subscription_status: status,
+          trial_started_at: store.trial_started_at || null,
+          trial_ends_at: cutoffDate,
+          subscription_started_at: store.subscription_started_at || new Date().toISOString().slice(0, 10),
+          subscription_ends_at: cutoffDate,
+          next_payment_due_at: cutoffDate,
+          monthly_price_usd: store.monthly_price_usd ?? 0,
+          billing_notes: store.billing_notes || null,
+          last_payment_at: store.last_payment_at || null,
+        }),
+      });
+
+      setStores((current) =>
+        current.map((entry) =>
+          entry.id === store.id
+            ? {
+                ...entry,
+                ...data.store,
+                product_count: entry.product_count,
+                active_product_count: entry.active_product_count,
+                order_count: entry.order_count,
+                order_count_30d: entry.order_count_30d,
+                user_count: entry.user_count,
+              }
+            : entry
+        )
+      );
+      setCutoffDrafts((current) => ({ ...current, [store.id]: cutoffDate }));
+      setMessage(
+        status === "past_due"
+          ? `${store.name} quedó vencido con corte ${formatDate(cutoffDate)}.`
+          : `${store.name} quedó activo hasta ${formatDate(cutoffDate)}.`
+      );
+    } catch (error: any) {
+      setError(error.message || "No se pudo guardar la fecha de corte.");
+    } finally {
+      setSavingCutoffId("");
+    }
   }
 
   useEffect(() => {
@@ -270,88 +409,126 @@ export function AdminStoresManager() {
         {error ? <p className="mt-3 text-sm font-black text-red-600">{error}</p> : null}
       </section>
 
-      <section className="grid gap-3">
+      <section className="overflow-hidden rounded-[24px] bg-white shadow-xl shadow-[#2E3A79]/[0.06] ring-1 ring-[#25262B]/[0.06]">
+        <div className="hidden grid-cols-[minmax(260px,1fr)_92px_160px_170px_270px] gap-3 border-b border-[#25262B]/10 bg-[#F8F3E8] px-4 py-3 text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69] xl:grid">
+          <span>Comercio</span>
+          <span>Total pedidos</span>
+          <span>Estado</span>
+          <span>Fecha de corte</span>
+          <span className="text-right">Acciones</span>
+        </div>
+
         {filteredStores.map((store) => {
-          const badge = statusBadge(store);
+          const cutoff = getStoreCutoff(store);
+          const status = getCutoffStatus(cutoff);
+          const draftDate = cutoffDrafts[store.id] ?? toDateInput(cutoff);
+          const isSaving = savingCutoffId === store.id;
+          const isDraftDirty = draftDate !== toDateInput(cutoff);
 
           return (
             <article
               key={store.id}
-              className="rounded-[26px] bg-white p-4 shadow-xl shadow-[#2E3A79]/[0.06] ring-1 ring-[#25262B]/[0.06]"
+              className="grid gap-3 border-b border-[#25262B]/10 px-4 py-3 last:border-b-0 xl:min-h-[78px] xl:grid-cols-[minmax(260px,1fr)_92px_160px_170px_270px] xl:items-center"
             >
-              <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr_auto] xl:items-center">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Building2 size={19} className="text-[#2E3A79]" />
-                    <h3 className="text-xl font-black">{store.name}</h3>
-                    <span className={`rounded-full px-3 py-1 text-xs font-black ${badge.className}`}>
-                      {badge.label}
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="truncate text-base font-black">{store.name}</h3>
+                  {!store.is_active && (
+                    <span className="rounded-full bg-red-100 px-2 py-1 text-[11px] font-black text-red-700">
+                      Pausado
                     </span>
-                    <span className="rounded-full bg-[#F8F3E8] px-3 py-1 text-xs font-black text-[#2E3A79]">
-                      {store.plan_type || "trial"}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-sm font-bold text-[#746f69]">
-                    /{store.slug} - {store.business_type || "general"} - {store.whatsapp || "sin WhatsApp"}
-                  </p>
-                  <p className="mt-1 text-xs font-bold text-[#746f69]">
-                    Vence/cobra: {formatDate(store.next_payment_due_at || store.trial_ends_at)} - Creado: {formatDate(store.created_at)}
-                  </p>
+                  )}
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-black ring-1 ${status.className}`}>
+                    {status.label}
+                  </span>
                 </div>
+                <p className="mt-0.5 truncate text-xs font-bold text-[#746f69]">
+                  /{store.slug} · {store.business_type || "general"} · {store.whatsapp || "sin WhatsApp"}
+                </p>
+              </div>
 
-                <div className="grid grid-cols-4 gap-2 text-center">
-                  <div className="rounded-2xl bg-[#F8F3E8] px-3 py-2">
-                    <p className="text-lg font-black">{store.active_product_count}</p>
-                    <p className="text-[10px] font-black uppercase tracking-[0.1em] text-[#746f69]">Productos</p>
-                  </div>
-                  <div className="rounded-2xl bg-[#F8F3E8] px-3 py-2">
-                    <p className="text-lg font-black">{store.order_count}</p>
-                    <p className="text-[10px] font-black uppercase tracking-[0.1em] text-[#746f69]">Pedidos</p>
-                  </div>
-                  <div className="rounded-2xl bg-[#F8F3E8] px-3 py-2">
-                    <p className="text-lg font-black">{store.order_count_30d}</p>
-                    <p className="text-[10px] font-black uppercase tracking-[0.1em] text-[#746f69]">30 dias</p>
-                  </div>
-                  <div className="rounded-2xl bg-[#F8F3E8] px-3 py-2">
-                    <p className="text-lg font-black">{store.user_count}</p>
-                    <p className="text-[10px] font-black uppercase tracking-[0.1em] text-[#746f69]">Usuarios</p>
-                  </div>
-                </div>
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69] xl:hidden">
+                  Total pedidos
+                </p>
+                <p className="text-base font-black text-[#25262B]">{store.order_count}</p>
+              </div>
 
-                <div className="flex flex-wrap justify-start gap-2 xl:justify-end">
-                  <Link
-                    href={`/admin/comercios/${store.id}`}
-                    className="inline-flex items-center justify-center gap-2 rounded-full bg-[#25262B] px-4 py-3 text-sm font-black text-white"
-                  >
-                    <Pencil size={16} />
-                    Ver
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => toggleStore(store)}
-                    className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F8F3E8] px-4 py-3 text-sm font-black text-[#2E3A79]"
-                  >
-                    {store.is_active ? <PauseCircle size={16} /> : <CheckCircle2 size={16} />}
-                    {store.is_active ? "Pausar" : "Activar"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => copyStoreLink(store)}
-                    className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-4 py-3 text-sm font-black text-[#2E3A79] ring-1 ring-[#25262B]/10"
-                  >
-                    <Copy size={16} />
-                    Copiar
-                  </button>
-                  <a
-                    href={`/${store.slug}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-4 py-3 text-sm font-black text-white"
-                  >
-                    <ExternalLink size={16} />
-                    Catalogo
-                  </a>
-                </div>
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69] xl:hidden">
+                  Estado
+                </p>
+                <p className={["text-sm font-black leading-tight", status.isUrgent ? "text-red-700" : "text-green-700"].join(" ")}>
+                  {status.daysLabel}
+                </p>
+                <p className="text-[11px] font-bold text-[#746f69]">{status.label}</p>
+              </div>
+
+              <label className="block">
+                <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69] xl:hidden">
+                  Fecha de corte
+                </span>
+                <input
+                  type="date"
+                  value={draftDate}
+                  onChange={(event) =>
+                    setCutoffDrafts((current) => ({ ...current, [store.id]: event.target.value }))
+                  }
+                  className="mt-1 w-full rounded-xl border border-[#25262B]/10 bg-white px-3 py-2 text-sm font-black text-[#25262B] outline-none focus:border-[#2E3A79]"
+                />
+              </label>
+
+              <div className="flex flex-wrap justify-start gap-1.5 xl:flex-nowrap xl:justify-end">
+                <button
+                  type="button"
+                  onClick={() => saveCutoffDate(store)}
+                  disabled={isSaving || !draftDate}
+                  className={[
+                    "inline-flex h-9 items-center justify-center gap-1.5 rounded-full px-3 text-xs font-black",
+                    isDraftDirty
+                      ? "bg-[#FFB547] text-[#25262B]"
+                      : "bg-[#F8F3E8] text-[#2E3A79]",
+                    isSaving || !draftDate ? "cursor-not-allowed opacity-60" : "",
+                  ].join(" ")}
+                >
+                  {isSaving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                  Guardar
+                </button>
+                <Link
+                  href={`/admin/comercios/${store.id}`}
+                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full bg-[#25262B] px-3 text-xs font-black text-white"
+                >
+                  <Pencil size={14} />
+                  Ver
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => toggleStore(store)}
+                  title={store.is_active ? "Pausar comercio" : "Activar comercio"}
+                  aria-label={store.is_active ? "Pausar comercio" : "Activar comercio"}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#F8F3E8] text-[#2E3A79]"
+                >
+                  {store.is_active ? <PauseCircle size={14} /> : <CheckCircle2 size={14} />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => copyStoreLink(store)}
+                  title="Copiar link"
+                  aria-label="Copiar link"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-[#2E3A79] ring-1 ring-[#25262B]/10"
+                >
+                  <Copy size={14} />
+                </button>
+                <a
+                  href={`/${store.slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Abrir catálogo"
+                  aria-label="Abrir catálogo"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#2E3A79] text-white"
+                >
+                  <ExternalLink size={14} />
+                </a>
               </div>
             </article>
           );

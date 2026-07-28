@@ -65,6 +65,7 @@ function ProductOptionsSheet({
   onRetryLoadOptions,
   onClose,
   onAdded,
+  isStoreOpen = true,
 }: {
   product: Product;
   storeSlug: string;
@@ -79,6 +80,7 @@ function ProductOptionsSheet({
   onRetryLoadOptions?: () => void;
   onClose: () => void;
   onAdded: () => void;
+  isStoreOpen?: boolean;
 }) {
   const initialSelections = useMemo(() => {
     return {};
@@ -145,6 +147,11 @@ function ProductOptionsSheet({
   }
 
   function addCustomizedProduct() {
+    if (!isStoreOpen) {
+      setMessage("El comercio esta cerrado por horario. Puedes revisar el catalogo, pero no hacer pedidos ahora.");
+      return;
+    }
+
     const validation = validateSelections();
     if (validation) {
       setMessage(validation);
@@ -314,16 +321,16 @@ function ProductOptionsSheet({
           <button
             type="button"
             onClick={addCustomizedProduct}
-            disabled={isLoadingOptions || !hasLoadedOptions}
+            disabled={!isStoreOpen || isLoadingOptions || !hasLoadedOptions}
             className={[
               "inline-flex w-full items-center justify-center gap-2 rounded-full px-5 py-4 text-sm font-black",
-              isLoadingOptions || !hasLoadedOptions
+              !isStoreOpen || isLoadingOptions || !hasLoadedOptions
                 ? "bg-[#F8F3E8] text-[#746f69]"
                 : "bg-[#FFB547] text-[#25262B]",
             ].join(" ")}
           >
             <Plus size={18} />
-            Añadir al carrito
+            {!isStoreOpen ? "Cerrado por horario" : "Añadir al carrito"}
           </button>
         </div>
       </section>
@@ -338,6 +345,7 @@ export function ProductListItem({
   baseCurrency = "USD",
   showPricesInBs = true,
   cartQuantity = 0,
+  isStoreOpen = true,
 }: {
   product: Product;
   storeSlug: string;
@@ -345,6 +353,7 @@ export function ProductListItem({
   baseCurrency?: "USD" | "EUR" | string;
   showPricesInBs?: boolean;
   cartQuantity?: number;
+  isStoreOpen?: boolean;
 }) {
   const hasVariants = Boolean(product.variants?.length);
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
@@ -375,7 +384,7 @@ export function ProductListItem({
     if (!product.discountPercent || product.discountPercent <= 0) return null;
     return selectedVariant?.originalPriceUsd || product.originalPriceUsd || null;
   }, [product.discountPercent, product.originalPriceUsd, selectedVariant]);
-  const canAdd = !hasVariants || Boolean(selectedVariant);
+  const canAdd = isStoreOpen && (!hasVariants || Boolean(selectedVariant));
 
   async function loadOptionGroups() {
     if (loadedOptionGroups) return loadedOptionGroups;
@@ -415,6 +424,11 @@ export function ProductListItem({
   }
 
   async function handleAdd() {
+    if (!isStoreOpen) {
+      setOptionsMessage("El comercio esta cerrado por horario. Puedes revisar el catalogo, pero no hacer pedidos ahora.");
+      return;
+    }
+
     if (!canAdd) {
       return;
     }
@@ -452,7 +466,7 @@ export function ProductListItem({
   }
 
   function prefetchOptions() {
-    if (!canAdd || !hasOptionGroups || loadedOptionGroups || isLoadingOptions) return;
+    if (!isStoreOpen || !canAdd || !hasOptionGroups || loadedOptionGroups || isLoadingOptions) return;
     void loadOptionGroups().catch(() => {
       // La apertura del modal muestra el error si el cliente intenta continuar.
     });
@@ -538,18 +552,18 @@ export function ProductListItem({
                 onClick={handleAdd}
                 onMouseEnter={prefetchOptions}
                 onFocus={prefetchOptions}
-                disabled={!canAdd}
+                disabled={!isStoreOpen || !canAdd}
                 className={[
                   "inline-flex min-h-8 shrink-0 items-center justify-center gap-1 rounded-full px-2.5 text-center text-[11px] font-black leading-tight",
                   added
                     ? "bg-[#6FA64F] text-white"
-                    : !canAdd
+                    : !isStoreOpen || !canAdd
                       ? "bg-[#F8F3E8] text-[#746f69]"
                     : "bg-[#FFB547] text-[#25262B]",
                 ].join(" ")}
               >
                 {added ? <Check size={15} /> : <Plus size={15} />}
-                {isLoadingOptions ? "Cargando" : added ? "Listo" : "Añadir"}
+                {!isStoreOpen ? "Cerrado" : isLoadingOptions ? "Cargando" : added ? "Listo" : "Añadir"}
               </button>
             </div>
             {optionsMessage ? (
@@ -577,6 +591,7 @@ export function ProductListItem({
           }}
           onClose={() => setIsCustomizing(false)}
           onAdded={markAdded}
+          isStoreOpen={isStoreOpen}
         />
       ) : null}
       {isGalleryOpen ? (

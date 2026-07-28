@@ -25,6 +25,8 @@ export const adminStoreSelect = `
   accepts_pickup,
   is_active,
   plan_type,
+  service_fee_payer,
+  service_fee_billing_cycle,
   trial_started_at,
   trial_ends_at,
   subscription_status,
@@ -54,6 +56,39 @@ function optionalNumber(value: unknown) {
   if (value === "" || value === null || value === undefined) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function yesterdayIsoDate() {
+  const date = new Date();
+  date.setDate(date.getDate() - 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function normalizePastDueDates<
+  T extends {
+    plan_type: string;
+    subscription_status: string;
+    trial_ends_at: string | null;
+    subscription_ends_at: string | null;
+    next_payment_due_at: string | null;
+  }
+>(payload: T): T {
+  if (!["past_due", "expired"].includes(payload.subscription_status)) return payload;
+
+  const yesterday = yesterdayIsoDate();
+  const fallbackCutoff =
+    payload.next_payment_due_at || payload.subscription_ends_at || payload.trial_ends_at || yesterday;
+
+  return {
+    ...payload,
+    trial_ends_at:
+      payload.plan_type === "trial" ? payload.trial_ends_at || fallbackCutoff : payload.trial_ends_at,
+    subscription_ends_at:
+      payload.plan_type === "monthly" || payload.plan_type === "per_service"
+        ? payload.subscription_ends_at || fallbackCutoff
+        : payload.subscription_ends_at,
+    next_payment_due_at: payload.next_payment_due_at || fallbackCutoff,
+  };
 }
 
 export function normalizeAdminDeliverySettingsPayload(body: any) {
@@ -122,7 +157,7 @@ export function normalizeAdminStorePayload(body: any) {
       ? "trial"
       : "active";
 
-  return {
+  return normalizePastDueDates({
     slug,
     name,
     description: cleanText(body.description) || null,
@@ -146,6 +181,8 @@ export function normalizeAdminStorePayload(body: any) {
     accepts_pickup: body.accepts_pickup !== false,
     is_active: body.is_active !== false,
     plan_type: planType,
+    service_fee_payer: body.service_fee_payer === "customer" ? "customer" : "merchant",
+    service_fee_billing_cycle: "monthly",
     trial_started_at: cleanText(body.trial_started_at) || null,
     trial_ends_at: cleanText(body.trial_ends_at) || null,
     subscription_status: subscriptionStatus,
@@ -161,7 +198,7 @@ export function normalizeAdminStorePayload(body: any) {
     ),
     billing_notes: cleanText(body.billing_notes) || null,
     last_payment_at: cleanText(body.last_payment_at) || null,
-  };
+  });
 }
 
 export function normalizeAdminSubscriptionPayload(body: any) {
@@ -181,8 +218,10 @@ export function normalizeAdminSubscriptionPayload(body: any) {
     ? cleanText(body.subscription_status)
     : "trial";
 
-  return {
+  return normalizePastDueDates({
     plan_type: planType,
+    service_fee_payer: body.service_fee_payer === "customer" ? "customer" : "merchant",
+    service_fee_billing_cycle: "monthly",
     subscription_status: subscriptionStatus,
     trial_started_at: cleanText(body.trial_started_at) || null,
     trial_ends_at: cleanText(body.trial_ends_at) || null,
@@ -198,5 +237,5 @@ export function normalizeAdminSubscriptionPayload(body: any) {
     ),
     billing_notes: cleanText(body.billing_notes) || null,
     last_payment_at: cleanText(body.last_payment_at) || null,
-  };
+  });
 }

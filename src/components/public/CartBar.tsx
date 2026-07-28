@@ -12,11 +12,13 @@ export function CartBar({
   usdToBs = 600,
   baseCurrency = "USD",
   showPricesInBs = true,
+  isStoreOpen = true,
 }: {
   storeSlug: string;
   usdToBs?: number;
   baseCurrency?: "USD" | "EUR" | string;
   showPricesInBs?: boolean;
+  isStoreOpen?: boolean;
 }) {
   const router = useRouter();
   const [count, setCount] = useState(0);
@@ -44,7 +46,7 @@ export function CartBar({
     }
   }, [count, router, storeSlug]);
 
-  if (count === 0) return null;
+  if (!isStoreOpen || count === 0) return null;
 
   return (
     <div className="vp-safe-bottom fixed inset-x-0 bottom-0 z-40 px-4 pb-4">

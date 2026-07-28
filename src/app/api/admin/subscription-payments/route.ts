@@ -7,9 +7,9 @@ function cleanText(value: unknown) {
   return String(value || "").trim();
 }
 
-function addMonths(date: Date, months: number) {
+function addDays(date: Date, days: number) {
   const next = new Date(date);
-  next.setMonth(next.getMonth() + months);
+  next.setDate(next.getDate() + days);
   return next;
 }
 
@@ -63,15 +63,10 @@ export async function PATCH(request: NextRequest) {
     const status = action === "reject" ? "rejected" : "approved";
 
     if (status === "approved") {
-      const store = (payment as any).stores || {};
       const planType = cleanText((payment as any).plan_type) || "monthly";
-      const currentEnd = store.subscription_ends_at || store.next_payment_due_at;
-      const baseDate =
-        planType !== "per_service" && currentEnd && new Date(currentEnd).getTime() > Date.now()
-          ? new Date(currentEnd)
-          : new Date();
-      const months = (payment as any).billing_period === "annual" ? 12 : 1;
-      const nextDue = addMonths(baseDate, months).toISOString();
+      const baseDate = new Date();
+      const days = (payment as any).billing_period === "annual" ? 365 : 30;
+      const nextDue = addDays(baseDate, days).toISOString();
 
       const { error: storeError } = await supabase
         .from("stores")
@@ -84,6 +79,7 @@ export async function PATCH(request: NextRequest) {
           last_payment_at: new Date().toISOString(),
           monthly_price_usd:
             planType === "per_service" ? PER_SERVICE_FEE_USD : Number((payment as any).amount_usd || 20),
+          service_fee_billing_cycle: "monthly",
         })
         .eq("id", (payment as any).store_id);
 
@@ -106,7 +102,7 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({
       payment: data,
-      message: status === "approved" ? "Pago aprobado y suscripción extendida." : "Pago rechazado.",
+      message: status === "approved" ? "Pago aprobado. El nuevo periodo queda activo por 30 días desde hoy." : "Pago rechazado.",
     });
   } catch (error) {
     return adminErrorResponse(error, "Error revisando pago.");

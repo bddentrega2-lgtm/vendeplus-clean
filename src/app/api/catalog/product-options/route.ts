@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
 
   const { data: store, error: storeError } = await supabase
     .from("stores")
-    .select("id, is_active, subscription_status, trial_ends_at, subscription_ends_at")
+    .select("id, is_active, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
     .eq("slug", storeSlug)
     .eq("is_active", true)
     .maybeSingle();
