@@ -9,6 +9,11 @@ import type { CheckoutFormData, DeliveryLocation, DeliveryQuote, SavedOrder, Sto
 import { clearCart, getCart, getCartSubtotal } from "@/lib/cart";
 import { formatBaseCurrency, formatBs } from "@/lib/currency";
 import {
+  clearCustomerBrowserProfile,
+  getCustomerBrowserProfile,
+  saveCustomerBrowserProfile,
+} from "@/lib/customer-browser-profile";
+import {
   buildMapsUrl,
   buildRouteUrl,
   calculateDeliveryQuoteFromSettings,
@@ -105,12 +110,28 @@ export function CheckoutForm({ store }: { store: Store }) {
   const [copied, setCopied] = useState(false);
   const [copiedPaymentLine, setCopiedPaymentLine] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [rememberCustomer, setRememberCustomer] = useState(true);
+  const [hasSavedCustomer, setHasSavedCustomer] = useState(false);
+  const [customerProfileLoaded, setCustomerProfileLoaded] = useState(false);
   const lastQuoteRequestRef = useRef("");
 
   useEffect(() => {
     setItems(getCart(store.slug));
     router.prefetch(`/${store.slug}/confirmacion`);
   }, [router, store.slug]);
+
+  useEffect(() => {
+    const profile = getCustomerBrowserProfile();
+    if (profile) {
+      setForm((current) => ({
+        ...current,
+        customerName: current.customerName || profile.name,
+        customerPhone: current.customerPhone || profile.phone,
+      }));
+      setHasSavedCustomer(true);
+    }
+    setCustomerProfileLoaded(true);
+  }, []);
 
   const subtotalUsd = useMemo(() => getCartSubtotal(items), [items]);
   const deliverySettings = useMemo(
@@ -479,6 +500,16 @@ export function CheckoutForm({ store }: { store: Store }) {
       }
 
       localStorage.setItem(getOrderKey(store.slug), JSON.stringify(saveResult.order));
+      if (rememberCustomer) {
+        const saved = saveCustomerBrowserProfile(
+          saveResult.order.form.customerName,
+          saveResult.order.form.customerPhone
+        );
+        setHasSavedCustomer(saved);
+      } else {
+        clearCustomerBrowserProfile();
+        setHasSavedCustomer(false);
+      }
       clearCart(store.slug);
       setItems([]);
       window.open(saveResult.order.whatsappUrl, "_blank", "noopener,noreferrer");
@@ -535,6 +566,34 @@ export function CheckoutForm({ store }: { store: Store }) {
                   <input className="vp-input" value={form.customerPhone} onChange={(event) => updateField("customerPhone", event.target.value)} placeholder="Ej: 0412-0000000" />
                 </label>
               </div>
+              {customerProfileLoaded ? (
+                <div className="mt-4 rounded-2xl bg-[#F6F4EF] px-4 py-3 ring-1 ring-[#25262B]/10">
+                  <label className="flex cursor-pointer items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={rememberCustomer}
+                      onChange={(event) => {
+                        const checked = event.target.checked;
+                        setRememberCustomer(checked);
+                        if (!checked && hasSavedCustomer) {
+                          clearCustomerBrowserProfile();
+                          setHasSavedCustomer(false);
+                        }
+                      }}
+                      className="mt-1 h-4 w-4 accent-[#2E3A79]"
+                    />
+                    <span className="text-sm font-bold leading-relaxed text-[#5F635E]">
+                      Recordar mi nombre y teléfono en este dispositivo para mis próximos pedidos en Somos.
+                    </span>
+                  </label>
+                  {hasSavedCustomer ? (
+                    <p className="mt-2 flex items-center gap-2 text-xs font-black text-[#2E3A79]">
+                      <ShieldCheck size={15} />
+                      Usamos los datos guardados de tu pedido anterior. Puedes editarlos.
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
             </section>
 
             <section className="vp-card p-4 sm:p-5">
