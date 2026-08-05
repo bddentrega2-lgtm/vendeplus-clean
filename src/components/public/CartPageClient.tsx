@@ -8,6 +8,7 @@ import type { CartItem, Store } from "@/types";
 import { getCart, getCartSubtotal, removeCartItem, updateCartItemQuantity } from "@/lib/cart";
 import { formatBaseCurrency, formatBs } from "@/lib/currency";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
+import { useLiveStoreOpenState } from "@/hooks/use-live-store-open-state";
 
 function formatSelectedOptions(item: CartItem, baseCurrency: "USD" | "EUR" | string) {
   const groups = new Map<string, string[]>();
@@ -51,7 +52,8 @@ export function CartPageClient({ store }: { store: Store }) {
   const baseCurrency = store.baseCurrency || "USD";
   const showPricesInBs = store.showPricesInBs !== false;
   const subtotalBs = subtotal * exchangeRate;
-  const isStoreOpen = store.openState?.isOpen !== false;
+  const openState = useLiveStoreOpenState(store);
+  const isStoreOpen = openState.isOpen;
 
   useEffect(() => {
     if (isStoreOpen && items.length > 0) {
@@ -98,7 +100,7 @@ export function CartPageClient({ store }: { store: Store }) {
           <section className="mt-5 rounded-[32px] bg-red-50 p-5 text-center text-red-700 ring-1 ring-red-100">
             <h2 className="text-xl font-black">Comercio cerrado por horario</h2>
             <p className="mt-2 text-sm font-bold">
-              {store.openState?.label || "Cerrado"}. Puedes revisar el catalogo, pero no abrir carrito ni finalizar pedidos ahora.
+              {openState.label}. Puedes revisar el catalogo, pero no abrir carrito ni finalizar pedidos ahora.
             </p>
             <Link href={`/${store.slug}`} className="vp-button-soft mt-5 w-full">
               Volver al catalogo

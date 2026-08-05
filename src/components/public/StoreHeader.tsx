@@ -1,11 +1,15 @@
+"use client";
+
 import Link from "next/link";
 import { Clock, MapPin, ShoppingBag, Star } from "lucide-react";
 import type { Store } from "@/types";
 import { BrandLogo } from "@/components/public/BrandLogo";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
+import { useLiveStoreOpenState } from "@/hooks/use-live-store-open-state";
 
 export function StoreHeader({ store }: { store: Store }) {
-  const isOpen = store.openState?.isOpen !== false;
+  const openState = useLiveStoreOpenState(store);
+  const isOpen = openState.isOpen;
 
   return (
     <header className="relative overflow-hidden rounded-b-[38px] bg-[#2E3A79] text-white shadow-2xl shadow-[#2E3A79]/20">
@@ -33,7 +37,7 @@ export function StoreHeader({ store }: { store: Store }) {
             <Star size={14} className="text-[#FFB547]" /> {store.badge}
           </div>
           <div className={isOpen ? "mb-3 inline-flex rounded-full bg-green-100 px-3 py-2 text-xs font-black text-green-700" : "mb-3 inline-flex rounded-full bg-red-100 px-3 py-2 text-xs font-black text-red-700"}>
-            {isOpen ? "Abierto ahora" : store.openState?.label || "Cerrado"}
+            {isOpen ? "Abierto ahora" : openState.label}
           </div>
           <h1 className="text-4xl font-black tracking-tight sm:text-5xl">{store.name}</h1>
           <p className="mt-3 max-w-xl text-base font-semibold leading-relaxed text-white/82">{store.description}</p>
@@ -42,7 +46,7 @@ export function StoreHeader({ store }: { store: Store }) {
             <div className="rounded-2xl bg-white/10 p-3 backdrop-blur">
               <Clock size={18} className="mb-1 text-[#FFB547]" />
               <p className="text-xs font-bold text-white/65">Horario</p>
-              <p className="text-sm font-black">{store.openState?.label || store.openingHours}</p>
+              <p className="text-sm font-black">{openState.label || store.openingHours}</p>
             </div>
             <div className="rounded-2xl bg-white/10 p-3 backdrop-blur">
               <MapPin size={18} className="mb-1 text-[#FFB547]" />

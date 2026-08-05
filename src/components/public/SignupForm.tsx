@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useState } from "react";
 import { ArrowRight, Check, Eye, EyeOff, Loader2, Lock, Store } from "lucide-react";
-import { plans } from "@/lib/plans";
 import { AuthCaptcha } from "@/components/shared/AuthCaptcha";
 
 const businessTypes = [
@@ -14,16 +13,6 @@ const businessTypes = [
   { value: "tech", label: "Tecnología" },
   { value: "general", label: "General" },
 ];
-
-function planCapacityLabel(plan: (typeof plans)[number]) {
-  if (plan.id === "custom") return "Adaptado a tu necesidad";
-  return `${plan.productLimit} productos · ${plan.storeLimit} comercio${plan.storeLimit > 1 ? "s" : ""}`;
-}
-
-function planPriceLabel(plan: (typeof plans)[number]) {
-  if (plan.id === "custom") return "Por confirmar";
-  return `$${plan.priceUsd}`;
-}
 
 export function SignupForm() {
   const [storeName, setStoreName] = useState("");
@@ -134,35 +123,32 @@ export function SignupForm() {
           <div className="grid h-14 w-14 place-items-center rounded-3xl bg-[#FFB547] text-[#25262B]">
             <Store size={25} />
           </div>
-          <h1 className="mt-6 text-4xl font-black">Empieza con 15 días gratis</h1>
+          <h1 className="mt-6 text-4xl font-black">Vende sin pagar mensualidad</h1>
           <p className="mt-3 text-sm font-bold leading-relaxed text-white/70">
-            Crea tu comercio, publica productos, recibe pedidos por WhatsApp y ajusta el delivery antes de pagar.
+            Crea tu catálogo, recibe pedidos por WhatsApp y cobra directamente en tu cuenta.
           </p>
-          <p className="mt-3 rounded-2xl bg-white/10 p-3 text-sm font-black text-[#FFB547] ring-1 ring-white/10">
-            Todos empiezan en Prueba gratis por 15 días. Al vencer, el comercio elige cómo pagar.
-          </p>
+          <div className="mt-5 rounded-[26px] bg-[#FFB547] p-5 text-[#25262B]">
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-[#2E3A79]">Una sola tarifa clara</p>
+            <div className="mt-2 flex items-end gap-2">
+              <span className="text-4xl font-black">$0.10</span>
+              <span className="pb-1 text-xs font-black opacity-65">por pedido confirmado</span>
+            </div>
+          </div>
 
-          <div className="mt-6 grid gap-3">
-            {plans.map((plan) => (
-              <div
-                key={plan.id}
-                className="rounded-[24px] bg-white/8 p-4 text-left text-white ring-1 ring-white/10"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-black">{plan.name}</p>
-                    <p className="mt-1 text-xs font-bold opacity-70">
-                      {planCapacityLabel(plan)}
-                    </p>
-                  </div>
-                  <p className="text-xl font-black">
-                    {planPriceLabel(plan)}
-                    {plan.id !== "custom" ? (
-                      <span className="text-xs font-bold opacity-70"> {plan.billingLabel}</span>
-                    ) : null}
-                  </p>
-                </div>
-              </div>
+          <div className="mt-5 grid gap-3">
+            {[
+              "Sin mensualidad ni comisión porcentual",
+              "Tú eliges: asumir el fee o cobrarlo al cliente",
+              "Pagos directos a tu cuenta",
+              "Mantienes tus precios reales",
+              "Tus clientes siguen siendo tuyos",
+            ].map((benefit) => (
+              <p key={benefit} className="flex items-center gap-3 text-sm font-bold text-white/85">
+                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-white/10 text-[#FFB547]">
+                  <Check size={14} />
+                </span>
+                {benefit}
+              </p>
             ))}
           </div>
         </section>

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Copy, Loader2, MessageCircle, Navigation, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Loader2, MessageCircle, Navigation, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CheckoutFormData, DeliveryLocation, DeliveryQuote, SavedOrder, Store } from "@/types";
 import { clearCart, getCart, getCartSubtotal } from "@/lib/cart";
@@ -26,6 +26,7 @@ import { buildOrderMessage, buildWhatsAppUrl } from "@/lib/whatsapp";
 import { saveOrderToSupabase } from "@/lib/supabase/orders";
 import { PER_SERVICE_FEE_USD } from "@/lib/plans";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
+import { useLiveStoreOpenState } from "@/hooks/use-live-store-open-state";
 
 const LocationPicker = dynamic(
   () => import("@/components/public/LocationPicker").then((mod) => mod.LocationPicker),
@@ -95,6 +96,7 @@ function formatCheckoutOptions(
 
 export function CheckoutForm({ store }: { store: Store }) {
   const router = useRouter();
+  const openState = useLiveStoreOpenState(store);
   const [items, setItems] = useState<ReturnType<typeof getCart>>([]);
   const [form, setForm] = useState<CheckoutFormData>(initialForm);
   const [location, setLocation] = useState<DeliveryLocation | null>(null);
@@ -107,7 +109,6 @@ export function CheckoutForm({ store }: { store: Store }) {
   });
   const [isCalculating, setIsCalculating] = useState(false);
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
   const [copiedPaymentLine, setCopiedPaymentLine] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [rememberCustomer, setRememberCustomer] = useState(true);
@@ -404,8 +405,8 @@ export function CheckoutForm({ store }: { store: Store }) {
 
   function validate() {
     if (items.length === 0) return "Tu carrito está vacío.";
-    if (store.openState && !store.openState.isOpen) {
-      return `${store.openState.label}. El comercio no está recibiendo pedidos en este momento.`;
+    if (!openState.isOpen) {
+      return `${openState.label}. El comercio no está recibiendo pedidos en este momento.`;
     }
     if (!form.customerName.trim()) return "Escribe el nombre del cliente.";
     if (!form.customerPhone.trim()) return "Escribe el teléfono del cliente.";
@@ -467,15 +468,6 @@ export function CheckoutForm({ store }: { store: Store }) {
     };
   }
 
-  async function copyOrder() {
-    const order = buildOrder();
-    if (!order) return;
-    await navigator.clipboard.writeText(order.whatsappMessage);
-    localStorage.setItem(getOrderKey(store.slug), JSON.stringify(order));
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
-  }
-
   async function copyPaymentLine(label: string, value: string) {
     await navigator.clipboard.writeText(value);
     setCopiedPaymentLine(`${label}-${value}`);
@@ -512,8 +504,9 @@ export function CheckoutForm({ store }: { store: Store }) {
       }
       clearCart(store.slug);
       setItems([]);
-      window.open(saveResult.order.whatsappUrl, "_blank", "noopener,noreferrer");
-      router.push(`/${store.slug}/confirmacion`);
+      window.history.replaceState(null, "", `/${store.slug}/confirmacion`);
+      window.location.href = saveResult.order.whatsappUrl;
+      return;
     } catch (error: any) {
       setError(error.message || "No se pudo guardar el pedido.");
     } finally {
@@ -902,24 +895,24 @@ export function CheckoutForm({ store }: { store: Store }) {
                   </div>
                 </div>
 
+                {!openState.isOpen ? <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700">{openState.label}. El comercio no está recibiendo pedidos en este momento.</p> : null}
                 {error ? <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p> : null}
-                {copied ? <p className="mt-4 flex items-center gap-2 rounded-2xl bg-green-50 p-3 text-sm font-bold text-green-700"><CheckCircle2 size={18} /> Pedido copiado</p> : null}
-
                 <div className="mt-4 grid gap-3">
                   <button
               type="button"
               onClick={sendOrder}
-              disabled={isSubmitting}
-              className="vp-button-mango w-full disabled:cursor-not-allowed disabled:opacity-70"
+              disabled={isSubmitting || !openState.isOpen}
+              className={`vp-button-mango w-full disabled:cursor-not-allowed disabled:opacity-70 ${
+                !isSubmitting && openState.isOpen ? "vp-confirm-order-attention" : ""
+              }`}
             >
               {isSubmitting ? (
                 <Loader2 size={18} className="animate-spin" />
               ) : (
                 <MessageCircle size={18} />
               )}
-              {isSubmitting ? "Guardando pedido..." : "Confirmar pedido por WhatsApp"}
+              {isSubmitting ? "Guardando pedido..." : !openState.isOpen ? "Comercio cerrado" : "Confirmar pedido por WhatsApp"}
             </button>
-                  <button type="button" onClick={copyOrder} className="vp-button-soft w-full"><Copy size={18} /> Copiar pedido</button>
                 </div>
               </div>
             </section>

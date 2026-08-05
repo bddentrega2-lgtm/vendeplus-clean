@@ -9,6 +9,7 @@ import { ProductListItem } from "@/components/public/ProductCard";
 import { CartBar } from "@/components/public/CartBar";
 import { getCart } from "@/lib/cart";
 import { buildClientPublicUrl } from "@/lib/public-url";
+import { useLiveStoreOpenState } from "@/hooks/use-live-store-open-state";
 
 const FEATURED_PRODUCTS_LIMIT = 5;
 const CATEGORY_PREVIEW_LIMIT = 7;
@@ -52,7 +53,8 @@ export function CatalogClient({ store }: { store: Store }) {
   const showGroupedMenu = selectedCategoryId === "all";
   const showCategoryPreviews = showGroupedMenu && !query.trim();
   const whatsappUrl = store.whatsappPhone ? `https://wa.me/${store.whatsappPhone}` : "";
-  const isStoreOpen = store.openState?.isOpen !== false;
+  const openState = useLiveStoreOpenState(store);
+  const isStoreOpen = openState.isOpen;
 
   async function shareCatalog() {
     const url = buildClientPublicUrl(`${window.location.pathname}${window.location.search}`);
@@ -137,9 +139,9 @@ export function CatalogClient({ store }: { store: Store }) {
   return (
     <main style={getBrandStyle(store)} className="vp-public-store vp-container pb-32 pt-5">
       <StoreBrandHeader store={store} />
-      {store.openState && !store.openState.isOpen ? (
+      {!isStoreOpen ? (
         <section className="mb-4 rounded-[24px] bg-red-50 p-4 text-sm font-black text-red-700 ring-1 ring-red-100">
-          {store.openState.label}. Puedes revisar el catálogo, pero el comercio no está recibiendo pedidos ahora.
+          {openState.label}. Puedes revisar el catálogo, pero el comercio no está recibiendo pedidos ahora.
         </section>
       ) : null}
       <section className="mb-4 rounded-[30px] bg-white/90 p-4 shadow-xl shadow-[#2E3A79]/[0.08] ring-1 ring-[#25262B]/[0.07]">
