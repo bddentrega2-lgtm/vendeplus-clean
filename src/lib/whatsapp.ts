@@ -61,7 +61,7 @@ export function buildOrderMessage(params: {
         ? "por calcular"
         : formatBaseCurrency(totals.deliveryUsd, baseCurrency);
 
-  const deliveryBlock =
+  const deliverySummary =
     form.deliveryType === "pickup"
       ? `Retiro (pick up)`
       : form.deliveryType === "national_shipping"
@@ -72,7 +72,13 @@ export function buildOrderMessage(params: {
             (quote.distanceKm !== null
               ? `${quote.distanceKm.toFixed(2)} km`
               : quote.label || "por confirmar")
-          }\nUbicacion: ${mapsUrl || "Ubicacion pendiente"}${reference}`;
+          }`;
+  const feeLine = Number(totals.serviceFeeUsd || 0) > 0
+    ? `\nFee: ${formatBaseCurrency(totals.serviceFeeUsd || 0, baseCurrency)}`
+    : "";
+  const locationBlock = form.deliveryType === "delivery"
+    ? `\n\nUbicacion: ${mapsUrl || "Ubicacion pendiente"}${reference}`
+    : "";
 
   return `Hola, ya realicé mi pedido y sería lo siguiente:
 
@@ -84,8 +90,7 @@ Cliente: ${form.customerName} | ${form.customerPhone}
 📦 Pedido:
 ${itemsText}${orderDetails}
 
-${deliveryBlock}
-${Number(totals.serviceFeeUsd || 0) > 0 ? `\n🧾 Fee: ${formatBaseCurrency(totals.serviceFeeUsd || 0, baseCurrency)}\n` : ""}
+${deliverySummary}${feeLine}${locationBlock}
 
 💳 ${form.paymentMethod}${paymentReference}
 💰 Total: ${formatBaseCurrency(totals.totalUsd, baseCurrency)} / ${formatBs(totals.totalBs)}${notes}`;

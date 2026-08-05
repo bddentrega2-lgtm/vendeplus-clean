@@ -20,7 +20,6 @@ import { AffiliatedDeliveryLogos } from "@/components/public/AffiliatedDeliveryL
 import { BrandLogo } from "@/components/public/BrandLogo";
 import { PwaInstallButton } from "@/components/pwa/PwaInstallButton";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
-import { plans } from "@/lib/plans";
 
 type AffiliatedStore = {
   name: string;
@@ -131,12 +130,6 @@ export function HomeClient({
 }) {
   const affiliatedStores = mapAffiliatedStores(stores);
 
-  function homePlanFeature(feature: string) {
-    return feature
-      .replace("Pedidos por WhatsApp", "Ventas automatizadas")
-      .replace("pedidos", "ventas");
-  }
-
   return (
     <main className="min-h-screen bg-[#F6F4EF] text-[#25262B]">
       <header className="sticky top-0 z-30 border-b border-[#25262B]/[0.06] bg-[#F6F4EF]/95 backdrop-blur">
@@ -146,7 +139,7 @@ export function HomeClient({
           </Link>
           <div className="hidden items-center gap-5 text-sm font-black text-[#5F635E] md:flex">
             <a href="#comercios">Comercios</a>
-            <a href="#planes">Planes</a>
+            <a href="#planes">Cómo funciona</a>
             <a href="#delivery">Delivery</a>
             <Link href="/marketplace">Marketplace</Link>
           </div>
@@ -326,7 +319,7 @@ export function HomeClient({
                 href="#planes"
                 className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F6F4EF] px-6 py-4 text-sm font-black text-[#2E3A79]"
               >
-                Ver planes
+                Ver cómo funciona
               </a>
             </div>
           </div>
@@ -347,68 +340,63 @@ export function HomeClient({
 
       <section id="planes" className="bg-[#25262B] py-12 text-white">
         <div className="vp-container">
-          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+          <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
             <div>
               <p className="text-sm font-black uppercase tracking-[0.18em] text-[#FFB547]">
-                Planes para comercios
+                Simple, directo y sin mensualidad
               </p>
-              <h2 className="mt-1 text-3xl font-black">Empieza con 15 dias gratis</h2>
-            </div>
-            <Link
-              href="/registro"
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-black text-[#2E3A79]"
-            >
-              Crear comercio
-              <ArrowRight size={16} />
-            </Link>
-          </div>
-
-          <div className="mt-5 grid gap-4 lg:grid-cols-3">
-            {plans.map((plan) => (
-              <article
-                key={plan.id}
-                className={[
-                  "rounded-[26px] p-5 shadow-xl shadow-black/10 ring-1 ring-white/10",
-                  plan.id === "monthly" ? "bg-[#FFB547] text-[#25262B]" : "bg-white/10 text-white",
-                ].join(" ")}
-              >
-                <p className={plan.id === "monthly" ? "text-sm font-black text-[#2E3A79]" : "text-sm font-black text-[#FFB547]"}>
-                  {plan.name}
+              <h2 className="mt-2 text-3xl font-black leading-tight sm:text-4xl">
+                Tu negocio, tus precios, tus pagos y tus clientes
+              </h2>
+              <p className="mt-4 max-w-xl text-base font-bold leading-relaxed text-white/70">
+                Usa Somos sin pagar mensualidad ni entregar un porcentaje de tus ventas. Solo se agrega un fee fijo de $0.10 por pedido confirmado.
+              </p>
+              <div className="mt-6 rounded-[28px] bg-[#FFB547] p-5 text-[#25262B] shadow-xl shadow-black/15">
+                <p className="text-sm font-black uppercase tracking-[0.16em] text-[#2E3A79]">
+                  Pagas por resultado
                 </p>
-                <div className="mt-3 flex items-end gap-2">
-                  {plan.id === "custom" ? (
-                    <span className="text-2xl font-black">Personalizado</span>
-                  ) : (
-                    <>
-                      <span className="text-4xl font-black">${plan.priceUsd}</span>
-                      <span className={plan.id === "monthly" ? "pb-1 text-sm font-black text-[#25262B]/70" : "pb-1 text-sm font-black text-white/65"}>
-                        {plan.billingLabel}
-                      </span>
-                    </>
-                  )}
+                <div className="mt-2 flex items-end gap-2">
+                  <span className="text-5xl font-black">$0.10</span>
+                  <span className="pb-1 text-sm font-black text-[#25262B]/65">por pedido confirmado</span>
                 </div>
-                <div className="mt-4 space-y-2">
-                  {plan.features.map((feature) => (
-                    <p key={feature} className="flex items-center gap-2 text-sm font-bold">
-                      <Check size={16} className={plan.id === "monthly" ? "text-[#2E3A79]" : "text-[#FFB547]"} />
-                      {homePlanFeature(feature)}
-                    </p>
-                  ))}
+                <p className="mt-3 text-sm font-bold">
+                  Sin mensualidades, contratos ni comisiones porcentuales.
+                </p>
+                <p className="mt-3 rounded-2xl bg-[#25262B]/10 px-4 py-3 text-sm font-black text-[#2E3A79]">
+                  Tú eliges: asumir el fee o cobrarlo al cliente final.
+                </p>
+              </div>
+              <Link
+                href="/registro"
+                className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-white px-5 py-4 text-sm font-black text-[#2E3A79] sm:w-auto"
+              >
+                Crear mi catálogo gratis
+                <ArrowRight size={16} />
+              </Link>
+            </div>
+
+            <div className="overflow-hidden rounded-[28px] bg-white/8 ring-1 ring-white/10">
+              <div className="grid grid-cols-2 border-b border-white/10 text-sm font-black">
+                <p className="bg-[#2E3A79] p-4 text-[#FFB547]">Con Somos</p>
+                <p className="p-4 text-white/60">Otras apps</p>
+              </div>
+              {[
+                ["Pagos directos a tu cuenta", "Pagos con intermediarios"],
+                ["Sin comisión sobre la venta", "Comisión porcentual"],
+                ["Tú decides quién asume el fee", "La plataforma define sus cargos"],
+                ["Mantienes tus precios reales", "Puedes terminar subiendo precios"],
+                ["Tus clientes siguen siendo tuyos", "La plataforma controla la relación"],
+                ["WhatsApp como canal principal", "El cliente depende de otra app"],
+              ].map(([somos, otrasApps]) => (
+                <div key={somos} className="grid grid-cols-2 border-b border-white/10 last:border-0">
+                  <p className="flex gap-2 bg-[#2E3A79]/35 p-4 text-sm font-bold">
+                    <Check className="mt-0.5 shrink-0 text-[#FFB547]" size={16} />
+                    {somos}
+                  </p>
+                  <p className="p-4 text-sm font-bold text-white/55">{otrasApps}</p>
                 </div>
-                <Link
-                  href="/registro"
-                  className={[
-                    "mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-black",
-                    plan.id === "monthly"
-                      ? "bg-[#25262B] text-white"
-                      : "bg-white text-[#2E3A79]",
-                  ].join(" ")}
-                >
-                  {plan.id === "custom" ? "Solicitar propuesta" : "Empezar"}
-                  <ArrowRight size={16} />
-                </Link>
-              </article>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -488,7 +476,7 @@ export function HomeClient({
           </div>
           <div className="grid gap-2 text-sm font-black text-white/72 sm:grid-cols-2">
             <a href="#comercios">Comercios</a>
-            <a href="#planes">Planes</a>
+            <a href="#planes">Cómo funciona</a>
             <a href="#delivery">Delivery</a>
             <Link href="/marketplace">Marketplace</Link>
           </div>

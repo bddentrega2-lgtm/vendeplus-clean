@@ -103,6 +103,24 @@ img {
   box-shadow: 0 14px 28px rgba(255, 181, 71, 0.28);
 }
 
+.vp-confirm-order-attention {
+  animation: vp-confirm-order-attention 1.8s ease-in-out infinite;
+  will-change: transform, filter;
+}
+
+@keyframes vp-confirm-order-attention {
+  0%,
+  100% {
+    filter: drop-shadow(0 8px 12px rgba(255, 181, 71, 0.2));
+    transform: scale(1);
+  }
+
+  50% {
+    filter: drop-shadow(0 12px 18px rgba(255, 181, 71, 0.48));
+    transform: scale(1.025);
+  }
+}
+
 .vp-button-soft {
   display: inline-flex;
   align-items: center;
@@ -250,7 +268,8 @@ img {
 @media (prefers-reduced-motion: reduce) {
   .vp-logo-marquee-track,
   .vp-payment-highlight,
-  .vp-payment-highlight::before {
+  .vp-payment-highlight::before,
+  .vp-confirm-order-attention {
     animation: none;
   }
 }

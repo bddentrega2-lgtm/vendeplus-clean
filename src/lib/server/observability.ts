@@ -91,7 +91,18 @@ export function logApiError(
   error: unknown,
   details: ApiLogDetails = {}
 ) {
-  const message = error instanceof Error ? error.message : String(error || "unknown_error");
+  const errorRecord =
+    error && typeof error === "object"
+      ? (error as Record<string, unknown>)
+      : null;
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof errorRecord?.message === "string"
+        ? errorRecord.message
+        : String(error || "unknown_error");
+  const errorCode =
+    typeof errorRecord?.code === "string" ? errorRecord.code.slice(0, 80) : undefined;
 
   console.error(
     JSON.stringify({
@@ -101,6 +112,7 @@ export function logApiError(
       requestId: context.requestId,
       durationMs: getApiDurationMs(context),
       error: message.slice(0, 240),
+      ...(errorCode ? { errorCode } : {}),
       ...(sanitizeDetails(details) as ApiLogDetails),
     })
   );

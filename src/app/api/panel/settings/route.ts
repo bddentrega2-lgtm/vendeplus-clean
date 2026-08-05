@@ -7,6 +7,7 @@ import {
   requirePanelAuth,
 } from "@/lib/panel/access";
 import { isMissingColumnError } from "@/lib/supabase/schema-compat";
+import { loadTransportAgencyDeliverySettings } from "@/lib/transport";
 
 function optionalNumber(value: unknown) {
   if (value === "" || value === null || value === undefined) return null;
@@ -64,6 +65,97 @@ function normalizePaymentDetails(value: unknown) {
       note: cleanText(source.efectivo?.note),
     },
   };
+}
+
+async function syncDeliverySettings(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  storeId: string,
+  payload: {
+    accepts_delivery: boolean;
+    accepts_pickup: boolean;
+    accepts_national_shipping: boolean;
+  }
+) {
+  const { data: current, error: currentError } = await supabase
+    .from("store_delivery_settings")
+    .select("id, delivery_provider")
+    .eq("store_id", storeId)
+    .maybeSingle();
+  if (currentError) throw currentError;
+
+  const base = {
+    delivery_enabled: payload.accepts_delivery,
+    pickup_enabled: payload.accepts_pickup,
+    national_shipping_enabled: payload.accepts_national_shipping,
+    updated_at: new Date().toISOString(),
+  };
+  let settingsPayload: Record<string, unknown> = base;
+
+  if (!payload.accepts_delivery) {
+    // Keep the selected provider and its relation while delivery is paused.
+    // mapStoreDeliverySettings exposes it as disabled until delivery_enabled is true again.
+    settingsPayload = base;
+  } else if (current?.delivery_provider === "transport_agency") {
+    const transport = await loadTransportAgencyDeliverySettings(
+      supabase,
+      storeId,
+      payload.accepts_pickup
+    );
+    if (!transport) {
+      throw new Error(
+        "La empresa delivery seleccionada no está disponible o no tiene tarifas activas."
+      );
+    }
+    settingsPayload = {
+      ...base,
+      delivery_provider: "transport_agency",
+      pricing_type: transport.settings.pricingType,
+      fixed_fee_usd: transport.settings.fixedFeeUsd,
+      max_distance_km: transport.settings.maxDistanceKm,
+      distance_factor: null,
+      manual_quote_message: transport.settings.manualQuoteMessage,
+      transport_agency_connection_id: transport.connection.id,
+      transport_agency_id: transport.connection.agency_id,
+    };
+  } else if (!current || current.delivery_provider === "disabled") {
+    const transport = await loadTransportAgencyDeliverySettings(
+      supabase,
+      storeId,
+      payload.accepts_pickup
+    );
+    settingsPayload = transport
+      ? {
+          ...base,
+          delivery_provider: "transport_agency",
+          pricing_type: transport.settings.pricingType,
+          fixed_fee_usd: transport.settings.fixedFeeUsd,
+          max_distance_km: transport.settings.maxDistanceKm,
+          distance_factor: null,
+          manual_quote_message: transport.settings.manualQuoteMessage,
+          transport_agency_connection_id: transport.connection.id,
+          transport_agency_id: transport.connection.agency_id,
+        }
+      : {
+          ...base,
+          delivery_provider: "own_delivery",
+          transport_agency_connection_id: null,
+          transport_agency_id: null,
+        };
+  }
+
+  const result = current?.id
+    ? await supabase
+        .from("store_delivery_settings")
+        .update(settingsPayload)
+        .eq("store_id", storeId)
+    : await supabase.from("store_delivery_settings").insert({
+        store_id: storeId,
+        delivery_provider: payload.accepts_delivery ? "own_delivery" : "disabled",
+        pricing_type: "manual",
+        fixed_fee_usd: 0,
+        ...settingsPayload,
+      });
+  if (result.error) throw result.error;
 }
 
 function normalizeStorePayload(body: any) {
@@ -332,24 +424,11 @@ export async function PATCH(request: NextRequest) {
 
     if (error) throw error;
 
-    if ("accepts_national_shipping" in payload) {
-      const settingsSync = await supabase
-        .from("store_delivery_settings")
-        .upsert(
-          {
-            store_id: body.id,
-            national_shipping_enabled: payload.accepts_national_shipping,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "store_id" }
-        );
-      if (
-        settingsSync.error &&
-        !isMissingColumnError(settingsSync.error, ["national_shipping_enabled"])
-      ) {
-        throw settingsSync.error;
-      }
-    }
+    await syncDeliverySettings(supabase, body.id, {
+      accepts_delivery: payload.accepts_delivery,
+      accepts_pickup: payload.accepts_pickup,
+      accepts_national_shipping: payload.accepts_national_shipping,
+    });
 
     return NextResponse.json({
       store: data,
