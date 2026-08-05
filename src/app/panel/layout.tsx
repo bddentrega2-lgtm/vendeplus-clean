@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { PanelAuthProvider } from "@/components/panel/PanelAuthProvider";
 import { PanelFrame } from "@/components/panel/PanelFrame";
+import { PanelStoreProvider } from "@/components/panel/PanelStoreContext";
 
 export const metadata: Metadata = {
   robots: {
@@ -12,7 +13,9 @@ export const metadata: Metadata = {
 export default function PanelLayout({ children }: { children: React.ReactNode }) {
   return (
     <PanelAuthProvider>
-      <PanelFrame>{children}</PanelFrame>
+      <PanelStoreProvider>
+        <PanelFrame>{children}</PanelFrame>
+      </PanelStoreProvider>
     </PanelAuthProvider>
   );
 }
