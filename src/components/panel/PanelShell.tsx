@@ -2,6 +2,7 @@
 import { LogoutButton } from "@/components/panel/LogoutButton";
 import { OnboardingTour } from "@/components/panel/OnboardingTour";
 import { PanelStoreIdentity } from "@/components/panel/PanelStoreIdentity";
+import { PanelStoreSwitcher } from "@/components/panel/PanelStoreSwitcher";
 import { PwaInstallButton } from "@/components/pwa/PwaInstallButton";
 import {
   BarChart3,
@@ -83,6 +84,9 @@ export function PanelShell({
           </nav>
 
           <PanelStoreIdentity />
+          <div className="mt-4 rounded-[26px] bg-[#25262B] p-3 text-white">
+            <PanelStoreSwitcher compact />
+          </div>
 
           <div className="mt-4 rounded-[26px] bg-[#F8F3E8] p-3 ring-1 ring-[#25262B]/[0.06]">
             <p className="mb-2 text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
@@ -111,6 +115,9 @@ export function PanelShell({
               </div>
 
               <div className="flex flex-col gap-3 sm:flex-row md:items-center">
+                <div className="w-full min-w-56 lg:hidden">
+                  <PanelStoreSwitcher />
+                </div>
                 <div className="md:hidden">
                   <PwaInstallButton compact label="Descargar app" />
                 </div>

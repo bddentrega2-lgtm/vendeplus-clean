@@ -10,6 +10,7 @@ import {
   getSavedPanelPin,
 } from "@/lib/panel/client-auth";
 import { isSubscriptionPastDue } from "@/lib/subscription-status";
+import { usePanelStore } from "@/components/panel/PanelStoreContext";
 
 const panelRouteMeta: Record<string, { active: string; title: string; subtitle: string }> = {
   "/panel": {
@@ -83,10 +84,6 @@ function isStorePastDue(store?: PanelStoreSubscriptionState | null) {
   return isSubscriptionPastDue(store);
 }
 
-function getRelevantSubscriptionStore(stores: PanelStoreSubscriptionState[]) {
-  return stores.find(isStorePastDue) || stores[0] || null;
-}
-
 function ExpiredPanelBlock() {
   return (
     <section className="rounded-[34px] bg-white p-6 text-center shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-red-100">
@@ -111,6 +108,7 @@ function ExpiredPanelBlock() {
 export function PanelFrame({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [isExpired, setIsExpired] = useState(false);
+  const { activeStore } = usePanelStore();
 
   const meta = panelRouteMeta[pathname] || panelRouteMeta["/panel"];
 
@@ -136,7 +134,9 @@ export function PanelFrame({ children }: { children: React.ReactNode }) {
           headers: await getPanelAuthHeaders(savedPin),
         });
         const data = await response.json();
-        const relevantStore = getRelevantSubscriptionStore(Array.isArray(data.stores) ? data.stores : []);
+        const stores = Array.isArray(data.stores) ? data.stores : [];
+        const relevantStore =
+          stores.find((store: { id?: string }) => store.id === activeStore?.id) || stores[0] || null;
         if (active) setIsExpired(isStorePastDue(relevantStore));
       } catch {
         if (active) setIsExpired(false);
@@ -148,7 +148,7 @@ export function PanelFrame({ children }: { children: React.ReactNode }) {
     return () => {
       active = false;
     };
-  }, [pathname]);
+  }, [pathname, activeStore?.id]);
 
   if (routesWithoutPanelShell.has(pathname)) {
     return <>{children}</>;
