@@ -103,7 +103,7 @@ export function TransportMarketplaceSection({ pin, onChanged }: Props) {
   const visibleAgencies = useMemo(() => {
     if (!activeExclusiveConnection?.agency_id) return agencies;
     return agencies.filter((agency: any) => agency.id === activeExclusiveConnection.agency_id);
-  }, [agencies, activeExclusiveConnection?.agency_id]);
+  }, [agencies, activeExclusiveConnection]);
 
   function pricingLabel(agency: any) {
     const rate = getTransportAgencyRateFromRelation(agency.transport_agency_rates) || {};

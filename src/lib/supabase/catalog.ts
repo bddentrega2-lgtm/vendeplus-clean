@@ -256,6 +256,7 @@ function mapStore(
       openingHoursText: row.opening_hours,
     }),
     planType: row.plan_type || "monthly",
+    serviceFeeUsd: Number(row.monthly_price_usd ?? (row.plan_type === "per_service" ? 0.1 : 0)),
     serviceFeePayer: row.service_fee_payer === "customer" ? "customer" : "merchant",
     serviceFeeBillingCycle: "monthly",
   };
@@ -291,6 +292,7 @@ const storeSelect = `
   is_active,
   subscription_status,
   plan_type,
+  monthly_price_usd,
   service_fee_payer,
   service_fee_billing_cycle,
   trial_ends_at,
@@ -365,6 +367,7 @@ const storeSelect = `
 const baseStoreSelect = `
   id,
   plan_type,
+  monthly_price_usd,
   service_fee_payer,
   service_fee_billing_cycle,
   slug,
@@ -429,6 +432,7 @@ const baseStoreSelect = `
 const storeShellSelect = `
   id,
   plan_type,
+  monthly_price_usd,
   service_fee_payer,
   service_fee_billing_cycle,
   slug,
@@ -501,6 +505,7 @@ const storeShellSelect = `
 const storeShellCompatibleSelect = `
   id,
   plan_type,
+  monthly_price_usd,
   service_fee_payer,
   service_fee_billing_cycle,
   slug,
@@ -569,6 +574,7 @@ const storeShellCompatibleSelect = `
 const deliveryCompatibleStoreSelect = `
   id,
   plan_type,
+  monthly_price_usd,
   service_fee_payer,
   service_fee_billing_cycle,
   slug,
@@ -666,6 +672,7 @@ const deliveryCompatibleStoreSelect = `
 const legacyStoreSelect = `
   id,
   plan_type,
+  monthly_price_usd,
   service_fee_payer,
   service_fee_billing_cycle,
   slug,

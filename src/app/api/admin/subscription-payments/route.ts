@@ -68,19 +68,21 @@ export async function PATCH(request: NextRequest) {
       const days = (payment as any).billing_period === "annual" ? 365 : 30;
       const nextDue = addDays(baseDate, days).toISOString();
 
+      const subscriptionUpdate: Record<string, unknown> = {
+        plan_type: planType,
+        subscription_status: "active",
+        subscription_started_at: new Date().toISOString(),
+        subscription_ends_at: nextDue,
+        next_payment_due_at: nextDue,
+        last_payment_at: new Date().toISOString(),
+        service_fee_billing_cycle: "monthly",
+      };
+      if (planType === "monthly") subscriptionUpdate.monthly_price_usd = 20;
+      if (planType === "per_service") subscriptionUpdate.monthly_price_usd = PER_SERVICE_FEE_USD;
+
       const { error: storeError } = await supabase
         .from("stores")
-        .update({
-          plan_type: planType,
-          subscription_status: "active",
-          subscription_started_at: new Date().toISOString(),
-          subscription_ends_at: nextDue,
-          next_payment_due_at: nextDue,
-          last_payment_at: new Date().toISOString(),
-          monthly_price_usd:
-            planType === "per_service" ? PER_SERVICE_FEE_USD : Number((payment as any).amount_usd || 20),
-          service_fee_billing_cycle: "monthly",
-        })
+        .update(subscriptionUpdate)
         .eq("id", (payment as any).store_id);
 
       if (storeError) throw storeError;

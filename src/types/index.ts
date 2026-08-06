@@ -131,6 +131,7 @@ export type Store = {
   manualOpenNote?: string;
   openState?: StoreOpenState;
   planType?: string;
+  serviceFeeUsd?: number;
   serviceFeePayer?: "merchant" | "customer";
   serviceFeeBillingCycle?: "weekly" | "monthly";
 };

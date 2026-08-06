@@ -1,4 +1,4 @@
-import { PER_SERVICE_FEE_USD } from "@/lib/plans";
+import { DEFAULT_PRODUCT_LIMIT, PER_SERVICE_FEE_USD } from "@/lib/plans";
 
 export const adminStoreSelect = `
   id,
@@ -25,6 +25,7 @@ export const adminStoreSelect = `
   accepts_pickup,
   is_active,
   plan_type,
+  product_limit,
   service_fee_payer,
   service_fee_billing_cycle,
   trial_started_at,
@@ -84,7 +85,7 @@ function normalizePastDueDates<
     trial_ends_at:
       payload.plan_type === "trial" ? payload.trial_ends_at || fallbackCutoff : payload.trial_ends_at,
     subscription_ends_at:
-      payload.plan_type === "monthly" || payload.plan_type === "per_service"
+      ["monthly", "per_service", "custom"].includes(payload.plan_type)
         ? payload.subscription_ends_at || fallbackCutoff
         : payload.subscription_ends_at,
     next_payment_due_at: payload.next_payment_due_at || fallbackCutoff,
@@ -143,6 +144,7 @@ export function normalizeAdminStorePayload(body: any) {
     "trial",
     "monthly",
     "per_service",
+    "custom",
     "emprendedor",
     "visionario",
     "founder",
@@ -181,6 +183,7 @@ export function normalizeAdminStorePayload(body: any) {
     accepts_pickup: body.accepts_pickup !== false,
     is_active: body.is_active !== false,
     plan_type: planType,
+    product_limit: Math.min(10000, Math.max(1, Number(body.product_limit || DEFAULT_PRODUCT_LIMIT))),
     service_fee_payer: body.service_fee_payer === "customer" ? "customer" : "merchant",
     service_fee_billing_cycle: "monthly",
     trial_started_at: cleanText(body.trial_started_at) || null,
@@ -192,8 +195,11 @@ export function normalizeAdminStorePayload(body: any) {
     monthly_price_usd: Math.max(
       0,
       Number(
-        body.monthly_price_usd ||
-          (planType === "monthly" ? 20 : planType === "per_service" ? PER_SERVICE_FEE_USD : 0)
+        planType === "per_service"
+          ? PER_SERVICE_FEE_USD
+          : planType === "custom"
+            ? Math.min(100, Math.max(0, Number(body.service_fee_usd || body.monthly_price_usd || 0)))
+            : body.monthly_price_usd || (planType === "monthly" ? 20 : 0)
       )
     ),
     billing_notes: cleanText(body.billing_notes) || null,
@@ -206,6 +212,7 @@ export function normalizeAdminSubscriptionPayload(body: any) {
     "trial",
     "monthly",
     "per_service",
+    "custom",
     "emprendedor",
     "visionario",
     "founder",
@@ -220,6 +227,7 @@ export function normalizeAdminSubscriptionPayload(body: any) {
 
   return normalizePastDueDates({
     plan_type: planType,
+    product_limit: Math.min(10000, Math.max(1, Number(body.product_limit || DEFAULT_PRODUCT_LIMIT))),
     service_fee_payer: body.service_fee_payer === "customer" ? "customer" : "merchant",
     service_fee_billing_cycle: "monthly",
     subscription_status: subscriptionStatus,
@@ -231,8 +239,11 @@ export function normalizeAdminSubscriptionPayload(body: any) {
     monthly_price_usd: Math.max(
       0,
       Number(
-        body.monthly_price_usd ||
-          (planType === "monthly" ? 20 : planType === "per_service" ? PER_SERVICE_FEE_USD : 0)
+        planType === "per_service"
+          ? PER_SERVICE_FEE_USD
+          : planType === "custom"
+            ? Math.min(100, Math.max(0, Number(body.service_fee_usd || body.monthly_price_usd || 0)))
+            : body.monthly_price_usd || (planType === "monthly" ? 20 : 0)
       )
     ),
     billing_notes: cleanText(body.billing_notes) || null,

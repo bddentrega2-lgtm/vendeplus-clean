@@ -6,7 +6,7 @@ import {
   panelErrorResponse,
   requirePanelAuth,
 } from "@/lib/panel/access";
-import { getPlan } from "@/lib/plans";
+import { getStoreProductLimit } from "@/lib/plans";
 
 const productsSelect = `
   id,
@@ -341,7 +341,7 @@ export async function POST(request: NextRequest) {
       await Promise.all([
         supabase
           .from("stores")
-          .select("id, plan_type")
+          .select("id, plan_type, product_limit")
           .eq("id", payload.store_id)
           .single(),
         supabase
@@ -353,9 +353,9 @@ export async function POST(request: NextRequest) {
     if (storeError) throw storeError;
     if (countError) throw countError;
 
-    const plan = getPlan((store as any)?.plan_type);
-    if ((productCount || 0) >= plan.productLimit) {
-      return badRequest(`Este plan permite hasta ${plan.productLimit} productos.`);
+    const productLimit = getStoreProductLimit(store as any);
+    if ((productCount || 0) >= productLimit) {
+      return badRequest(`Este plan permite hasta ${productLimit} productos.`);
     }
 
     const { data, error } = await supabase

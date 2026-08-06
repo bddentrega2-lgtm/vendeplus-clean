@@ -185,7 +185,6 @@ export default async function StoreOpenGraphImage({
                 overflow: "hidden",
               }}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={imageUrl}
                 alt=""

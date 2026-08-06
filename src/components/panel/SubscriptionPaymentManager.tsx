@@ -12,10 +12,11 @@ import {
   shouldShowPanelInitialAccessGate,
 } from "@/lib/panel/client-auth";
 import { formatBs, formatUsd } from "@/lib/currency";
-import { plans, getPlan, type PlanId, PER_SERVICE_FEE_USD } from "@/lib/plans";
+import { plans, getPlan, PER_SERVICE_FEE_USD } from "@/lib/plans";
 import { isDateBeforeToday, isSubscriptionPastDue } from "@/lib/subscription-status";
 
-const selfServicePlans = plans.filter((plan) => plan.id !== "custom");
+const publicPlan = plans.find((plan) => plan.id === "per_service")!;
+const selectedPlanId = "per_service" as const;
 const somosPaymentDetails = [
   { label: "Cedula/RIF", value: "20890442" },
   { label: "Telefono", value: "04245666025" },
@@ -31,6 +32,7 @@ type StoreRow = {
   subscription_ends_at?: string | null;
   next_payment_due_at?: string | null;
   monthly_price_usd?: number | null;
+  product_limit?: number | null;
   usd_to_bs?: number | null;
   trial_ends_at?: string | null;
   service_fee_payer?: "merchant" | "customer" | null;
@@ -95,7 +97,6 @@ export function SubscriptionPaymentManager() {
   const [payments, setPayments] = useState<PaymentRow[]>([]);
   const [serviceUsageByStore, setServiceUsageByStore] = useState<Record<string, ServiceUsage>>({});
   const [storeId, setStoreId] = useState("");
-  const [selectedPlanId, setSelectedPlanId] = useState<PlanId>("monthly");
   const [billingPeriod] = useState<"monthly" | "annual">("monthly");
   const [paymentReference, setPaymentReference] = useState("");
   const [paymentBank, setPaymentBank] = useState("");
@@ -126,10 +127,9 @@ export function SubscriptionPaymentManager() {
   const isTrialExpired = Boolean(
     isTrial && dueAt && currentTimeMs !== null && isDateBeforeToday(dueAt, new Date(currentTimeMs))
   );
-  const isPerService = selectedStore?.plan_type === "per_service";
+  const isPerService = ["per_service", "custom"].includes(String(selectedStore?.plan_type || ""));
   const needsPlanChoice = Boolean(selectedStore && !isPerService && (isTrialExpired || isPastDueStatus || isPastDueByDate));
   const amountUsd = useMemo(() => {
-    if (needsPlanChoice && selectedPlanId === "monthly") return 20;
     if (needsPlanChoice && selectedPlanId === "per_service") return 0;
     if (isPerService) return serviceUsage.amountUsd;
     const monthly = Number(selectedStore?.monthly_price_usd || 0) || currentPlan.priceUsd;
@@ -139,13 +139,12 @@ export function SubscriptionPaymentManager() {
     currentPlan.priceUsd,
     isPerService,
     needsPlanChoice,
-    selectedPlanId,
     selectedStore?.monthly_price_usd,
     serviceUsage.amountUsd,
   ]);
   const amountBs = amountUsd * Number(selectedStore?.usd_to_bs || 600);
   const shouldShowPaymentForm = Boolean(
-    selectedStore && ((!isTrial && !needsPlanChoice) || (needsPlanChoice && selectedPlan.id === "monthly"))
+    selectedStore && !isTrial && !needsPlanChoice
   );
   const currentServiceFeePayerLabel =
     selectedStore?.service_fee_payer === "customer" ? "lo paga el cliente" : "lo asume el comercio";
@@ -274,7 +273,7 @@ export function SubscriptionPaymentManager() {
           <div>
             <h2 className="text-2xl font-black">Pagar suscripción</h2>
             <p className="mt-1 text-sm font-bold text-[#746f69]">
-              La prueba gratis dura 15 días. Al vencer, elige mensual o corte por servicio.
+              La prueba gratis dura 15 días. Al vencer, continúa con el fee por pedido.
             </p>
           </div>
         </div>
@@ -304,34 +303,18 @@ export function SubscriptionPaymentManager() {
           <section className="mt-4 rounded-[24px] bg-[#FFF8F0] p-4">
             <p className="text-sm font-black text-[#25262B]">
               {needsPlanChoice
-                ? "Tu periodo vencio. Elige como deseas continuar: mensualidad o fee por pedido."
+                ? "Tu periodo venció. Elige quién asumirá el fee por pedido para continuar."
                 : `Estas en prueba gratis hasta ${formatDate(dueAt)}.`}
             </p>
             {needsPlanChoice ? (
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
-                {selfServicePlans.map((plan) => (
-                  <button
-                    key={plan.id}
-                    type="button"
-                    onClick={() => setSelectedPlanId(plan.id)}
-                    className={[
-                      "rounded-[22px] p-4 text-left ring-1",
-                      selectedPlanId === plan.id
-                        ? "bg-[#2E3A79] text-white ring-[#2E3A79]"
-                        : "bg-white text-[#25262B] ring-[#25262B]/10",
-                    ].join(" ")}
-                  >
-                    <p className="text-base font-black">{plan.name}</p>
-                    <p className="mt-1 text-sm font-black">
-                      {plan.id === "monthly"
-                        ? "$20 adelantados al mes"
-                        : `$${PER_SERVICE_FEE_USD.toFixed(2)} por servicio en corte mensual`}
-                    </p>
-                    <p className="mt-2 text-xs font-bold opacity-70">
-                      Hasta {plan.productLimit} productos.
-                    </p>
-                  </button>
-                ))}
+              <div className="mt-3 rounded-[22px] bg-[#2E3A79] p-4 text-white">
+                <p className="text-base font-black">{publicPlan.name}</p>
+                <p className="mt-1 text-sm font-black">
+                  ${PER_SERVICE_FEE_USD.toFixed(2)} por pedido en corte mensual
+                </p>
+                <p className="mt-2 text-xs font-bold opacity-70">
+                  Hasta {publicPlan.productLimit} productos. Los planes privados solo pueden ser habilitados por Somos.
+                </p>
               </div>
             ) : null}
           </section>
