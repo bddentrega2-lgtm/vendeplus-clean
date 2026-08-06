@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPlan, PER_SERVICE_FEE_USD } from "@/lib/plans";
+import { getPlan, getStoreServiceFeeUsd, PER_SERVICE_FEE_USD } from "@/lib/plans";
 import {
   assertStoreManager,
   badRequest,
@@ -22,11 +22,6 @@ function addDays(date: Date, days: number) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
   return next;
-}
-
-function isCommercialPlan(value: unknown) {
-  const plan = cleanText(value);
-  return plan === "monthly" || plan === "per_service";
 }
 
 function isCancelledOrderStatus(value: unknown) {
@@ -54,7 +49,7 @@ async function getServiceUsage(supabase: any, store: any) {
   const serviceCount = billableOrders.length;
   const amountUsd = Number(
     billableOrders
-      .reduce((sum: number, order: any) => sum + money(order.platform_service_fee_usd || PER_SERVICE_FEE_USD), 0)
+      .reduce((sum: number, order: any) => sum + money(order.platform_service_fee_usd || getStoreServiceFeeUsd(store)), 0)
       .toFixed(2)
   );
 
@@ -76,7 +71,7 @@ export async function GET(request: NextRequest) {
 
     let storesQuery = supabase
       .from("stores")
-      .select("id, name, slug, plan_type, subscription_status, trial_ends_at, subscription_started_at, subscription_ends_at, next_payment_due_at, monthly_price_usd, usd_to_bs, last_payment_at, created_at, service_fee_payer, service_fee_billing_cycle")
+      .select("id, name, slug, plan_type, subscription_status, trial_ends_at, subscription_started_at, subscription_ends_at, next_payment_due_at, monthly_price_usd, usd_to_bs, last_payment_at, created_at, product_limit, service_fee_payer, service_fee_billing_cycle")
       .order("name", { ascending: true });
 
     let paymentsQuery = supabase
@@ -102,7 +97,7 @@ export async function GET(request: NextRequest) {
       await Promise.all(
         stores.map(async (store: any) => [
           store.id,
-          store.plan_type === "per_service"
+          ["per_service", "custom"].includes(store.plan_type)
             ? await getServiceUsage(supabase, store)
             : { serviceCount: 0, amountUsd: 0, periodStart: null },
         ])
@@ -135,7 +130,7 @@ export async function POST(request: NextRequest) {
     const supabase = createSupabaseAdminClient();
     const { data: store, error: storeError } = await supabase
       .from("stores")
-      .select("id, plan_type, subscription_status, trial_ends_at, subscription_started_at, subscription_ends_at, next_payment_due_at, monthly_price_usd, usd_to_bs, last_payment_at, created_at, service_fee_payer, service_fee_billing_cycle")
+      .select("id, plan_type, subscription_status, trial_ends_at, subscription_started_at, subscription_ends_at, next_payment_due_at, monthly_price_usd, usd_to_bs, last_payment_at, created_at, product_limit, service_fee_payer, service_fee_billing_cycle")
       .eq("id", storeId)
       .single();
 
@@ -177,16 +172,13 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const effectivePlanId =
-      action === "choose_plan" && isCommercialPlan(selectedPlanId)
-        ? selectedPlanId
-        : cleanText((store as any).plan_type);
+    const effectivePlanId = cleanText((store as any).plan_type);
     const plan = getPlan(effectivePlanId);
     let amountUsd = plan.priceUsd;
 
     if (effectivePlanId === "monthly") {
       amountUsd = 20;
-    } else if (effectivePlanId === "per_service") {
+    } else if (["per_service", "custom"].includes(effectivePlanId)) {
       const usage = await getServiceUsage(supabase, store);
       amountUsd = usage.amountUsd;
       if (amountUsd <= 0) {

@@ -9,6 +9,7 @@ export type PlanId =
 
 export const TRIAL_DAYS = 15;
 export const PER_SERVICE_FEE_USD = 0.1;
+export const DEFAULT_PRODUCT_LIMIT = 50;
 
 export type Plan = {
   id: PlanId;
@@ -118,4 +119,23 @@ export function getPlan(planId?: string | null) {
       (plan) => plan.id === normalizedPlanId || plan.id === planId
     ) || monthlyPlan
   );
+}
+
+export function getStoreProductLimit(store?: {
+  plan_type?: string | null;
+  product_limit?: number | null;
+} | null) {
+  const configured = Number(store?.product_limit);
+  if (Number.isInteger(configured) && configured > 0) return configured;
+  return getPlan(store?.plan_type).productLimit;
+}
+
+export function getStoreServiceFeeUsd(store?: {
+  plan_type?: string | null;
+  monthly_price_usd?: number | null;
+} | null) {
+  if (!store || !["per_service", "custom"].includes(String(store.plan_type || ""))) return 0;
+  const configured = Number(store.monthly_price_usd);
+  if (Number.isFinite(configured) && configured >= 0) return configured;
+  return store.plan_type === "per_service" ? PER_SERVICE_FEE_USD : 0;
 }

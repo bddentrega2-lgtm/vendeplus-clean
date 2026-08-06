@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { PER_SERVICE_FEE_USD } from "@/lib/plans";
+import { getStoreServiceFeeUsd } from "@/lib/plans";
 import { NextRequest, NextResponse } from "next/server";
 import type { CartItem, CheckoutFormData, SavedOrder, Store } from "@/types";
 import { getInitialPaymentStatus, getSuggestedPaymentCurrency } from "@/lib/payments";
@@ -304,7 +304,7 @@ export async function POST(request: NextRequest) {
     const supabase = createSupabaseAdminClient();
     let storeResult = await supabase
       .from("stores")
-      .select("id, slug, name, whatsapp, usd_to_bs, base_currency, is_active, latitude, longitude, opening_hours, business_hours, manual_open_status, manual_open_note, accepts_delivery, accepts_pickup, accepts_national_shipping, plan_type, service_fee_payer, service_fee_billing_cycle, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
+      .select("id, slug, name, whatsapp, usd_to_bs, base_currency, is_active, latitude, longitude, opening_hours, business_hours, manual_open_status, manual_open_note, accepts_delivery, accepts_pickup, accepts_national_shipping, plan_type, monthly_price_usd, service_fee_payer, service_fee_billing_cycle, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
       .eq("id", storeId)
       .single();
 
@@ -324,7 +324,7 @@ export async function POST(request: NextRequest) {
     ) {
       storeResult = await supabase
         .from("stores")
-        .select("id, slug, name, whatsapp, usd_to_bs, is_active, latitude, longitude, accepts_delivery, accepts_pickup, plan_type, service_fee_payer, service_fee_billing_cycle")
+        .select("id, slug, name, whatsapp, usd_to_bs, is_active, latitude, longitude, accepts_delivery, accepts_pickup, plan_type, monthly_price_usd, service_fee_payer, service_fee_billing_cycle")
         .eq("id", storeId)
         .single();
     }
@@ -654,7 +654,7 @@ export async function POST(request: NextRequest) {
     }
 
     const deliveryUsd = order.form.deliveryType === "delivery" ? serverQuote.feeUsd : 0;
-    const platformServiceFeeUsd = (store as any).plan_type === "per_service" ? PER_SERVICE_FEE_USD : 0;
+    const platformServiceFeeUsd = getStoreServiceFeeUsd(store as any);
     const platformServiceFeePayer = (store as any).service_fee_payer === "customer" ? "customer" : "merchant";
     const platformServiceFeeCustomerUsd = platformServiceFeePayer === "customer" ? platformServiceFeeUsd : 0;
     const totalUsd = subtotalUsd + deliveryUsd + platformServiceFeeCustomerUsd;

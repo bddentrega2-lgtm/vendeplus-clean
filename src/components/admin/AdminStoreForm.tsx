@@ -44,6 +44,8 @@ type StoreDraft = {
   accepts_pickup: boolean;
   is_active: boolean;
   plan_type: string;
+  product_limit: string;
+  service_fee_usd: string;
   service_fee_payer: string;
   trial_started_at: string;
   trial_ends_at: string;
@@ -87,6 +89,8 @@ const initialDraft: StoreDraft = {
   accepts_pickup: true,
   is_active: true,
   plan_type: "monthly",
+  product_limit: "50",
+  service_fee_usd: "0",
   service_fee_payer: "merchant",
   trial_started_at: "",
   trial_ends_at: "",
@@ -172,6 +176,7 @@ function planLabel(value: string) {
   if (value === "trial") return "Prueba gratis";
   if (value === "monthly") return "Mensualidad";
   if (value === "per_service") return "Fee por pedido";
+  if (value === "custom") return "Personalizado privado";
   if (value === "founder") return "Founder";
   return value || "Sin plan";
 }
@@ -271,6 +276,12 @@ function mapStoreToDraft(store: any, deliverySettings?: any): StoreDraft {
       deliverySettings?.pickup_enabled ?? store.accepts_pickup !== false,
     is_active: store.is_active !== false,
     plan_type: store.plan_type || "trial",
+    product_limit: String(store.product_limit ?? "50"),
+    service_fee_usd: String(
+      ["per_service", "custom"].includes(store.plan_type)
+        ? store.monthly_price_usd ?? (store.plan_type === "per_service" ? PER_SERVICE_FEE_USD : 0)
+        : 0
+    ),
     service_fee_payer: store.service_fee_payer === "customer" ? "customer" : "merchant",
     trial_started_at: toDateInput(store.trial_started_at),
     trial_ends_at: toDateInput(store.trial_ends_at),
@@ -346,7 +357,11 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
       }
       if (field === "plan_type") {
         if (value === "monthly") next.monthly_price_usd = "20";
-        if (value === "per_service") next.monthly_price_usd = PER_SERVICE_FEE_USD.toFixed(2);
+        if (value === "per_service") {
+          next.monthly_price_usd = PER_SERVICE_FEE_USD.toFixed(2);
+          next.service_fee_usd = PER_SERVICE_FEE_USD.toFixed(2);
+        }
+        if (value === "custom") next.monthly_price_usd = "0";
         if (value === "trial" || value === "founder") next.monthly_price_usd = "0";
         next.subscription_status = value === "trial" ? "trial" : "active";
         if (value === "per_service" && !current.service_fee_payer) next.service_fee_payer = "merchant";
@@ -419,6 +434,8 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
           access_role: isEditing ? "owner" : draft.access_role,
           usd_to_bs: Number(draft.usd_to_bs || 600),
           monthly_price_usd: Number(draft.monthly_price_usd || 0),
+          product_limit: Number(draft.product_limit || 50),
+          service_fee_usd: Number(draft.service_fee_usd || 0),
           admin_delivery_provider: draft.admin_delivery_provider,
           admin_delivery_enabled: draft.admin_delivery_enabled,
           admin_pickup_enabled: draft.admin_pickup_enabled,
@@ -449,6 +466,8 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
       subscription_ends_at: source.subscription_ends_at,
       next_payment_due_at: source.next_payment_due_at,
       monthly_price_usd: Number(source.monthly_price_usd || 0),
+      product_limit: Number(source.product_limit || 50),
+      service_fee_usd: Number(source.service_fee_usd || 0),
       billing_notes: source.billing_notes,
       last_payment_at: source.last_payment_at,
     };
@@ -754,20 +773,20 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
             <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Plan elegido</p>
             <p className="mt-2 text-lg font-black text-[#25262B]">{planLabel(draft.plan_type)}</p>
             <p className="mt-1 text-sm font-bold text-[#746f69]">
-              {draft.plan_type === "per_service"
+              {["per_service", "custom"].includes(draft.plan_type)
                 ? `${formatAdminDate(primarySubscriptionDate)} - ${feePayerLabel}`
                 : formatAdminDate(primarySubscriptionDate)}
             </p>
           </div>
           <div className="rounded-[24px] bg-white p-4 ring-1 ring-[#25262B]/[0.06]">
             <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-              {draft.plan_type === "per_service" ? "Fee" : "Monto"}
+              {["per_service", "custom"].includes(draft.plan_type) ? "Fee" : "Monto"}
             </p>
             <p className="mt-2 text-lg font-black text-[#25262B]">
-              ${Number(draft.monthly_price_usd || 0).toFixed(2)}
+              ${Number(["per_service", "custom"].includes(draft.plan_type) ? draft.service_fee_usd : draft.monthly_price_usd).toFixed(2)}
             </p>
             <p className="mt-1 text-sm font-bold text-[#746f69]">
-              {draft.plan_type === "per_service" ? "por pedido" : "mensual"}
+              {["per_service", "custom"].includes(draft.plan_type) ? "por pedido" : "mensual"}
             </p>
           </div>
           <div className="rounded-[24px] bg-white p-4 ring-1 ring-[#25262B]/[0.06]">
@@ -818,7 +837,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
           </button>
         </div>
 
-        {draft.plan_type === "per_service" ? (
+        {["per_service", "custom"].includes(draft.plan_type) ? (
           <div className="mt-4 rounded-[24px] bg-white p-4 ring-1 ring-[#25262B]/[0.06]">
             <p className="text-sm font-black text-[#25262B]">Quien paga el fee por pedido?</p>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -862,6 +881,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
               <option value="trial">Trial</option>
               <option value="monthly">Mensual $20 / tienda</option>
               <option value="per_service">{`Por servicio $${PER_SERVICE_FEE_USD.toFixed(2)}`}</option>
+              <option value="custom">Personalizado privado</option>
               <option value="founder">Founder</option>
             </select>
           </Field>
@@ -875,8 +895,17 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
               <option value="expired">expired</option>
             </select>
           </Field>
-          <Field label={draft.plan_type === "per_service" ? "Costo por servicio USD" : "Monto mensual USD"}>
-            <input type="number" value={draft.monthly_price_usd} onChange={(event) => updateField("monthly_price_usd", event.target.value)} className={inputClass} />
+          {["per_service", "custom"].includes(draft.plan_type) ? (
+            <Field label="Fee por pedido USD">
+              <input type="number" min="0" step="0.01" value={draft.service_fee_usd} onChange={(event) => updateField("service_fee_usd", event.target.value)} className={inputClass} disabled={draft.plan_type === "per_service"} />
+            </Field>
+          ) : (
+            <Field label="Monto mensual USD">
+              <input type="number" value={draft.monthly_price_usd} onChange={(event) => updateField("monthly_price_usd", event.target.value)} className={inputClass} />
+            </Field>
+          )}
+          <Field label="Límite de productos">
+            <input type="number" min="1" max="10000" step="1" value={draft.product_limit} onChange={(event) => updateField("product_limit", event.target.value)} className={inputClass} />
           </Field>
           <Field label="Proximo cobro">
             <input type="date" value={draft.next_payment_due_at} onChange={(event) => updateField("next_payment_due_at", event.target.value)} className={inputClass} />

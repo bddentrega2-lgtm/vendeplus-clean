@@ -24,7 +24,6 @@ import { isCashPaymentMethod } from "@/lib/payments";
 import { buildPaymentInfo } from "@/lib/payment-display";
 import { buildOrderMessage, buildWhatsAppUrl } from "@/lib/whatsapp";
 import { saveOrderToSupabase } from "@/lib/supabase/orders";
-import { PER_SERVICE_FEE_USD } from "@/lib/plans";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import { useLiveStoreOpenState } from "@/hooks/use-live-store-open-state";
 
@@ -373,7 +372,11 @@ export function CheckoutForm({ store }: { store: Store }) {
         : isManualQuoteDelivery && deliveryUsd === 0
           ? "Por confirmar"
           : formatBaseCurrency(quote.originalFeeUsd ?? deliveryUsd, baseCurrency);
-  const serviceFeeUsd = store.planType === "per_service" && store.serviceFeePayer === "customer" ? PER_SERVICE_FEE_USD : 0;
+  const serviceFeeUsd =
+    ["per_service", "custom"].includes(String(store.planType || "")) &&
+    store.serviceFeePayer === "customer"
+      ? Number(store.serviceFeeUsd || 0)
+      : 0;
   const totalUsd = subtotalUsd + deliveryUsd + serviceFeeUsd;
   const totalBs = totalUsd * (store.usdToBs || 600);
   const isCashPayment = isCashPaymentMethod(form.paymentMethod);

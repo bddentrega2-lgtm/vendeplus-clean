@@ -13,7 +13,7 @@ import { isMissingColumnError } from "@/lib/supabase/schema-compat";
 import { normalizePhone } from "@/lib/customers/normalize-phone";
 import { safeUpsertCustomerFromOrder } from "@/lib/customers/upsert-customer-from-order";
 import { getVenezuelaRelativeRange } from "@/lib/time/venezuela";
-import { PER_SERVICE_FEE_USD } from "@/lib/plans";
+import { getStoreServiceFeeUsd } from "@/lib/plans";
 
 const allowedStatuses = [
   "received",
@@ -619,7 +619,7 @@ export async function POST(request: NextRequest) {
 
     const { data: store, error: storeError } = await supabase
       .from("stores")
-      .select("id, name, usd_to_bs, plan_type, service_fee_payer, service_fee_billing_cycle, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
+      .select("id, name, usd_to_bs, plan_type, monthly_price_usd, service_fee_payer, service_fee_billing_cycle, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
       .eq("id", storeId)
       .single();
 
@@ -674,7 +674,7 @@ export async function POST(request: NextRequest) {
     );
     const deliveryUsd =
       deliveryType === "delivery" ? Math.max(0, toSafeNumber(body.deliveryUsd, 0)) : 0;
-    const platformServiceFeeUsd = (store as any).plan_type === "per_service" ? PER_SERVICE_FEE_USD : 0;
+    const platformServiceFeeUsd = getStoreServiceFeeUsd(store as any);
     const platformServiceFeePayer = (store as any).service_fee_payer === "customer" ? "customer" : "merchant";
     const platformServiceFeeCustomerUsd = platformServiceFeePayer === "customer" ? platformServiceFeeUsd : 0;
     const totalUsd = subtotalUsd + deliveryUsd + platformServiceFeeCustomerUsd;
