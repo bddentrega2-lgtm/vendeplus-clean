@@ -58,6 +58,28 @@ function buildGoogleMapsUrl(lat: unknown, lng: unknown) {
   return `https://maps.google.com/?q=${latitude},${longitude}`;
 }
 
+function normalizeInternationalPhone(value: unknown) {
+  let digits = cleanText(value).replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (digits.startsWith("0")) digits = `58${digits.slice(1)}`;
+  if (!digits.startsWith("58") && digits.length === 10 && digits.startsWith("4")) {
+    digits = `58${digits}`;
+  }
+  return `+${digits}`;
+}
+
+function buildEntrega2CommerceId(order: any) {
+  const source = cleanText(order.stores?.slug) || cleanText(order.store_id);
+  const normalized = source
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return `vp_${normalized}`;
+}
+
 function buildEntrega2Payload(order: any) {
   const externalOrderId = getEntrega2ExternalOrderId(order.id);
   const deliveryMapsUrl = buildGoogleMapsUrl(order.delivery_lat, order.delivery_lng);
@@ -68,34 +90,33 @@ function buildEntrega2Payload(order: any) {
     const notes = cleanText(item.notes) ? ` - ${item.notes}` : "";
     return `${quantity}x ${item.product_name}${variant} - $${totalUsd.toFixed(2)}${notes}`;
   });
-  const pedido = [
-    order.public_code ? `Pedido ${order.public_code}` : "Pedido Somos",
-    order.customer_name ? `Cliente: ${order.customer_name}` : null,
-    order.customer_phone ? `Tel: ${order.customer_phone}` : null,
+  const detalles = [
+    order.public_code ? `Pedido: ${order.public_code}` : null,
     items.length ? `Productos: ${items.join(" | ")}` : null,
     order.payment_method ? `Pago: ${order.payment_method}` : null,
     order.total_usd ? `Total: $${Number(optionalNumber(order.total_usd) || 0).toFixed(2)}` : null,
-    order.order_details || order.notes ? `Notas: ${order.order_details || order.notes}` : null,
+    order.order_details || order.notes ? `Observaciones: ${order.order_details || order.notes}` : null,
+    order.delivery_reference ? `Referencia: ${order.delivery_reference}` : null,
   ]
     .filter(Boolean)
     .join("\n");
 
   return {
-    pedido,
+    pedido: cleanText(order.customer_name),
     direccion_entrega:
       cleanText(order.delivery_address) ||
       cleanText(order.delivery_reference) ||
       deliveryMapsUrl,
     latitud_entrega: optionalNumber(order.delivery_lat),
     longitud_entrega: optionalNumber(order.delivery_lng),
-    detalles: cleanText(order.order_details) || cleanText(order.notes),
+    detalles,
     link_maps: deliveryMapsUrl,
     latitud_retiro: optionalNumber(order.stores?.latitude),
     longitud_retiro: optionalNumber(order.stores?.longitude),
-    id_comercio: `vp_${cleanText(order.stores?.slug) || cleanText(order.store_id)}`,
+    id_comercio: buildEntrega2CommerceId(order),
     nombre_comercio: order.stores?.name || "Comercio Somos",
-    telefono_contacto: cleanText(order.customer_phone),
-    telefono_comercio: cleanText(order.stores?.whatsapp),
+    telefono_contacto: normalizeInternationalPhone(order.stores?.whatsapp),
+    telefono_comercio: normalizeInternationalPhone(order.customer_phone),
     tipo_vehiculo: getEntrega2DefaultVehicleType(),
     id_externo: externalOrderId,
     creado_por_usuario_id: getEntrega2CreatedByUserId(),
@@ -460,6 +481,9 @@ export async function POST(
     }
     if (!cleanText(order.customer_name) || !cleanText(order.customer_phone)) {
       return badRequest("El pedido necesita nombre y telefono del cliente.");
+    }
+    if (!cleanText((order.stores as any)?.whatsapp)) {
+      return badRequest("El comercio necesita un telefono configurado para Entrega2 App.");
     }
 
     if (

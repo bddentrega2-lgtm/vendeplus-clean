@@ -53,11 +53,6 @@ function getEntrega2Config() {
   return {
     baseUrl,
     apiKey,
-    createdByUserId:
-      process.env.ENTREGA2_CREATED_BY_USER_ID?.trim() ||
-      "somos@entrega2company.com",
-    defaultVehicleType:
-      process.env.ENTREGA2_DEFAULT_VEHICLE_TYPE?.trim() || "tapp",
   };
 }
 
@@ -134,11 +129,11 @@ export async function quoteEntrega2Delivery(payload: Record<string, unknown>) {
 }
 
 export function getEntrega2CreatedByUserId() {
-  return getEntrega2Config().createdByUserId;
+  return "somos_ve@entrega2company.com";
 }
 
 export function getEntrega2DefaultVehicleType() {
-  return getEntrega2Config().defaultVehicleType;
+  return "tapp";
 }
 
 export function normalizeEntrega2OrderStatus(value: unknown) {
