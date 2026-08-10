@@ -55,7 +55,7 @@ function buildGoogleMapsUrl(lat: unknown, lng: unknown) {
   const latitude = optionalNumber(lat);
   const longitude = optionalNumber(lng);
   if (latitude === null || longitude === null) return "";
-  return `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
+  return `https://maps.google.com/?q=${latitude},${longitude}`;
 }
 
 function buildEntrega2Payload(order: any) {
@@ -88,10 +88,14 @@ function buildEntrega2Payload(order: any) {
       deliveryMapsUrl,
     latitud_entrega: optionalNumber(order.delivery_lat),
     longitud_entrega: optionalNumber(order.delivery_lng),
+    detalles: cleanText(order.order_details) || cleanText(order.notes),
+    link_maps: deliveryMapsUrl,
     latitud_retiro: optionalNumber(order.stores?.latitude),
     longitud_retiro: optionalNumber(order.stores?.longitude),
     id_comercio: `vp_${cleanText(order.stores?.slug) || cleanText(order.store_id)}`,
     nombre_comercio: order.stores?.name || "Comercio Somos",
+    telefono_contacto: cleanText(order.customer_phone),
+    telefono_comercio: cleanText(order.stores?.whatsapp),
     tipo_vehiculo: getEntrega2DefaultVehicleType(),
     id_externo: externalOrderId,
     creado_por_usuario_id: getEntrega2CreatedByUserId(),
