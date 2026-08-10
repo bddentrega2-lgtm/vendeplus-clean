@@ -7,13 +7,16 @@ import {
   Clock3,
   MessageCircle,
   Search,
+  Star,
   ShoppingBag,
   Store as StoreIcon,
   Truck,
+  Zap,
 } from "lucide-react";
 import type { Store } from "@/types";
 import { BrandLogo } from "@/components/public/BrandLogo";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
+import type { MarketplaceFeaturedProduct } from "@/lib/monthly-challenges";
 
 const businessLabels: Record<string, string> = {
   food: "Comida",
@@ -86,6 +89,11 @@ function StoreCard({ store }: { store: Store }) {
         </p>
 
         <div className="mt-3 flex flex-wrap gap-2">
+          {store.monthlyBadges?.includes("Comercio rápido") ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-[#FFF0C9] px-2.5 py-1 text-[11px] font-black text-[#8A5700]">
+              <Zap size={12} /> Comercio rápido
+            </span>
+          ) : null}
           {canDeliver ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-[#EAF6E3] px-2.5 py-1 text-[11px] font-black text-[#437028]">
               <Truck size={12} />
@@ -117,6 +125,7 @@ function StoreCard({ store }: { store: Store }) {
 
 export function MarketplaceClient({
   stores,
+  featuredProducts = [],
   eyebrow = "Marketplace",
   title = "Compra en comercios afiliados a Somos",
   description = "Busca un comercio, arma tu pedido, elige delivery o retiro y confirma por WhatsApp.",
@@ -131,6 +140,7 @@ export function MarketplaceClient({
   partnerLocation,
 }: {
   stores: Store[];
+  featuredProducts?: MarketplaceFeaturedProduct[];
   eyebrow?: string;
   title?: string;
   description?: string;
@@ -265,6 +275,26 @@ export function MarketplaceClient({
           </div>
         </div>
       </section>
+
+      {featuredProducts.length ? (
+        <section className="border-y border-[#FFB547]/30 bg-gradient-to-br from-[#2E3A79] to-[#4656A4] text-white">
+          <div className="vp-container py-5 sm:py-6">
+            <div className="flex items-end justify-between gap-3">
+              <div><p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#FFB547]">Recompensas de agosto</p><h2 className="mt-0.5 text-2xl font-black">Productos destacados</h2><p className="mt-1 text-xs font-bold text-white/70">Descuentos especiales activados este mes.</p></div>
+              <Star className="hidden fill-[#FFB547] text-[#FFB547] sm:block" size={30} />
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {featuredProducts.map((product) => {
+                const finalPrice = product.discountPercent > 0 ? product.priceUsd * (1 - product.discountPercent / 100) : product.priceUsd;
+                return <Link key={product.rewardId} href={`/${product.storeSlug}`} className="group grid min-h-32 grid-cols-[108px_1fr] overflow-hidden rounded-[20px] bg-white text-[#25262B] shadow-xl shadow-black/10 transition hover:-translate-y-0.5 sm:grid-cols-[126px_1fr]">
+                  <div className="relative min-h-32 overflow-hidden"><OptimizedImage src={product.imageUrl} alt={product.productName} fill sizes="126px" className="bg-[#F8F3E8] object-cover transition duration-500 group-hover:scale-105" /><span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-[#FFB547] px-2 py-1 text-[10px] font-black"><Star size={10} className="fill-current" /> Destacado</span></div>
+                  <div className="min-w-0 p-3"><p className="truncate text-[10px] font-black uppercase tracking-[0.1em] text-[#2E3A79]">{product.storeName}</p><h3 className="mt-0.5 truncate text-base font-black">{product.productName}</h3><p className="mt-1 line-clamp-1 text-xs font-bold text-[#746f69]">{product.description}</p><div className="mt-2 flex flex-wrap items-center gap-1.5"><span className="text-lg font-black text-[#2E3A79]">${finalPrice.toFixed(2)}</span>{product.discountPercent > 0 ? <><span className="text-xs font-bold text-[#746f69] line-through">${product.priceUsd.toFixed(2)}</span><span className="rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-black text-green-700">-{product.discountPercent}%</span></> : null}</div></div>
+                </Link>;
+              })}
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section className="border-b border-[#25262B]/[0.06] bg-white">
         <div className="vp-container py-5">

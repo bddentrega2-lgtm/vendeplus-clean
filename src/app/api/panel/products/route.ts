@@ -65,6 +65,29 @@ type NormalizedVariant = {
 type ProductImageInput = { image_url: string; alt_text: string | null; sort_order: number };
 const maxProductImages = 2;
 
+async function recordPromotionActivation(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  storeId: string,
+  productId: string,
+  discountPercent: number,
+  previousDiscountPercent = 0
+) {
+  if (discountPercent <= 0) return;
+  const { error } = await supabase.from("store_promotion_activations").upsert(
+    { store_id: storeId, product_id: productId },
+    { onConflict: "store_id,product_id", ignoreDuplicates: true }
+  );
+  if (error) throw error;
+  if (previousDiscountPercent <= 0) {
+    const { error: eventError } = await supabase.from("store_promotion_events").insert({
+      store_id: storeId,
+      product_id: productId,
+      discount_percent: discountPercent,
+    });
+    if (eventError) throw eventError;
+  }
+}
+
 function normalizeProductImages(body: any, primaryImageUrl: string | null): ProductImageInput[] {
   const extra = Array.isArray(body.product_images) ? body.product_images : [];
   return [primaryImageUrl, ...extra.map((image: any) => typeof image === "string" ? image : image?.image_url)]
@@ -347,15 +370,16 @@ export async function POST(request: NextRequest) {
         supabase
           .from("products")
           .select("id", { count: "exact", head: true })
-          .eq("store_id", payload.store_id),
+          .eq("store_id", payload.store_id)
+          .eq("is_available", true),
       ]);
 
     if (storeError) throw storeError;
     if (countError) throw countError;
 
     const productLimit = getStoreProductLimit(store as any);
-    if ((productCount || 0) >= productLimit) {
-      return badRequest(`Este plan permite hasta ${productLimit} productos.`);
+    if (payload.is_available && (productCount || 0) >= productLimit) {
+      return badRequest(`Puedes publicar hasta ${productLimit} productos. Guarda este producto como inactivo o completa el logro para ampliar el límite.`);
     }
 
     const { data, error } = await supabase
@@ -368,6 +392,7 @@ export async function POST(request: NextRequest) {
 
     await syncProductVariants(supabase, data.id, variants);
     await syncProductImages(supabase, data.id, payload.store_id, productImages);
+    await recordPromotionActivation(supabase, payload.store_id, data.id, payload.discount_percent);
 
     return NextResponse.json({ product: data });
   } catch (error: any) {
@@ -407,7 +432,7 @@ export async function PATCH(request: NextRequest) {
 
     const { data: existingProduct, error: existingError } = await supabase
       .from("products")
-      .select("id, store_id")
+      .select("id, store_id, is_available, discount_percent")
       .eq("id", body.id)
       .single();
 
@@ -418,6 +443,19 @@ export async function PATCH(request: NextRequest) {
       existingProduct.store_id,
       "No tienes permiso para editar este producto."
     );
+
+    if (payload.is_available && existingProduct.is_available === false) {
+      const [{ data: store, error: storeError }, { count: activeCount, error: countError }] = await Promise.all([
+        supabase.from("stores").select("id, plan_type, product_limit").eq("id", existingProduct.store_id).single(),
+        supabase.from("products").select("id", { count: "exact", head: true }).eq("store_id", existingProduct.store_id).eq("is_available", true),
+      ]);
+      if (storeError) throw storeError;
+      if (countError) throw countError;
+      const productLimit = getStoreProductLimit(store as any);
+      if ((activeCount || 0) >= productLimit) {
+        return badRequest(`Puedes publicar hasta ${productLimit} productos. Desactiva otro o completa el logro para ampliar el límite.`);
+      }
+    }
 
     const { data, error } = await supabase
       .from("products")
@@ -430,6 +468,7 @@ export async function PATCH(request: NextRequest) {
 
     await syncProductVariants(supabase, body.id, variants);
     await syncProductImages(supabase, body.id, payload.store_id, productImages);
+    await recordPromotionActivation(supabase, existingProduct.store_id, body.id, payload.discount_percent, Number(existingProduct.discount_percent || 0));
 
     return NextResponse.json({ product: data });
   } catch (error: any) {

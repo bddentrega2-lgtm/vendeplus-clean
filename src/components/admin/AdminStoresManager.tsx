@@ -20,6 +20,7 @@ import {
   hasSavedPanelAuth,
 } from "@/lib/panel/client-auth";
 import { buildClientPublicUrl } from "@/lib/public-url";
+import { getPlan } from "@/lib/plans";
 
 type StoreRow = {
   id: string;
@@ -47,7 +48,21 @@ type StoreRow = {
   order_count: number;
   order_count_30d: number;
   user_count: number;
+  somos_billed_usd: number;
 };
+
+function formatUsd(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+  }).format(Number(value || 0));
+}
+
+function getSomosBillingLabel(store: StoreRow) {
+  if (["trial", "founder"].includes(String(store.plan_type || ""))) return "Sin cobro";
+  return formatUsd(store.somos_billed_usd);
+}
 
 async function apiRequest(pin: string, path = "/api/admin/stores", options?: RequestInit) {
   const response = await fetch(path, {
@@ -410,10 +425,12 @@ export function AdminStoresManager() {
       </section>
 
       <section className="overflow-hidden rounded-[24px] bg-white shadow-xl shadow-[#2E3A79]/[0.06] ring-1 ring-[#25262B]/[0.06]">
-        <div className="hidden grid-cols-[minmax(260px,1fr)_92px_160px_170px_270px] gap-3 border-b border-[#25262B]/10 bg-[#F8F3E8] px-4 py-3 text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69] xl:grid">
+        <div className="hidden grid-cols-[minmax(220px,1fr)_110px_92px_130px_135px_170px_270px] gap-3 border-b border-[#25262B]/10 bg-[#F8F3E8] px-4 py-3 text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69] xl:grid">
           <span>Comercio</span>
+          <span>Plan</span>
           <span>Total pedidos</span>
           <span>Estado</span>
+          <span>Facturado Somos</span>
           <span>Fecha de corte</span>
           <span className="text-right">Acciones</span>
         </div>
@@ -428,7 +445,7 @@ export function AdminStoresManager() {
           return (
             <article
               key={store.id}
-              className="grid gap-3 border-b border-[#25262B]/10 px-4 py-3 last:border-b-0 xl:min-h-[78px] xl:grid-cols-[minmax(260px,1fr)_92px_160px_170px_270px] xl:items-center"
+              className="grid gap-3 border-b border-[#25262B]/10 px-4 py-3 last:border-b-0 xl:min-h-[78px] xl:grid-cols-[minmax(220px,1fr)_110px_92px_130px_135px_170px_270px] xl:items-center"
             >
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -438,13 +455,15 @@ export function AdminStoresManager() {
                       Pausado
                     </span>
                   )}
-                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-black ring-1 ${status.className}`}>
-                    {status.label}
-                  </span>
                 </div>
                 <p className="mt-0.5 truncate text-xs font-bold text-[#746f69]">
                   /{store.slug} · {store.business_type || "general"} · {store.whatsapp || "sin WhatsApp"}
                 </p>
+              </div>
+
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69] xl:hidden">Plan</p>
+                <p className="text-sm font-black text-[#2E3A79]">{getPlan(store.plan_type).name}</p>
               </div>
 
               <div>
@@ -461,7 +480,14 @@ export function AdminStoresManager() {
                 <p className={["text-sm font-black leading-tight", status.isUrgent ? "text-red-700" : "text-green-700"].join(" ")}>
                   {status.daysLabel}
                 </p>
-                <p className="text-[11px] font-bold text-[#746f69]">{status.label}</p>
+              </div>
+
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69] xl:hidden">Facturado Somos</p>
+                <p className="text-sm font-black text-[#25262B]">{getSomosBillingLabel(store)}</p>
+                {["per_service", "custom"].includes(String(store.plan_type || "")) ? (
+                  <p className="text-[11px] font-bold text-[#746f69]">Corte actual</p>
+                ) : null}
               </div>
 
               <label className="block">

@@ -8,6 +8,7 @@ import {
 } from "@/lib/panel/access";
 import { isMissingColumnError } from "@/lib/supabase/schema-compat";
 import { loadTransportAgencyDeliverySettings } from "@/lib/transport";
+import { assertAchievementFeature, loadStoreAchievements } from "@/lib/achievements";
 
 function optionalNumber(value: unknown) {
   if (value === "" || value === null || value === undefined) return null;
@@ -335,9 +336,13 @@ export async function GET(request: NextRequest) {
     if (error) throw error;
 
     const storesWithFees = await Promise.all((data || []).map(async (store: any) => {
-      if (store.plan_type !== "per_service") return store;
-      const { data: balance } = await supabase.rpc("store_service_fee_balance", { p_store_id: store.id }).maybeSingle();
-      return { ...store, service_fee_balance: balance || null };
+      const [achievementState, balanceResult] = await Promise.all([
+        loadStoreAchievements(supabase, store.id),
+        store.plan_type === "per_service"
+          ? supabase.rpc("store_service_fee_balance", { p_store_id: store.id }).maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
+      return { ...store, service_fee_balance: balanceResult.data || null, achievement_features: achievementState.features };
     }));
 
     return NextResponse.json({
@@ -376,6 +381,20 @@ export async function PATCH(request: NextRequest) {
     }
 
     const supabase = createSupabaseAdminClient();
+
+    const { data: currentBrand, error: currentBrandError } = await supabase
+      .from("stores")
+      .select("primary_color, accent_color, button_text_color")
+      .eq("id", body.id)
+      .single();
+    if (currentBrandError) throw currentBrandError;
+    const changesBrandColors =
+      payload.primary_color !== currentBrand.primary_color ||
+      payload.accent_color !== currentBrand.accent_color ||
+      payload.button_text_color !== currentBrand.button_text_color;
+    if (changesBrandColors) {
+      await assertAchievementFeature(supabase, body.id, "brand_colors");
+    }
 
     let paymentDetailsSaved = true;
     let { data, error } = await supabase

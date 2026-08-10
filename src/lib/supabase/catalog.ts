@@ -819,6 +819,29 @@ async function hydrateStoresDeliveryRelations(rows: AnyRecord[]): Promise<AnyRec
   );
 }
 
+async function getMarketplaceEligibleStoreIds(
+  supabase: ReturnType<typeof createSupabasePublicClient>,
+  storeIds: string[]
+) {
+  if (!supabase || !storeIds.length) return new Set<string>();
+
+  const rpcResult = await supabase.rpc("marketplace_eligible_store_ids", {
+    p_store_ids: storeIds,
+  });
+  if (!rpcResult.error) {
+    return new Set((rpcResult.data || []).map((row: AnyRecord) => String(row.store_id)));
+  }
+
+  const productsResult = await supabase
+    .from("products")
+    .select("store_id")
+    .in("store_id", storeIds)
+    .gt("price_usd", 0);
+
+  if (productsResult.error) return new Set<string>();
+  return new Set((productsResult.data || []).map((row: AnyRecord) => String(row.store_id)));
+}
+
 export async function getPublicStores(): Promise<Store[]> {
   const supabase = createSupabasePublicClient();
 
@@ -859,10 +882,18 @@ export async function getPublicStores(): Promise<Store[]> {
     return allowDemoFallbacks() ? fallbackStores : [];
   }
 
-  const hydratedData = await hydrateStoresDeliveryRelations(data as AnyRecord[]);
+  const candidateRows = (data as AnyRecord[]).filter(
+    (row) => !isStoreSubscriptionPastDue(row) && Boolean(String(row.logo_url || "").trim())
+  );
+  const candidateIds = candidateRows.map((row) => String(row.id));
+  if (!candidateIds.length) return [];
+
+  const eligibleIds = await getMarketplaceEligibleStoreIds(supabase, candidateIds);
+  const hydratedData = await hydrateStoresDeliveryRelations(
+    candidateRows.filter((row) => eligibleIds.has(String(row.id)))
+  );
 
   return hydratedData
-    .filter((row) => !isStoreSubscriptionPastDue(row))
     .map((row) => mapStore(row, { includeFallbackCatalog: false }));
 }
 
@@ -954,6 +985,17 @@ export async function getPublicTransportAgencyMarketplaceBySlug(slug: string): P
 
   if (storesError) return null;
 
+  const marketplaceCandidates = ((storesData || []) as AnyRecord[]).filter(
+    (row) => !isStoreSubscriptionPastDue(row) && Boolean(String(row.logo_url || "").trim())
+  );
+  const eligibleStoreIds = await getMarketplaceEligibleStoreIds(
+    supabase,
+    marketplaceCandidates.map((row) => String(row.id))
+  );
+  const eligibleMarketplaceStores = marketplaceCandidates.filter((row) =>
+    eligibleStoreIds.has(String(row.id))
+  );
+
   return {
     agency: {
       id: String(agency.id),
@@ -965,8 +1007,7 @@ export async function getPublicTransportAgencyMarketplaceBySlug(slug: string): P
       state: agency.state || null,
       coverageNotes: normalizePublicBrandText(agency.coverage_notes) || null,
     },
-    stores: (await hydrateStoresDeliveryRelations((storesData || []) as AnyRecord[]))
-      .filter((row) => !isStoreSubscriptionPastDue(row))
+    stores: (await hydrateStoresDeliveryRelations(eligibleMarketplaceStores))
       .map((row) => mapStore(row, { includeFallbackCatalog: false })),
   };
 }

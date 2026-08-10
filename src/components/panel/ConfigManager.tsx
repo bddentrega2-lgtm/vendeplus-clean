@@ -72,6 +72,7 @@ type StoreRow = {
   service_fee_payer?: "merchant" | "customer";
   service_fee_billing_cycle?: "weekly" | "monthly";
   service_fee_balance?: { orders_count?: number; amount_usd?: number | string; period_start?: string } | null;
+  achievement_features?: { brand_colors?: boolean };
 };
 
 const businessTypes = [
@@ -224,6 +225,7 @@ function StoreSettingsCard({
   paymentDetailsAvailable: boolean;
   onSaved: () => void;
 }) {
+  const canCustomizeColors = store.achievement_features?.brand_colors !== false;
   const [draft, setDraft] = useState({
     id: store.id,
     name: store.name || "",
@@ -727,7 +729,7 @@ function StoreSettingsCard({
           <div>
             <h3 className="text-lg font-black text-[#25262B]">Identidad visual</h3>
             <p className="mt-1 text-sm font-bold text-[#746f69]">
-              Ajusta los colores principales que verá el cliente en el catálogo público.
+              {canCustomizeColors ? "Ajusta los colores principales que verá el cliente en el catálogo público." : "Refiere un comercio y ayúdalo a completar su primera venta para desbloquear los colores."}
             </p>
           </div>
           <div
@@ -772,16 +774,18 @@ function StoreSettingsCard({
               <div className="mt-3 flex items-center gap-3">
                 <input
                   type="color"
+                  disabled={!canCustomizeColors}
                   value={colorInputValue}
                   onChange={(event) => updateField(item.field, event.target.value)}
-                  className="h-12 w-16 rounded-2xl border border-[#25262B]/10 bg-white px-2 py-2 outline-none"
+                  className="h-12 w-16 rounded-2xl border border-[#25262B]/10 bg-white px-2 py-2 outline-none disabled:cursor-not-allowed disabled:opacity-40"
                 />
                 <input
+                  disabled={!canCustomizeColors}
                   value={colorValue}
                   onChange={(event) => updateField(item.field, event.target.value)}
                   placeholder="#2E3A79"
                   maxLength={7}
-                  className="min-w-0 flex-1 rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold uppercase outline-none focus:border-[#2E3A79]"
+                  className="min-w-0 flex-1 rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold uppercase outline-none focus:border-[#2E3A79] disabled:cursor-not-allowed disabled:bg-[#F8F3E8] disabled:opacity-60"
                 />
               </div>
               <p className="mt-2 text-xs font-bold leading-relaxed text-[#746f69]">

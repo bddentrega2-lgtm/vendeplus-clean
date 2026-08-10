@@ -12,6 +12,7 @@ import {
   buildRepeatLastOrderMessage,
   buildWhatsappUrl,
 } from "@/lib/customers/customer-messages";
+import { assertAchievementFeature } from "@/lib/achievements";
 
 function cleanText(value: unknown, maxLength = 1000) {
   return String(value || "").trim().slice(0, maxLength);
@@ -80,6 +81,7 @@ export async function GET(
       customer.store_id,
       "No tienes permiso para ver este cliente."
     );
+    await assertAchievementFeature(supabase, customer.store_id, "customers_detail");
 
     const { data: orders, error: ordersError } = await supabase
       .from("orders")
@@ -160,6 +162,7 @@ export async function PATCH(
       customer.store_id,
       "No tienes permiso para editar este cliente."
     );
+    await assertAchievementFeature(supabase, customer.store_id, "customers_detail");
 
     const { data, error } = await supabase
       .from("customers")

@@ -17,6 +17,7 @@ import {
 } from "@/lib/distance-ranges";
 import { isMissingColumnError } from "@/lib/supabase/schema-compat";
 import { loadTransportAgencyDeliverySettings } from "@/lib/transport";
+import { assertAchievementFeature } from "@/lib/achievements";
 import { isTransportConnectionEnded } from "@/lib/transport/disengagement";
 
 function cleanText(value: unknown) {
@@ -161,6 +162,9 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requirePanelAuth(request);
     const supabase = createSupabaseAdminClient();
+    if (auth.storeIds !== null) {
+      await Promise.all(auth.storeIds.map((storeId) => assertAchievementFeature(supabase, storeId, "delivery")));
+    }
     const rows = await loadRows(supabase, auth.storeIds);
 
     return NextResponse.json({ stores: rows });
@@ -181,6 +185,7 @@ export async function PATCH(request: NextRequest) {
 
     if (!storeId) return badRequest("Falta el comercio.");
     assertStoreManager(auth, storeId, "No tienes permiso para editar este comercio.");
+    await assertAchievementFeature(supabase, storeId, "delivery");
 
     if (body.action === "zone") {
       const id = cleanText(body.id);
@@ -327,6 +332,7 @@ export async function POST(request: NextRequest) {
 
     if (!storeId) return badRequest("Falta el comercio.");
     assertStoreManager(auth, storeId, "No tienes permiso para editar este comercio.");
+    await assertAchievementFeature(supabase, storeId, "delivery");
 
     if (body.action === "zone") {
       const { error } = await supabase.from("store_delivery_zones").insert({
@@ -391,6 +397,7 @@ export async function DELETE(request: NextRequest) {
 
     if (!storeId || !id) return badRequest("Faltan datos.");
     assertStoreManager(auth, storeId, "No tienes permiso para editar este comercio.");
+    await assertAchievementFeature(supabase, storeId, "delivery");
 
     const table =
       body.action === "zone"

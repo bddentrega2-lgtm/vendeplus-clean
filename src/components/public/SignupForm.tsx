@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { ArrowRight, Check, Eye, EyeOff, Loader2, Lock, Store } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ArrowRight, Check, Eye, EyeOff, ImageUp, Loader2, Lock, Store } from "lucide-react";
 import { AuthCaptcha } from "@/components/shared/AuthCaptcha";
 
 const businessTypes = [
@@ -16,6 +16,9 @@ const businessTypes = [
 
 export function SignupForm() {
   const [storeName, setStoreName] = useState("");
+  const [representativeName, setRepresentativeName] = useState("");
+  const [representativeIdNumber, setRepresentativeIdNumber] = useState("");
+  const [logo, setLogo] = useState<File | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -23,6 +26,7 @@ export function SignupForm() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [whatsapp, setWhatsapp] = useState("");
   const [businessType, setBusinessType] = useState("fashion");
+  const [referralCode, setReferralCode] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
   const [captchaToken, setCaptchaToken] = useState("");
@@ -33,10 +37,36 @@ export function SignupForm() {
     requiresEmailConfirmation: boolean;
   } | null>(null);
 
+  useEffect(() => {
+    const referral = new URLSearchParams(window.location.search).get("ref");
+    if (referral) setReferralCode(referral);
+  }, []);
+
   async function createAccount() {
     setIsSaving(true);
     setError("");
     setSuccess(null);
+
+    if (representativeName.trim().length < 3) {
+      setError("Ingresa el nombre completo del representante.");
+      setIsSaving(false);
+      return;
+    }
+    if (!/^(?:[VEJGP]-?)?\d{5,12}$/i.test(representativeIdNumber.trim())) {
+      setError("Ingresa una cédula válida, por ejemplo V-12345678.");
+      setIsSaving(false);
+      return;
+    }
+    if (!logo) {
+      setError("Sube el logo del comercio.");
+      setIsSaving(false);
+      return;
+    }
+    if (!["image/jpeg", "image/png", "image/webp"].includes(logo.type) || logo.size > 2 * 1024 * 1024) {
+      setError("El logo debe ser JPG, PNG o WebP y pesar máximo 2 MB.");
+      setIsSaving(false);
+      return;
+    }
 
     if (password !== confirmPassword) {
       setError("Las contraseñas no coinciden.");
@@ -45,18 +75,22 @@ export function SignupForm() {
     }
 
     try {
+      const formData = new FormData();
+      formData.set("storeName", storeName);
+      formData.set("representativeName", representativeName);
+      formData.set("representativeIdNumber", representativeIdNumber);
+      formData.set("email", email);
+      formData.set("password", password);
+      formData.set("confirmPassword", confirmPassword);
+      formData.set("whatsapp", whatsapp);
+      formData.set("businessType", businessType);
+      formData.set("captchaToken", captchaToken);
+      formData.set("referralCode", referralCode);
+      if (logo) formData.set("logo", logo);
+
       const response = await fetch("/api/signup", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          storeName,
-          email,
-          password,
-          confirmPassword,
-          whatsapp,
-          businessType,
-          captchaToken,
-        }),
+        body: formData,
       });
       const data = await response.json();
 
@@ -179,6 +213,51 @@ export function SignupForm() {
               />
             </label>
 
+            <label className="space-y-1">
+              <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
+                Nombre del representante
+              </span>
+              <input
+                value={representativeName}
+                onChange={(event) => setRepresentativeName(event.target.value)}
+                placeholder="Nombre y apellido"
+                autoComplete="name"
+                required
+                className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+              />
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
+                Cédula del representante
+              </span>
+              <input
+                value={representativeIdNumber}
+                onChange={(event) => setRepresentativeIdNumber(event.target.value.toUpperCase())}
+                placeholder="V-12345678"
+                inputMode="text"
+                required
+                className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+              />
+            </label>
+
+            <label className="space-y-2 md:col-span-2">
+              <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
+                Logo del comercio
+              </span>
+              <span className="flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-[#2E3A79]/30 bg-[#F8F3E8] px-4 py-4 text-sm font-bold text-[#2E3A79]">
+                <ImageUp size={22} />
+                {logo ? logo.name : "Subir logo en JPG, PNG o WebP (máximo 2 MB)"}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  required
+                  className="sr-only"
+                  onChange={(event) => setLogo(event.target.files?.[0] || null)}
+                />
+              </span>
+            </label>
+
             <label className="relative space-y-1">
               <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
                 Rubro
@@ -194,6 +273,18 @@ export function SignupForm() {
                   </option>
                 ))}
               </select>
+            </label>
+
+            <label className="space-y-1 md:col-span-2">
+              <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
+                Código de referido (opcional)
+              </span>
+              <input
+                value={referralCode}
+                onChange={(event) => setReferralCode(event.target.value)}
+                placeholder="Slug del comercio que te invitó"
+                className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+              />
             </label>
 
             <label className="relative space-y-1">

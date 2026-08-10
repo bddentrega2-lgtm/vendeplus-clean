@@ -1,5 +1,6 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { assertAchievementFeature, loadStoreAchievements } from "@/lib/achievements";
 import {
   assertStoreAccess,
   panelErrorResponse,
@@ -235,6 +236,11 @@ export async function GET(request: NextRequest) {
         selectedStoreId,
         "No tienes permiso para consultar este comercio."
       );
+    }
+
+    if (mode === "full" && auth.storeIds !== null) {
+      const storeIdsToCheck = selectedStoreId ? [selectedStoreId] : auth.storeIds;
+      await Promise.all(storeIdsToCheck.map((storeId) => assertAchievementFeature(supabase, storeId, "full_stats")));
     }
 
     let storesQuery = supabase
@@ -543,6 +549,9 @@ export async function GET(request: NextRequest) {
     const strongestWeekday = ordersByWeekday[0] || null;
 
     if (mode === "summary") {
+      const achievementState = auth.storeIds !== null && safeStores[0]?.id
+        ? await loadStoreAchievements(supabase, selectedStoreId || safeStores[0].id)
+        : null;
       return NextResponse.json({
         stores: safeStores,
         selectedStoreId,
@@ -578,6 +587,7 @@ export async function GET(request: NextRequest) {
         },
         topProducts: topProducts.slice(0, 5),
         customers: customerSummary,
+        achievementFeatures: achievementState?.features || null,
         auth: {
           mode: auth.mode,
           email: auth.email || null,

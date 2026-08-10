@@ -4,6 +4,7 @@ import { panelErrorResponse, requirePanelAuth } from "@/lib/panel/access";
 import { getCustomerBadges, shouldContactCustomer } from "@/lib/customers/customer-segments";
 import { buildContactAgainMessage, buildRepeatLastOrderMessage, buildWhatsappUrl } from "@/lib/customers/customer-messages";
 import { safeUpsertCustomerFromOrder } from "@/lib/customers/upsert-customer-from-order";
+import { assertAchievementFeature } from "@/lib/achievements";
 
 function toNumber(value: unknown) {
   const parsed = Number(value || 0);
@@ -86,6 +87,11 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requirePanelAuth(request);
     const supabase = createSupabaseAdminClient();
+    let customerDetailsUnlocked = true;
+    if (auth.storeIds !== null) {
+      const states = await Promise.all(auth.storeIds.map((storeId) => assertAchievementFeature(supabase, storeId, "customers_basic")));
+      customerDetailsUnlocked = states.every((state) => state.features.customers_detail);
+    }
     const { searchParams } = new URL(request.url);
     const search = String(searchParams.get("search") || "").trim();
     const safeSearch = search.replace(/[,.%()]/g, " ").trim();
@@ -329,6 +335,7 @@ export async function GET(request: NextRequest) {
       customers: filtered,
       stores: storesResult.data || [],
       summary,
+      customerDetailsUnlocked,
       page: {
         limit,
         offset,

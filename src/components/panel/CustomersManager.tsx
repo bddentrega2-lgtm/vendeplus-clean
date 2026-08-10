@@ -407,6 +407,7 @@ export function CustomersManager() {
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerRow | null>(null);
   const [selectedOrders, setSelectedOrders] = useState<CustomerOrder[]>([]);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [customerDetailsUnlocked, setCustomerDetailsUnlocked] = useState(true);
   const [isBackfilling, setIsBackfilling] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -436,6 +437,7 @@ export function CustomersManager() {
         nextOffset > 0 ? [...current, ...(data.customers || [])] : data.customers || []
       );
       setSummary(data.summary || null);
+      setCustomerDetailsUnlocked(data.customerDetailsUnlocked !== false);
       setPage(
         data.page || {
           limit: page.limit,
@@ -456,7 +458,7 @@ export function CustomersManager() {
           ? new URLSearchParams(window.location.search).get("customerId")
           : null;
 
-      if (customerId && !selectedCustomer) {
+      if (customerId && !selectedCustomer && data.customerDetailsUnlocked !== false) {
         void openCustomerById(customerId, currentPin);
       }
     } catch (error: any) {
@@ -787,11 +789,12 @@ export function CustomersManager() {
                 <button
                   type="button"
                   onClick={() => openCustomer(customer)}
-                  disabled={isLoadingDetail}
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-3 text-xs font-black text-white disabled:opacity-60"
+                  disabled={isLoadingDetail || !customerDetailsUnlocked}
+                  title={customerDetailsUnlocked ? "Ver detalle" : "Completa el logro de 3 promociones y 3 meses activos"}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <UserRound size={16} />
-                  Ver detalle
+                  {customerDetailsUnlocked ? "Ver detalle" : "Detalle bloqueado"}
                 </button>
               </div>
             </div>

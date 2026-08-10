@@ -9,7 +9,7 @@ export type PlanId =
 
 export const TRIAL_DAYS = 15;
 export const PER_SERVICE_FEE_USD = 0.1;
-export const DEFAULT_PRODUCT_LIMIT = 50;
+export const DEFAULT_PRODUCT_LIMIT = 30;
 
 export type Plan = {
   id: PlanId;
@@ -28,8 +28,8 @@ const trialPlan: Plan = {
   priceUsd: 0,
   billingLabel: "15 dias",
   storeLimit: 1,
-  productLimit: 50,
-  features: ["1 comercio", "50 productos", "Pedidos automatizados y ordenados", "Delivery basico"],
+  productLimit: 30,
+  features: ["1 comercio", "30 productos iniciales", "Pedidos automatizados y ordenados", "Delivery basico"],
 };
 
 const monthlyPlan: Plan = {
@@ -38,10 +38,10 @@ const monthlyPlan: Plan = {
   priceUsd: 20,
   billingLabel: "al mes por tienda, pago adelantado",
   storeLimit: 1,
-  productLimit: 50,
+  productLimit: 30,
   features: [
     "1 tienda",
-    "Hasta 50 productos",
+    "30 productos iniciales, ampliables con logros",
     "Pedidos automatizados y ordenados",
     "Delivery configurable",
     "Clientes, reportes y estadisticas base",
@@ -55,14 +55,14 @@ const perServicePlan: Plan = {
   priceUsd: PER_SERVICE_FEE_USD,
   billingLabel: "por servicio procesado",
   storeLimit: 1,
-  productLimit: 50,
+  productLimit: 30,
   serviceFeeUsd: PER_SERVICE_FEE_USD,
   features: [
     "Sin mensualidad fija",
     "$0.10 por servicio procesado",
     "Corte mensual con lo acumulado",
     "Ideal para bajo volumen",
-    "Hasta 50 productos",
+    "30 productos iniciales, ampliables con logros",
     "Pedidos automatizados y ordenados",
   ],
 };

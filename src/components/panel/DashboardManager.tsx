@@ -11,7 +11,6 @@ import {
   ExternalLink,
   Lock,
   ShoppingBag,
-  Store,
   UsersRound,
 } from "lucide-react";
 import Link from "next/link";
@@ -217,6 +216,10 @@ export function DashboardManager() {
   }
 
   const summary = stats.summary || {};
+  const achievementFeatures = stats.achievementFeatures;
+  const hasBasicStats = achievementFeatures === null || achievementFeatures?.basic_stats;
+  const hasFullStats = achievementFeatures === null || achievementFeatures?.full_stats;
+  const hasCustomers = achievementFeatures === null || achievementFeatures?.customers_basic;
   const stores = Array.isArray(stats.stores) ? stats.stores : [];
   const primaryStore = getRelevantStore(stores);
   const subscriptionReminder = getSubscriptionReminder(primaryStore);
@@ -310,12 +313,6 @@ export function DashboardManager() {
       value: String(summary.activeProducts || 0),
       detail: `${summary.inactiveProducts || 0} productos inactivos`,
       icon: Boxes,
-    },
-    {
-      label: "Entregas",
-      value: String(summary.deliveryOrders || 0),
-      detail: `${Number(summary.averageDistanceKm || 0).toFixed(2)} km promedio`,
-      icon: Store,
     },
   ];
 
@@ -467,7 +464,7 @@ export function DashboardManager() {
         </div>
       </section>
 
-      <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
+      {hasCustomers ? <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
         <div className="flex flex-col justify-between gap-3 xl:flex-row xl:items-center">
           <div>
             <p className="text-sm font-black uppercase tracking-[0.18em] text-[#746f69]">
@@ -515,16 +512,16 @@ export function DashboardManager() {
             </p>
           </div>
         </div>
-      </section>
+      </section> : null}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {hasBasicStats ? <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {cards.map((card) => (
           <MetricCard key={card.label} {...card} />
         ))}
-      </section>
+      </section> : <section className="rounded-[34px] bg-white p-6 text-center shadow-xl ring-1 ring-[#25262B]/[0.06]"><Lock className="mx-auto text-[#2E3A79]" /><h2 className="mt-3 text-2xl font-black">Tus estadísticas se desbloquean con 10 pedidos</h2><p className="mt-2 text-sm font-bold text-[#746f69]">Revisa tu progreso y los demás beneficios disponibles.</p><Link href="/panel/logros" className="mt-4 inline-flex rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black">Ver logros</Link></section>}
 
       <section className="grid gap-5 xl:grid-cols-2">
-        <div className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
+        {hasFullStats ? <div className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
           <h2 className="text-2xl font-black">Productos más vendidos</h2>
           <div className="mt-5 space-y-3">
             {(stats.topProducts || []).slice(0, 5).map((product: any, index: number) => (
@@ -537,7 +534,7 @@ export function DashboardManager() {
               </div>
             ))}
           </div>
-        </div>
+        </div> : null}
 
         <div className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
           <h2 className="text-2xl font-black">Accesos rápidos</h2>
@@ -555,8 +552,8 @@ export function DashboardManager() {
             <Link href="/panel/pedidos" className="rounded-full bg-[#FFB547] px-5 py-3 text-center text-sm font-black text-[#25262B]">
               Ver pedidos
             </Link>
-            <Link href="/panel/estadisticas" className="rounded-full bg-[#F8F3E8] px-5 py-3 text-center text-sm font-black text-[#2E3A79]">
-              Estadísticas completas
+            <Link href={hasFullStats ? "/panel/estadisticas" : "/panel/logros"} className="rounded-full bg-[#F8F3E8] px-5 py-3 text-center text-sm font-black text-[#2E3A79]">
+              {hasFullStats ? "Estadísticas completas" : "Desbloquear estadísticas"}
             </Link>
           </div>
         </div>

@@ -27,6 +27,11 @@ const panelRouteMeta: Record<string, { active: string; title: string; subtitle: 
     title: "Pedidos",
     subtitle: "",
   },
+  "/panel/logros": {
+    active: "/panel/logros",
+    title: "Logros",
+    subtitle: "Completa metas y desbloquea nuevas funciones permanentemente.",
+  },
   "/panel/productos": {
     active: "/panel/productos",
     title: "Productos",
@@ -71,8 +76,14 @@ const panelRouteMeta: Record<string, { active: string; title: string; subtitle: 
 
 const routesWithoutPanelShell = new Set(["/panel/login", "/panel/update-password"]);
 const routesAllowedWhenExpired = new Set(["/panel/suscripcion"]);
+const routeFeatureRequirements: Record<string, string> = {
+  "/panel/delivery": "delivery",
+  "/panel/clientes": "customers_basic",
+  "/panel/estadisticas": "full_stats",
+};
 
 type PanelStoreSubscriptionState = {
+  id?: string | null;
   subscription_status?: string | null;
   subscription_ends_at?: string | null;
   next_payment_due_at?: string | null;
@@ -108,9 +119,14 @@ function ExpiredPanelBlock() {
   );
 }
 
+function LockedFeatureBlock({ achievementTitle }: { achievementTitle: string }) {
+  return <section className="rounded-[34px] bg-white p-6 text-center shadow-xl ring-1 ring-[#25262B]/[0.06]"><div className="mx-auto grid h-14 w-14 place-items-center rounded-3xl bg-[#FFB547]/20 text-2xl">🏆</div><h2 className="mt-4 text-2xl font-black">Esta función es un logro</h2><p className="mx-auto mt-2 max-w-xl text-sm font-bold leading-relaxed text-[#746f69]">Completa “{achievementTitle}” para desbloquearla permanentemente.</p><Link href="/panel/logros" className="mt-5 inline-flex rounded-full bg-[#FFB547] px-6 py-3 text-sm font-black text-[#25262B]">Ver mi progreso</Link></section>;
+}
+
 export function PanelFrame({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [isExpired, setIsExpired] = useState(false);
+  const [lockedAchievementTitle, setLockedAchievementTitle] = useState("");
 
   const meta = panelRouteMeta[pathname] || panelRouteMeta["/panel"];
 
@@ -138,6 +154,15 @@ export function PanelFrame({ children }: { children: React.ReactNode }) {
         const data = await response.json();
         const relevantStore = getRelevantSubscriptionStore(Array.isArray(data.stores) ? data.stores : []);
         if (active) setIsExpired(isStorePastDue(relevantStore));
+        const requiredFeature = routeFeatureRequirements[pathname];
+        if (requiredFeature && relevantStore?.id) {
+          const achievementResponse = await fetch(`/api/panel/achievements?storeId=${encodeURIComponent(relevantStore.id)}`, { headers: await getPanelAuthHeaders(savedPin) });
+          const achievementData = await achievementResponse.json();
+          const requiredAchievement = (achievementData.achievements || []).find((item: any) => item.feature === requiredFeature);
+          if (active) setLockedAchievementTitle(requiredAchievement?.unlocked ? "" : requiredAchievement?.title || "el logro requerido");
+        } else if (active) {
+          setLockedAchievementTitle("");
+        }
       } catch {
         if (active) setIsExpired(false);
       }
@@ -158,7 +183,7 @@ export function PanelFrame({ children }: { children: React.ReactNode }) {
 
   return (
     <PanelShell active={meta.active} title={meta.title} subtitle={meta.subtitle}>
-      {shouldBlockContent ? <ExpiredPanelBlock /> : children}
+      {shouldBlockContent ? <ExpiredPanelBlock /> : lockedAchievementTitle ? <LockedFeatureBlock achievementTitle={lockedAchievementTitle} /> : children}
     </PanelShell>
   );
 }

@@ -89,7 +89,7 @@ const initialDraft: StoreDraft = {
   accepts_pickup: true,
   is_active: true,
   plan_type: "monthly",
-  product_limit: "50",
+  product_limit: "30",
   service_fee_usd: "0",
   service_fee_payer: "merchant",
   trial_started_at: "",
@@ -276,7 +276,7 @@ function mapStoreToDraft(store: any, deliverySettings?: any): StoreDraft {
       deliverySettings?.pickup_enabled ?? store.accepts_pickup !== false,
     is_active: store.is_active !== false,
     plan_type: store.plan_type || "trial",
-    product_limit: String(store.product_limit ?? "50"),
+    product_limit: String(store.product_limit ?? "30"),
     service_fee_usd: String(
       ["per_service", "custom"].includes(store.plan_type)
         ? store.monthly_price_usd ?? (store.plan_type === "per_service" ? PER_SERVICE_FEE_USD : 0)
@@ -331,6 +331,25 @@ function Field({
 const inputClass =
   "w-full rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#25262B]";
 
+type AdminAchievement = {
+  key: string;
+  title: string;
+  reward: string;
+  unlocked: boolean;
+  source: "earned" | "inherited" | "admin" | null;
+  progress: { current: number; target: number; detail?: string };
+};
+
+type AdminMonthlyChallenge = {
+  key: string;
+  title: string;
+  reward: string;
+  unlocked: boolean;
+  source: "earned" | "admin" | null;
+  rewardStatus: "active" | "revoked" | null;
+  progress: { current: number; target: number; detail?: string };
+};
+
 export function AdminStoreForm({ storeId }: { storeId?: string }) {
   const router = useRouter();
   const isEditing = Boolean(storeId);
@@ -344,6 +363,9 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [createdStoreId, setCreatedStoreId] = useState("");
+  const [achievements, setAchievements] = useState<AdminAchievement[]>([]);
+  const [monthlyChallenges, setMonthlyChallenges] = useState<AdminMonthlyChallenge[]>([]);
+  const [updatingAchievement, setUpdatingAchievement] = useState("");
 
   function updateField(field: keyof StoreDraft, value: string | boolean) {
     setDraft((current) => {
@@ -394,8 +416,13 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
 
     try {
       if (isEditing) {
-        const data = await adminRequest(`/api/admin/stores/${storeId}`, "");
+        const [data, achievementData] = await Promise.all([
+          adminRequest(`/api/admin/stores/${storeId}`, ""),
+          adminRequest(`/api/admin/stores/${storeId}/achievements`, ""),
+        ]);
         setDraft(mapStoreToDraft(data.store, data.deliverySettings));
+        setAchievements(achievementData.achievements || []);
+        setMonthlyChallenges(achievementData.monthlyChallenges || []);
       } else {
         await adminRequest("/api/admin/summary", "");
       }
@@ -409,6 +436,46 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
       setIsCheckingAccess(false);
     }
   }, [isEditing, storeId]);
+
+  async function updateAchievement(achievement: AdminAchievement, action: "grant" | "revoke") {
+    if (!storeId) return;
+    if (action === "revoke" && !window.confirm(`¿Quitar la recompensa “${achievement.reward}”? Su progreso volverá a cero y deberá cumplir nuevamente la meta.`)) return;
+    setUpdatingAchievement(achievement.key);
+    setError("");
+    setMessage("");
+    try {
+      const data = await adminRequest(`/api/admin/stores/${storeId}/achievements`, "", {
+        method: "PATCH",
+        body: JSON.stringify({ achievementKey: achievement.key, action }),
+      });
+      setAchievements(data.achievements || []);
+      setMessage(data.message || "Recompensa habilitada.");
+      if (achievement.key === "orders_100_product_limit") {
+        setDraft((current) => ({ ...current, product_limit: action === "grant" ? "50" : "30" }));
+      }
+    } catch (nextError: any) {
+      setError(nextError.message || "No se pudo actualizar la recompensa.");
+    } finally {
+      setUpdatingAchievement("");
+    }
+  }
+
+  async function updateMonthlyChallenge(challenge: AdminMonthlyChallenge) {
+    if (!storeId || !challenge.rewardStatus) return;
+    const action = challenge.rewardStatus === "active" ? "revoke_monthly" : "activate_monthly";
+    if (action === "revoke_monthly" && !window.confirm(`¿Retirar temporalmente “${challenge.reward}”?`)) return;
+    setUpdatingAchievement(challenge.key);
+    setError(""); setMessage("");
+    try {
+      const data = await adminRequest(`/api/admin/stores/${storeId}/achievements`, "", { method: "PATCH", body: JSON.stringify({ monthlyChallengeKey: challenge.key, action }) });
+      setMonthlyChallenges(data.monthlyChallenges || []);
+      setMessage(data.message || "Recompensa mensual actualizada.");
+    } catch (nextError: any) {
+      setError(nextError.message || "No se pudo actualizar la recompensa mensual.");
+    } finally {
+      setUpdatingAchievement("");
+    }
+  }
 
   async function saveStore() {
     if (!isEditing && draft.access_email && draft.access_password !== draft.access_password_confirmation) {
@@ -434,7 +501,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
           access_role: isEditing ? "owner" : draft.access_role,
           usd_to_bs: Number(draft.usd_to_bs || 600),
           monthly_price_usd: Number(draft.monthly_price_usd || 0),
-          product_limit: Number(draft.product_limit || 50),
+          product_limit: Number(draft.product_limit || 30),
           service_fee_usd: Number(draft.service_fee_usd || 0),
           admin_delivery_provider: draft.admin_delivery_provider,
           admin_delivery_enabled: draft.admin_delivery_enabled,
@@ -466,7 +533,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
       subscription_ends_at: source.subscription_ends_at,
       next_payment_due_at: source.next_payment_due_at,
       monthly_price_usd: Number(source.monthly_price_usd || 0),
-      product_limit: Number(source.product_limit || 50),
+      product_limit: Number(source.product_limit || 30),
       service_fee_usd: Number(source.service_fee_usd || 0),
       billing_notes: source.billing_notes,
       last_payment_at: source.last_payment_at,
@@ -729,6 +796,32 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
           </button>
         </div>
       </div>
+
+      {isEditing ? <section className="mt-6 rounded-[28px] bg-white p-4 ring-1 ring-[#25262B]/[0.08]">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Control Super Admin</p>
+          <h3 className="mt-1 text-xl font-black text-[#25262B]">Logros y recompensas</h3>
+          <p className="mt-1 text-sm font-bold text-[#746f69]">Puedes habilitar o retirar una recompensa. Al retirarla, su progreso vuelve a cero y solo cuenta actividad nueva.</p>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {achievements.map((achievement) => <article key={achievement.key} className="rounded-[22px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
+            <div className="flex items-start justify-between gap-2"><div><p className="text-sm font-black text-[#25262B]">{achievement.title}</p><p className="mt-1 text-xs font-bold text-[#746f69]">{achievement.reward}</p></div><span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${achievement.unlocked ? "bg-green-100 text-green-700" : "bg-white text-[#746f69]"}`}>{achievement.unlocked ? achievement.source === "inherited" ? "Heredado" : achievement.source === "admin" ? "Admin" : "Logrado" : "Pendiente"}</span></div>
+            <p className="mt-3 text-xs font-bold text-[#746f69]">{achievement.progress.detail || `${achievement.progress.current} de ${achievement.progress.target}`}</p>
+            <button type="button" onClick={() => updateAchievement(achievement, achievement.unlocked ? "revoke" : "grant")} disabled={updatingAchievement === achievement.key} className={`mt-3 inline-flex w-full items-center justify-center rounded-full px-4 py-2 text-xs font-black disabled:cursor-not-allowed disabled:opacity-60 ${achievement.unlocked ? "bg-red-50 text-red-700 ring-1 ring-red-200" : "bg-[#2E3A79] text-white"}`}>{updatingAchievement === achievement.key ? "Actualizando..." : achievement.unlocked ? "Quitar recompensa" : "Habilitar manualmente"}</button>
+          </article>)}
+        </div>
+      </section> : null}
+
+      {isEditing && monthlyChallenges.length ? <section className="mt-6 rounded-[28px] bg-gradient-to-br from-[#FFF0C9] to-white p-4 ring-1 ring-[#FFB547]/40">
+        <div><p className="text-xs font-black uppercase tracking-[0.14em] text-[#8A5700]">Campaña temporal</p><h3 className="mt-1 text-xl font-black text-[#25262B]">Retos de agosto</h3><p className="mt-1 text-sm font-bold text-[#746f69]">Puedes retirar o reactivar una recompensa mensual que el comercio ya haya ganado.</p></div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          {monthlyChallenges.map((challenge) => <article key={challenge.key} className="rounded-[22px] bg-white p-4 ring-1 ring-[#25262B]/[0.06]">
+            <div className="flex items-start justify-between gap-2"><div><p className="text-sm font-black text-[#25262B]">{challenge.title}</p><p className="mt-1 text-xs font-bold text-[#746f69]">{challenge.reward}</p></div><span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${challenge.rewardStatus === "active" ? "bg-green-100 text-green-700" : challenge.rewardStatus === "revoked" ? "bg-red-50 text-red-700" : "bg-[#F8F3E8] text-[#746f69]"}`}>{challenge.rewardStatus === "active" ? "Ganada" : challenge.rewardStatus === "revoked" ? "Retirada" : "En progreso"}</span></div>
+            <p className="mt-3 text-xs font-bold text-[#746f69]">{challenge.progress.detail || `${challenge.progress.current} de ${challenge.progress.target}`}</p>
+            {challenge.rewardStatus ? <button type="button" onClick={() => updateMonthlyChallenge(challenge)} disabled={updatingAchievement === challenge.key} className={`mt-3 inline-flex w-full items-center justify-center rounded-full px-4 py-2 text-xs font-black disabled:opacity-60 ${challenge.rewardStatus === "active" ? "bg-red-50 text-red-700 ring-1 ring-red-200" : "bg-[#2E3A79] text-white"}`}>{updatingAchievement === challenge.key ? "Actualizando..." : challenge.rewardStatus === "active" ? "Retirar recompensa" : "Reactivar recompensa"}</button> : null}
+          </article>)}
+        </div>
+      </section> : null}
 
       <section className="mt-6 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
         <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">

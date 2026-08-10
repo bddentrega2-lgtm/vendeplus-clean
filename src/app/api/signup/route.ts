@@ -18,12 +18,26 @@ import {
 import { buildPublicSiteUrl } from "@/lib/server/site-url";
 import { TRIAL_DAYS } from "@/lib/plans";
 
-const MAX_SIGNUP_BODY_BYTES = 20_000;
+const MAX_LOGO_BYTES = 2 * 1024 * 1024;
+const MAX_SIGNUP_BODY_BYTES = MAX_LOGO_BYTES + 120_000;
+const ALLOWED_LOGO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const SIGNUP_IP_LIMIT = 5;
 const SIGNUP_RATE_WINDOW_MS = 60 * 60 * 1000;
 
 function cleanText(value: unknown) {
   return String(value || "").trim();
+}
+
+function normalizeRepresentativeId(value: unknown) {
+  const normalized = cleanText(value).toUpperCase().replace(/\s+/g, "");
+  if (/^[0-9]{5,12}$/.test(normalized)) return `V-${normalized}`;
+  return normalized.replace(/^([VEJGP])(?=[0-9])/, "$1-");
+}
+
+function logoExtension(type: string) {
+  if (type === "image/png") return "png";
+  if (type === "image/webp") return "webp";
+  return "jpg";
 }
 
 function badRequest(message: string) {
@@ -142,6 +156,18 @@ async function canRecoverOrphanCommerceUser(supabase: any, user: any) {
   );
 }
 
+async function findUserAfterSignup(supabase: any, email: string) {
+  const retryDelaysMs = [0, 200, 500, 900];
+
+  for (const delayMs of retryDelaysMs) {
+    if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    const user = await findUserByEmail(supabase, email);
+    if (user?.id) return user;
+  }
+
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   const apiContext = createApiRequestContext(request, "signup");
   const observed = (response: NextResponse) =>
@@ -178,19 +204,37 @@ export async function POST(request: NextRequest) {
 
   let createdUserId = "";
   let createdStoreId = "";
+  let uploadedLogoPath = "";
   let shouldDeleteAuthUserOnFailure = false;
 
   try {
-    const body = await request.json();
-    const storeName = cleanText(body.storeName);
-    const email = normalizeAccessEmail(body.email);
-    const password = cleanText(body.password);
-    const confirmPassword = cleanText(body.confirmPassword);
-    const whatsapp = cleanText(body.whatsapp).replace(/[^0-9]/g, "");
-    const businessType = cleanText(body.businessType) || "general";
-    const captchaToken = cleanText(body.captchaToken);
+    const body = await request.formData();
+    const storeName = cleanText(body.get("storeName"));
+    const representativeName = cleanText(body.get("representativeName"));
+    const representativeIdNumber = normalizeRepresentativeId(body.get("representativeIdNumber"));
+    const logo = body.get("logo");
+    const email = normalizeAccessEmail(body.get("email"));
+    const password = cleanText(body.get("password"));
+    const confirmPassword = cleanText(body.get("confirmPassword"));
+    const whatsapp = cleanText(body.get("whatsapp")).replace(/[^0-9]/g, "");
+    const businessType = cleanText(body.get("businessType")) || "general";
+    const captchaToken = cleanText(body.get("captchaToken"));
+    const referralCode = slugifyStore(cleanText(body.get("referralCode")));
 
     if (!storeName) return observed(badRequest("El nombre del comercio es obligatorio."));
+    if (representativeName.length < 3 || representativeName.length > 120) {
+      return observed(badRequest("Ingresa el nombre completo del representante."));
+    }
+    if (!/^[VEJGP]-[0-9]{5,12}$/.test(representativeIdNumber)) {
+      return observed(badRequest("Ingresa una cedula valida, por ejemplo V-12345678."));
+    }
+    if (!(logo instanceof File)) return observed(badRequest("El logo del comercio es obligatorio."));
+    if (!ALLOWED_LOGO_TYPES.has(logo.type)) {
+      return observed(badRequest("El logo debe ser una imagen JPG, PNG o WebP."));
+    }
+    if (logo.size <= 0 || logo.size > MAX_LOGO_BYTES) {
+      return observed(badRequest("El logo no debe pesar mas de 2 MB."));
+    }
     if (!email || !email.includes("@")) return observed(badRequest("Ingresa un email valido."));
     if (password.length < 8) {
       return observed(badRequest("La contrasena debe tener al menos 8 caracteres."));
@@ -203,6 +247,11 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createSupabaseAdminClient();
+    const { data: referrerStore, error: referrerError } = referralCode
+      ? await supabase.from("stores").select("id, slug").eq("slug", referralCode).maybeSingle()
+      : { data: null, error: null };
+    if (referrerError) throw referrerError;
+    if (referralCode && !referrerStore) return observed(badRequest("El código de referido no es válido."));
     const existingUser = await findUserByEmail(supabase, email);
 
     if (existingUser) {
@@ -248,11 +297,44 @@ export async function POST(request: NextRequest) {
       createdUserId = userResult.data.user?.id || "";
       shouldDeleteAuthUserOnFailure = Boolean(createdUserId);
       requiresEmailConfirmation = !userResult.data.session;
+
+      if (!createdUserId) {
+        const recoveredUser = await findUserAfterSignup(supabase, email);
+
+        if (recoveredUser) {
+          const canRecover = await canRecoverOrphanCommerceUser(supabase, recoveredUser);
+          if (!canRecover) {
+            return observed(conflict("Ya existe una cuenta con ese email. Inicia sesion o usa otro correo."));
+          }
+
+          createdUserId = recoveredUser.id;
+          const createdAtMs = Date.parse(String(recoveredUser.created_at || ""));
+          shouldDeleteAuthUserOnFailure = Number.isFinite(createdAtMs)
+            && Date.now() - createdAtMs < 60_000;
+
+          logApiEvent(apiContext, "signup_user_recovered_same_request", {
+            userId: createdUserId,
+          });
+        }
+      }
     }
 
     if (!createdUserId) {
       throw new Error("No se pudo crear el usuario.");
     }
+
+    const logoPath = `store-signup/${slug}/${Date.now()}.${logoExtension(logo.type)}`;
+    const logoBuffer = Buffer.from(await logo.arrayBuffer());
+    const { error: logoError } = await supabase.storage
+      .from("product-images")
+      .upload(logoPath, logoBuffer, {
+        cacheControl: "31536000",
+        contentType: logo.type,
+        upsert: false,
+      });
+    if (logoError) throw logoError;
+    uploadedLogoPath = logoPath;
+    const { data: logoData } = supabase.storage.from("product-images").getPublicUrl(logoPath);
 
     const storePayload = {
       slug,
@@ -264,7 +346,7 @@ export async function POST(request: NextRequest) {
       latitude: null,
       longitude: null,
       cover_image_url: null,
-      logo_url: null,
+      logo_url: logoData.publicUrl,
       opening_hours: "Disponible hoy",
       delivery_estimate: "25-40 min",
       pickup_estimate: "15-25 min",
@@ -283,12 +365,29 @@ export async function POST(request: NextRequest) {
       trial_ends_at: trialEndsAt.toISOString(),
       subscription_status: "trial",
       monthly_price_usd: 0,
+      product_limit: 30,
     };
 
     const storeResult = await insertStore(supabase, storePayload);
     if (storeResult.error) throw storeResult.error;
 
     createdStoreId = storeResult.data.id;
+
+    const { error: profileError } = await supabase.from("store_registration_profiles").insert({
+      store_id: createdStoreId,
+      representative_name: representativeName,
+      representative_id_number: representativeIdNumber,
+    });
+    if (profileError) throw profileError;
+
+    if (referrerStore) {
+      const { error: referralError } = await supabase.from("store_referrals").insert({
+        referrer_store_id: referrerStore.id,
+        referred_store_id: createdStoreId,
+        status: "registered",
+      });
+      if (referralError) throw referralError;
+    }
 
     const { error: assignmentError } = await supabase.from("store_users").insert({
       store_id: createdStoreId,
@@ -327,6 +426,9 @@ export async function POST(request: NextRequest) {
     try {
       const supabase = createSupabaseAdminClient();
       if (createdStoreId) await supabase.from("stores").delete().eq("id", createdStoreId);
+      if (uploadedLogoPath) {
+        await supabase.storage.from("product-images").remove([uploadedLogoPath]);
+      }
       if (shouldDeleteAuthUserOnFailure && createdUserId) await supabase.auth.admin.deleteUser(createdUserId);
     } catch {
       // Best-effort cleanup only.
