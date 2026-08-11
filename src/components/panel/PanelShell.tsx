@@ -2,6 +2,7 @@
 import { LogoutButton } from "@/components/panel/LogoutButton";
 import { OnboardingTour } from "@/components/panel/OnboardingTour";
 import { PanelStoreIdentity } from "@/components/panel/PanelStoreIdentity";
+import { PanelStoreSelector } from "@/components/panel/PanelStoreSelector";
 import { PwaInstallButton } from "@/components/pwa/PwaInstallButton";
 import {
   BarChart3,
@@ -117,6 +118,7 @@ export function PanelShell({
               </div>
 
               <div className="flex flex-col gap-3 sm:flex-row md:items-center">
+                <PanelStoreSelector />
                 <div className="md:hidden">
                   <PwaInstallButton compact label="Descargar app" />
                 </div>

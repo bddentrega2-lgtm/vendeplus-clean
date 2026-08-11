@@ -6,6 +6,7 @@ import {
   Building2,
   CheckCircle2,
   ClipboardList,
+  CreditCard,
   Loader2,
   Lock,
   Package,
@@ -33,6 +34,8 @@ type Summary = {
   totalCustomers: number;
   estimatedMrrUsd: number;
   revenueUsd: number;
+  approvedPaymentsUsd: number;
+  pendingServiceFeesUsd: number;
   attentionStores: number;
 };
 
@@ -231,6 +234,8 @@ export function AdminDashboard() {
     { label: "Productos", value: summary.totalProducts, icon: Package },
     { label: "Clientes", value: summary.totalCustomers, icon: UserRoundPlus },
     { label: "Usuarios", value: summary.totalAssignments, icon: UserRoundPlus },
+    { label: "Pagos aprobados", value: formatUsd(summary.approvedPaymentsUsd), icon: CheckCircle2 },
+    { label: "Fees pendientes", value: formatUsd(summary.pendingServiceFeesUsd), icon: CreditCard },
   ];
 
   return (

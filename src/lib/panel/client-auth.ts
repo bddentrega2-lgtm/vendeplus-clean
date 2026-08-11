@@ -4,6 +4,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 const PANEL_TOKEN_KEY = "vendeplus_panel_token";
 const PANEL_PIN_KEY = "vendeplus_panel_pin";
+const PANEL_STORE_KEY = "vendeplus_panel_store_id";
 
 let memoryPanelToken = "";
 let panelSessionBootstrapped = false;
@@ -60,6 +61,18 @@ export function clearPanelAuthStorage() {
   panelTokenPromise = null;
   sessionStorage.removeItem(PANEL_TOKEN_KEY);
   sessionStorage.removeItem(PANEL_PIN_KEY);
+  sessionStorage.removeItem(PANEL_STORE_KEY);
+}
+
+export function getSelectedPanelStoreId() {
+  if (typeof window === "undefined") return "";
+  return sessionStorage.getItem(PANEL_STORE_KEY) || "";
+}
+
+export function saveSelectedPanelStoreId(storeId: string) {
+  if (typeof window === "undefined") return;
+  if (storeId) sessionStorage.setItem(PANEL_STORE_KEY, storeId);
+  else sessionStorage.removeItem(PANEL_STORE_KEY);
 }
 
 export function clearBrowserAuthStorage() {
@@ -133,5 +146,11 @@ export async function getPanelAuthHeaders(
   void pin;
 
   const accessToken = await getPanelAccessToken();
-  return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+  if (!accessToken) return {};
+
+  const selectedStoreId = getSelectedPanelStoreId();
+  return {
+    Authorization: `Bearer ${accessToken}`,
+    ...(selectedStoreId ? { "X-Panel-Store-Id": selectedStoreId } : {}),
+  };
 }

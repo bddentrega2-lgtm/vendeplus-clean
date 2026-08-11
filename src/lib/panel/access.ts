@@ -31,7 +31,6 @@ export function canAccessStore(
   auth: PanelAuthContext,
   storeId?: string | null
 ) {
-  if (auth.isFounderMode) return true;
   return Boolean(storeId && auth.storeIds?.includes(storeId));
 }
 
@@ -49,7 +48,9 @@ export function getStoreRole(
   auth: PanelAuthContext,
   storeId?: string | null
 ): PanelRole | null {
-  if (auth.isFounderMode) return "owner";
+  if (auth.isFounderMode) {
+    return storeId && auth.storeIds?.includes(storeId) ? "owner" : null;
+  }
 
   const role =
     (storeId && auth.storeRoles?.[storeId]) ||

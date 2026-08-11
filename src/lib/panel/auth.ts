@@ -87,6 +87,9 @@ export async function getPanelAuthContext(
     const userEmail = getSupabaseUserEmail(userResult.user);
 
     if (isFounderEmail(userEmail)) {
+      const selectedStoreId = String(
+        request.headers.get("x-panel-store-id") || ""
+      ).trim();
       return {
         isAuthorized: true,
         mode: "user",
@@ -94,7 +97,7 @@ export async function getPanelAuthContext(
         isFounderMode: true,
         userId: userResult.user.id,
         email: userEmail,
-        storeIds: null,
+        storeIds: selectedStoreId ? [selectedStoreId] : [],
         role: "owner",
       };
     }

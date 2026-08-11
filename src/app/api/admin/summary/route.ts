@@ -14,6 +14,39 @@ function toNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function isCancelledOrderStatus(value: unknown) {
+  return ["cancelled", "canceled", "cancelado"].includes(
+    String(value || "").trim().toLowerCase()
+  );
+}
+
+function getPendingServiceFees(stores: any[], orders: any[]) {
+  const storesById = new Map(
+    stores
+      .filter((store) => String(store.slug || "").toLowerCase() !== "smash")
+      .map((store) => [store.id, store])
+  );
+
+  return Number(
+    orders
+      .reduce((sum, order) => {
+        if (isCancelledOrderStatus(order.status)) return sum;
+        const store = storesById.get(order.store_id);
+        if (!store || !["per_service", "custom"].includes(String(store.plan_type || ""))) {
+          return sum;
+        }
+        const periodStart =
+          store.last_payment_at ||
+          store.subscription_started_at ||
+          store.trial_ends_at ||
+          store.created_at;
+        if (periodStart && new Date(order.created_at) < new Date(periodStart)) return sum;
+        return sum + toNumber(order.platform_service_fee_usd);
+      }, 0)
+      .toFixed(2)
+  );
+}
+
 export async function GET(request: NextRequest) {
   try {
     const auth = await requireAdminAuth(request);
@@ -24,6 +57,8 @@ export async function GET(request: NextRequest) {
       recentStoresResult,
       summaryMetricsResult,
       storeMetricsResult,
+      approvedPaymentsResult,
+      serviceFeesResult,
     ] = await Promise.all([
       supabase.from("stores").select(`
         id,
@@ -39,6 +74,9 @@ export async function GET(request: NextRequest) {
         monthly_price_usd,
         payment_methods,
         accepts_delivery
+        ,subscription_started_at
+        ,last_payment_at
+        ,created_at
       `),
       supabase
         .from("stores")
@@ -47,6 +85,16 @@ export async function GET(request: NextRequest) {
         .limit(6),
       supabase.rpc("admin_summary_metrics").maybeSingle(),
       supabase.rpc("admin_store_metrics"),
+      supabase
+        .from("store_subscription_payments")
+        .select("amount_usd")
+        .eq("status", "approved")
+        .limit(10000),
+      supabase
+        .from("orders")
+        .select("store_id, status, created_at, platform_service_fee_usd")
+        .gt("platform_service_fee_usd", 0)
+        .limit(10000),
     ]);
 
     if (storesResult.error) throw storesResult.error;
@@ -57,6 +105,8 @@ export async function GET(request: NextRequest) {
     if (storeMetricsResult.error && !isMissingAdminMetricsRpc(storeMetricsResult.error)) {
       throw storeMetricsResult.error;
     }
+    if (approvedPaymentsResult.error) throw approvedPaymentsResult.error;
+    if (serviceFeesResult.error) throw serviceFeesResult.error;
 
     const stores = storesResult.data || [];
     const summaryMetrics = (summaryMetricsResult.error
@@ -152,6 +202,15 @@ export async function GET(request: NextRequest) {
           return sum + (configuredPrice || getPlan(store.plan_type).priceUsd);
         }, 0),
         revenueUsd: toNumber(summaryMetrics.revenue_usd),
+        approvedPaymentsUsd: Number(
+          (approvedPaymentsResult.data || [])
+            .reduce((sum: number, payment: any) => sum + toNumber(payment.amount_usd), 0)
+            .toFixed(2)
+        ),
+        pendingServiceFeesUsd: getPendingServiceFees(
+          stores,
+          serviceFeesResult.data || []
+        ),
         attentionStores: new Set(alerts.map((alert) => alert.storeId)).size,
       },
       recentStores: recentStoresResult.data || [],

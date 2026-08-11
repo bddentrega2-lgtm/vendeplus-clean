@@ -10,6 +10,7 @@ import {
   getSavedPanelPin,
 } from "@/lib/panel/client-auth";
 import { isSubscriptionPastDue } from "@/lib/subscription-status";
+import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
 
 const panelRouteMeta: Record<string, { active: string; title: string; subtitle: string }> = {
   "/panel": {
@@ -125,6 +126,7 @@ function LockedFeatureBlock({ achievementTitle }: { achievementTitle: string }) 
 
 export function PanelFrame({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { isBootstrapping } = usePanelAuth();
   const [isExpired, setIsExpired] = useState(false);
   const [lockedAchievementTitle, setLockedAchievementTitle] = useState("");
 
@@ -177,6 +179,14 @@ export function PanelFrame({ children }: { children: React.ReactNode }) {
 
   if (routesWithoutPanelShell.has(pathname)) {
     return <>{children}</>;
+  }
+
+  if (isBootstrapping) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#F8F3E8] px-4 text-center text-[#25262B]">
+        <p className="text-sm font-black text-[#746f69]">Cargando tu comercio...</p>
+      </main>
+    );
   }
 
   const shouldBlockContent = isExpired && !routesAllowedWhenExpired.has(pathname);
