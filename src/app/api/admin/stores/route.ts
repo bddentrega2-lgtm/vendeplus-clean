@@ -37,7 +37,7 @@ function withSomosBilling(stores: any[], orders: any[]) {
 
     const store = storesById.get(order.store_id);
     if (!store) continue;
-    if (String(store.slug || "").trim().toLowerCase() === "smash") continue;
+    if (store.is_test === true) continue;
 
     const periodStart =
       store.last_payment_at ||

@@ -24,6 +24,7 @@ export const adminStoreSelect = `
   accepts_delivery,
   accepts_pickup,
   is_active,
+  is_test,
   plan_type,
   product_limit,
   service_fee_payer,

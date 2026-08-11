@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPanelAuthContext, type PanelAuthContext } from "@/lib/panel/auth";
+import {
+  canAccessStore,
+  getStoreRole,
+  type PanelRole,
+} from "@/lib/panel/store-access";
 
-export type PanelRole = "owner" | "admin" | "operator";
-
-const VALID_PANEL_ROLES = new Set<PanelRole>(["owner", "admin", "operator"]);
+export { canAccessStore, getStoreRole } from "@/lib/panel/store-access";
+export type { PanelRole } from "@/lib/panel/store-access";
 
 export class PanelAccessError extends Error {
   status: number;
@@ -27,13 +31,6 @@ export async function requirePanelAuth(
   return auth;
 }
 
-export function canAccessStore(
-  auth: PanelAuthContext,
-  storeId?: string | null
-) {
-  return Boolean(storeId && auth.storeIds?.includes(storeId));
-}
-
 export function assertStoreAccess(
   auth: PanelAuthContext,
   storeId?: string | null,
@@ -42,21 +39,6 @@ export function assertStoreAccess(
   if (!canAccessStore(auth, storeId)) {
     throw new PanelAccessError(message, 403);
   }
-}
-
-export function getStoreRole(
-  auth: PanelAuthContext,
-  storeId?: string | null
-): PanelRole | null {
-  if (auth.isFounderMode) {
-    return storeId && auth.storeIds?.includes(storeId) ? "owner" : null;
-  }
-
-  const role =
-    (storeId && auth.storeRoles?.[storeId]) ||
-    (storeId && auth.storeIds?.includes(storeId) ? auth.role : undefined);
-
-  return VALID_PANEL_ROLES.has(role as PanelRole) ? (role as PanelRole) : null;
 }
 
 export function canUseStoreRole(
