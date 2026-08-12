@@ -24,20 +24,14 @@ function toNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function isCancelledOrderStatus(value: unknown) {
-  return ["cancelled", "canceled", "cancelado"].includes(String(value || "").trim().toLowerCase());
-}
-
 function withSomosBilling(stores: any[], orders: any[]) {
   const totals = new Map<string, number>();
   const storesById = new Map(stores.map((store) => [store.id, store]));
 
   for (const order of orders) {
-    if (isCancelledOrderStatus(order.status)) continue;
-
     const store = storesById.get(order.store_id);
     if (!store) continue;
-    if (String(store.slug || "").trim().toLowerCase() === "smash") continue;
+    if (store.is_test === true) continue;
 
     const periodStart =
       store.last_payment_at ||
@@ -55,9 +49,9 @@ function withSomosBilling(stores: any[], orders: any[]) {
 
   return stores.map((store) => ({
     ...store,
-    somos_billed_usd: ["per_service", "custom"].includes(String(store.plan_type || ""))
+    somos_billed_usd: store.plan_type === "per_service"
       ? totals.get(store.id) || 0
-      : ["monthly", "emprendedor", "visionario"].includes(String(store.plan_type || ""))
+      : store.plan_type === "monthly"
         ? toNumber(store.monthly_price_usd)
         : 0,
   }));
@@ -131,6 +125,10 @@ export async function POST(request: NextRequest) {
 
     if (!payload.slug) {
       return badRequest("El slug del comercio es obligatorio.");
+    }
+
+    if (payload.plan_type === "founder" && payload.is_test !== true) {
+      return badRequest("El plan Founder solo puede asignarse a cuentas de prueba.");
     }
 
     if (accessEmail && accessPassword.length < 6) {

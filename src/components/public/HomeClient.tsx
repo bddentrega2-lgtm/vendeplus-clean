@@ -349,7 +349,7 @@ export function HomeClient({
                 Tu negocio, tus precios, tus pagos y tus clientes
               </h2>
               <p className="mt-4 max-w-xl text-base font-bold leading-relaxed text-white/70">
-                Usa Somos sin pagar mensualidad ni entregar un porcentaje de tus ventas. Solo se agrega un fee fijo de $0.10 por pedido confirmado.
+                Usa Somos sin pagar mensualidad ni entregar un porcentaje de tus ventas. Solo se agrega un fee fijo de $0.10 por pedido recibido.
               </p>
               <div className="mt-6 rounded-[28px] bg-[#FFB547] p-5 text-[#25262B] shadow-xl shadow-black/15">
                 <p className="text-sm font-black uppercase tracking-[0.16em] text-[#2E3A79]">
@@ -357,7 +357,7 @@ export function HomeClient({
                 </p>
                 <div className="mt-2 flex items-end gap-2">
                   <span className="text-5xl font-black">$0.10</span>
-                  <span className="pb-1 text-sm font-black text-[#25262B]/65">por pedido confirmado</span>
+                  <span className="pb-1 text-sm font-black text-[#25262B]/65">por pedido recibido</span>
                 </div>
                 <p className="mt-3 text-sm font-bold">
                   Sin mensualidades, contratos ni comisiones porcentuales.

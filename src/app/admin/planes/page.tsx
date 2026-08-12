@@ -22,18 +22,16 @@ export default function AdminPlansPage() {
             </p>
             <h2 className="mt-2 text-2xl font-black">{plan.name}</h2>
             <p className="mt-3 text-4xl font-black">
-              {plan.id === "custom" ? "Personalizado" : `$${plan.priceUsd}`}
-              {plan.id !== "custom" ? (
-                <span className="text-sm font-bold text-[#746f69]"> {plan.billingLabel}</span>
-              ) : null}
+              ${plan.priceUsd}
+              <span className="text-sm font-bold text-[#746f69]"> {plan.billingLabel}</span>
             </p>
             <div className="mt-4 grid grid-cols-2 gap-2 text-center">
               <div className="rounded-2xl bg-[#F8F3E8] p-3">
-                <p className="text-xl font-black">{plan.id === "custom" ? "Sin limite" : plan.storeLimit}</p>
+                <p className="text-xl font-black">{plan.storeLimit}</p>
                 <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#746f69]">Comercios</p>
               </div>
               <div className="rounded-2xl bg-[#F8F3E8] p-3">
-                <p className="text-xl font-black">{plan.id === "custom" ? "Sin limite" : plan.productLimit}</p>
+                <p className="text-xl font-black">{plan.productLimit}</p>
                 <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#746f69]">Productos</p>
               </div>
             </div>

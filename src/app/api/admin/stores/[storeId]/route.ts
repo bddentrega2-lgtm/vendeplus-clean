@@ -104,6 +104,9 @@ export async function PATCH(
     if (!storeId) return badRequest("Falta el ID del comercio.");
     if (!payload.name) return badRequest("El nombre del comercio es obligatorio.");
     if (!payload.slug) return badRequest("El slug del comercio es obligatorio.");
+    if (payload.plan_type === "founder" && payload.is_test !== true) {
+      return badRequest("El plan Founder solo puede asignarse a cuentas de prueba.");
+    }
 
     const supabase = createSupabaseAdminClient();
     const { data: existingSlug, error: slugError } = await supabase

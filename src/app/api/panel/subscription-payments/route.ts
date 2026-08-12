@@ -24,10 +24,6 @@ function addDays(date: Date, days: number) {
   return next;
 }
 
-function isCancelledOrderStatus(value: unknown) {
-  return ["cancelled", "canceled", "cancelado"].includes(cleanText(value).toLowerCase());
-}
-
 async function getServiceUsage(supabase: any, store: any) {
   const periodStart =
     store.last_payment_at ||
@@ -45,10 +41,10 @@ async function getServiceUsage(supabase: any, store: any) {
 
   if (error) throw error;
 
-  const billableOrders = (data || []).filter((order: any) => !isCancelledOrderStatus(order.status));
-  const serviceCount = billableOrders.length;
+  const receivedOrders = data || [];
+  const serviceCount = receivedOrders.length;
   const amountUsd = Number(
-    billableOrders
+    receivedOrders
       .reduce((sum: number, order: any) => sum + money(order.platform_service_fee_usd || getStoreServiceFeeUsd(store)), 0)
       .toFixed(2)
   );
@@ -97,7 +93,7 @@ export async function GET(request: NextRequest) {
       await Promise.all(
         stores.map(async (store: any) => [
           store.id,
-          ["per_service", "custom"].includes(store.plan_type)
+          store.plan_type === "per_service"
             ? await getServiceUsage(supabase, store)
             : { serviceCount: 0, amountUsd: 0, periodStart: null },
         ])
@@ -167,8 +163,8 @@ export async function POST(request: NextRequest) {
         store: data,
         message:
           serviceFeePayer === "customer"
-            ? "Plan por servicio activado. El fee se cobrara al cliente en cada pedido."
-            : "Plan por servicio activado. El comercio asumira el fee en el corte mensual.",
+            ? "Plan por servicio activado. El fee se cobrara al cliente en cada pedido recibido."
+            : "Plan por servicio activado. El comercio asumira el fee de cada pedido recibido en el corte mensual.",
       });
     }
 
@@ -178,7 +174,7 @@ export async function POST(request: NextRequest) {
 
     if (effectivePlanId === "monthly") {
       amountUsd = 20;
-    } else if (["per_service", "custom"].includes(effectivePlanId)) {
+    } else if (effectivePlanId === "per_service") {
       const usage = await getServiceUsage(supabase, store);
       amountUsd = usage.amountUsd;
       if (amountUsd <= 0) {

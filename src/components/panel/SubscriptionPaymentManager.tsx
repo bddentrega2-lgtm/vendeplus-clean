@@ -127,7 +127,7 @@ export function SubscriptionPaymentManager() {
   const isTrialExpired = Boolean(
     isTrial && dueAt && currentTimeMs !== null && isDateBeforeToday(dueAt, new Date(currentTimeMs))
   );
-  const isPerService = ["per_service", "custom"].includes(String(selectedStore?.plan_type || ""));
+  const isPerService = selectedStore?.plan_type === "per_service";
   const needsPlanChoice = Boolean(selectedStore && !isPerService && (isTrialExpired || isPastDueStatus || isPastDueByDate));
   const amountUsd = useMemo(() => {
     if (needsPlanChoice && selectedPlanId === "per_service") return 0;
@@ -271,7 +271,7 @@ export function SubscriptionPaymentManager() {
             <CreditCard size={22} />
           </div>
           <div>
-            <h2 className="text-2xl font-black">Pagar suscripción</h2>
+            <h2 className="text-2xl font-black">Plan por servicio</h2>
             <p className="mt-1 text-sm font-bold text-[#746f69]">
               La prueba gratis dura 15 días. Al vencer, continúa con el fee por pedido.
             </p>
@@ -288,8 +288,8 @@ export function SubscriptionPaymentManager() {
             </select>
           </label>
           <div className="rounded-2xl bg-[#F8F3E8] px-4 py-3">
-            <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Periodo</p>
-            <p className="mt-1 text-sm font-black text-[#25262B]">Mensual</p>
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Corte</p>
+            <p className="mt-1 text-sm font-black text-[#25262B]">Mensual sobre pedidos recibidos</p>
           </div>
         </div>
 
@@ -310,7 +310,7 @@ export function SubscriptionPaymentManager() {
               <div className="mt-3 rounded-[22px] bg-[#2E3A79] p-4 text-white">
                 <p className="text-base font-black">{publicPlan.name}</p>
                 <p className="mt-1 text-sm font-black">
-                  ${PER_SERVICE_FEE_USD.toFixed(2)} por pedido en corte mensual
+                  ${PER_SERVICE_FEE_USD.toFixed(2)} por pedido recibido, con corte mensual
                 </p>
                 <p className="mt-2 text-xs font-bold opacity-70">
                   Hasta {publicPlan.productLimit} productos. Los planes privados solo pueden ser habilitados por Somos.
@@ -324,7 +324,7 @@ export function SubscriptionPaymentManager() {
           <section className="mt-4 rounded-[24px] bg-[#F8F3E8] p-4">
             <p className="text-sm font-black text-[#25262B]">Antes de activar: quien paga el fee?</p>
             <p className="mt-1 text-sm font-bold text-[#746f69]">
-              El fee es de {formatUsd(PER_SERVICE_FEE_USD)} por pedido y el corte sera mensual.
+              El fee es de {formatUsd(PER_SERVICE_FEE_USD)} por pedido recibido y el corte sera mensual.
             </p>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
               <button
@@ -363,7 +363,7 @@ export function SubscriptionPaymentManager() {
 
         {isPerService ? (
           <section className="mt-4 rounded-[24px] bg-[#FFF8F0] p-4">
-            <p className="text-sm font-black text-[#25262B]">Corte por servicio</p>
+            <p className="text-sm font-black text-[#25262B]">Corte de pedidos recibidos</p>
             <p className="mt-1 text-sm font-bold text-[#746f69]">
               Servicios acumulados este periodo: {serviceUsage.serviceCount}. Total del corte:{" "}
               {formatUsd(serviceUsage.amountUsd)}.
@@ -372,7 +372,7 @@ export function SubscriptionPaymentManager() {
               Fee configurado: {currentServiceFeePayerLabel}.
             </p>
             <p className="mt-2 text-xs font-black uppercase tracking-[0.12em] text-[#2E3A79]">
-              Pago completo acumulado. No se aceptan abonos parciales.
+              Liquidacion completa del corte. No se aceptan abonos parciales.
             </p>
             <p className="mt-1 text-xs font-bold text-[#746f69]">
               Cuando el pago sea aprobado por admin, el acumulado vuelve a cero y comienza un nuevo mes de corte.
@@ -408,7 +408,7 @@ export function SubscriptionPaymentManager() {
             Monto a pagar: {formatUsd(amountUsd)} / {formatBs(amountBs)}
           </p>
           <p className="mt-1 text-xs font-bold text-[#746f69]">
-            Con este pago, admin revisa la referencia y activa el plan.
+            Somos revisara la referencia y registrara la liquidacion del corte.
           </p>
         </section>
         <div className="mt-4 grid gap-4 md:grid-cols-3">

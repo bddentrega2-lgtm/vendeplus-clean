@@ -1,12 +1,9 @@
 import { PanelAccessError } from "@/lib/panel/access";
 
 export const achievementDefinitions = [
-  { key: "setup_delivery", title: "Completa tu configuración inicial", description: "Agrega teléfono, ubicación, logo y tu primer producto.", reward: "Módulo de delivery", feature: "delivery", target: 1 },
-  { key: "orders_10_basic_stats", title: "Realiza tus primeros 10 pedidos", description: "Completa 10 pedidos de al menos 5 clientes diferentes.", reward: "Estadísticas básicas", feature: "basic_stats", target: 10 },
   { key: "orders_50_full_stats", title: "Completa 50 pedidos", description: "Completa 50 pedidos de al menos 20 clientes diferentes.", reward: "Estadísticas completas", feature: "full_stats", target: 50 },
   { key: "orders_100_product_limit", title: "Completa 100 pedidos", description: "Completa 100 pedidos de al menos 35 clientes diferentes.", reward: "20 productos adicionales (50 en total)", feature: "product_limit_50", target: 100 },
   { key: "referral_brand_colors", title: "Refiere un comercio", description: "Invita un comercio que se registre y sea autorizado por Super Admin.", reward: "Personalización de colores", feature: "brand_colors", target: 1 },
-  { key: "promo_20_customers", title: "Activa una promoción y logra 20 ventas", description: "Promociona al menos un producto y completa 20 pedidos de 10 clientes diferentes.", reward: "Módulo de clientes", feature: "customers_basic", target: 20 },
   { key: "promos_3_three_months_customer_details", title: "Activa 3 promociones y mantén actividad 3 meses", description: "Promociona tres productos distintos y registra ventas en tres meses diferentes.", reward: "Detalles completos de clientes", feature: "customers_detail", target: 3 },
 ] as const;
 
@@ -80,28 +77,16 @@ export async function loadStoreAchievements(supabase: any, storeId: string) {
     }
   }
   const referralCount = (referralsResult.data || []).filter((row: any) => row.status === "qualified" && afterReset(row.qualified_at, "referral_brand_colors")).length;
-  const setupConfigured = Boolean(
-    store?.name && store?.whatsapp && store?.address && store?.latitude != null && store?.longitude != null && store?.logo_url && products.length
-  );
-  const setupResetAt = resetByKey.get("setup_delivery");
-  const setupTouchedAfterReset = !setupResetAt || afterReset(store?.updated_at, "setup_delivery") || products.some((product: any) => afterReset(product.updated_at || product.created_at, "setup_delivery"));
-  const setupComplete = setupConfigured && setupTouchedAfterReset;
-  const orders10 = metricsFor("orders_10_basic_stats");
   const orders50 = metricsFor("orders_50_full_stats");
   const orders100 = metricsFor("orders_100_product_limit");
-  const promo20 = metricsFor("promo_20_customers");
   const promo3 = metricsFor("promos_3_three_months_customer_details");
   const promotedCountFor = (key: AchievementKey) => new Set((promotionsResult.data || []).filter((row: any) => afterReset(row.first_activated_at, key)).map((row: any) => row.product_id)).size;
-  const promo20Count = promotedCountFor("promo_20_customers");
   const promo3Count = promotedCountFor("promos_3_three_months_customer_details");
 
   const progressByKey: Record<AchievementKey, { current: number; target: number; completed: boolean; detail?: string }> = {
-    setup_delivery: { current: setupComplete ? 1 : 0, target: 1, completed: setupComplete },
-    orders_10_basic_stats: { current: Math.min(orders10.completedOrders.length, 10), target: 10, completed: orders10.completedOrders.length >= 10 && orders10.uniqueCustomers >= 5, detail: `${orders10.completedOrders.length}/10 pedidos · ${orders10.uniqueCustomers}/5 clientes` },
     orders_50_full_stats: { current: Math.min(orders50.completedOrders.length, 50), target: 50, completed: orders50.completedOrders.length >= 50 && orders50.uniqueCustomers >= 20, detail: `${orders50.completedOrders.length}/50 pedidos · ${orders50.uniqueCustomers}/20 clientes` },
     orders_100_product_limit: { current: Math.min(orders100.completedOrders.length, 100), target: 100, completed: orders100.completedOrders.length >= 100 && orders100.uniqueCustomers >= 35, detail: `${orders100.completedOrders.length}/100 pedidos · ${orders100.uniqueCustomers}/35 clientes` },
     referral_brand_colors: { current: Math.min(referralCount, 1), target: 1, completed: referralCount >= 1 },
-    promo_20_customers: { current: Math.min(promo20.completedOrders.length, 20), target: 20, completed: promo20Count >= 1 && promo20.completedOrders.length >= 20 && promo20.uniqueCustomers >= 10, detail: `${promo20Count}/1 promociones · ${promo20.completedOrders.length}/20 pedidos · ${promo20.uniqueCustomers}/10 clientes` },
     promos_3_three_months_customer_details: { current: Math.min(promo3.activeMonths, 3), target: 3, completed: promo3Count >= 3 && promo3.activeMonths >= 3, detail: `${promo3Count}/3 promociones · ${promo3.activeMonths}/3 meses` },
   };
 
@@ -126,7 +111,12 @@ export async function loadStoreAchievements(supabase: any, storeId: string) {
     const unlock: any = existing.get(definition.key);
     return { ...definition, progress: progressByKey[definition.key], unlocked: Boolean(unlock), source: unlock?.source || null, unlockedAt: unlock?.unlocked_at || null, resetAt: resetByKey.get(definition.key) || null };
   });
-  const features = Object.fromEntries(achievementDefinitions.map((definition) => [definition.feature, achievements.find((item) => item.key === definition.key)?.unlocked || false]));
+  const features: Record<string, boolean> = {
+    delivery: true,
+    basic_stats: true,
+    customers_basic: true,
+    ...Object.fromEntries(achievementDefinitions.map((definition) => [definition.feature, achievements.find((item) => item.key === definition.key)?.unlocked || false])),
+  };
 
   return { storeId, productLimit: features.product_limit_50 ? Math.max(50, Number(store.product_limit || 30)) : Math.min(30, Number(store.product_limit || 30)), achievements, features };
 }

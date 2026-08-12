@@ -78,8 +78,6 @@ const panelRouteMeta: Record<string, { active: string; title: string; subtitle: 
 const routesWithoutPanelShell = new Set(["/panel/login", "/panel/update-password"]);
 const routesAllowedWhenExpired = new Set(["/panel/suscripcion"]);
 const routeFeatureRequirements: Record<string, string> = {
-  "/panel/delivery": "delivery",
-  "/panel/clientes": "customers_basic",
   "/panel/estadisticas": "full_stats",
 };
 
@@ -108,7 +106,7 @@ function ExpiredPanelBlock() {
       <h2 className="mt-4 text-2xl font-black text-[#25262B]">Tu periodo vencio</h2>
       <p className="mx-auto mt-2 max-w-xl text-sm font-bold leading-relaxed text-[#746f69]">
         Para proteger tu catalogo y evitar pedidos sin plan activo, este panel queda limitado a Suscripcion.
-        Elige mensualidad o fee por pedido para reactivar la operacion.
+        Activa el plan por servicio para reanudar la operacion.
       </p>
       <Link
         href="/panel/suscripcion"

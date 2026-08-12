@@ -25,6 +25,12 @@ export function LocationPicker({
   const mapRef = useRef<HTMLDivElement | null>(null);
   const leafletMapRef = useRef<LeafletMap | null>(null);
   const destinationMarkerRef = useRef<Marker | null>(null);
+  const onChangeRef = useRef(onChange);
+  const initialCenterRef = useRef({
+    latitude: storeLatitude,
+    longitude: storeLongitude,
+    storeName,
+  });
   const [showMap, setShowMap] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
@@ -34,6 +40,20 @@ export function LocationPicker({
   );
   const selectedLabel =
     mode === "store" ? "Ubicacion del negocio" : "Punto elegido en el mapa";
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  useEffect(() => {
+    if (!showMap) {
+      initialCenterRef.current = {
+        latitude: storeLatitude,
+        longitude: storeLongitude,
+        storeName,
+      };
+    }
+  }, [showMap, storeLatitude, storeLongitude, storeName]);
 
   const updateDestinationMarker = useCallback(
     async (latitude: number, longitude: number) => {
@@ -73,9 +93,9 @@ export function LocationPicker({
       accuracyMeters?: number
     ) => {
       await updateDestinationMarker(latitude, longitude);
-      onChange({ latitude, longitude, label, source, accuracyMeters });
+      onChangeRef.current({ latitude, longitude, label, source, accuracyMeters });
     },
-    [onChange, updateDestinationMarker]
+    [updateDestinationMarker]
   );
 
   useEffect(() => {
@@ -86,6 +106,7 @@ export function LocationPicker({
 
       const leaflet = await import("leaflet");
       if (!mounted || !mapRef.current) return;
+      const initialCenter = initialCenterRef.current;
 
       const storeIcon = leaflet.divIcon({
         className: "vendeplus-store-marker",
@@ -95,10 +116,11 @@ export function LocationPicker({
       });
 
       const map = leaflet.map(mapRef.current, {
-        center: [storeLatitude, storeLongitude],
+        center: [initialCenter.latitude, initialCenter.longitude],
         zoom: 14,
         zoomControl: true,
       });
+      leafletMapRef.current = map;
 
       requestAnimationFrame(() => map.invalidateSize());
       window.setTimeout(() => map.invalidateSize(), 250);
@@ -113,9 +135,9 @@ export function LocationPicker({
 
       if (mode !== "store") {
         leaflet
-          .marker([storeLatitude, storeLongitude], { icon: storeIcon })
+          .marker([initialCenter.latitude, initialCenter.longitude], { icon: storeIcon })
           .addTo(map)
-          .bindPopup(`Punto de retiro: ${storeName}`);
+          .bindPopup(`Punto de retiro: ${initialCenter.storeName}`);
       }
 
       map.on("click", (event) => {
@@ -133,7 +155,6 @@ export function LocationPicker({
         );
       });
 
-      leafletMapRef.current = map;
       setIsReady(true);
     }
 
@@ -147,7 +168,7 @@ export function LocationPicker({
         destinationMarkerRef.current = null;
       }
     };
-  }, [mode, selectDestination, selectedLabel, showMap, storeLatitude, storeLongitude, storeName]);
+  }, [mode, selectDestination, selectedLabel, showMap]);
 
   useEffect(() => {
     if (!value || !showMap || !isReady) return;

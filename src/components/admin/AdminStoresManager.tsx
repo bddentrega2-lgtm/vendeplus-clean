@@ -485,7 +485,7 @@ export function AdminStoresManager() {
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69] xl:hidden">Facturado Somos</p>
                 <p className="text-sm font-black text-[#25262B]">{getSomosBillingLabel(store)}</p>
-                {["per_service", "custom"].includes(String(store.plan_type || "")) ? (
+                {store.plan_type === "per_service" ? (
                   <p className="text-[11px] font-bold text-[#746f69]">Corte actual</p>
                 ) : null}
               </div>

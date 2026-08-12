@@ -373,7 +373,7 @@ export function CheckoutForm({ store }: { store: Store }) {
           ? "Por confirmar"
           : formatBaseCurrency(quote.originalFeeUsd ?? deliveryUsd, baseCurrency);
   const serviceFeeUsd =
-    ["per_service", "custom"].includes(String(store.planType || "")) &&
+    store.planType === "per_service" &&
     store.serviceFeePayer === "customer"
       ? Number(store.serviceFeeUsd || 0)
       : 0;
