@@ -114,6 +114,7 @@ export function CheckoutForm({ store }: { store: Store }) {
   const [hasSavedCustomer, setHasSavedCustomer] = useState(false);
   const [customerProfileLoaded, setCustomerProfileLoaded] = useState(false);
   const lastQuoteRequestRef = useRef("");
+  const idempotencyKeyRef = useRef(crypto.randomUUID());
 
   useEffect(() => {
     setItems(getCart(store.slug));
@@ -487,7 +488,11 @@ export function CheckoutForm({ store }: { store: Store }) {
     setError("");
 
     try {
-      const saveResult = await saveOrderToSupabase(order, store);
+      const saveResult = await saveOrderToSupabase(
+        order,
+        store,
+        idempotencyKeyRef.current
+      );
 
       if (!saveResult.ok || !saveResult.order) {
         setError(saveResult.error || "No se pudo guardar el pedido.");

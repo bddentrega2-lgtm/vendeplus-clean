@@ -1,10 +1,14 @@
 import type { SavedOrder, Store } from "@/types";
 
-export async function saveOrderToSupabase(order: SavedOrder, store: Store) {
+export async function saveOrderToSupabase(
+  order: SavedOrder,
+  store: Store,
+  idempotencyKey: string
+) {
   const response = await fetch("/api/orders", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ order, storeId: store.id }),
+    body: JSON.stringify({ order, storeId: store.id, idempotencyKey }),
   });
 
   const data = await response.json().catch(() => ({}));
