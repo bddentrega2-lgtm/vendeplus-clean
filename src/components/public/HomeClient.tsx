@@ -1,504 +1,121 @@
 "use client";
 
 import Link from "next/link";
-import {
-  ArrowRight,
-  BadgeDollarSign,
-  Check,
-  MessageCircle,
-  PackageCheck,
-  ShieldCheck,
-  ShoppingBag,
-  Store as StoreIcon,
-  Truck,
-  Users,
-  WalletCards,
-} from "lucide-react";
+import { ArrowRight, Check, ClipboardList, PackageCheck, Settings2, ShoppingBag, Store as StoreIcon, Truck } from "lucide-react";
 import type { Store } from "@/types";
 import type { PublicTransportAgencyLogo } from "@/lib/transport";
 import { AffiliatedDeliveryLogos } from "@/components/public/AffiliatedDeliveryLogos";
-import { BrandLogo } from "@/components/public/BrandLogo";
+import { ButtonLink } from "@/components/public/ButtonLink";
+import { PublicFooter } from "@/components/public/PublicFooter";
+import { PublicHeader } from "@/components/public/PublicHeader";
+import { SectionHeading } from "@/components/public/SectionHeading";
+import { SurfaceCard } from "@/components/public/SurfaceCard";
 import { PwaInstallButton } from "@/components/pwa/PwaInstallButton";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
 
-type AffiliatedStore = {
-  name: string;
-  category: string;
-  slug: string;
-  imageUrl: string;
-  initials: string;
-};
-
-const fallbackAffiliatedStores: AffiliatedStore[] = [
-  { name: "Armario", category: "Moda", slug: "armario", imageUrl: "", initials: "AR" },
-  { name: "Smash", category: "Comida", slug: "marketplace", imageUrl: "", initials: "SM" },
-  { name: "Knockouts", category: "Food", slug: "knockouts", imageUrl: "", initials: "KO" },
-  { name: "Migas MCY", category: "Bakery", slug: "migasmcy", imageUrl: "", initials: "MG" },
+const commerceFeatures = ["Catálogo público por comercio", "Productos, precios, imágenes y variantes", "Carrito y finalización de pedido", "Solicitud de pedido por WhatsApp", "Delivery o retiro según configuración"];
+const deliveryFeatures = ["Panel para empresas delivery", "Solicitudes de afiliación", "Tarifas por rango de km", "Cobertura máxima configurable", "Datos operativos y de contacto"];
+const benefits = [
+  { icon: ShoppingBag, title: "Catálogo digital", text: "Productos, precios e imágenes en un enlace fácil de compartir." },
+  { icon: ClipboardList, title: "Pedidos más ordenados", text: "Información clara para que el comercio gestione cada solicitud." },
+  { icon: Truck, title: "Delivery conectado", text: "Delivery propio, retiro o empresas afiliadas según la configuración." },
+  { icon: Settings2, title: "Configuración flexible", text: "Opciones adaptables a la forma real de operar de cada comercio." },
+  { icon: PackageCheck, title: "Operación centralizada", text: "Catálogo, pedidos, clientes y entregas desde un mismo panel." },
 ];
 
-const quickActions = [
-  {
-    title: "Quiero comprar",
-    text: "Ver comercios afiliados y hacer pedidos desde el marketplace.",
-    href: "/marketplace",
-    icon: ShoppingBag,
-  },
-  {
-    title: "Tengo un comercio",
-    text: "Crear catalogo, recibir pedidos, controlar pagos y operar con facilidad y orden.",
-    href: "/registro",
-    icon: StoreIcon,
-  },
-  {
-    title: "Soy empresa delivery",
-    text: "Afiliate gratis y obtén beneficios por referir comercios.",
-    href: "/transporte",
-    icon: Truck,
-  },
-];
-
-const commerceBenefits = [
-  { icon: ShoppingBag, title: "Catalogo listo para compartir" },
-  { icon: PackageCheck, title: "Pedidos ordenados en panel" },
-  { icon: WalletCards, title: "Pagos visibles y comprobables" },
-  { icon: Truck, title: "Delivery propio o empresa afiliada" },
-  { icon: Users, title: "Clientes frecuentes y recompra" },
-  { icon: MessageCircle, title: "Pedidos automatizados y ordenados" },
-];
-
-const deliveryBenefits = [
-  "Perfil de empresa delivery con logo, cobertura y condiciones",
-  "Tarifas por zonas, rangos de km o tarifa plana",
-  "Solicitudes de afiliacion aprobadas por ambas partes",
-  "Pedidos confirmados por comercio antes de enviarse",
-  "Facturacion semanal por comercio y balance general",
-  "Historial operativo de cada servicio recibido",
-];
-
-const differentiators = [
-  "Pensado para comercios que necesitan ordenar ventas y entregas",
-  "Mobile-first para operar desde el telefono",
-  "Pagos en Bs, USD o EUR segun el comercio",
-  "Sin app obligatoria para el cliente final",
-  "Panel simple para equipos no tecnicos",
-  "Preparado para delivery propio o externo",
-];
-
-function getInitials(name: string) {
-  return name
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+function FeatureList({ items, light = false }: { items: string[]; light?: boolean }) {
+  return <ul className="mt-6 grid gap-3">{items.map((item) => <li key={item} className={`flex items-start gap-3 text-sm font-medium leading-6 ${light ? "text-white/75" : "text-[var(--somos-navy)]/75"}`}><span className={`mt-1 grid h-5 w-5 shrink-0 place-items-center rounded-full ${light ? "bg-white/10 text-[var(--somos-amber)]" : "bg-[var(--somos-amber)]/20 text-[var(--somos-teal)]"}`}><Check size={13} strokeWidth={3} /></span>{item}</li>)}</ul>;
 }
 
-function mapAffiliatedStores(stores: Store[]): AffiliatedStore[] {
-  const storesWithLogos = stores
-    .filter((store) => store.name && store.slug)
-    .map((store) => ({
-      name: store.name,
-      category: store.category || "Comercio",
-      slug: store.slug,
-      imageUrl: store.logoUrl || "",
-      initials: getInitials(store.name),
-    }))
-    .filter((store) => store.imageUrl);
+export function HomeClient({ stores = [], transportAgencies = [] }: { stores?: Store[]; transportAgencies?: PublicTransportAgencyLogo[] }) {
+  const affiliatedStores = stores.filter((store) => store.name && store.slug && (store.logoUrl || store.coverImageUrl || store.heroImageUrl)).map((store) => ({
+    name: store.name,
+    category: store.category || "Comercio",
+    slug: store.slug,
+    imageUrl: store.logoUrl || store.coverImageUrl || store.heroImageUrl || "",
+  }));
 
-  if (storesWithLogos.length) return storesWithLogos;
+  return <main className="somos-page">
+    <PublicHeader />
 
-  const storesWithImages = stores
-    .filter((store) => store.name && store.slug)
-    .map((store) => ({
-      name: store.name,
-      category: store.category || "Comercio",
-      slug: store.slug,
-      imageUrl: store.coverImageUrl || store.heroImageUrl || "",
-      initials: getInitials(store.name),
-    }))
-    .filter((store) => store.imageUrl);
-
-  return storesWithImages.length ? storesWithImages : fallbackAffiliatedStores;
-}
-
-export function HomeClient({
-  stores = [],
-  transportAgencies = [],
-}: {
-  stores?: Store[];
-  transportAgencies?: PublicTransportAgencyLogo[];
-}) {
-  const affiliatedStores = mapAffiliatedStores(stores);
-
-  return (
-    <main className="min-h-screen bg-[#F6F4EF] text-[#25262B]">
-      <header className="sticky top-0 z-30 border-b border-[#25262B]/[0.06] bg-[#F6F4EF]/95 backdrop-blur">
-        <nav className="vp-container flex items-center justify-between gap-3 py-3">
-          <Link href="/" aria-label="Ir al inicio de Somos">
-            <BrandLogo compact />
-          </Link>
-          <div className="hidden items-center gap-5 text-sm font-black text-[#5F635E] md:flex">
-            <a href="#comercios">Comercios</a>
-            <a href="#planes">Cómo funciona</a>
-            <a href="#delivery">Delivery</a>
-            <Link href="/marketplace">Marketplace</Link>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link
-              href="/panel/login"
-              className="inline-flex rounded-full bg-white px-3 py-2 text-xs font-black text-[#2E3A79] ring-1 ring-[#25262B]/10 sm:px-4 sm:text-sm"
-            >
-              Iniciar sesion
-            </Link>
-            <Link
-              href="/registro"
-              className="inline-flex items-center gap-2 rounded-full bg-[#FFB547] px-4 py-2 text-sm font-black text-[#25262B]"
-            >
-              Vender
-              <ArrowRight size={15} />
-            </Link>
-          </div>
-        </nav>
-      </header>
-
-      <section className="bg-[#F6F4EF]">
-        <div className="vp-container grid min-h-[calc(100vh-76px)] gap-8 py-8 lg:grid-cols-[0.95fr_1.05fr] lg:items-center lg:py-10">
-          <div>
-            <p className="inline-flex rounded-full bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-[#2E3A79] ring-1 ring-[#25262B]/10">
-              Ecosistema que conecta comercios y empresas delivery
-            </p>
-            <h1 className="mt-5 max-w-3xl text-3xl font-black leading-[1.08] text-[#25262B] sm:text-4xl lg:text-[2.65rem]">
-              SOMOS es el ecosistema que conecta tus comercios favoritos con las mejores empresas delivery de tu ciudad para brindarte el mejor servicio.
-            </h1>
-            <p className="mt-4 max-w-2xl text-base font-bold leading-relaxed text-[#5F635E] sm:text-lg">
-              Somos une catalogo, carrito, pedidos, pagos, delivery, clientes y recompra en un solo panel simple para tu comercio.
-            </p>
-
-            <div className="mt-7 grid gap-3 sm:grid-cols-3">
-              {quickActions.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.title}
-                    href={item.href}
-                    className="group rounded-[22px] bg-white p-4 shadow-lg shadow-[#2E3A79]/[0.05] ring-1 ring-[#25262B]/[0.07] transition hover:-translate-y-0.5"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[#2E3A79] text-[#FFB547]">
-                        <Icon size={20} />
-                      </span>
-                      <span className="text-lg font-black leading-tight sm:text-xl">{item.title}</span>
-                    </div>
-                    <p className="mt-3 min-h-14 text-xs font-bold leading-relaxed text-[#5F635E]">
-                      {item.text}
-                    </p>
-                    <span className="mt-3 inline-flex items-center gap-2 text-xs font-black text-[#2E3A79]">
-                      Continuar
-                      <ArrowRight size={14} />
-                    </span>
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="overflow-hidden rounded-[34px] bg-[#25262B] p-5 text-white shadow-2xl shadow-[#25262B]/20">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#FFB547]">
-                  Red Somos
-                </p>
-                <h2 className="mt-2 text-2xl font-black leading-tight">
-                  Comercios afiliados operando desde un mismo ecosistema
-                </h2>
-              </div>
-              <span className="hidden rounded-full bg-white/10 px-4 py-2 text-xs font-black text-white/80 sm:inline-flex">
-                En vivo
-              </span>
-            </div>
-
-            <div className="mt-5 rounded-[26px] bg-white/8 p-4 ring-1 ring-white/10">
-              <div className="flex items-center justify-between rounded-2xl bg-white/10 p-3">
-                <span className="text-sm font-black">Comercio</span>
-                <span className="text-sm font-black text-[#FFB547]">Pedido confirmado</span>
-              </div>
-              <div className="mt-3 flex items-center justify-between rounded-2xl bg-white/10 p-3">
-                <span className="text-sm font-black">Empresa delivery</span>
-                <span className="text-sm font-black text-[#8BD17C]">Servicio recibido</span>
-              </div>
-              <div className="mt-3 rounded-2xl bg-[#FFB547] p-3 text-[#25262B]">
-                <p className="text-sm font-black">Cliente informado automaticamente</p>
-              </div>
-            </div>
-
-            <div className="mt-6 overflow-hidden rounded-[26px] bg-white p-3 text-[#25262B]">
-              <p className="px-2 text-xs font-black uppercase tracking-[0.16em] text-[#5F635E]">
-                Comercios afiliados
-              </p>
-              <div className="vp-logo-marquee mt-3">
-                <div className="vp-logo-marquee-track">
-                  {[...affiliatedStores, ...affiliatedStores].map((store, index) => (
-                    <Link
-                      key={`${store.name}-${index}`}
-                      href={store.slug === "marketplace" ? "/marketplace" : `/${store.slug}`}
-                      className="flex min-w-[170px] items-center gap-3 rounded-2xl bg-[#F6F4EF] p-3 ring-1 ring-[#25262B]/[0.06]"
-                    >
-                      {store.imageUrl ? (
-                        <OptimizedImage
-                          src={store.imageUrl}
-                          alt={`${store.name} logo`}
-                          width={44}
-                          height={44}
-                          sizes="44px"
-                          className="h-11 w-11 shrink-0 rounded-2xl bg-white object-cover ring-1 ring-[#25262B]/10"
-                          fallback={
-                            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#2E3A79] text-sm font-black text-[#FFB547]">
-                              {store.initials}
-                            </span>
-                          }
-                        />
-                      ) : (
-                        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#2E3A79] text-sm font-black text-[#FFB547]">
-                          {store.initials}
-                        </span>
-                      )}
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-black">{store.name}</span>
-                        <span className="block text-[11px] font-black text-[#5F635E]">{store.category}</span>
-                      </span>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <AffiliatedDeliveryLogos
-              agencies={transportAgencies}
-              className="mt-4 overflow-hidden rounded-[26px] bg-white p-3 text-[#25262B]"
-              cardClassName="bg-[#F6F4EF]"
-              label="Empresas delivery afiliadas"
-            />
-
-            <div className="mt-4 grid grid-cols-3 gap-2">
-              {[
-                ["15", "dias gratis"],
-                ["100%", "control de pedidos"],
-                ["24/7", "catalogo online"],
-              ].map(([value, label]) => (
-                <div key={label} className="rounded-2xl bg-white/10 p-3 text-center ring-1 ring-white/10">
-                  <p className="text-lg font-black text-[#FFB547]">{value}</p>
-                  <p className="text-[11px] font-black text-white/70">{label}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+    <section className="relative overflow-hidden">
+      <div className="absolute -right-24 top-12 h-72 w-72 rounded-full bg-[var(--somos-orange)]/10 blur-3xl" />
+      <div className="absolute -left-32 bottom-0 h-72 w-72 rounded-full bg-[var(--somos-teal)]/10 blur-3xl" />
+      <div className="vp-container relative py-14 sm:py-20 lg:py-24">
+        <div className="max-w-4xl">
+          <p className="somos-badge">Comercio y logística local</p>
+          <h1 className="mt-5 max-w-4xl text-4xl font-bold leading-[1.02] tracking-[-0.04em] text-[var(--somos-navy)] sm:text-6xl lg:text-7xl">Dos soluciones. Un mismo ecosistema.</h1>
+          <p className="somos-muted mt-6 max-w-2xl text-lg font-medium leading-8 sm:text-xl">Somos conecta comercios, pedidos y empresas delivery en una experiencia más ordenada, digital y fácil de gestionar.</p>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row"><ButtonLink href="/marketplace" variant="secondary">Ver marketplace</ButtonLink><ButtonLink href="/registro">Registrar comercio <ArrowRight size={17} /></ButtonLink><ButtonLink href="/transporte/registro" variant="secondary">Registrar empresa delivery</ButtonLink></div>
         </div>
-      </section>
 
-      <section id="comercios" className="bg-white py-12">
-        <div className="vp-container grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
-          <div>
-            <p className="text-sm font-black uppercase tracking-[0.18em] text-[#2E3A79]">
-              Para comercios
-            </p>
-            <h2 className="mt-2 text-3xl font-black leading-tight sm:text-4xl">
-              Convierte tus pedidos en una operacion ordenada
-            </h2>
-            <p className="mt-3 text-base font-bold leading-relaxed text-[#5F635E]">
-              Muestra productos, recibe pedidos claros, verifica pagos y decide si entregas con delivery propio, retiro o empresa afiliada.
-            </p>
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <Link
-                href="/registro"
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-6 py-4 text-sm font-black text-[#25262B]"
-              >
-                Registrar comercio
-                <ArrowRight size={17} />
-              </Link>
-              <a
-                href="#planes"
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F6F4EF] px-6 py-4 text-sm font-black text-[#2E3A79]"
-              >
-                Ver cómo funciona
-              </a>
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            {commerceBenefits.map((benefit) => {
-              const Icon = benefit.icon;
-              return (
-                <article key={benefit.title} className="rounded-[22px] bg-[#F6F4EF] p-4 ring-1 ring-[#25262B]/[0.07]">
-                  <Icon className="text-[#2E3A79]" size={22} />
-                  <p className="mt-3 text-sm font-black">{benefit.title}</p>
-                </article>
-              );
-            })}
-          </div>
+        <div id="soluciones" className="mt-12 grid gap-5 lg:grid-cols-2">
+          <SurfaceCard className="flex flex-col p-6 sm:p-8">
+            <span className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--somos-orange)] text-[var(--somos-navy)]"><StoreIcon size={23} /></span>
+            <p className="mt-6 text-sm font-semibold text-[var(--somos-orange)]">Para comercios</p>
+            <h2 className="mt-2 text-3xl font-bold leading-tight tracking-tight text-[var(--somos-navy)]">Vende mejor desde tu catálogo digital.</h2>
+            <p className="somos-muted mt-4 text-base font-medium leading-7">Muestra tus productos, recibe pedidos y ofrece una experiencia de compra más ordenada para tus clientes.</p>
+            <FeatureList items={commerceFeatures} />
+            <ButtonLink href="/registro" className="mt-7 w-full sm:w-fit">Registrar comercio <ArrowRight size={17} /></ButtonLink>
+          </SurfaceCard>
+          <SurfaceCard dark className="flex flex-col p-6 sm:p-8">
+            <span className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--somos-amber)] text-[var(--somos-navy)]"><Truck size={23} /></span>
+            <p className="mt-6 text-sm font-semibold text-[var(--somos-amber)]">Para empresas delivery</p>
+            <h2 className="mt-2 text-3xl font-bold leading-tight tracking-tight">Conecta con comercios y organiza tu operación.</h2>
+            <p className="mt-4 text-base font-medium leading-7 text-white/70">Configura tarifas, cobertura y datos operativos para que los comercios puedan solicitar afiliación a tu empresa.</p>
+            <FeatureList items={deliveryFeatures} light />
+            <ButtonLink href="/transporte/registro" variant="light" className="mt-7 w-full sm:w-fit">Registrar empresa delivery <ArrowRight size={17} /></ButtonLink>
+          </SurfaceCard>
         </div>
-      </section>
+      </div>
+    </section>
 
-      <section id="planes" className="bg-[#25262B] py-12 text-white">
-        <div className="vp-container">
-          <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
-            <div>
-              <p className="text-sm font-black uppercase tracking-[0.18em] text-[#FFB547]">
-                Simple, directo y sin mensualidad
-              </p>
-              <h2 className="mt-2 text-3xl font-black leading-tight sm:text-4xl">
-                Tu negocio, tus precios, tus pagos y tus clientes
-              </h2>
-              <p className="mt-4 max-w-xl text-base font-bold leading-relaxed text-white/70">
-                Usa Somos sin pagar mensualidad ni entregar un porcentaje de tus ventas. Solo se agrega un fee fijo de $0.10 por pedido recibido.
-              </p>
-              <div className="mt-6 rounded-[28px] bg-[#FFB547] p-5 text-[#25262B] shadow-xl shadow-black/15">
-                <p className="text-sm font-black uppercase tracking-[0.16em] text-[#2E3A79]">
-                  Pagas por resultado
-                </p>
-                <div className="mt-2 flex items-end gap-2">
-                  <span className="text-5xl font-black">$0.10</span>
-                  <span className="pb-1 text-sm font-black text-[#25262B]/65">por pedido recibido</span>
-                </div>
-                <p className="mt-3 text-sm font-bold">
-                  Sin mensualidades, contratos ni comisiones porcentuales.
-                </p>
-                <p className="mt-3 rounded-2xl bg-[#25262B]/10 px-4 py-3 text-sm font-black text-[#2E3A79]">
-                  Tú eliges: asumir el fee o cobrarlo al cliente final.
-                </p>
-              </div>
-              <Link
-                href="/registro"
-                className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-white px-5 py-4 text-sm font-black text-[#2E3A79] sm:w-auto"
-              >
-                Crear mi catálogo gratis
-                <ArrowRight size={16} />
-              </Link>
-            </div>
+    <section className="bg-white py-14 sm:py-20"><div className="vp-container">
+      <SectionHeading eyebrow="Operaciones locales" title="Creado para operaciones locales reales" description="Somos está diseñado para comercios y empresas delivery que necesitan ordenar pedidos, mostrar mejor sus productos y trabajar con reglas claras de cobertura y tarifas." />
+      <div className="mt-9 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">{benefits.map((benefit) => { const Icon = benefit.icon; return <article key={benefit.title} className="rounded-3xl border border-[var(--somos-navy)]/8 bg-[var(--somos-off-white)] p-5"><Icon size={22} className="text-[var(--somos-orange)]" /><h3 className="mt-4 text-base font-bold text-[var(--somos-navy)]">{benefit.title}</h3><p className="somos-muted mt-2 text-sm font-medium leading-6">{benefit.text}</p></article>; })}</div>
+    </div></section>
 
-            <div className="overflow-hidden rounded-[28px] bg-white/8 ring-1 ring-white/10">
-              <div className="grid grid-cols-2 border-b border-white/10 text-sm font-black">
-                <p className="bg-[#2E3A79] p-4 text-[#FFB547]">Con Somos</p>
-                <p className="p-4 text-white/60">Otras apps</p>
-              </div>
-              {[
-                ["Pagos directos a tu cuenta", "Pagos con intermediarios"],
-                ["Sin comisión sobre la venta", "Comisión porcentual"],
-                ["Tú decides quién asume el fee", "La plataforma define sus cargos"],
-                ["Mantienes tus precios reales", "Puedes terminar subiendo precios"],
-                ["Tus clientes siguen siendo tuyos", "La plataforma controla la relación"],
-                ["WhatsApp como canal principal", "El cliente depende de otra app"],
-              ].map(([somos, otrasApps]) => (
-                <div key={somos} className="grid grid-cols-2 border-b border-white/10 last:border-0">
-                  <p className="flex gap-2 bg-[#2E3A79]/35 p-4 text-sm font-bold">
-                    <Check className="mt-0.5 shrink-0 text-[#FFB547]" size={16} />
-                    {somos}
-                  </p>
-                  <p className="p-4 text-sm font-bold text-white/55">{otrasApps}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+    {affiliatedStores.length || transportAgencies.length ? <section className="bg-[var(--somos-teal)] py-14 text-white sm:py-20"><div className="vp-container">
+      <SectionHeading light eyebrow="Red Somos" title="Comercios y empresas delivery en un mismo ecosistema" description="Perfiles reales y activos disponibles en la plataforma." />
+      {affiliatedStores.length ? <div className="mt-8 overflow-hidden rounded-3xl bg-white p-4 text-[var(--somos-navy)]"><p className="px-2 text-sm font-semibold">Comercios afiliados</p><div className="vp-logo-marquee mt-3"><div className="vp-logo-marquee-track">{[...affiliatedStores, ...affiliatedStores].map((store, index) => <Link key={`${store.slug}-${index}`} href={`/${store.slug}`} className="flex min-w-44 items-center gap-3 rounded-2xl bg-[var(--somos-off-white)] p-3"><OptimizedImage src={store.imageUrl} alt={`Logo de ${store.name}`} width={44} height={44} sizes="44px" className="h-11 w-11 rounded-xl bg-white object-cover" /><span className="min-w-0"><span className="block truncate text-sm font-bold">{store.name}</span><span className="block text-xs font-medium text-[var(--somos-navy)]/60">{store.category}</span></span></Link>)}</div></div></div> : null}
+      {transportAgencies.length ? <AffiliatedDeliveryLogos agencies={transportAgencies} className="mt-4 overflow-hidden rounded-3xl bg-white p-4 text-[var(--somos-navy)]" cardClassName="bg-[var(--somos-off-white)]" label="Empresas delivery afiliadas" /> : null}
+    </div></section> : null}
+
+    <section className="py-14 sm:py-20"><div className="vp-container grid gap-8 lg:grid-cols-[1fr_0.8fr] lg:items-center">
+      <SectionHeading eyebrow="Marketplace" title="También puedes explorar comercios en Somos" description="Descubre catálogos activos y realiza pedidos desde comercios configurados en la plataforma." />
+      <SurfaceCard className="flex flex-col items-start bg-white sm:p-7"><span className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--somos-amber)]/20 text-[var(--somos-teal)]"><ShoppingBag size={22} /></span><p className="somos-muted mt-4 text-sm font-medium leading-6">Busca por comercio o rubro y entra directamente a su catálogo.</p><ButtonLink href="/marketplace" className="mt-5">Ver comercios <ArrowRight size={17} /></ButtonLink></SurfaceCard>
+    </div></section>
+
+    <section className="bg-[var(--somos-navy)] py-14 text-white sm:py-20"><div className="vp-container grid gap-8 lg:grid-cols-[1fr_0.9fr] lg:items-center">
+      <div><p className="somos-badge somos-badge-light">Modelo simple para comercios</p><h2 className="mt-4 text-3xl font-bold leading-tight tracking-tight sm:text-5xl">Tu negocio, tus precios, tus pagos y tus clientes</h2><p className="mt-4 max-w-2xl text-base font-medium leading-7 text-white/70">Usa Somos sin pagar mensualidad ni entregar un porcentaje de tus ventas. Solo se agrega un fee fijo de $0.10 por pedido recibido.</p></div>
+      <div className="rounded-3xl bg-white/8 p-6 ring-1 ring-white/10"><p className="text-sm font-semibold text-[var(--somos-amber)]">Pagas por resultado</p><div className="mt-2 flex items-end gap-2"><span className="text-5xl font-bold">$0.10</span><span className="pb-1 text-sm font-medium text-white/60">por pedido recibido</span></div><p className="mt-3 text-sm font-medium text-white/70">Sin mensualidades, contratos ni comisiones porcentuales.</p><ButtonLink href="/registro" variant="light" className="mt-6 w-full sm:w-fit">Registrar comercio <ArrowRight size={17} /></ButtonLink></div>
+      <div className="overflow-hidden rounded-3xl border border-white/10 lg:col-span-2">
+        <div className="grid grid-cols-2 border-b border-white/10 text-sm font-bold">
+          <p className="bg-[var(--somos-teal)] p-4 text-[var(--somos-amber)] sm:px-6">Con Somos</p>
+          <p className="p-4 text-white/60 sm:px-6">Otras apps</p>
         </div>
-      </section>
+        {[
+          ["Pagos directos a tu cuenta", "Pagos con intermediarios"],
+          ["Sin comisión sobre la venta", "Comisión porcentual"],
+          ["Tú decides quién asume el fee", "La plataforma define sus cargos"],
+          ["Mantienes tus precios reales", "Puedes terminar subiendo precios"],
+          ["Tus clientes siguen siendo tuyos", "La plataforma controla la relación"],
+          ["WhatsApp como canal principal", "El cliente depende de otra app"],
+        ].map(([somos, otrasApps]) => (
+          <div key={somos} className="grid grid-cols-2 border-b border-white/10 last:border-0">
+            <p className="flex gap-2 bg-[var(--somos-teal)]/55 p-4 text-sm font-medium leading-6 sm:px-6">
+              <Check className="mt-1 shrink-0 text-[var(--somos-amber)]" size={16} />
+              {somos}
+            </p>
+            <p className="p-4 text-sm font-medium leading-6 text-white/55 sm:px-6">{otrasApps}</p>
+          </div>
+        ))}
+      </div>
+    </div></section>
 
-      <section id="delivery" className="vp-container py-12">
-        <div className="grid gap-6 rounded-[30px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.07] lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
-          <div>
-            <p className="text-sm font-black uppercase tracking-[0.18em] text-[#2E3A79]">
-              Para empresas delivery
-            </p>
-            <h2 className="mt-2 text-3xl font-black leading-tight">
-              Recibe comercios afiliados con reglas claras desde el primer pedido
-            </h2>
-            <p className="mt-3 text-sm font-bold leading-relaxed text-[#5F635E]">
-              La empresa publica cobertura, moneda de cobro, condiciones, capacidad y tarifas. El comercio solicita afiliacion y luego envia pedidos confirmados desde su panel.
-            </p>
-            <Link
-              href="/transporte"
-              className="mt-5 inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-6 py-4 text-sm font-black text-[#25262B]"
-            >
-              Afiliar mi empresa
-              <ArrowRight size={17} />
-            </Link>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-[0.9fr_1.1fr]">
-            <div className="relative h-72 overflow-hidden rounded-[26px]">
-              <OptimizedImage
-              src="https://images.unsplash.com/photo-1617347454431-f49d7ff5c3b1?auto=format&fit=crop&w=900&q=80"
-              alt="Empresa delivery organizando entregas urbanas"
-                fill
-                sizes="(max-width: 640px) 100vw, 45vw"
-                className="object-cover"
-                fallback={<div className="h-full w-full bg-[#F6F4EF]" />}
-              />
-            </div>
-            <div className="grid gap-3">
-              {deliveryBenefits.map((item) => (
-                <div key={item} className="flex items-center gap-3 rounded-[18px] bg-[#F6F4EF] p-4">
-                  <Truck size={20} className="shrink-0 text-[#2E3A79]" />
-                  <p className="text-sm font-black">{item}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
+    <section className="bg-[var(--somos-orange)] py-14 sm:py-16"><div className="vp-container flex flex-col justify-between gap-7 lg:flex-row lg:items-center"><div><h2 className="max-w-2xl text-3xl font-bold leading-tight tracking-tight text-[var(--somos-navy)] sm:text-4xl">Empieza a ordenar tu operación con Somos</h2><p className="mt-3 text-base font-medium text-[var(--somos-navy)]/70">Elige el camino que corresponde a tu operación.</p></div><div className="flex flex-col gap-3 sm:flex-row"><ButtonLink href="/registro" variant="light">Configurar comercio</ButtonLink><ButtonLink href="/transporte/registro" variant="secondary" className="bg-[var(--somos-navy)] text-white">Registrar empresa delivery</ButtonLink></div></div></section>
 
-      <section className="bg-white py-12">
-        <div className="vp-container grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
-          <div>
-            <p className="text-sm font-black uppercase tracking-[0.18em] text-[#2E3A79]">
-              Operacion real
-            </p>
-            <h2 className="mt-1 text-3xl font-black">Hecho para vender todos los dias</h2>
-            <p className="mt-3 text-sm font-bold leading-relaxed text-[#5F635E]">
-              La plataforma reduce mensajes repetidos, ventas perdidas y cobros confusos sin cambiar la forma natural de vender.
-            </p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {differentiators.map((item) => (
-              <div key={item} className="flex items-center gap-3 rounded-[20px] bg-[#F6F4EF] p-4">
-                <ShieldCheck size={20} className="shrink-0 text-[#6FA64F]" />
-                <p className="text-sm font-black">{item}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <footer className="bg-[#25262B] py-8 text-white">
-        <div className="vp-container grid gap-6 md:grid-cols-[1fr_auto] md:items-center">
-          <div>
-            <BrandLogo compact />
-            <p className="mt-3 max-w-xl text-sm font-bold leading-relaxed text-white/65">
-              Somos ayuda a comercios y empresas delivery a operar ventas con mas orden, control y seguimiento.
-            </p>
-          </div>
-          <div className="grid gap-2 text-sm font-black text-white/72 sm:grid-cols-2">
-            <a href="#comercios">Comercios</a>
-            <a href="#planes">Cómo funciona</a>
-            <a href="#delivery">Delivery</a>
-            <Link href="/marketplace">Marketplace</Link>
-          </div>
-          <div className="flex flex-wrap gap-2 md:col-span-2">
-            <PwaInstallButton />
-            <Link
-              href="/registro"
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
-            >
-              Crear comercio
-              <BadgeDollarSign size={17} />
-            </Link>
-            <Link
-              href="/transporte"
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-black text-[#2E3A79]"
-            >
-              Afiliar empresa
-              <Truck size={17} />
-            </Link>
-          </div>
-        </div>
-      </footer>
-    </main>
-  );
+    <section className="bg-white py-7"><div className="vp-container flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center"><div><p className="text-sm font-semibold text-[var(--somos-navy)]">Acceso rápido en tu dispositivo</p><p className="somos-muted mt-1 text-sm font-medium">Puedes instalar Somos para abrirlo directamente desde tu pantalla de inicio.</p></div><PwaInstallButton /></div></section>
+    <PublicFooter />
+  </main>;
 }
