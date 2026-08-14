@@ -5,7 +5,6 @@ import { useMemo, useState } from "react";
 import {
   ArrowRight,
   Clock3,
-  MessageCircle,
   Search,
   Star,
   ShoppingBag,
@@ -14,7 +13,8 @@ import {
   Zap,
 } from "lucide-react";
 import type { Store } from "@/types";
-import { BrandLogo } from "@/components/public/BrandLogo";
+import { PublicFooter } from "@/components/public/PublicFooter";
+import { PublicHeader } from "@/components/public/PublicHeader";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import type { MarketplaceFeaturedProduct } from "@/lib/monthly-challenges";
 
@@ -174,28 +174,8 @@ export function MarketplaceClient({
   }, [activeFilter, query, stores]);
 
   return (
-    <main className="min-h-screen bg-[#FFF8F0] text-[#25262B]">
-      <header className="sticky top-0 z-30 border-b border-[#25262B]/[0.06] bg-[#FFF8F0]/95 backdrop-blur">
-        <nav className="vp-container flex items-center justify-between gap-3 py-3">
-          <Link href="/" aria-label="Ir al inicio de Somos">
-            <BrandLogo compact />
-          </Link>
-          <div className="flex items-center gap-2">
-            <Link
-              href="/"
-              className="hidden rounded-full bg-white px-4 py-2 text-sm font-black text-[#2E3A79] ring-1 ring-[#25262B]/10 sm:inline-flex"
-            >
-              Comercios y delivery
-            </Link>
-            <Link
-              href="/panel/login"
-              className="inline-flex rounded-full bg-[#FFB547] px-4 py-2 text-sm font-black text-[#25262B]"
-            >
-              Iniciar sesion
-            </Link>
-          </div>
-        </nav>
-      </header>
+    <main className="somos-page">
+      <PublicHeader primaryHref="/registro" primaryLabel="Registrar comercio" />
 
       <section className="bg-white">
         <div className="vp-container py-8 sm:py-12">
@@ -365,23 +345,7 @@ export function MarketplaceClient({
         )}
       </section>
 
-      <footer className="bg-[#25262B] py-8 text-white">
-        <div className="vp-container flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-          <div>
-            <BrandLogo compact />
-            <p className="mt-3 text-sm font-bold text-white/65">
-              {footerText}
-            </p>
-          </div>
-          <Link
-            href="/"
-            className="inline-flex w-fit items-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-black text-[#2E3A79]"
-          >
-            <MessageCircle size={17} />
-            Soy comercio o delivery
-          </Link>
-        </div>
-      </footer>
+      <PublicFooter text={footerText} />
     </main>
   );
 }

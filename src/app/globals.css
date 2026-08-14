@@ -2,14 +2,116 @@
 @import "leaflet/dist/leaflet.css";
 
 :root {
-  --vp-blue: #2e3a79;
-  --vp-blue-dark: #151b4f;
-  --vp-mango: #ffb547;
-  --vp-cream: #fff8f0;
-  --vp-sand: #e8d9c9;
-  --vp-graphite: #25262b;
-  --vp-muted: #746f69;
+  --somos-orange: #f27533;
+  --somos-amber: #f5a220;
+  --somos-off-white: #f4f4f4;
+  --somos-teal: #1f464c;
+  --somos-navy: #042332;
+  --vp-blue: var(--somos-teal);
+  --vp-blue-dark: var(--somos-navy);
+  --vp-mango: var(--somos-orange);
+  --vp-cream: var(--somos-off-white);
+  --vp-sand: #dedbd5;
+  --vp-graphite: var(--somos-navy);
+  --vp-muted: #667477;
   --vp-green: #6fa64f;
+}
+
+.somos-page {
+  min-height: 100vh;
+  background: var(--somos-off-white);
+  color: var(--somos-navy);
+}
+
+.somos-surface {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(4, 35, 50, 0.08);
+}
+
+.somos-card,
+.somos-card-dark {
+  border-radius: 28px;
+  padding: 24px;
+}
+
+.somos-card {
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(4, 35, 50, 0.08);
+  box-shadow: 0 20px 50px rgba(4, 35, 50, 0.08);
+}
+
+.somos-card-dark {
+  background: var(--somos-teal);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 24px 60px rgba(4, 35, 50, 0.18);
+  color: white;
+}
+
+.somos-button-primary,
+.somos-button-secondary,
+.somos-button-light {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 999px;
+  padding: 12px 20px;
+  font-weight: 700;
+  line-height: 1.2;
+  transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.somos-button-primary {
+  background: var(--somos-orange);
+  color: var(--somos-navy);
+  box-shadow: 0 12px 28px rgba(242, 117, 51, 0.22);
+}
+
+.somos-button-secondary {
+  background: transparent;
+  color: var(--somos-teal);
+  box-shadow: inset 0 0 0 1px rgba(31, 70, 76, 0.22);
+}
+
+.somos-button-light {
+  background: white;
+  color: var(--somos-navy);
+}
+
+.somos-button-primary:hover,
+.somos-button-secondary:hover,
+.somos-button-light:hover {
+  transform: translateY(-1px);
+}
+
+.somos-badge {
+  display: inline-flex;
+  width: fit-content;
+  border-radius: 999px;
+  background: rgba(245, 162, 32, 0.16);
+  padding: 7px 12px;
+  color: var(--somos-teal);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.somos-badge-light {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--somos-amber);
+}
+
+.somos-heading {
+  max-width: 760px;
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.04;
+}
+
+.somos-muted {
+  color: rgba(4, 35, 50, 0.68);
 }
 
 * {
@@ -327,6 +429,100 @@ img {
 
 .leaflet-container {
   font-family: var(--font-nunito), Arial, Helvetica, sans-serif;
+}
+
+/* Temporary global compatibility layer for the Somos visual preview. */
+[class*="bg-[#2E3A79]"],
+[class*="bg-[#2e3a79]"] {
+  background-color: var(--somos-teal) !important;
+}
+
+[class*="bg-[#151B4F]"],
+[class*="bg-[#151b4f]"],
+[class*="bg-[#25262B]"],
+[class*="bg-[#25262b]"] {
+  background-color: var(--somos-navy) !important;
+}
+
+[class*="bg-[#FFB547]"],
+[class*="bg-[#ffb547]"] {
+  background-color: var(--somos-orange) !important;
+}
+
+[class*="bg-[#FFF8F0]"],
+[class*="bg-[#fff8f0]"],
+[class*="bg-[#F8F3E8]"],
+[class*="bg-[#f8f3e8]"],
+[class*="bg-[#F6F4EF]"],
+[class*="bg-[#f6f4ef]"] {
+  background-color: var(--somos-off-white) !important;
+}
+
+[class*="text-[#2E3A79]"],
+[class*="text-[#2e3a79]"] {
+  color: var(--somos-teal) !important;
+}
+
+[class*="text-[#25262B]"],
+[class*="text-[#25262b]"] {
+  color: var(--somos-navy) !important;
+}
+
+[class*="text-[#FFB547]"],
+[class*="text-[#ffb547]"] {
+  color: var(--somos-orange) !important;
+}
+
+[class*="border-[#2E3A79]"],
+[class*="border-[#2e3a79]"] {
+  border-color: var(--somos-teal) !important;
+}
+
+[class*="border-[#FFB547]"],
+[class*="border-[#ffb547]"] {
+  border-color: var(--somos-orange) !important;
+}
+
+[class*="ring-[#2E3A79]"],
+[class*="ring-[#2e3a79]"] {
+  --tw-ring-color: rgba(31, 70, 76, 0.22) !important;
+}
+
+[class*="ring-[#FFB547]"],
+[class*="ring-[#ffb547]"] {
+  --tw-ring-color: rgba(242, 117, 51, 0.26) !important;
+}
+
+[class*="shadow-[#2E3A79]"],
+[class*="shadow-[#2e3a79]"] {
+  --tw-shadow-color: rgba(31, 70, 76, 0.18) !important;
+}
+
+[class*="shadow-[#FFB547]"],
+[class*="shadow-[#ffb547]"] {
+  --tw-shadow-color: rgba(242, 117, 51, 0.2) !important;
+}
+
+[class*="from-[#2E3A79]"],
+[class*="from-[#2e3a79]"] {
+  --tw-gradient-from: var(--somos-teal) !important;
+}
+
+[class*="to-[#4656A4]"],
+[class*="to-[#4656a4]"],
+[class*="to-[#151B4F]"],
+[class*="to-[#151b4f]"] {
+  --tw-gradient-to: var(--somos-navy) !important;
+}
+
+[class*="focus:border-[#2E3A79]"]:focus,
+[class*="focus:border-[#2e3a79]"]:focus {
+  border-color: var(--somos-teal) !important;
+}
+
+[class*="focus:ring-[#2E3A79]"]:focus,
+[class*="focus:ring-[#2e3a79]"]:focus {
+  --tw-ring-color: rgba(31, 70, 76, 0.16) !important;
 }
 
 /* Somos dynamic public store branding */

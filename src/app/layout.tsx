@@ -18,8 +18,16 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   applicationName: "Somos",
   icons: {
-    icon: "/favicon.png",
-    apple: "/icons/somos-apple-touch-icon.png",
+    icon: {
+      url: "/brand/new-somos-preview/favicon-preview-32.png",
+      type: "image/png",
+      sizes: "32x32",
+    },
+    apple: {
+      url: "/brand/new-somos-preview/apple-touch-icon-preview.png",
+      type: "image/png",
+      sizes: "180x180",
+    },
   },
   appleWebApp: {
     capable: true,
@@ -29,7 +37,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#2E3A79",
+  themeColor: "#1F464C",
 };
 
 export default function RootLayout({
