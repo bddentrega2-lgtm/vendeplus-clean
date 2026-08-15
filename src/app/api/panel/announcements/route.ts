@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
       .lte("starts_at", now)
       .or(`ends_at.is.null,ends_at.gt.${now}`)
       .order("starts_at", { ascending: false })
-      .limit(3);
+      .limit(20);
 
     if (error) throw error;
     return NextResponse.json({ announcements: data || [] });
