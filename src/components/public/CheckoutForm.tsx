@@ -114,6 +114,7 @@ export function CheckoutForm({ store }: { store: Store }) {
   const [hasSavedCustomer, setHasSavedCustomer] = useState(false);
   const [customerProfileLoaded, setCustomerProfileLoaded] = useState(false);
   const lastQuoteRequestRef = useRef("");
+  const idempotencyKeyRef = useRef(crypto.randomUUID());
 
   useEffect(() => {
     setItems(getCart(store.slug));
@@ -487,7 +488,11 @@ export function CheckoutForm({ store }: { store: Store }) {
     setError("");
 
     try {
-      const saveResult = await saveOrderToSupabase(order, store);
+      const saveResult = await saveOrderToSupabase(
+        order,
+        store,
+        idempotencyKeyRef.current
+      );
 
       if (!saveResult.ok || !saveResult.order) {
         setError(saveResult.error || "No se pudo guardar el pedido.");
@@ -520,32 +525,16 @@ export function CheckoutForm({ store }: { store: Store }) {
   return (
     <main className="vp-container pb-10 pt-5">
       <div className="mx-auto max-w-5xl">
-        <div className="mb-5 flex items-center justify-between gap-3">
+        <div className="mb-4 flex items-center justify-between gap-3">
           <Link href={`/${store.slug}/carrito`} className="vp-button-soft px-4 py-3">
             <ArrowLeft size={18} /> Volver al carrito
           </Link>
-          <div className="rounded-full bg-[#2E3A79] px-4 py-3 text-sm font-black text-white">Finalizar pedido</div>
+          <span className="text-sm font-black text-[#2E3A79]">{store.name}</span>
         </div>
 
-        <section className="mb-5 overflow-hidden rounded-[36px] bg-[#2E3A79] text-white shadow-2xl shadow-[#2E3A79]/20">
-          <div className="relative p-5 sm:p-7">
-            <div className="absolute right-5 top-5 rounded-full bg-[#FFB547] px-4 py-2 text-sm font-black text-[#25262B]">Somos</div>
-            <p className="text-sm font-bold text-white/65">{store.name}</p>
-            <h1 className="mt-2 max-w-xl text-3xl font-black tracking-tight sm:text-5xl">Confirma tu pedido</h1>
-            <p className="mt-3 max-w-xl text-sm font-semibold leading-relaxed text-white/72">
-              Revisa el total, agrega como recibirlo y confirma el pedido por WhatsApp.
-            </p>
-            <div className="mt-5 flex flex-wrap gap-2">
-              <span className="inline-flex items-center gap-2 rounded-full bg-white/12 px-3 py-2 text-xs font-black text-white">
-                <ShieldCheck size={15} className="text-[#FFB547]" />
-                Total claro antes de pagar
-              </span>
-              <span className="inline-flex items-center gap-2 rounded-full bg-white/12 px-3 py-2 text-xs font-black text-white">
-                <MessageCircle size={15} className="text-[#FFB547]" />
-                Confirmación por WhatsApp
-              </span>
-            </div>
-          </div>
+        <section className="mb-5 rounded-[28px] bg-[#2E3A79] px-5 py-4 text-white shadow-lg shadow-[#2E3A79]/15 sm:px-6">
+          <h1 className="text-2xl font-black tracking-tight sm:text-3xl">Finaliza tu pedido</h1>
+          <p className="mt-1 text-sm font-semibold text-white/75">Completa tus datos y revisa el total.</p>
         </section>
 
         <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
@@ -579,13 +568,13 @@ export function CheckoutForm({ store }: { store: Store }) {
                       className="mt-1 h-4 w-4 accent-[#2E3A79]"
                     />
                     <span className="text-sm font-bold leading-relaxed text-[#5F635E]">
-                      Recordar mi nombre y teléfono en este dispositivo para mis próximos pedidos en Somos.
+                      Recordar mis datos para próximos pedidos.
                     </span>
                   </label>
                   {hasSavedCustomer ? (
                     <p className="mt-2 flex items-center gap-2 text-xs font-black text-[#2E3A79]">
                       <ShieldCheck size={15} />
-                      Usamos los datos guardados de tu pedido anterior. Puedes editarlos.
+                      Datos anteriores cargados. Puedes editarlos.
                     </p>
                   ) : null}
                 </div>
@@ -609,13 +598,9 @@ export function CheckoutForm({ store }: { store: Store }) {
                   ))}
                 </select>
               </div>
-              <p className="mt-3 rounded-2xl bg-[#FFF8F0] p-3 text-sm font-bold text-[#746f69]">
-                {form.deliveryType === "delivery"
-                  ? deliveryModeCopy
-                  : form.deliveryType === "national_shipping"
-                    ? "Indica cedula y ciudad. El comercio coordinara el envio nacional por WhatsApp."
-                    : "Retiras directamente en el comercio."}
-              </p>
+              {form.deliveryType === "delivery" && deliveryModeCopy ? (
+                <p className="mt-3 text-sm font-bold text-[#746f69]">{deliveryModeCopy}</p>
+              ) : null}
             </section>
 
             {form.deliveryType === "delivery" ? (
@@ -623,7 +608,6 @@ export function CheckoutForm({ store }: { store: Store }) {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <h2 className="text-xl font-black text-[#25262B]">3. Ubicación para Delivery</h2>
-                    <p className="mt-1 text-sm font-bold text-[#746f69]">Carga la ubicación donde quieres recibir el pedido.</p>
                   </div>
                   {isCalculating ? <Loader2 className="animate-spin text-[#2E3A79]" /> : <Navigation className="text-[#FFB547]" />}
                 </div>
@@ -674,9 +658,6 @@ export function CheckoutForm({ store }: { store: Store }) {
                       <p className="text-sm font-black text-[#25262B]">
                         Delivery gestionado por {deliveryPartnerName}
                       </p>
-                      <p className="mt-0.5 text-xs font-bold text-[#746f69]">
-                        La empresa delivery recibirá los datos necesarios para coordinar la entrega.
-                      </p>
                     </div>
                   </div>
                 ) : null}
@@ -713,9 +694,7 @@ export function CheckoutForm({ store }: { store: Store }) {
             ) : form.deliveryType === "national_shipping" ? (
               <section className="vp-card p-4 sm:p-5">
                 <h2 className="text-xl font-black text-[#25262B]">3. Envio nacional</h2>
-                <p className="mt-2 rounded-[24px] bg-[#FFF8F0] p-4 text-sm font-bold leading-relaxed text-[#746f69]">
-                  El comercio coordinara agencia, costo y detalles finales por WhatsApp. Por ahora deja estos datos para identificar el envio.
-                </p>
+                <p className="mt-1 text-sm font-bold text-[#746f69]">El comercio coordinará los detalles por WhatsApp.</p>
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <label>
                     <span className="vp-label">Cedula</span>
@@ -762,12 +741,6 @@ export function CheckoutForm({ store }: { store: Store }) {
                   }
                 />
               </label>
-              {isCashPayment ? (
-                <p className="mt-2 rounded-2xl bg-[#FFF8F0] p-3 text-xs font-black text-[#746f69]">
-                  Esta información llegará al comercio junto con tu pedido.
-                </p>
-              ) : null}
-
               {paymentInfo ? (
                 <div className="mt-4 rounded-[26px] bg-[#2E3A79] p-4 text-white">
                   <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -814,7 +787,7 @@ export function CheckoutForm({ store }: { store: Store }) {
                     )}
                   </div>
 
-                  {!paymentInfo.hasConfiguredData ? (
+                  {!paymentInfo.hasConfiguredData && paymentInfo.lines.length > 0 ? (
                     <p className="mt-3 rounded-2xl bg-white/10 p-3 text-xs font-black text-white">
                       No hay datos de pago guardados para este método. Confírmalos por WhatsApp con el comercio.
                     </p>

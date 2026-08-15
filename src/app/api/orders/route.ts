@@ -260,8 +260,12 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const order = body.order as SavedOrder | undefined;
     const storeId = cleanText(body.storeId);
+    const idempotencyKey = cleanText(body.idempotencyKey, 100);
 
     if (!order || !storeId) return requestBadRequest("Pedido inválido.");
+    if (!isUuid(idempotencyKey)) {
+      return requestBadRequest("No se pudo identificar este intento de pedido.");
+    }
 
     const storeLimit = await checkDistributedRateLimit({
       key: `orders:store:${storeId}:ip:${clientIp}`,
@@ -684,6 +688,7 @@ export async function POST(request: NextRequest) {
       id: orderDbId,
       public_code: publicCode,
       store_id: storeId,
+      idempotency_key: idempotencyKey,
       customer_name: cleanText(order.form.customerName),
       customer_phone: cleanText(order.form.customerPhone),
       customer_phone_normalized: normalizePhone(order.form.customerPhone) || null,
@@ -770,6 +775,37 @@ export async function POST(request: NextRequest) {
     };
 
     let { error: orderError } = await supabase.from("orders").insert(orderPayload);
+
+    if (orderError?.code === "23505") {
+      const { data: existingOrder, error: existingOrderError } = await supabase
+        .from("orders")
+        .select("id, public_code, whatsapp_message")
+        .eq("store_id", storeId)
+        .eq("idempotency_key", idempotencyKey)
+        .maybeSingle();
+
+      if (existingOrderError) throw existingOrderError;
+      if (existingOrder) {
+        const savedOrder: SavedOrder = {
+          ...order,
+          id: existingOrder.public_code || publicCode,
+          storeName: (store as any).name || order.storeName,
+          items: validatedItems,
+          quote: serverQuote,
+          totals,
+          whatsappMessage: existingOrder.whatsapp_message || whatsappMessage,
+          whatsappUrl: buildWhatsAppUrl(
+            (store as any).whatsapp || "",
+            existingOrder.whatsapp_message || whatsappMessage
+          ),
+        };
+        return withApiHeaders(NextResponse.json({
+          orderId: existingOrder.id,
+          order: savedOrder,
+          idempotentReplay: true,
+        }));
+      }
+    }
 
     if (orderError && isMissingColumnError(orderError, ["payment_", "customer_", "delivery_", "platform_service_"])) {
       const {

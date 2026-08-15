@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "test:critical": "node --experimental-strip-types --test scripts/critical-contracts.test.mjs",
+    "test:entrega2-contract": "node --test scripts/entrega2-phone-mapping.test.mjs",
     "check:production": "node scripts/check-production.mjs",
     "predeploy:smoke": "node scripts/predeploy-smoke.mjs",
     "e2e:checkout": "node scripts/e2e-checkout.mjs",

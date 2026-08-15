@@ -530,22 +530,42 @@ export async function POST(
 
     const requestPayload = buildEntrega2Payload(order);
 
-    const { error: pendingIntegrationError } = await supabase
-      .from("order_integrations")
-      .upsert(
-        {
-          order_id: order.id,
-          provider,
-          external_id: externalOrderId,
-          status: "sending",
-          request_payload: requestPayload,
-          last_error: null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "order_id,provider" }
-      );
+    const pendingPayload = {
+      order_id: order.id,
+      provider,
+      external_id: externalOrderId,
+      status: "sending",
+      request_payload: requestPayload,
+      last_error: null,
+      updated_at: new Date().toISOString(),
+    };
+    const pendingResult = existingIntegration
+      ? await supabase
+          .from("order_integrations")
+          .update(pendingPayload)
+          .eq("id", existingIntegration.id)
+          .in("status", ["error", "failed"])
+          .select("id")
+          .maybeSingle()
+      : await supabase
+          .from("order_integrations")
+          .insert(pendingPayload)
+          .select("id")
+          .single();
 
-    if (pendingIntegrationError) throw pendingIntegrationError;
+    if (pendingResult.error && pendingResult.error.code !== "23505") {
+      throw pendingResult.error;
+    }
+    if (pendingResult.error?.code === "23505" || !pendingResult.data) {
+      return attachApiResponseHeaders(
+        NextResponse.json(
+          { error: "Este pedido ya se está enviando a Entrega2 App." },
+          { status: 409 }
+        ),
+        apiContext,
+        "send-delivery"
+      );
+    }
 
     try {
       const entrega2Response = await sendEntrega2Order(requestPayload);
