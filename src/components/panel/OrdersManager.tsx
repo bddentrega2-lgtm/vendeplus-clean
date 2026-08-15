@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
   CheckCircle2,
   CircleDollarSign,
@@ -10,6 +11,7 @@ import {
   Lock,
   MapPin,
   Navigation,
+  Plus,
   RefreshCcw,
   Search,
   Send,
@@ -269,7 +271,7 @@ function OrderDetail({
                 <p>Cliente: {order.customer_name}</p>
                 <p>Teléfono: {order.customer_phone}</p>
                 <p>Pago: {order.payment_method}</p>
-                <p>Modalidad: {order.delivery_type === "delivery" ? "Delivery" : order.delivery_type === "national_shipping" ? "Envio nacional" : "Retiro (pick up)"}</p>
+                <p>Modalidad: {getDeliverySummary(order)}</p>
               </div>
             </section>
 
@@ -964,6 +966,13 @@ export function OrdersManager() {
           </div>
 
           <div className="flex flex-wrap gap-2">
+            <Link
+              href="/panel/pedidos/nuevo"
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
+            >
+              <Plus size={16} />
+              Pedido manual
+            </Link>
             <button
               type="button"
               onClick={() => {
@@ -1074,6 +1083,8 @@ export function OrdersManager() {
             <option value="all">Todas las modalidades</option>
             <option value="delivery">Solo Delivery</option>
             <option value="pickup">Solo Retiro (pick up)</option>
+            <option value="table">Solo Mesa</option>
+            <option value="bar">Solo Barra</option>
             <option value="national_shipping">Solo Envio nacional</option>
           </select>
         </div>

@@ -6,6 +6,7 @@ import {
   CreditCard,
   Home,
   LayoutDashboard,
+  Megaphone,
   PlusCircle,
   ShieldCheck,
   Sparkles,
@@ -21,6 +22,7 @@ const navItems = [
   { href: "/admin/usuarios", label: "Usuarios", icon: UserRoundPlus },
   { href: "/admin/planes", label: "Planes", icon: Tags },
   { href: "/admin/suscripciones", label: "Suscripciones", icon: CreditCard },
+  { href: "/admin/notificaciones", label: "Notificaciones", icon: Megaphone },
   { href: "/admin/transporte", label: "Transporte", icon: Truck },
   { href: "/admin/asignaciones", label: "Asignaciones", icon: UserRoundPlus },
 ];

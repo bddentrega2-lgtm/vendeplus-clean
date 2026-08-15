@@ -17,6 +17,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { formatUsd } from "@/lib/currency";
+import type { ProductOptionGroup, SelectedCartOption } from "@/types";
 import { PanelAccessGate, PanelModuleSkeleton } from "@/components/panel/PanelLoadingState";
 import {
   getPanelAccessToken,
@@ -56,7 +57,10 @@ type SelectedItem = {
   productId: string;
   quantity: number;
   notes: string;
+  selectedOptions: SelectedCartOption[];
 };
+
+type FulfillmentType = "delivery" | "pickup" | "table" | "bar";
 
 type InterpretDetails = {
   mode: "ai" | "local" | "";
@@ -116,11 +120,13 @@ export function ManualOrderManager() {
   const [customerPhone, setCustomerPhone] = useState("");
   const [deliveryReference, setDeliveryReference] = useState("");
   const [orderDetails, setOrderDetails] = useState("");
-  const [deliveryType, setDeliveryType] = useState<"delivery" | "pickup">("delivery");
+  const [deliveryType, setDeliveryType] = useState<FulfillmentType>("delivery");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [deliveryUsd, setDeliveryUsd] = useState("");
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<SelectedItem[]>([]);
+  const [optionGroupsByProduct, setOptionGroupsByProduct] = useState<Record<string, ProductOptionGroup[]>>({});
+  const [loadingOptionsFor, setLoadingOptionsFor] = useState("");
   const [interpretDetails, setInterpretDetails] = useState<InterpretDetails>({
     mode: "",
     warnings: [],
@@ -159,7 +165,11 @@ export function ManualOrderManager() {
           const product = products.find((row) => row.id === item.productId);
           if (!product) return null;
 
-          const unitPriceUsd = Number(product.price_usd || 0);
+          const optionExtraUsd = (item.selectedOptions || []).reduce(
+            (sum, option) => sum + Number(option.priceDeltaUsd || 0),
+            0
+          );
+          const unitPriceUsd = Number(product.price_usd || 0) + optionExtraUsd;
           return {
             ...item,
             product,
@@ -244,7 +254,7 @@ export function ManualOrderManager() {
     );
   }, [products, selectedStore, selectedStoreId]);
 
-  function addProduct(product: ProductRow) {
+  async function addProduct(product: ProductRow) {
     setItems((current) => {
       const existing = current.find((item) => item.productId === product.id);
 
@@ -256,8 +266,61 @@ export function ManualOrderManager() {
         );
       }
 
-      return [...current, { productId: product.id, quantity: 1, notes: "" }];
+      return [...current, { productId: product.id, quantity: 1, notes: "", selectedOptions: [] }];
     });
+
+    if (!selectedStore?.slug || optionGroupsByProduct[product.id]) return;
+
+    setLoadingOptionsFor(product.id);
+    try {
+      const params = new URLSearchParams({
+        storeSlug: selectedStore.slug,
+        productId: product.id,
+      });
+      const response = await fetch(`/api/catalog/product-options?${params.toString()}`);
+      const data = await response.json().catch(() => ({}));
+      setOptionGroupsByProduct((current) => ({
+        ...current,
+        [product.id]: response.ok && Array.isArray(data.optionGroups) ? data.optionGroups : [],
+      }));
+    } catch {
+      setOptionGroupsByProduct((current) => ({ ...current, [product.id]: [] }));
+    } finally {
+      setLoadingOptionsFor("");
+    }
+  }
+
+  function toggleOption(productId: string, group: ProductOptionGroup, valueId: string) {
+    const value = group.values.find((option) => option.id === valueId);
+    if (!value) return;
+
+    setItems((current) => current.map((item) => {
+      if (item.productId !== productId) return item;
+      const withoutGroup = item.selectedOptions.filter((option) => option.groupId !== group.id);
+      const currentGroup = item.selectedOptions.filter((option) => option.groupId === group.id);
+      const alreadySelected = currentGroup.some((option) => option.valueId === value.id);
+
+      if (alreadySelected) {
+        return {
+          ...item,
+          selectedOptions: item.selectedOptions.filter((option) => option.valueId !== value.id),
+        };
+      }
+
+      const nextOption: SelectedCartOption = {
+        groupId: group.id,
+        groupName: group.name,
+        valueId: value.id,
+        valueName: value.name,
+        priceDeltaUsd: Number(value.priceDeltaUsd || 0),
+      };
+      const maxSelect = group.selectionType === "single" ? 1 : Number(group.maxSelect || 0);
+      const nextGroup = maxSelect > 0 && currentGroup.length >= maxSelect
+        ? [...currentGroup.slice(1), nextOption]
+        : [...currentGroup, nextOption];
+
+      return { ...item, selectedOptions: [...withoutGroup, ...nextGroup] };
+    }));
   }
 
   function updateQuantity(productId: string, delta: number) {
@@ -274,6 +337,12 @@ export function ManualOrderManager() {
 
   function removeProduct(productId: string) {
     setItems((current) => current.filter((item) => item.productId !== productId));
+  }
+
+  function updateItemNotes(productId: string, notes: string) {
+    setItems((current) => current.map((item) =>
+      item.productId === productId ? { ...item, notes } : item
+    ));
   }
 
   async function interpretMessage() {
@@ -314,6 +383,7 @@ export function ManualOrderManager() {
               productId: String(item.productId),
               quantity: Math.max(1, Math.floor(Number(item.quantity || 1))),
               notes: String(item.notes || ""),
+              selectedOptions: [],
             }))
         : [];
 
@@ -372,13 +442,20 @@ export function ManualOrderManager() {
       return;
     }
 
-    if (!customerName.trim()) {
+    const isOnPremise = deliveryType === "table" || deliveryType === "bar";
+
+    if (!isOnPremise && !customerName.trim()) {
       setError("Escribe el nombre del cliente.");
       return;
     }
 
-    if (!customerPhone.trim()) {
+    if (!isOnPremise && !customerPhone.trim()) {
       setError("Escribe el teléfono del cliente.");
+      return;
+    }
+
+    if (deliveryType === "table" && !deliveryReference.trim()) {
+      setError("Indica el número o nombre de la mesa.");
       return;
     }
 
@@ -392,14 +469,27 @@ export function ManualOrderManager() {
       return;
     }
 
+    for (const item of items) {
+      for (const group of optionGroupsByProduct[item.productId] || []) {
+        const selectedCount = item.selectedOptions.filter((option) => option.groupId === group.id).length;
+        const minSelect = group.required ? Math.max(1, Number(group.minSelect || 1)) : 0;
+        if (selectedCount < minSelect) {
+          setError(minSelect === 1
+            ? `Selecciona una opción para ${group.name}.`
+            : `Selecciona ${minSelect} opciones para ${group.name}.`);
+          return;
+        }
+      }
+    }
+
     setIsSaving(true);
 
     try {
-      await panelRequest(pin, "/api/panel/orders", {
+      const data = await panelRequest(pin, "/api/panel/orders", {
         method: "POST",
         body: JSON.stringify({
           storeId: selectedStoreId,
-          customerName,
+          customerName: customerName.trim() || (deliveryType === "table" ? "Cliente de mesa" : "Cliente de barra"),
           customerPhone,
           deliveryType,
           paymentMethod,
@@ -411,7 +501,7 @@ export function ManualOrderManager() {
         }),
       });
 
-      setSuccess("Pedido creado correctamente.");
+      setSuccess(`Pedido ${data.order?.public_code || ""} creado correctamente.`);
       window.setTimeout(() => router.push("/panel/pedidos"), 700);
     } catch (error: any) {
       setError(error.message || "No se pudo guardar el pedido.");
@@ -542,38 +632,32 @@ export function ManualOrderManager() {
         ) : null}
 
         <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
-          <h2 className="text-xl font-black">Datos del cliente</h2>
+          <h2 className="text-xl font-black">Cliente y modalidad</h2>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <input
               value={customerName}
               onChange={(event) => setCustomerName(event.target.value)}
-              placeholder="Nombre del cliente"
+              placeholder={deliveryType === "table" || deliveryType === "bar" ? "Nombre (opcional)" : "Nombre del cliente"}
               className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
             />
             <input
               value={customerPhone}
               onChange={(event) => setCustomerPhone(event.target.value)}
-              placeholder="Teléfono"
+              placeholder={deliveryType === "table" || deliveryType === "bar" ? "Teléfono (opcional)" : "Teléfono"}
               className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
             />
           </div>
 
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <input
-              value={deliveryReference}
-              onChange={(event) => setDeliveryReference(event.target.value)}
-              placeholder="Dirección o referencia"
-              className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-            />
+          <div className="mt-4">
             <input
               value={orderDetails}
               onChange={(event) => setOrderDetails(event.target.value)}
               placeholder="Nota del pedido"
-              className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+              className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
             />
           </div>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <button
               type="button"
               onClick={() => setDeliveryType("delivery")}
@@ -584,7 +668,7 @@ export function ManualOrderManager() {
                   : "bg-[#F8F3E8] text-[#746f69]",
               ].join(" ")}
             >
-              Entrega
+              Delivery
             </button>
             <button
               type="button"
@@ -598,7 +682,43 @@ export function ManualOrderManager() {
             >
               Retiro
             </button>
+            <button
+              type="button"
+              onClick={() => setDeliveryType("table")}
+              className={[
+                "rounded-2xl px-4 py-3 text-left text-sm font-black",
+                deliveryType === "table"
+                  ? "bg-[#2E3A79] text-white"
+                  : "bg-[#F8F3E8] text-[#746f69]",
+              ].join(" ")}
+            >
+              Mesa
+            </button>
+            <button
+              type="button"
+              onClick={() => setDeliveryType("bar")}
+              className={[
+                "rounded-2xl px-4 py-3 text-left text-sm font-black",
+                deliveryType === "bar"
+                  ? "bg-[#2E3A79] text-white"
+                  : "bg-[#F8F3E8] text-[#746f69]",
+              ].join(" ")}
+            >
+              Barra
+            </button>
           </div>
+
+          <label className="mt-4 block space-y-1">
+            <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
+              {deliveryType === "table" ? "Número o nombre de la mesa" : deliveryType === "bar" ? "Referencia en barra" : deliveryType === "pickup" ? "Referencia del retiro" : "Dirección o referencia"}
+            </span>
+            <input
+              value={deliveryReference}
+              onChange={(event) => setDeliveryReference(event.target.value)}
+              placeholder={deliveryType === "table" ? "Ej: Mesa 4" : deliveryType === "bar" ? "Ej: Puesto 2 (opcional)" : deliveryType === "pickup" ? "Ej: Retira Carlos (opcional)" : "Dirección y punto de referencia"}
+              className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+            />
+          </label>
 
           {deliveryType === "delivery" && (
             <input
@@ -683,7 +803,7 @@ export function ManualOrderManager() {
             <div>
               <h2 className="text-2xl font-black">Resumen</h2>
               <p className="text-sm font-bold text-white/65">
-                {totalQuantity} productos · {deliveryType === "delivery" ? "Entrega" : "Retiro"}
+                {totalQuantity} productos · {deliveryType === "delivery" ? "Delivery" : deliveryType === "pickup" ? "Retiro" : deliveryType === "table" ? "Mesa" : "Barra"}
               </p>
             </div>
           </div>
@@ -732,6 +852,45 @@ export function ManualOrderManager() {
                     </div>
                     <p className="font-black">{formatUsd(item.totalUsd)}</p>
                   </div>
+                  {loadingOptionsFor === item.productId ? (
+                    <p className="mt-3 text-xs font-bold text-[#746f69]">Cargando opciones...</p>
+                  ) : null}
+                  {(optionGroupsByProduct[item.productId] || []).map((group) => (
+                    <div key={group.id} className="mt-3 rounded-2xl bg-[#F8F3E8] p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-black">{group.name}</p>
+                        <span className="text-[10px] font-black uppercase text-[#746f69]">
+                          {group.required ? "Obligatorio" : "Opcional"}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {group.values.filter((value) => value.isActive !== false).map((value) => {
+                          const selected = item.selectedOptions.some((option) => option.valueId === value.id);
+                          return (
+                            <button
+                              key={value.id}
+                              type="button"
+                              onClick={() => toggleOption(item.productId, group, value.id)}
+                              className={[
+                                "rounded-full px-3 py-2 text-xs font-black ring-1",
+                                selected
+                                  ? "bg-[#2E3A79] text-white ring-[#2E3A79]"
+                                  : "bg-white text-[#25262B] ring-[#25262B]/10",
+                              ].join(" ")}
+                            >
+                              {value.name}{Number(value.priceDeltaUsd || 0) > 0 ? ` +${formatUsd(Number(value.priceDeltaUsd))}` : ""}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                  <input
+                    value={item.notes}
+                    onChange={(event) => updateItemNotes(item.productId, event.target.value)}
+                    placeholder="Nota para cocina (opcional)"
+                    className="mt-3 w-full rounded-2xl border border-[#25262B]/10 px-3 py-2 text-xs font-bold outline-none focus:border-[#2E3A79]"
+                  />
                 </div>
               ))
             )}

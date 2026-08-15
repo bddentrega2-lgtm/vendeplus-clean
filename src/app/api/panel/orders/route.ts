@@ -218,8 +218,55 @@ function normalizeManualItems(value: unknown) {
       productId: cleanText(item?.productId),
       quantity: Math.max(1, Math.floor(toSafeNumber(item?.quantity, 1))),
       notes: cleanText(item?.notes),
+      selectedOptions: Array.isArray(item?.selectedOptions)
+        ? item.selectedOptions
+            .map((option: any) => ({
+              groupId: cleanText(option?.groupId),
+              valueId: cleanText(option?.valueId),
+            }))
+            .filter((option: any) => option.groupId && option.valueId)
+        : [],
     }))
     .filter((item) => item.productId);
+}
+
+async function loadManualOptionAssignments(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  storeId: string,
+  productIds: string[]
+) {
+  const { data, error } = await supabase
+    .from("product_option_group_products")
+    .select(`
+      product_id,
+      sort_order,
+      product_option_groups (
+        id,
+        name,
+        selection_type,
+        required,
+        min_select,
+        max_select,
+        is_active,
+        product_option_values (
+          id,
+          name,
+          price_delta_usd,
+          is_active
+        )
+      )
+    `)
+    .eq("store_id", storeId)
+    .in("product_id", productIds);
+
+  if (error) throw error;
+
+  const byProduct = new Map<string, any[]>();
+  for (const assignment of data || []) {
+    const productId = String((assignment as any).product_id);
+    byProduct.set(productId, [...(byProduct.get(productId) || []), assignment]);
+  }
+  return byProduct;
 }
 
 function buildManualMessage({
@@ -239,12 +286,12 @@ function buildManualMessage({
   publicCode: string;
   customerName: string;
   customerPhone: string;
-  deliveryType: "delivery" | "pickup";
+  deliveryType: "delivery" | "pickup" | "table" | "bar";
   paymentMethod: string;
   deliveryReference: string;
   orderDetails: string;
   originalMessage: string;
-  items: Array<{ product_name: string; quantity: number; total_usd: number }>;
+  items: Array<{ product_name: string; quantity: number; total_usd: number; selectedOptions?: Array<{ groupName: string; valueName: string }> }>;
   subtotalUsd: number;
   deliveryUsd: number;
   totalUsd: number;
@@ -254,13 +301,16 @@ function buildManualMessage({
     `Código: ${publicCode}`,
     `Cliente: ${customerName}`,
     customerPhone ? `Telefono: ${customerPhone}` : "",
-    `Modalidad: ${deliveryType === "delivery" ? "Delivery" : "Retiro (pick up)"}`,
+    `Modalidad: ${deliveryType === "delivery" ? "Delivery" : deliveryType === "pickup" ? "Retiro (pick up)" : deliveryType === "table" ? "Mesa" : "Barra"}`,
     paymentMethod ? `Pago: ${paymentMethod}` : "",
     deliveryReference ? `Referencia: ${deliveryReference}` : "",
     "",
     "Productos:",
     ...items.map(
-      (item) => `- ${item.quantity}x ${item.product_name} ($${item.total_usd.toFixed(2)})`
+      (item) => {
+        const options = (item.selectedOptions || []).map((option) => option.valueName).join(", ");
+        return `- ${item.quantity}x ${item.product_name}${options ? ` (${options})` : ""} ($${item.total_usd.toFixed(2)})`;
+      }
     ),
     "",
     `Subtotal: $${subtotalUsd.toFixed(2)}`,
@@ -483,7 +533,13 @@ export async function GET(request: NextRequest) {
       }
 
       if (deliveryType && deliveryType !== "all") {
-        query = query.eq("delivery_type", deliveryType);
+        if (deliveryType === "table" || deliveryType === "bar") {
+          query = query.eq("delivery_pricing_type", deliveryType);
+        } else if (deliveryType === "pickup") {
+          query = query.eq("delivery_type", "pickup").is("delivery_pricing_type", null);
+        } else {
+          query = query.eq("delivery_type", deliveryType);
+        }
       }
 
       if (search) {
@@ -595,8 +651,10 @@ export async function POST(request: NextRequest) {
     const storeId = cleanText(body.storeId);
     const customerName = cleanText(body.customerName);
     const customerPhone = cleanText(body.customerPhone);
-    const deliveryType: "delivery" | "pickup" =
-      body.deliveryType === "pickup" ? "pickup" : "delivery";
+    const deliveryType: "delivery" | "pickup" | "table" | "bar" =
+      body.deliveryType === "pickup" || body.deliveryType === "table" || body.deliveryType === "bar"
+        ? body.deliveryType
+        : "delivery";
     const paymentMethod = cleanText(body.paymentMethod);
     const deliveryReference = cleanText(body.deliveryReference);
     const orderDetails = cleanText(body.orderDetails);
@@ -610,8 +668,12 @@ export async function POST(request: NextRequest) {
       "No tienes permiso para crear pedidos en este comercio."
     );
 
-    if (!customerName) return badRequest("El nombre del cliente es obligatorio.");
-    if (!customerPhone) return badRequest("El teléfono del cliente es obligatorio.");
+    const isOnPremise = deliveryType === "table" || deliveryType === "bar";
+    if (!isOnPremise && !customerName) return badRequest("El nombre del cliente es obligatorio.");
+    if (!isOnPremise && !customerPhone) return badRequest("El teléfono del cliente es obligatorio.");
+    if (deliveryType === "table" && !deliveryReference) {
+      return badRequest("Indica el número o nombre de la mesa.");
+    }
     if (!paymentMethod) return badRequest("Selecciona un método de pago.");
     if (!requestedItems.length) return badRequest("Agrega al menos un producto.");
 
@@ -647,6 +709,8 @@ export async function POST(request: NextRequest) {
       return badRequest("Uno o más productos no pertenecen al comercio seleccionado.");
     }
 
+    const optionAssignments = await loadManualOptionAssignments(supabase, storeId, productIds);
+
     const itemsPayload = requestedItems.map((item) => {
       const product: any = productMap.get(item.productId);
 
@@ -654,7 +718,54 @@ export async function POST(request: NextRequest) {
         throw new Error(`El producto ${product.name} no está disponible.`);
       }
 
-      const unitPriceUsd = toSafeNumber(product.price_usd, 0);
+      const groups = (optionAssignments.get(item.productId) || [])
+        .map((assignment) => assignment.product_option_groups)
+        .filter((group) => group && group.is_active !== false);
+      const selectedByGroup = new Map<string, string[]>();
+
+      for (const option of item.selectedOptions) {
+        selectedByGroup.set(option.groupId, [
+          ...(selectedByGroup.get(option.groupId) || []),
+          option.valueId,
+        ]);
+      }
+
+      const frozenOptions = groups.flatMap((group: any) => {
+        const selectedValueIds = selectedByGroup.get(String(group.id)) || [];
+        const values = Array.isArray(group.product_option_values)
+          ? group.product_option_values.filter((value: any) => value.is_active !== false)
+          : [];
+        const minSelect = group.required ? Math.max(1, toSafeNumber(group.min_select, 1)) : 0;
+        const maxSelect = toSafeNumber(group.max_select, group.selection_type === "single" ? 1 : 0);
+
+        if (selectedValueIds.length < minSelect) {
+          throw new Error(minSelect === 1
+            ? `Selecciona una opción para ${group.name}.`
+            : `Selecciona ${minSelect} opciones para ${group.name}.`);
+        }
+        if (maxSelect > 0 && selectedValueIds.length > maxSelect) {
+          throw new Error(`Seleccionaste demasiadas opciones en ${group.name}.`);
+        }
+        if (group.selection_type === "single" && selectedValueIds.length > 1) {
+          throw new Error(`Solo puedes seleccionar una opción en ${group.name}.`);
+        }
+
+        return selectedValueIds.map((valueId) => {
+          const value = values.find((entry: any) => String(entry.id) === valueId);
+          if (!value) throw new Error(`Una opción de ${group.name} ya no está disponible.`);
+          return {
+            groupName: group.name || "Opciones",
+            valueName: value.name || "Opción",
+            priceDeltaUsd: Math.max(0, toSafeNumber(value.price_delta_usd, 0)),
+          };
+        });
+      });
+
+      const optionExtraUsd = frozenOptions.reduce(
+        (sum, option) => sum + option.priceDeltaUsd,
+        0
+      );
+      const unitPriceUsd = toSafeNumber(product.price_usd, 0) + optionExtraUsd;
       const totalUsd = unitPriceUsd * item.quantity;
 
       return {
@@ -665,6 +776,7 @@ export async function POST(request: NextRequest) {
         unit_price_usd: unitPriceUsd,
         total_usd: totalUsd,
         notes: item.notes || null,
+        selectedOptions: frozenOptions,
       };
     });
 
@@ -682,9 +794,12 @@ export async function POST(request: NextRequest) {
     const totalBs = totalUsd * usdToBs;
     const orderId = randomUUID();
     const publicCode = createManualPublicCode();
+    const effectiveCustomerName = customerName || (deliveryType === "table" ? "Cliente de mesa" : "Cliente de barra");
+    const storedDeliveryType: "delivery" | "pickup" = deliveryType === "delivery" ? "delivery" : "pickup";
+    const serviceModeLabel = deliveryType === "table" ? "Mesa" : deliveryType === "bar" ? "Barra" : null;
     const whatsappMessage = buildManualMessage({
       publicCode,
-      customerName,
+      customerName: effectiveCustomerName,
       customerPhone,
       deliveryType,
       paymentMethod,
@@ -701,10 +816,10 @@ export async function POST(request: NextRequest) {
       id: orderId,
       public_code: publicCode,
       store_id: storeId,
-      customer_name: customerName,
-      customer_phone: customerPhone,
+      customer_name: effectiveCustomerName,
+      customer_phone: customerPhone || "",
       customer_phone_normalized: normalizePhone(customerPhone) || null,
-      delivery_type: deliveryType,
+      delivery_type: storedDeliveryType,
       payment_method: paymentMethod,
       payment_status: getInitialPaymentStatus(paymentMethod),
       payment_currency: getSuggestedPaymentCurrency(paymentMethod) || null,
@@ -716,9 +831,9 @@ export async function POST(request: NextRequest) {
       delivery_zone_id: null,
       delivery_zone_name: cleanText(body.deliveryZoneName) || null,
       delivery_distance_km: null,
-      delivery_pricing_type: deliveryType === "delivery" ? "manual" : null,
+      delivery_pricing_type: deliveryType === "delivery" ? "manual" : serviceModeLabel ? deliveryType : null,
       delivery_status: deliveryType === "delivery" ? "pending" : "pickup",
-      delivery_notes: deliveryType === "delivery" ? "Pedido manual asistido." : null,
+      delivery_notes: deliveryType === "delivery" ? "Pedido manual." : serviceModeLabel ? `Atención en ${serviceModeLabel.toLowerCase()}.` : null,
       delivery_address: deliveryType === "delivery" ? deliveryReference || null : null,
       total_usd: totalUsd,
       total_bs: totalBs,
@@ -729,11 +844,13 @@ export async function POST(request: NextRequest) {
       distance_km: null,
       delivery_lat: null,
       delivery_lng: null,
-      delivery_reference: deliveryType === "delivery" ? deliveryReference || null : null,
+      delivery_reference: deliveryReference || null,
       order_details: orderDetails || null,
       notes: originalMessage
-        ? `Pedido manual asistido. Mensaje recibido: ${originalMessage}`
-        : "Pedido manual asistido.",
+        ? `Pedido manual. Mensaje recibido: ${originalMessage}`
+        : serviceModeLabel
+          ? `Pedido manual · ${serviceModeLabel}.`
+          : "Pedido manual.",
       status: "received",
       whatsapp_message: whatsappMessage,
     };
@@ -777,29 +894,59 @@ export async function POST(request: NextRequest) {
 
     if (orderError) throw orderError;
 
-    const { error: itemsError } = await supabase.from("order_items").insert(
+    const { data: insertedItems, error: itemsError } = await supabase.from("order_items").insert(
       itemsPayload.map((item) => ({
-        ...item,
+        product_id: item.product_id,
+        product_name: item.product_name,
+        variant_name: item.variant_name,
+        quantity: item.quantity,
+        unit_price_usd: item.unit_price_usd,
+        total_usd: item.total_usd,
+        notes: item.notes,
         order_id: orderId,
       }))
-    );
+    ).select("id");
 
     if (itemsError) {
       await supabase.from("orders").delete().eq("id", orderId);
       throw itemsError;
     }
 
-    await safeUpsertCustomerFromOrder(supabase, {
-      id: orderId,
-      store_id: storeId,
-      customer_name: customerName,
-      customer_phone: customerPhone,
-      delivery_type: deliveryType,
-      payment_method: paymentMethod,
-      delivery_reference: deliveryReference || null,
-      total_usd: totalUsd,
-      created_at: new Date().toISOString(),
+    const optionRows = itemsPayload.flatMap((item, index) => {
+      const orderItemId = insertedItems?.[index]?.id;
+      if (!orderItemId) return [];
+      return item.selectedOptions.map((option) => ({
+        order_item_id: orderItemId,
+        option_group_name: option.groupName,
+        option_name: option.valueName,
+        price_delta_usd: option.priceDeltaUsd,
+        quantity: 1,
+      }));
     });
+
+    if (optionRows.length) {
+      const { error: optionsError } = await supabase
+        .from("order_item_options")
+        .insert(optionRows);
+      if (optionsError) {
+        await supabase.from("orders").delete().eq("id", orderId);
+        throw optionsError;
+      }
+    }
+
+    if (customerPhone) {
+      await safeUpsertCustomerFromOrder(supabase, {
+        id: orderId,
+        store_id: storeId,
+        customer_name: effectiveCustomerName,
+        customer_phone: customerPhone,
+        delivery_type: storedDeliveryType,
+        payment_method: paymentMethod,
+        delivery_reference: deliveryReference || null,
+        total_usd: totalUsd,
+        created_at: new Date().toISOString(),
+      });
+    }
 
     return NextResponse.json({
       order,

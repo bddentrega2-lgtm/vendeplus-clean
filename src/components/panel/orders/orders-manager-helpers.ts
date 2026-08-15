@@ -403,6 +403,12 @@ export function getStatusOptionsForOrder(order: OrderRow) {
 }
 
 export function getDeliverySummary(order: OrderRow) {
+  if (order.delivery_pricing_type === "table") {
+    return order.delivery_reference ? `Mesa · ${order.delivery_reference}` : "Mesa";
+  }
+  if (order.delivery_pricing_type === "bar") {
+    return order.delivery_reference ? `Barra · ${order.delivery_reference}` : "Barra";
+  }
   if (order.delivery_type === "pickup") return "Retiro";
   if (order.delivery_type === "national_shipping") return "Envio nacional";
   if (order.delivery_zone_name) return `Delivery · ${order.delivery_zone_name}`;

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { PanelShell } from "@/components/panel/PanelShell";
 import { isSubscriptionPastDue } from "@/lib/subscription-status";
 import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
+import { PanelAnnouncements } from "@/components/panel/PanelAnnouncements";
 
 const panelRouteMeta: Record<string, { active: string; title: string; subtitle: string }> = {
   "/panel": {
@@ -143,6 +144,7 @@ export function PanelFrame({ children }: { children: React.ReactNode }) {
   return (
     <PanelShell active={meta.active} title={meta.title} subtitle={meta.subtitle}>
       <div key={selectedStoreId}>
+        <PanelAnnouncements />
         {shouldBlockContent ? <ExpiredPanelBlock /> : lockedAchievementTitle ? <LockedFeatureBlock achievementTitle={lockedAchievementTitle} /> : children}
       </div>
     </PanelShell>
