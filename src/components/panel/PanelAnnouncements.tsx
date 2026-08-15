@@ -14,7 +14,6 @@ type Announcement = {
   action_url?: string | null;
 };
 
-const DISMISSED_KEY = "somos_dismissed_announcements";
 const SEEN_KEY = "somos_seen_announcements";
 
 const styles = {
@@ -52,14 +51,9 @@ export function PanelAnnouncements() {
         });
         if (!response.ok) return;
         const data = await response.json();
-        const dismissed = readStoredIds(DISMISSED_KEY);
         if (active) {
           setSeenIds(readStoredIds(SEEN_KEY));
-          setAnnouncements(
-            (Array.isArray(data.announcements) ? data.announcements : []).filter(
-              (item: Announcement) => !dismissed.has(item.id)
-            )
-          );
+          setAnnouncements(Array.isArray(data.announcements) ? data.announcements : []);
         }
       } catch {
         // Los avisos no deben interrumpir la operación del panel.
@@ -84,15 +78,6 @@ export function PanelAnnouncements() {
     setIsOpen(true);
   }
 
-  function dismiss(id: string) {
-    const dismissed = readStoredIds(DISMISSED_KEY);
-    dismissed.add(id);
-    saveStoredIds(DISMISSED_KEY, dismissed);
-    setAnnouncements((current) => current.filter((item) => item.id !== id));
-  }
-
-  if (!announcements.length) return null;
-
   return (
     <div className="fixed bottom-24 right-4 z-50 lg:bottom-6" aria-label="Novedades de Somos">
       {isOpen ? (
@@ -102,6 +87,13 @@ export function PanelAnnouncements() {
             <button type="button" onClick={() => setIsOpen(false)} aria-label="Cerrar notificaciones" className="rounded-full p-1 hover:bg-white/10"><X size={18} /></button>
           </header>
           <div className="max-h-[min(60vh,450px)] space-y-3 overflow-y-auto p-3">
+            {!announcements.length ? (
+              <div className="py-8 text-center text-[#746f69]">
+                <Bell size={28} className="mx-auto opacity-40" />
+                <p className="mt-3 text-sm font-black">Sin mensajes</p>
+                <p className="mt-1 text-xs font-bold">Aquí aparecerán las novedades de Somos.</p>
+              </div>
+            ) : null}
             {announcements.map((announcement) => {
               const visual = styles[announcement.kind] || styles.news;
               const Icon = visual.icon;
@@ -113,7 +105,7 @@ export function PanelAnnouncements() {
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     {announcement.action_label && announcement.action_url ? <Link href={announcement.action_url} onClick={() => setIsOpen(false)} className="rounded-full bg-white/80 px-3 py-1.5 text-xs font-black shadow-sm">{announcement.action_label}</Link> : null}
-                    <button type="button" onClick={() => dismiss(announcement.id)} className="inline-flex items-center gap-1 rounded-full px-2 py-1.5 text-xs font-black opacity-70 hover:bg-white/60 hover:opacity-100"><Check size={14} /> Entendido</button>
+                    <button type="button" onClick={() => setIsOpen(false)} className="inline-flex items-center gap-1 rounded-full px-2 py-1.5 text-xs font-black opacity-70 hover:bg-white/60 hover:opacity-100"><Check size={14} /> Entendido</button>
                   </div>
                 </article>
               );
