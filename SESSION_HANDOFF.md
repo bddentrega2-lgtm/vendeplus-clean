@@ -1,5 +1,13 @@
 # Punto de reanudacion
 
+## Continuidad entre computadoras (2026-08-15)
+
+- Punto de seguridad local publicado en GitHub en la rama `agent/audit-critical-hardening`.
+- Commit: `3b1704e` (`checkpoint: respaldar avances locales de Somos`).
+- Build, ESLint y 8/8 contratos criticos aprobados antes de publicar.
+- No hubo despliegue a Vercel ni cambios en produccion.
+- El unico archivo local no versionado es `scripts/import-don-aniello-menu.mjs`, excluido por ser un importador temporal.
+
 ## Idea pendiente: referidos para influencers
 
 - No implementar hasta nueva indicación del usuario.
