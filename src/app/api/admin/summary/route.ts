@@ -14,12 +14,6 @@ function toNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function isCancelledOrderStatus(value: unknown) {
-  return ["cancelled", "canceled", "cancelado"].includes(
-    String(value || "").trim().toLowerCase()
-  );
-}
-
 function getPendingServiceFees(stores: any[], orders: any[]) {
   const storesById = new Map(
     stores
@@ -30,9 +24,8 @@ function getPendingServiceFees(stores: any[], orders: any[]) {
   return Number(
     orders
       .reduce((sum, order) => {
-        if (isCancelledOrderStatus(order.status)) return sum;
         const store = storesById.get(order.store_id);
-        if (!store || !["per_service", "custom"].includes(String(store.plan_type || ""))) {
+        if (!store || store.plan_type !== "per_service") {
           return sum;
         }
         const periodStart =

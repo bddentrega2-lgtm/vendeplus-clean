@@ -2,13 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
 import { PanelShell } from "@/components/panel/PanelShell";
-import {
-  getPanelAccessToken,
-  getPanelAuthHeaders,
-  getSavedPanelPin,
-} from "@/lib/panel/client-auth";
 import { isSubscriptionPastDue } from "@/lib/subscription-status";
 import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
 
@@ -78,8 +72,6 @@ const panelRouteMeta: Record<string, { active: string; title: string; subtitle: 
 const routesWithoutPanelShell = new Set(["/panel/login", "/panel/update-password"]);
 const routesAllowedWhenExpired = new Set(["/panel/suscripcion"]);
 const routeFeatureRequirements: Record<string, string> = {
-  "/panel/delivery": "delivery",
-  "/panel/clientes": "customers_basic",
   "/panel/estadisticas": "full_stats",
 };
 
@@ -95,10 +87,6 @@ function isStorePastDue(store?: PanelStoreSubscriptionState | null) {
   return isSubscriptionPastDue(store);
 }
 
-function getRelevantSubscriptionStore(stores: PanelStoreSubscriptionState[]) {
-  return stores.find(isStorePastDue) || stores[0] || null;
-}
-
 function ExpiredPanelBlock() {
   return (
     <section className="rounded-[34px] bg-white p-6 text-center shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-red-100">
@@ -108,7 +96,7 @@ function ExpiredPanelBlock() {
       <h2 className="mt-4 text-2xl font-black text-[#25262B]">Tu periodo vencio</h2>
       <p className="mx-auto mt-2 max-w-xl text-sm font-bold leading-relaxed text-[#746f69]">
         Para proteger tu catalogo y evitar pedidos sin plan activo, este panel queda limitado a Suscripcion.
-        Elige mensualidad o fee por pedido para reactivar la operacion.
+        Activa el plan por servicio para reanudar la operacion.
       </p>
       <Link
         href="/panel/suscripcion"
@@ -126,56 +114,9 @@ function LockedFeatureBlock({ achievementTitle }: { achievementTitle: string }) 
 
 export function PanelFrame({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { isBootstrapping } = usePanelAuth();
-  const [isExpired, setIsExpired] = useState(false);
-  const [lockedAchievementTitle, setLockedAchievementTitle] = useState("");
+  const { isBootstrapping, selectedStoreId, selectedStore, achievementFeatures, achievements } = usePanelAuth();
 
   const meta = panelRouteMeta[pathname] || panelRouteMeta["/panel"];
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadSubscriptionState() {
-      if (routesWithoutPanelShell.has(pathname)) {
-        if (active) setIsExpired(false);
-        return;
-      }
-
-      const savedPin = getSavedPanelPin();
-      const savedToken = await getPanelAccessToken();
-
-      if (!savedPin && !savedToken) {
-        if (active) setIsExpired(false);
-        return;
-      }
-
-      try {
-        const response = await fetch("/api/panel/settings", {
-          headers: await getPanelAuthHeaders(savedPin),
-        });
-        const data = await response.json();
-        const relevantStore = getRelevantSubscriptionStore(Array.isArray(data.stores) ? data.stores : []);
-        if (active) setIsExpired(isStorePastDue(relevantStore));
-        const requiredFeature = routeFeatureRequirements[pathname];
-        if (requiredFeature && relevantStore?.id) {
-          const achievementResponse = await fetch(`/api/panel/achievements?storeId=${encodeURIComponent(relevantStore.id)}`, { headers: await getPanelAuthHeaders(savedPin) });
-          const achievementData = await achievementResponse.json();
-          const requiredAchievement = (achievementData.achievements || []).find((item: any) => item.feature === requiredFeature);
-          if (active) setLockedAchievementTitle(requiredAchievement?.unlocked ? "" : requiredAchievement?.title || "el logro requerido");
-        } else if (active) {
-          setLockedAchievementTitle("");
-        }
-      } catch {
-        if (active) setIsExpired(false);
-      }
-    }
-
-    loadSubscriptionState();
-
-    return () => {
-      active = false;
-    };
-  }, [pathname]);
 
   if (routesWithoutPanelShell.has(pathname)) {
     return <>{children}</>;
@@ -189,11 +130,21 @@ export function PanelFrame({ children }: { children: React.ReactNode }) {
     );
   }
 
+  const isExpired = isStorePastDue(selectedStore);
+  const requiredFeature = routeFeatureRequirements[pathname];
+  const requiredAchievement = requiredFeature
+    ? achievements.find((item) => item.feature === requiredFeature)
+    : null;
+  const lockedAchievementTitle = requiredFeature && !achievementFeatures[requiredFeature]
+    ? requiredAchievement?.title || "el logro requerido"
+    : "";
   const shouldBlockContent = isExpired && !routesAllowedWhenExpired.has(pathname);
 
   return (
     <PanelShell active={meta.active} title={meta.title} subtitle={meta.subtitle}>
-      {shouldBlockContent ? <ExpiredPanelBlock /> : lockedAchievementTitle ? <LockedFeatureBlock achievementTitle={lockedAchievementTitle} /> : children}
+      <div key={selectedStoreId}>
+        {shouldBlockContent ? <ExpiredPanelBlock /> : lockedAchievementTitle ? <LockedFeatureBlock achievementTitle={lockedAchievementTitle} /> : children}
+      </div>
     </PanelShell>
   );
 }

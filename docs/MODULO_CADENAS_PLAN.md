@@ -1,6 +1,45 @@
 # Plan: modulo opcional de cadenas
 
-Estado: aprobado conceptualmente; pendiente de autorizacion para implementar.
+Estado: idea guardada; decision de arquitectura pendiente. No implementar hasta autorizacion expresa.
+
+## Alternativa nueva: una marca con sedes internas
+
+Se evaluara una arquitectura mas simple para el comercio:
+
+- `stores` representa la marca, con un unico enlace y catalogo.
+- Una tabla `store_branches` representa las sedes.
+- El cliente debe seleccionar sede antes de ver el catalogo.
+- La disponibilidad de productos por sede se controla con `product_branches`, sin duplicar el producto base.
+- Cada pedido conserva `store_id` y agrega `branch_id`.
+- Cada sede define nombre, telefono, ubicacion, horarios, pagos, retiro y delivery.
+- Los operadores ven solo las sedes autorizadas; la central puede ver todas y filtrar.
+- Entrega2 debe usar telefono y ubicacion de retiro de la sede seleccionada.
+
+Alcance recomendado para una V1 de esta alternativa:
+
+- Productos, categorias, imagenes, opciones y precios compartidos por marca.
+- Disponibilidad distinta por sede.
+- Sin precios distintos ni inventario cuantitativo por sede inicialmente.
+- Clientes consolidados por marca y pedidos identificados por sede.
+- Activacion opcional; los comercios actuales siguen funcionando sin `branch_id`.
+
+## Comparacion y valoracion actual
+
+### Marca con sedes internas
+
+- Mejor experiencia publica, mantenimiento de catalogo, fidelizacion y escalabilidad para cadenas.
+- Mayor riesgo inicial: exige adaptar permisos, carrito, checkout, pagos, delivery, Entrega2, notificaciones y estadisticas a `branch_id`.
+- Valoracion preliminar: 7.8/10.
+
+### Central con cada sede como `store`
+
+- Mayor aislamiento y compatibilidad inmediata con la arquitectura actual, especialmente pedidos, pagos y delivery.
+- Genera duplicacion de catalogos y mas carga operativa conforme aumentan las sedes.
+- Valoracion preliminar: 7.3/10.
+
+### Recomendacion pendiente de decision
+
+La opcion preferida a largo plazo es una marca con sedes internas, manteniendo el modelo actual para comercios independientes. Solo debe construirse si en el primer lanzamiento quedan cubiertos server-side los permisos por sede, pagos, delivery, Entrega2, carrito, pedidos y notificaciones. La opcion de central + `stores` sigue siendo la alternativa de menor riesgo y salida mas rapida.
 
 ## Decision de arquitectura
 

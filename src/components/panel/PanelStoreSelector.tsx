@@ -9,7 +9,6 @@ export function PanelStoreSelector() {
   if (!isFounderMode || stores.length === 0) return null;
 
   function handleChange(storeId: string) {
-    sessionStorage.removeItem("somos_panel_store_identity");
     selectStore(storeId);
   }
 

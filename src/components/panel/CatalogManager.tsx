@@ -31,6 +31,7 @@ import {
   savePanelPin,
   shouldShowPanelInitialAccessGate,
 } from "@/lib/panel/client-auth";
+import { fetchPanelJson } from "@/lib/panel/client-fetch-cache";
 
 type StoreRow = {
   id: string;
@@ -69,7 +70,7 @@ type ProductRow = {
 };
 
 async function apiRequest(pin: string, options?: RequestInit) {
-  const response = await fetch("/api/panel/catalogo", {
+  return fetchPanelJson("/api/panel/catalogo", {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -77,13 +78,6 @@ async function apiRequest(pin: string, options?: RequestInit) {
     },
   });
 
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.error || "Error en la solicitud.");
-  }
-
-  return data;
 }
 
 function orderLabel(index: number) {

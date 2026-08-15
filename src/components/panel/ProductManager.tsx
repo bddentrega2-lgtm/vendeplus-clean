@@ -28,6 +28,7 @@ import {
   savePanelPin,
   shouldShowPanelInitialAccessGate,
 } from "@/lib/panel/client-auth";
+import { fetchPanelJson } from "@/lib/panel/client-fetch-cache";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import { compressImageForUpload } from "@/lib/images/client-compress";
 
@@ -205,7 +206,7 @@ function ProductVariantFields({
 
 async function apiRequest(pin: string, options?: RequestInit & { url?: string }) {
   const { url = "/api/panel/products", ...requestOptions } = options || {};
-  const response = await fetch(url, {
+  return fetchPanelJson(url, {
     ...requestOptions,
     headers: {
       "Content-Type": "application/json",
@@ -214,13 +215,6 @@ async function apiRequest(pin: string, options?: RequestInit & { url?: string })
     },
   });
 
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.error || "Error en la solicitud.");
-  }
-
-  return data;
 }
 
 async function uploadProductImage(

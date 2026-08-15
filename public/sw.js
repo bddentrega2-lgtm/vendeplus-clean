@@ -1,12 +1,12 @@
-const CACHE_VERSION = "somos-pwa-v2";
+const CACHE_VERSION = "somos-pwa-v3";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE_URLS = [
   "/manifest.webmanifest",
-  "/icons/icon.svg",
-  "/icons/somos-icon-192.png",
-  "/icons/somos-icon-512.png",
-  "/icons/somos-apple-touch-icon.png",
-  "/favicon.png",
+  "/brand/new-somos-preview/favicon-preview-32.png",
+  "/brand/new-somos-preview/apple-touch-icon-preview.png",
+  "/brand/new-somos-preview/somos-icon-preview-192.png",
+  "/brand/new-somos-preview/somos-icon-preview-512.png",
+  "/brand/new-somos-preview/somos-icon-preview-maskable-512.png",
 ];
 
 self.addEventListener("install", (event) => {
@@ -54,6 +54,7 @@ self.addEventListener("fetch", (event) => {
   const isStaticAsset =
     pathname.startsWith("/_next/static/") ||
     pathname.startsWith("/icons/") ||
+    pathname.startsWith("/brand/new-somos-preview/") ||
     pathname === "/manifest.webmanifest";
 
   if (!isStaticAsset) return;

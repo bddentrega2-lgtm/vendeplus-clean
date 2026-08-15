@@ -9,7 +9,23 @@ import {
   saveSelectedPanelStoreId,
 } from "@/lib/panel/client-auth";
 
-type PanelStoreOption = { id: string; name: string; slug: string };
+export type PanelStoreOption = {
+  id: string;
+  name: string;
+  slug: string;
+  logo_url: string | null;
+  cover_image_url: string | null;
+  subscription_status?: string | null;
+  subscription_ends_at?: string | null;
+  next_payment_due_at?: string | null;
+  trial_ends_at?: string | null;
+};
+
+type PanelAchievement = {
+  feature: string;
+  title: string;
+  unlocked: boolean;
+};
 
 type PanelAuthContextValue = {
   hasSession: boolean;
@@ -19,6 +35,9 @@ type PanelAuthContextValue = {
   isFounderMode: boolean;
   stores: PanelStoreOption[];
   selectedStoreId: string;
+  selectedStore: PanelStoreOption | null;
+  achievementFeatures: Record<string, boolean>;
+  achievements: PanelAchievement[];
   selectStore: (storeId: string) => void;
 };
 
@@ -30,6 +49,8 @@ export function PanelAuthProvider({ children }: { children: React.ReactNode }) {
   const [isFounderMode, setIsFounderMode] = useState(false);
   const [stores, setStores] = useState<PanelStoreOption[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState(() => getSelectedPanelStoreId());
+  const [achievementFeatures, setAchievementFeatures] = useState<Record<string, boolean>>({});
+  const [achievements, setAchievements] = useState<PanelAchievement[]>([]);
 
   async function loadPanelContext() {
     const response = await fetch("/api/panel/context", {
@@ -47,6 +68,8 @@ export function PanelAuthProvider({ children }: { children: React.ReactNode }) {
     setSelectedStoreId(nextStoreId);
     setStores(availableStores);
     setIsFounderMode(Boolean(data.isFounderMode));
+    setAchievementFeatures(data.achievementFeatures || {});
+    setAchievements(Array.isArray(data.achievements) ? data.achievements : []);
   }
 
   async function refreshSession() {
@@ -66,7 +89,9 @@ export function PanelAuthProvider({ children }: { children: React.ReactNode }) {
     if (!stores.some((store) => store.id === storeId)) return;
     saveSelectedPanelStoreId(storeId);
     setSelectedStoreId(storeId);
-    window.location.reload();
+    setAchievementFeatures({});
+    setAchievements([]);
+    void loadPanelContext();
   }
 
   useEffect(() => {
@@ -96,6 +121,9 @@ export function PanelAuthProvider({ children }: { children: React.ReactNode }) {
     isFounderMode,
     stores,
     selectedStoreId,
+    selectedStore: stores.find((store) => store.id === selectedStoreId) || stores[0] || null,
+    achievementFeatures,
+    achievements,
     selectStore,
   };
 
@@ -118,6 +146,9 @@ export function usePanelAuth() {
       isFounderMode: false,
       stores: [],
       selectedStoreId: getSelectedPanelStoreId(),
+      selectedStore: null,
+      achievementFeatures: {},
+      achievements: [],
       selectStore: () => {},
     };
   }

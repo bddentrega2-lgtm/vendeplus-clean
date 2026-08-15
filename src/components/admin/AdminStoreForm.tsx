@@ -43,6 +43,7 @@ type StoreDraft = {
   accepts_delivery: boolean;
   accepts_pickup: boolean;
   is_active: boolean;
+  is_test: boolean;
   plan_type: string;
   product_limit: string;
   service_fee_usd: string;
@@ -88,6 +89,7 @@ const initialDraft: StoreDraft = {
   accepts_delivery: false,
   accepts_pickup: true,
   is_active: true,
+  is_test: false,
   plan_type: "monthly",
   product_limit: "30",
   service_fee_usd: "0",
@@ -176,7 +178,6 @@ function planLabel(value: string) {
   if (value === "trial") return "Prueba gratis";
   if (value === "monthly") return "Mensualidad";
   if (value === "per_service") return "Fee por pedido";
-  if (value === "custom") return "Personalizado privado";
   if (value === "founder") return "Founder";
   return value || "Sin plan";
 }
@@ -275,10 +276,11 @@ function mapStoreToDraft(store: any, deliverySettings?: any): StoreDraft {
     admin_pickup_enabled:
       deliverySettings?.pickup_enabled ?? store.accepts_pickup !== false,
     is_active: store.is_active !== false,
+    is_test: store.is_test === true,
     plan_type: store.plan_type || "trial",
     product_limit: String(store.product_limit ?? "30"),
     service_fee_usd: String(
-      ["per_service", "custom"].includes(store.plan_type)
+      store.plan_type === "per_service"
         ? store.monthly_price_usd ?? (store.plan_type === "per_service" ? PER_SERVICE_FEE_USD : 0)
         : 0
     ),
@@ -383,7 +385,6 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
           next.monthly_price_usd = PER_SERVICE_FEE_USD.toFixed(2);
           next.service_fee_usd = PER_SERVICE_FEE_USD.toFixed(2);
         }
-        if (value === "custom") next.monthly_price_usd = "0";
         if (value === "trial" || value === "founder") next.monthly_price_usd = "0";
         next.subscription_status = value === "trial" ? "trial" : "active";
         if (value === "per_service" && !current.service_fee_payer) next.service_fee_payer = "merchant";
@@ -866,20 +867,20 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
             <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Plan elegido</p>
             <p className="mt-2 text-lg font-black text-[#25262B]">{planLabel(draft.plan_type)}</p>
             <p className="mt-1 text-sm font-bold text-[#746f69]">
-              {["per_service", "custom"].includes(draft.plan_type)
+              {draft.plan_type === "per_service"
                 ? `${formatAdminDate(primarySubscriptionDate)} - ${feePayerLabel}`
                 : formatAdminDate(primarySubscriptionDate)}
             </p>
           </div>
           <div className="rounded-[24px] bg-white p-4 ring-1 ring-[#25262B]/[0.06]">
             <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-              {["per_service", "custom"].includes(draft.plan_type) ? "Fee" : "Monto"}
+              {draft.plan_type === "per_service" ? "Fee" : "Monto"}
             </p>
             <p className="mt-2 text-lg font-black text-[#25262B]">
-              ${Number(["per_service", "custom"].includes(draft.plan_type) ? draft.service_fee_usd : draft.monthly_price_usd).toFixed(2)}
+              ${Number(draft.plan_type === "per_service" ? draft.service_fee_usd : draft.monthly_price_usd).toFixed(2)}
             </p>
             <p className="mt-1 text-sm font-bold text-[#746f69]">
-              {["per_service", "custom"].includes(draft.plan_type) ? "por pedido" : "mensual"}
+              {draft.plan_type === "per_service" ? "por pedido recibido" : "mensual"}
             </p>
           </div>
           <div className="rounded-[24px] bg-white p-4 ring-1 ring-[#25262B]/[0.06]">
@@ -930,7 +931,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
           </button>
         </div>
 
-        {["per_service", "custom"].includes(draft.plan_type) ? (
+        {draft.plan_type === "per_service" ? (
           <div className="mt-4 rounded-[24px] bg-white p-4 ring-1 ring-[#25262B]/[0.06]">
             <p className="text-sm font-black text-[#25262B]">Quien paga el fee por pedido?</p>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -974,8 +975,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
               <option value="trial">Trial</option>
               <option value="monthly">Mensual $20 / tienda</option>
               <option value="per_service">{`Por servicio $${PER_SERVICE_FEE_USD.toFixed(2)}`}</option>
-              <option value="custom">Personalizado privado</option>
-              <option value="founder">Founder</option>
+              {draft.is_test ? <option value="founder">Founder (solo prueba)</option> : null}
             </select>
           </Field>
           <Field label="Estado">
@@ -988,7 +988,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
               <option value="expired">expired</option>
             </select>
           </Field>
-          {["per_service", "custom"].includes(draft.plan_type) ? (
+          {draft.plan_type === "per_service" ? (
             <Field label="Fee por pedido USD">
               <input type="number" min="0" step="0.01" value={draft.service_fee_usd} onChange={(event) => updateField("service_fee_usd", event.target.value)} className={inputClass} disabled={draft.plan_type === "per_service"} />
             </Field>
@@ -1135,7 +1135,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
       </section>
 
       <div className="mt-5 flex flex-wrap gap-2">
-        {(["accepts_delivery", "accepts_pickup", "is_active"] as const).map((field) => (
+        {(["accepts_delivery", "accepts_pickup", "is_active", "is_test"] as const).map((field) => (
           <button
             key={field}
             type="button"
@@ -1145,11 +1145,13 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
               draft[field] ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700",
             ].join(" ")}
           >
-            {field === "accepts_delivery"
-              ? draft[field] ? "Delivery activo" : "Delivery inactivo"
-              : field === "accepts_pickup"
-                ? draft[field] ? "Retiro activo" : "Retiro inactivo"
-                : draft[field] ? "Comercio activo" : "Comercio pausado"}
+              {field === "accepts_delivery"
+                ? draft[field] ? "Delivery activo" : "Delivery inactivo"
+                : field === "accepts_pickup"
+                  ? draft[field] ? "Retiro activo" : "Retiro inactivo"
+                  : field === "is_test"
+                    ? draft[field] ? "Cuenta de prueba" : "Cuenta real"
+                    : draft[field] ? "Comercio activo" : "Comercio pausado"}
           </button>
         ))}
       </div>

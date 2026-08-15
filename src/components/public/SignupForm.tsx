@@ -165,7 +165,7 @@ export function SignupForm() {
             <p className="text-xs font-black uppercase tracking-[0.16em] text-[#2E3A79]">Una sola tarifa clara</p>
             <div className="mt-2 flex items-end gap-2">
               <span className="text-4xl font-black">$0.10</span>
-              <span className="pb-1 text-xs font-black opacity-65">por pedido confirmado</span>
+              <span className="pb-1 text-xs font-black opacity-65">por pedido recibido</span>
             </div>
           </div>
 

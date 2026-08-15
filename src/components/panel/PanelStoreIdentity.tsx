@@ -1,13 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import {
-  getPanelAccessToken,
-  getPanelAuthHeaders,
-  getSavedPanelPin,
-} from "@/lib/panel/client-auth";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import { isSubscriptionPastDue } from "@/lib/subscription-status";
+import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
 
 type StoreIdentity = {
   name: string;
@@ -20,97 +15,12 @@ type StoreIdentity = {
   trial_ends_at?: string | null;
 };
 
-const PANEL_STORE_IDENTITY_CACHE_KEY = "somos_panel_store_identity";
-const PANEL_STORE_IDENTITY_CACHE_TTL_MS = 5_000;
-
-function readCachedStoreIdentity() {
-  if (typeof window === "undefined") return null;
-
-  try {
-    const cached = sessionStorage.getItem(PANEL_STORE_IDENTITY_CACHE_KEY);
-    if (!cached) return null;
-
-    const parsed = JSON.parse(cached) as { savedAt: number; store: StoreIdentity };
-    if (!parsed?.store || Date.now() - parsed.savedAt > PANEL_STORE_IDENTITY_CACHE_TTL_MS) {
-      sessionStorage.removeItem(PANEL_STORE_IDENTITY_CACHE_KEY);
-      return null;
-    }
-
-    return parsed.store;
-  } catch {
-    sessionStorage.removeItem(PANEL_STORE_IDENTITY_CACHE_KEY);
-    return null;
-  }
-}
-
-function writeCachedStoreIdentity(store: StoreIdentity) {
-  if (typeof window === "undefined") return;
-
-  try {
-    sessionStorage.setItem(
-      PANEL_STORE_IDENTITY_CACHE_KEY,
-      JSON.stringify({ savedAt: Date.now(), store })
-    );
-  } catch {
-    // If storage is unavailable, keep the panel working without cache.
-  }
-}
-
 function isExpired(store: StoreIdentity) {
   return isSubscriptionPastDue(store);
 }
 
-function getRelevantIdentityStore(stores: any[]) {
-  return (
-    stores.find((store) => isSubscriptionPastDue(store)) || stores[0]
-  );
-}
-
 export function PanelStoreIdentity() {
-  const [store, setStore] = useState<StoreIdentity | null>(() => readCachedStoreIdentity());
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadIdentity() {
-      const savedPin = getSavedPanelPin();
-      const savedToken = await getPanelAccessToken();
-
-      if (!savedPin && !savedToken) return;
-
-      try {
-        const response = await fetch("/api/panel/settings", {
-          headers: await getPanelAuthHeaders(savedPin),
-        });
-        const data = await response.json();
-        const firstStore = getRelevantIdentityStore(Array.isArray(data.stores) ? data.stores : []);
-
-        if (active && firstStore) {
-          const nextStore = {
-            name: firstStore.name || "Tu negocio",
-            slug: firstStore.slug || "",
-            logo_url: firstStore.logo_url || null,
-            cover_image_url: firstStore.cover_image_url || null,
-            subscription_status: firstStore.subscription_status || null,
-            subscription_ends_at: firstStore.subscription_ends_at || null,
-            next_payment_due_at: firstStore.next_payment_due_at || null,
-            trial_ends_at: firstStore.trial_ends_at || null,
-          };
-
-          writeCachedStoreIdentity(nextStore);
-          setStore(nextStore);
-        }
-      } catch {
-        if (active) setStore(null);
-      }
-    }
-
-    loadIdentity();
-
-    return () => {
-      active = false;
-    };
-  }, []);
+  const { selectedStore: store } = usePanelAuth();
 
   if (!store) {
     return (

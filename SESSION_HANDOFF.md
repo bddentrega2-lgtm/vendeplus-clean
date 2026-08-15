@@ -1,5 +1,14 @@
 # Punto de reanudacion
 
+## Idea pendiente: referidos para influencers
+
+- No implementar hasta nueva indicación del usuario.
+- Cada influencer tendrá código y enlace de registro.
+- Comisión propuesta: 50% de pagos realmente aprobados durante los primeros 3 meses del comercio referido.
+- Aplica a mensualidades y fees pagados; excluye pendientes, rechazados y comercios `is_test`.
+- Panel ligero del influencer: referidos, ingresos generados, comisión pendiente y pagada.
+- Mantener historial contable congelado por pago y acceso privado con Supabase Auth.
+
 Actualizado: 2026-08-09, despues del despliegue a produccion
 
 ## Objetivo actual
@@ -90,3 +99,67 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 - Migración incremental remota aplicada: `20260809142220_reset_revoked_achievements.sql`.
 - Corrección remota aplicada: `20260810005351_add_store_product_update_timestamps.sql`; agrega `updated_at` automático a comercios y productos para reiniciar correctamente el logro de configuración.
 - Los 29 comercios existentes recibieron también la recompensa nueva como heredada.
+## Hotfix Entrega2 - telefonos invertidos (2026-08-12)
+
+- Causa: `buildEntrega2Payload` enviaba `stores.whatsapp` como `telefono_contacto` y `order.customer_phone` como `telefono_comercio`.
+- Correccion: cliente -> `telefono_contacto`; comercio -> `telefono_comercio`.
+- Archivo funcional: `src/app/api/panel/orders/[orderId]/send-delivery/route.ts`.
+- Validaciones: 8/8 contratos criticos, ESLint dirigido y `npm.cmd run build` exitosos; preview y produccion Vercel `Ready`.
+- GitHub: commit `2e35b0c` en `origin/main`.
+- Produccion: deployment `dpl_EYRz5PtNPH1WuTVjJtA5f8skRcZa`, aliases `somos-ve.com` y `www.somos-ve.com`.
+- No se reenvio el pedido previo ni se creo un delivery real de prueba. Proximo pedido enviado a Entrega2 usara el mapeo corregido.
+
+## Idea multisedes pendiente de decision (2026-08-12)
+
+- Se compararon dos modelos: central con cada sede como `store`, y una marca con menu unico mas sedes internas mediante `branch_id`.
+- Preferencia preliminar a largo plazo: marca con sedes internas; valoracion 7.8/10 frente a 7.3/10 para central + stores.
+- La alternativa central + stores conserva menor riesgo y mayor compatibilidad inmediata.
+- Analisis y condiciones guardados en `docs/MODULO_CADENAS_PLAN.md`.
+- No se implemento codigo, migracion ni cambios en Supabase. Esperar decision y autorizacion expresa del usuario.
+
+## P0 crecimiento - cierre operativo (2026-08-12)
+
+- GitHub `origin/main` y produccion quedaron en `b608962`.
+- Se versiono la migracion remota faltante `20260811151611_add_test_store_financial_metrics.sql`.
+- Se aplico y versiono `20260813014423_add_order_idempotency.sql`.
+- Checkout: clave idempotente unica por comercio; reintentos concurrentes devuelven el mismo pedido.
+- Entrega2: adquisicion atomica de `sending`; dos solicitudes simultaneas no pueden llamar al proveedor.
+- Prueba productiva controlada: 5/5 pedidos QA correctos; precios, delivery y pagos recalculados en servidor.
+- Prueba idempotente: 2 solicitudes simultaneas, 2 respuestas 200, mismo orderId y 1 fila persistida.
+- Load smoke concurrencia 10: sin errores; p95 catalogo ~3.3 s y `/transporte` ~6.1 s.
+- Recursos QA eliminados y verificados: 0 tiendas, 0 agencias y 0 pedidos residuales.
+- Produccion Vercel `dpl_Am3Rqr4ooh3CeW9fPyyJFxt6dnwR` en estado Ready.
+- Monitoreo avanzado Vercel bloqueado por 403 del plan/permisos; logs basicos disponibles.
+- Backup DB no completado: `supabase db dump` requiere Docker Desktop activo en este entorno.
+- Backup Storage parcial: 179 archivos / ~35.7 MB, sin manifiesto final por limite de 5 minutos; no cuenta como backup recuperable.
+- Pendiente P0 externo: habilitar Docker o backups gestionados y ejecutar dump + restauracion aislada; definir monitoreo/alertas con plan compatible o Sentry.
+
+## Cierre P0 y auditoria inicial del panel (2026-08-13)
+
+- `origin/main` quedo en `d5c3edb`; incluye el checkout simplificado (`c7d93be`) y el contrato automatico de prioridad del delivery externo.
+- Produccion conserva prioridad Entrega2/empresa delivery sobre zonas propias; Smash verificado sin selector de zonas.
+- Backup remoto de DB generado en `C:\Users\Windows\Desktop\RESPALDOS\somos-backups\2026-08-13`: `schema.sql` (124909 bytes) y `data.sql` (3726008 bytes), ambos con SHA256 calculado.
+- Pendiente para declarar recuperabilidad completa: restaurar el dump en una instancia aislada y completar backup verificable de Storage.
+- Logs Vercel de produccion, nivel error, ultima hora: sin resultados.
+- Auditoria inicial del panel: cada cambio de modulo dispara de nuevo `/api/panel/settings` desde `PanelFrame`; luego el modulo monta y pide su propia API. `PanelAuthProvider` ya carga `/api/panel/context`, pero no comparte el estado necesario. Este waterfall es la causa principal percibida.
+- Otras causas: `PanelStoreIdentity` vuelve a pedir settings, no hay cache/prefetch de APIs de modulos, y el selector de comercio usa `window.location.reload()`.
+- Siguiente paso recomendado: unificar contexto/suscripcion en `PanelAuthProvider`, eliminar fetch repetido por ruta, mantener el shell estable, agregar estados instantaneos y medir navegacion/API antes y despues. Probar local, preview y produccion.
+
+## Respaldo Somos en Google Drive (2026-08-14)
+
+- Reintento completado en la cuenta de Google Drive conectada (`bddentrega2@gmail.com`).
+- Carpeta: `vendeplus-backups/somos-database-2026-08-13`.
+- URL: `https://drive.google.com/drive/folders/1ppV7mVPRkCBkkYxZTR6rZ1Dl1VGDlq2k`.
+- `schema.sql`: 124909 bytes; SHA256 `D35C737AB06D50F073F7F6AD308F27891E86CEA511FC4E48092307CF2E4F9F8B`.
+- `data.sql`: 3726008 bytes; SHA256 `8ECA6B8A0392C58791C1C6B32083DEFB8100DB71A0168FB5FF96CF0A8A58EEC8`.
+- Drive confirmo ambos archivos, nombres y tamanos tras la carga.
+- Pendiente para recuperabilidad completa: restaurar la base en una instancia aislada y generar/verificar un respaldo actual de Supabase Storage.
+
+## Carga pendiente de productos TDK (2026-08-13)
+
+- Usuario solicito cargar 15 productos con precios entregados en la conversacion, sin duplicados.
+- No se realizo ninguna escritura: todos los intentos fueron de lectura y expiraron.
+- Windows quedo saturado: Node/Supabase, lectura de archivo local, `tasklist` y hasta detener Docker excedieron 30-120 segundos.
+- Se prepararon scripts temporales no versionados `scripts/tmp-import-tdk-products.mjs` en `vendeplus-clean` y `vendeplus-entrega2-hotfix`; deben eliminarse al terminar.
+- Siguiente paso exacto tras reiniciar: confirmar una unica tienda por `stores.name/slug ILIKE '%tdk%'`; leer productos existentes; comparar nombres normalizados sin acentos/mayusculas/signos; insertar solo faltantes; volver a consultar y verificar cero duplicados y precios.
+- No asumir categoria: revisar categorias actuales de TDK y usar la adecuada o dejar sin categoria si no existe una categoria inequívoca.

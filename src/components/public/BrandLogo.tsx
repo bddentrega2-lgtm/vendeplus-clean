@@ -1,22 +1,60 @@
-export function BrandLogo({ compact = false }: { compact?: boolean }) {
+import Image from "next/image";
+
+type BrandLogoVariant = "default" | "white" | "black";
+type BrandLogoSize = "sm" | "md" | "lg";
+
+const logoAssets: Record<BrandLogoVariant, { logo: string; mark: string }> = {
+  default: {
+    logo: "/brand/new-somos-preview/somos-logo-preview.png",
+    mark: "/brand/new-somos-preview/somos-isotipo-preview.png",
+  },
+  white: {
+    logo: "/brand/new-somos-preview/somos-logo-white-preview.png",
+    mark: "/brand/new-somos-preview/somos-isotipo-white-preview.png",
+  },
+  black: {
+    logo: "/brand/new-somos-preview/somos-logo-black-preview.png",
+    mark: "/brand/new-somos-preview/somos-isotipo-black-preview.png",
+  },
+};
+
+const logoSizes: Record<BrandLogoSize, string> = {
+  sm: "h-auto w-[116px] sm:w-[128px]",
+  md: "h-auto w-[144px] sm:w-[164px]",
+  lg: "h-auto w-[184px] sm:w-[220px]",
+};
+
+const markSizes: Record<BrandLogoSize, string> = {
+  sm: "h-8 w-9",
+  md: "h-10 w-11",
+  lg: "h-12 w-14",
+};
+
+export function BrandLogo({
+  compact = false,
+  markOnly = false,
+  variant = "default",
+  size = "md",
+  priority = false,
+}: {
+  compact?: boolean;
+  markOnly?: boolean;
+  variant?: BrandLogoVariant;
+  size?: BrandLogoSize;
+  priority?: boolean;
+}) {
+  const showMark = compact || markOnly;
+  const asset = logoAssets[variant];
+
   return (
-    <div className="inline-flex items-center gap-2">
-      <div className="grid h-11 w-11 place-items-center overflow-hidden rounded-2xl bg-white shadow-lg shadow-[#2E3A79]/15 ring-1 ring-[#25262B]/10">
-        <img
-          src="/brand/somos-isotipo.png"
-          alt=""
-          className="h-9 w-9 object-contain"
-          loading="eager"
-        />
-      </div>
-      {!compact ? (
-        <div className="leading-none">
-          <p className="text-2xl font-black tracking-tight text-[#2E3A79]">Somos</p>
-          <p className="text-[11px] font-extrabold uppercase tracking-[0.22em] text-[#746f69]">
-            Comunidad. Comercio. Conexion.
-          </p>
-        </div>
-      ) : null}
-    </div>
+    <Image
+      src={showMark ? asset.mark : asset.logo}
+      alt="Somos"
+      width={showMark ? 512 : 1117}
+      height={showMark ? 452 : 172}
+      className={showMark ? markSizes[size] : logoSizes[size]}
+      priority={priority}
+      sizes={showMark ? "56px" : "(max-width: 640px) 144px, 220px"}
+    />
   );
 }

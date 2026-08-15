@@ -27,6 +27,7 @@ import {
   savePanelPin,
   shouldShowPanelInitialAccessGate,
 } from "@/lib/panel/client-auth";
+import { fetchPanelJson } from "@/lib/panel/client-fetch-cache";
 
 type CustomerRow = {
   id: string;
@@ -120,7 +121,7 @@ function getBadgeStyle(key: string) {
 }
 
 async function apiRequest(pin: string, url: string, options?: RequestInit) {
-  const response = await fetch(url, {
+  return fetchPanelJson(url, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -129,13 +130,6 @@ async function apiRequest(pin: string, url: string, options?: RequestInit) {
     },
   });
 
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.error || "Error en la solicitud.");
-  }
-
-  return data;
 }
 
 function CustomerDetail({

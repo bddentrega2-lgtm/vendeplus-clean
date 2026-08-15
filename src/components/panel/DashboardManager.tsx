@@ -27,19 +27,12 @@ import {
   savePanelPin,
   shouldShowPanelInitialAccessGate,
 } from "@/lib/panel/client-auth";
+import { fetchPanelJson } from "@/lib/panel/client-fetch-cache";
 
 async function apiRequest(pin: string) {
-  const response = await fetch("/api/panel/stats?mode=summary", {
+  return fetchPanelJson("/api/panel/stats?mode=summary", {
     headers: await getPanelAuthHeaders(pin),
   });
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.error || "Error cargando dashboard.");
-  }
-
-  return data;
 }
 
 function MetricCard({

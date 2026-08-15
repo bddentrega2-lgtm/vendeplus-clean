@@ -469,12 +469,17 @@ function StoreSettingsCard({
     }
   }
 
+  const hasLatitudeValue = String(draft.latitude ?? "").trim() !== "";
+  const hasLongitudeValue = String(draft.longitude ?? "").trim() !== "";
   const parsedLatitude = Number(draft.latitude);
   const parsedLongitude = Number(draft.longitude);
   const hasStoreLocation =
-    Number.isFinite(parsedLatitude) && Number.isFinite(parsedLongitude);
-  const mapLatitude = hasStoreLocation ? parsedLatitude : 10.4806;
-  const mapLongitude = hasStoreLocation ? parsedLongitude : -66.9036;
+    hasLatitudeValue &&
+    hasLongitudeValue &&
+    Number.isFinite(parsedLatitude) &&
+    Number.isFinite(parsedLongitude);
+  const mapLatitude = hasStoreLocation ? parsedLatitude : 10.2469;
+  const mapLongitude = hasStoreLocation ? parsedLongitude : -67.5958;
   const selectedStoreLocation: DeliveryLocation | null = hasStoreLocation
     ? {
         latitude: parsedLatitude,
