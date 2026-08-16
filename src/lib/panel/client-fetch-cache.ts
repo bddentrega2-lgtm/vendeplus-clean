@@ -20,6 +20,7 @@ export async function fetchPanelJson<T = any>(
   ttlMs = 15_000
 ): Promise<T> {
   const method = String(options.method || "GET").toUpperCase();
+  const bypassCache = options.cache === "no-store";
 
   if (method !== "GET") {
     clearPanelReadCache();
@@ -28,6 +29,13 @@ export async function fetchPanelJson<T = any>(
     if (!response.ok) throw new Error(data.error || "Error en la solicitud.");
     clearPanelReadCache();
     return data;
+  }
+
+  if (bypassCache) {
+    const response = await fetch(url, options);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Error en la solicitud.");
+    return data as T;
   }
 
   const key = `${url}|${headersKey(options.headers)}`;

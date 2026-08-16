@@ -1,9 +1,6 @@
 import { AdminShell } from "@/components/admin/AdminShell";
 import { AdminTransportManager } from "@/components/admin/AdminTransportManager";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
 export default function AdminTransportePage() {
   return (
     <AdminShell

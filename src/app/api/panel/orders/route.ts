@@ -182,6 +182,26 @@ const compactOrdersSelect = `
     latitude,
     longitude,
     usd_to_bs
+  ),
+  order_integrations (
+    order_id,
+    provider,
+    external_id,
+    status,
+    last_error,
+    updated_at
+  ),
+  transport_orders (
+    id,
+    order_id,
+    agency_id,
+    agency_name_snapshot,
+    agency_whatsapp_snapshot,
+    status,
+    delivery_fee_usd,
+    agency_status_note,
+    rejection_reason,
+    updated_at
   )
 `;
 
@@ -415,6 +435,27 @@ async function attachTransportOrders(supabase: any, orders: any[], options: { in
   }
 }
 
+async function attachOrderRelations(
+  supabase: any,
+  orders: any[],
+  options: { includeEvents?: boolean } = {}
+) {
+  if (!orders.length) return orders;
+
+  const [withIntegrations, withTransport] = await Promise.all([
+    attachOrderIntegrations(supabase, orders),
+    attachTransportOrders(supabase, orders, options),
+  ]);
+  const integrationsByOrder = new Map(
+    withIntegrations.map((order: any) => [order.id, order.order_integrations || []])
+  );
+
+  return withTransport.map((order: any) => ({
+    ...order,
+    order_integrations: integrationsByOrder.get(order.id) || [],
+  }));
+}
+
 function withPaymentFallback(order: any) {
   return {
     ...order,
@@ -584,11 +625,7 @@ export async function GET(request: NextRequest) {
 
       if (error) throw error;
 
-      const integratedOrderRows = await attachOrderIntegrations(
-        supabase,
-        data ? [withPaymentFallback(data)] : []
-      );
-      const [order] = await attachTransportOrders(supabase, integratedOrderRows, {
+      const [order] = await attachOrderRelations(supabase, data ? [withPaymentFallback(data)] : [], {
         includeEvents: true,
       });
 
@@ -615,13 +652,11 @@ export async function GET(request: NextRequest) {
     const hasMore = pageRows.length > limit;
     const visibleRows = hasMore ? pageRows.slice(0, limit) : pageRows;
 
-    const orders = await attachOrderIntegrations(
-      supabase,
-      visibleRows.map(withPaymentFallback)
-    );
-    const ordersWithTransport = await attachTransportOrders(supabase, orders, {
-      includeEvents: !compact,
-    });
+    const ordersWithTransport = compact
+      ? visibleRows.map(withPaymentFallback)
+      : await attachOrderRelations(supabase, visibleRows.map(withPaymentFallback), {
+          includeEvents: true,
+        });
 
     return NextResponse.json({
       orders: ordersWithTransport,

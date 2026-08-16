@@ -1,5 +1,7 @@
 ﻿import Link from "next/link";
 import { LogoutButton } from "@/components/panel/LogoutButton";
+import { getPanelAuthHeaders } from "@/lib/panel/client-auth";
+import { fetchPanelJson } from "@/lib/panel/client-fetch-cache";
 import { OnboardingTour } from "@/components/panel/OnboardingTour";
 import { PanelStoreIdentity } from "@/components/panel/PanelStoreIdentity";
 import { PanelStoreSelector } from "@/components/panel/PanelStoreSelector";
@@ -32,6 +34,23 @@ const navItems = [
   { href: "/panel/configuracion", label: "Configuración", icon: Settings },
   { href: "/panel/suscripcion", label: "Suscripción", icon: CreditCard },
 ];
+
+const routeDataUrls: Record<string, string> = {
+  "/panel/pedidos": "/api/panel/orders?date=today&compact=true&limit=40",
+  "/panel/clientes": "/api/panel/customers?limit=80&offset=0",
+  "/panel/estadisticas": "/api/panel/stats?range=last_7_days",
+};
+
+async function prefetchRouteData(href: string) {
+  const url = routeDataUrls[href];
+  if (!url) return;
+
+  try {
+    await fetchPanelJson(url, { headers: await getPanelAuthHeaders() }, 30_000);
+  } catch {
+    // La pantalla manejará cualquier error cuando haga su solicitud normal.
+  }
+}
 
 export function PanelShell({
   children,
@@ -72,6 +91,8 @@ export function PanelShell({
                 <Link
                   key={item.href}
                   href={item.href}
+                  onPointerEnter={() => void prefetchRouteData(item.href)}
+                  onTouchStart={() => void prefetchRouteData(item.href)}
                   className={[
                     "flex items-center gap-3 rounded-3xl px-4 py-3 text-sm font-black transition",
                     isActive
@@ -136,6 +157,8 @@ export function PanelShell({
                 <Link
                   key={item.href}
                   href={item.href}
+                  onPointerEnter={() => void prefetchRouteData(item.href)}
+                  onTouchStart={() => void prefetchRouteData(item.href)}
                   className={[
                     "group flex items-center gap-3 rounded-[24px] p-4 text-sm font-black shadow-lg shadow-[#2E3A79]/[0.05] ring-1 ring-[#25262B]/[0.06] transition hover:-translate-y-0.5",
                     isActive

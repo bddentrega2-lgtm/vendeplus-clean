@@ -579,7 +579,11 @@ export function OrdersManager() {
       } else {
         let request = inflightRequestsRef.current.get(cacheKey);
         if (!request) {
-          request = apiRequest(currentPin, `/api/panel/orders${queryString}`);
+          request = apiRequest(
+            currentPin,
+            `/api/panel/orders${queryString}`,
+            options.force ? { cache: "no-store" } : undefined
+          );
           inflightRequestsRef.current.set(cacheKey, request);
         }
         try {

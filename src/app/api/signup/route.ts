@@ -202,6 +202,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const contentType = request.headers.get("content-type") || "";
+  if (!contentType.toLowerCase().startsWith("multipart/form-data")) {
+    return observed(badRequest("Envía los datos del registro mediante el formulario."));
+  }
+
   let createdUserId = "";
   let createdStoreId = "";
   let uploadedLogoPath = "";

@@ -1,9 +1,6 @@
 import { AdminShell } from "@/components/admin/AdminShell";
 import { AdminStoreForm } from "@/components/admin/AdminStoreForm";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
 export default async function EditAdminStorePage({
   params,
 }: {

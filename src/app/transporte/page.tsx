@@ -1,7 +1,7 @@
 import { TransportLanding } from "@/components/transport/TransportLanding";
 import { getPublicTransportAgencyLogos } from "@/lib/transport";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 export default async function TransportePage() {
   const transportAgencies = await getPublicTransportAgencyLogos();
