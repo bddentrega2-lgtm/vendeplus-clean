@@ -121,31 +121,40 @@ export type MarketplaceFeaturedProduct = {
 };
 
 export async function getActiveMonthlyMarketplaceRewards() {
-  const supabase = createSupabaseAdminClient();
-  const now = new Date().toISOString();
-  const { data, error } = await supabase
-    .from("store_monthly_challenge_rewards")
-    .select("id, store_id, product_id, monthly_challenges!inner(reward_type), stores!inner(name, slug, is_active), products(name, description, image_url, price_usd, discount_percent, is_available)")
-    .eq("status", "active")
-    .lte("reward_starts_at", now)
-    .gt("reward_ends_at", now);
-  if (error) throw error;
-
   const featuredProducts: MarketplaceFeaturedProduct[] = [];
   const fastStoreIds = new Set<string>();
-  for (const row of data || []) {
-    const challenge = Array.isArray(row.monthly_challenges) ? row.monthly_challenges[0] : row.monthly_challenges;
-    const store = Array.isArray(row.stores) ? row.stores[0] : row.stores;
-    const product = Array.isArray(row.products) ? row.products[0] : row.products;
-    if (!store?.is_active) continue;
-    if (challenge?.reward_type === "fast_store_badge") fastStoreIds.add(String(row.store_id));
-    if (challenge?.reward_type === "featured_product" && product?.is_available && row.product_id) {
-      featuredProducts.push({
-        rewardId: String(row.id), storeId: String(row.store_id), storeName: store.name, storeSlug: store.slug,
-        productId: String(row.product_id), productName: product.name, description: product.description || "Producto destacado en Somos.",
-        imageUrl: product.image_url || "", priceUsd: Number(product.price_usd || 0), discountPercent: Number(product.discount_percent || 0),
-      });
+
+  try {
+    const supabase = createSupabaseAdminClient();
+    const now = new Date().toISOString();
+    const { data, error } = await supabase
+      .from("store_monthly_challenge_rewards")
+      .select("id, store_id, product_id, monthly_challenges!inner(reward_type), stores!inner(name, slug, is_active), products(name, description, image_url, price_usd, discount_percent, is_available)")
+      .eq("status", "active")
+      .lte("reward_starts_at", now)
+      .gt("reward_ends_at", now);
+    if (error) throw error;
+
+    for (const row of data || []) {
+      const challenge = Array.isArray(row.monthly_challenges) ? row.monthly_challenges[0] : row.monthly_challenges;
+      const store = Array.isArray(row.stores) ? row.stores[0] : row.stores;
+      const product = Array.isArray(row.products) ? row.products[0] : row.products;
+      if (!store?.is_active) continue;
+      if (challenge?.reward_type === "fast_store_badge") fastStoreIds.add(String(row.store_id));
+      if (challenge?.reward_type === "featured_product" && product?.is_available && row.product_id) {
+        featuredProducts.push({
+          rewardId: String(row.id), storeId: String(row.store_id), storeName: store.name, storeSlug: store.slug,
+          productId: String(row.product_id), productName: product.name, description: product.description || "Producto destacado en Somos.",
+          imageUrl: product.image_url || "", priceUsd: Number(product.price_usd || 0), discountPercent: Number(product.discount_percent || 0),
+        });
+      }
     }
+  } catch (error) {
+    console.warn(
+      "Could not load active monthly marketplace rewards:",
+      error instanceof Error ? error.message : error
+    );
   }
+
   return { featuredProducts, fastStoreIds };
 }
