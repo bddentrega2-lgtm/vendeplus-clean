@@ -23,15 +23,30 @@ export async function GET(request: NextRequest) {
         : query.eq("id", "__no_authorized_store__");
     }
 
-    const { data, error } = await query;
+    const requestedStoreId = String(request.headers.get("x-panel-store-id") || "").trim();
+    const authorizedStoreId = auth.isFounderMode
+      ? requestedStoreId
+      : auth.storeIds?.includes(requestedStoreId)
+        ? requestedStoreId
+        : auth.storeIds?.[0] || "";
+    const unlockPromise = authorizedStoreId
+      ? supabase
+          .from("store_achievement_unlocks")
+          .select("achievement_key")
+          .eq("store_id", authorizedStoreId)
+          .eq("achievement_key", "orders_50_full_stats")
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null });
+
+    const [{ data, error }, initialUnlock] = await Promise.all([query, unlockPromise]);
     if (error) throw error;
 
     const stores = data || [];
-    const requestedStoreId = String(request.headers.get("x-panel-store-id") || "").trim();
     const selectedStore = stores.find((store) => store.id === requestedStoreId) || stores[0] || null;
-    let fullStatsUnlocked = false;
+    let fullStatsUnlocked = Boolean(initialUnlock.data);
+    if (initialUnlock.error) throw initialUnlock.error;
 
-    if (selectedStore) {
+    if (selectedStore && selectedStore.id !== authorizedStoreId) {
       const { data: unlock, error: unlockError } = await supabase
         .from("store_achievement_unlocks")
         .select("achievement_key")

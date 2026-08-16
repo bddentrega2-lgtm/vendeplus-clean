@@ -14,6 +14,35 @@ export type PanelAuthContext = {
   error?: string;
 };
 
+type StoreMembership = { store_id: string; role: string | null };
+
+const MEMBERSHIP_CACHE_TTL_MS = 10_000;
+const membershipCache = new Map<
+  string,
+  { expiresAt: number; rows: StoreMembership[] }
+>();
+
+function getCachedMemberships(userId: string) {
+  const cached = membershipCache.get(userId);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    membershipCache.delete(userId);
+    return null;
+  }
+  return cached.rows;
+}
+
+function cacheMemberships(userId: string, rows: StoreMembership[]) {
+  if (membershipCache.size >= 500) {
+    const oldestKey = membershipCache.keys().next().value;
+    if (oldestKey) membershipCache.delete(oldestKey);
+  }
+  membershipCache.set(userId, {
+    expiresAt: Date.now() + MEMBERSHIP_CACHE_TTL_MS,
+    rows,
+  });
+}
+
 export function normalizeAuthEmail(value?: string | null) {
   return String(value || "")
     .trim()
@@ -70,10 +99,11 @@ export async function getPanelAuthContext(
   try {
     const supabase = createSupabaseAdminClient();
 
-    const { data: userResult, error: userError } =
-      await supabase.auth.getUser(token);
+    const { data: claimsResult, error: claimsError } =
+      await supabase.auth.getClaims(token);
+    const claims = claimsResult?.claims;
 
-    if (userError || !userResult.user) {
+    if (claimsError || !claims?.sub) {
       return {
         isAuthorized: false,
         mode: "none",
@@ -84,7 +114,10 @@ export async function getPanelAuthContext(
       };
     }
 
-    const userEmail = getSupabaseUserEmail(userResult.user);
+    const userId = String(claims.sub);
+    const userEmail = normalizeAuthEmail(
+      typeof claims.email === "string" ? claims.email : ""
+    );
 
     if (isFounderEmail(userEmail)) {
       const selectedStoreId = String(
@@ -95,19 +128,24 @@ export async function getPanelAuthContext(
         mode: "user",
         method: "auth",
         isFounderMode: true,
-        userId: userResult.user.id,
+        userId,
         email: userEmail,
         storeIds: selectedStoreId ? [selectedStoreId] : [],
         role: "owner",
       };
     }
 
-    const { data: storeUsers, error: storeUsersError } = await supabase
-      .from("store_users")
-      .select("store_id, role")
-      .eq("user_id", userResult.user.id);
+    let storeUsers = getCachedMemberships(userId);
+    if (!storeUsers) {
+      const { data, error: storeUsersError } = await supabase
+        .from("store_users")
+        .select("store_id, role")
+        .eq("user_id", userId);
 
-    if (storeUsersError) throw storeUsersError;
+      if (storeUsersError) throw storeUsersError;
+      storeUsers = (data || []) as StoreMembership[];
+      if (storeUsers.length) cacheMemberships(userId, storeUsers);
+    }
 
     if (!storeUsers?.length) {
       return {
@@ -115,7 +153,7 @@ export async function getPanelAuthContext(
         mode: "user",
         method: "auth",
         isFounderMode: false,
-        userId: userResult.user.id,
+        userId,
         email: userEmail,
         storeIds: [],
         error: "Tu usuario aún no tiene un negocio vinculado.",
@@ -133,7 +171,7 @@ export async function getPanelAuthContext(
       mode: "user",
       method: "auth",
       isFounderMode: false,
-      userId: userResult.user.id,
+      userId,
       email: userEmail,
       storeIds: storeUsers.map((row) => row.store_id),
       storeRoles,

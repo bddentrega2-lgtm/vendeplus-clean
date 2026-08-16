@@ -5,6 +5,7 @@ import {
   type PaymentStatus,
 } from "@/lib/payments";
 import { getPanelAuthHeaders } from "@/lib/panel/client-auth";
+import { fetchPanelJson } from "@/lib/panel/client-fetch-cache";
 import { formatVenezuelaDateTime } from "@/lib/time/venezuela";
 
 export type OrderItem = {
@@ -439,7 +440,7 @@ export function groupOrderItemOptions(item: OrderItem) {
 }
 
 export async function apiRequest(pin: string, url: string, options?: RequestInit) {
-  const response = await fetch(url, {
+  return fetchPanelJson(url, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -447,12 +448,4 @@ export async function apiRequest(pin: string, url: string, options?: RequestInit
       ...(options?.headers || {}),
     },
   });
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.error || "Error en la solicitud.");
-  }
-
-  return data;
 }

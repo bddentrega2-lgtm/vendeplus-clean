@@ -25,6 +25,7 @@ import {
   savePanelPin,
   shouldShowPanelInitialAccessGate,
 } from "@/lib/panel/client-auth";
+import { fetchPanelJson } from "@/lib/panel/client-fetch-cache";
 
 type ChartItem = { label: string; value: number };
 type StoreRow = { id: string; slug: string; name: string };
@@ -136,13 +137,9 @@ async function apiRequest(
   pin: string,
   filters: { storeId: string; range: string; startDate: string; endDate: string }
 ) {
-  const response = await fetch(buildStatsUrl(filters), {
+  return fetchPanelJson<StatsData>(buildStatsUrl(filters), {
     headers: await getPanelAuthHeaders(pin),
   });
-
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "Error cargando estadísticas.");
-  return data as StatsData;
 }
 
 function MetricCard({

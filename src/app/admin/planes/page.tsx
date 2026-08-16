@@ -1,9 +1,6 @@
 import { AdminShell } from "@/components/admin/AdminShell";
 import { plans } from "@/lib/plans";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
 export default function AdminPlansPage() {
   return (
     <AdminShell

@@ -1,8 +1,6 @@
 import { PublicHeader } from "@/components/public/PublicHeader";
 import { TransportRegistrationForm } from "@/components/transport/TransportRegistrationForm";
 
-export const dynamic = "force-dynamic";
-
 export default function TransporteRegistroPage() {
   return (
     <main className="somos-page">

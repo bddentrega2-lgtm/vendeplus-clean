@@ -4,7 +4,6 @@ import { panelErrorResponse, requirePanelAuth } from "@/lib/panel/access";
 import { getCustomerBadges, shouldContactCustomer } from "@/lib/customers/customer-segments";
 import { buildContactAgainMessage, buildRepeatLastOrderMessage, buildWhatsappUrl } from "@/lib/customers/customer-messages";
 import { safeUpsertCustomerFromOrder } from "@/lib/customers/upsert-customer-from-order";
-import { loadStoreAchievements } from "@/lib/achievements";
 
 function toNumber(value: unknown) {
   const parsed = Number(value || 0);
@@ -87,11 +86,13 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requirePanelAuth(request);
     const supabase = createSupabaseAdminClient();
-    let customerDetailsUnlocked = true;
-    if (auth.storeIds !== null) {
-      const states = await Promise.all(auth.storeIds.map((storeId) => loadStoreAchievements(supabase, storeId)));
-      customerDetailsUnlocked = states.every((state) => state.features.customers_detail);
-    }
+    const customerDetailsPromise = auth.storeIds === null
+      ? Promise.resolve({ data: [], error: null })
+      : supabase
+          .from("store_achievement_unlocks")
+          .select("store_id")
+          .in("store_id", auth.storeIds)
+          .eq("achievement_key", "promos_3_three_months_customer_details");
     const { searchParams } = new URL(request.url);
     const search = String(searchParams.get("search") || "").trim();
     const safeSearch = search.replace(/[,.%()]/g, " ").trim();
@@ -166,10 +167,18 @@ export async function GET(request: NextRequest) {
 
     customersQuery = customersQuery.range(offset, to);
 
-    let [customersResult, storesResult] = await Promise.all([
+    const [customersResult, storesResult, customerDetailsResult] = await Promise.all([
       customersQuery,
       storesQuery,
+      customerDetailsPromise,
     ]);
+
+    if (customerDetailsResult.error) throw customerDetailsResult.error;
+    const unlockedStoreIds = new Set(
+      (customerDetailsResult.data || []).map((row: any) => String(row.store_id))
+    );
+    const customerDetailsUnlocked =
+      auth.storeIds === null || auth.storeIds.every((storeId) => unlockedStoreIds.has(storeId));
 
     if (customersResult.error) {
       return NextResponse.json({

@@ -1,9 +1,6 @@
 import { AdminAnnouncementsManager } from "@/components/admin/AdminAnnouncementsManager";
 import { AdminShell } from "@/components/admin/AdminShell";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
 export default function AdminAnnouncementsPage() {
   return (
     <AdminShell

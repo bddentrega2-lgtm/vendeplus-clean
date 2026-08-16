@@ -238,10 +238,20 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (mode === "full" && auth.storeIds !== null) {
-      const storeIdsToCheck = selectedStoreId ? [selectedStoreId] : auth.storeIds;
-      await Promise.all(storeIdsToCheck.map((storeId) => assertAchievementFeature(supabase, storeId, "full_stats")));
-    }
+    const storeIdsToCheck = selectedStoreId
+      ? [selectedStoreId]
+      : auth.storeIds || [];
+    const fullStatsAccessPromise = mode === "full" && auth.storeIds !== null
+      ? Promise.all(
+          storeIdsToCheck.map((storeId) =>
+            assertAchievementFeature(supabase, storeId, "full_stats")
+          )
+        )
+      : Promise.resolve([]);
+    const knownAchievementStoreId = selectedStoreId || auth.storeIds?.[0] || null;
+    const achievementStatePromise = mode === "summary" && knownAchievementStoreId
+      ? loadStoreAchievements(supabase, knownAchievementStoreId)
+      : Promise.resolve(null);
 
     let storesQuery = supabase
       .from("stores")
@@ -260,22 +270,37 @@ export async function GET(request: NextRequest) {
       .from("products")
       .select("id, name, store_id, is_available, is_featured, price_usd, stores(name)");
 
+    let customersQuery = supabase
+      .from("customers")
+      .select("orders_count, last_order_at");
+
     if (auth.storeIds !== null) {
       storesQuery = storesQuery.in("id", auth.storeIds);
       ordersQuery = ordersQuery.in("store_id", auth.storeIds);
       productsQuery = productsQuery.in("store_id", auth.storeIds);
+      customersQuery = customersQuery.in("store_id", auth.storeIds);
     }
 
     if (selectedStoreId) {
       ordersQuery = ordersQuery.eq("store_id", selectedStoreId);
       productsQuery = productsQuery.eq("store_id", selectedStoreId);
+      customersQuery = customersQuery.eq("store_id", selectedStoreId);
     }
 
     const [
       { data: stores, error: storesError },
       ordersResult,
       { data: products, error: productsError },
-    ] = await Promise.all([storesQuery, ordersQuery, productsQuery]);
+      customersResult,
+      achievementStateResult,
+    ] = await Promise.all([
+      storesQuery,
+      ordersQuery,
+      productsQuery,
+      customersQuery,
+      achievementStatePromise,
+      fullStatsAccessPromise,
+    ]);
 
     let orders = ordersResult.data;
     let ordersError = ordersResult.error;
@@ -316,22 +341,9 @@ export async function GET(request: NextRequest) {
       contact: 0,
     };
 
-    try {
-      let customersQuery = supabase
-        .from("customers")
-        .select("orders_count, last_order_at");
-
-      if (auth.storeIds !== null) {
-        customersQuery = customersQuery.in("store_id", auth.storeIds);
-      }
-
-      if (selectedStoreId) {
-        customersQuery = customersQuery.eq("store_id", selectedStoreId);
-      }
-
-      const { data: customers } = await customersQuery;
+    if (!customersResult.error) {
       const now = Date.now();
-      const safeCustomers = customers || [];
+      const safeCustomers = customersResult.data || [];
 
       customerSummary = {
         total: safeCustomers.length,
@@ -348,12 +360,6 @@ export async function GET(request: NextRequest) {
           );
           return days >= 21;
         }).length,
-      };
-    } catch {
-      customerSummary = {
-        total: 0,
-        frequent: 0,
-        contact: 0,
       };
     }
 
@@ -549,9 +555,11 @@ export async function GET(request: NextRequest) {
     const strongestWeekday = ordersByWeekday[0] || null;
 
     if (mode === "summary") {
-      const achievementState = auth.storeIds !== null && safeStores[0]?.id
-        ? await loadStoreAchievements(supabase, selectedStoreId || safeStores[0].id)
-        : null;
+      const achievementState = achievementStateResult || (
+        auth.storeIds === null && safeStores[0]?.id
+          ? await loadStoreAchievements(supabase, selectedStoreId || safeStores[0].id)
+          : null
+      );
       return NextResponse.json({
         stores: safeStores,
         selectedStoreId,
