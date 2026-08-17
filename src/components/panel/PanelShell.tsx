@@ -5,6 +5,7 @@ import { fetchPanelJson } from "@/lib/panel/client-fetch-cache";
 import { OnboardingTour } from "@/components/panel/OnboardingTour";
 import { PanelStoreIdentity } from "@/components/panel/PanelStoreIdentity";
 import { PanelStoreSelector } from "@/components/panel/PanelStoreSelector";
+import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
 import { PwaInstallButton } from "@/components/pwa/PwaInstallButton";
 import {
   BarChart3,
@@ -19,11 +20,13 @@ import {
   Trophy,
   Tags,
   Truck,
+  UtensilsCrossed,
 } from "lucide-react";
 
 const navItems = [
   { href: "/panel", label: "Inicio", icon: LayoutDashboard },
   { href: "/panel/pedidos", label: "Pedidos", icon: ClipboardList },
+  { href: "/panel/mesas", label: "Mesas", icon: UtensilsCrossed, premiumFeature: "table_orders" },
   { href: "/panel/logros", label: "Logros", icon: Trophy, featured: true },
   { href: "/panel/productos", label: "Productos", icon: Boxes },
   { href: "/panel/catalogo", label: "Categorías", icon: Tags },
@@ -63,6 +66,11 @@ export function PanelShell({
   subtitle?: string;
   active: string;
 }) {
+  const { selectedStore } = usePanelAuth();
+  const visibleNavItems = navItems.filter(
+    (item) => !item.premiumFeature || selectedStore?.table_orders_access_enabled === true
+  );
+
   return (
     <main className="min-h-screen bg-[#F8F3E8] text-[#25262B]">
       <div className="mx-auto flex min-h-screen w-full max-w-[1440px]">
@@ -82,7 +90,7 @@ export function PanelShell({
           </Link>
 
           <nav className="mt-8 space-y-2">
-            {navItems.map((item) => {
+            {visibleNavItems.map((item) => {
               const Icon = item.icon;
               const isActive = active === item.href;
               const isFeatured = Boolean(item.featured);
@@ -148,7 +156,7 @@ export function PanelShell({
           </header>
 
           <div className="mt-5 grid grid-cols-2 gap-3 lg:hidden">
-            {navItems.map((item) => {
+            {visibleNavItems.map((item) => {
               const Icon = item.icon;
               const isActive = active === item.href;
               const isFeatured = Boolean(item.featured);

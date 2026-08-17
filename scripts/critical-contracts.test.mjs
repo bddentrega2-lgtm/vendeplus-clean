@@ -9,6 +9,10 @@ import {
   canAccessStore,
   getStoreRole,
 } from "../src/lib/panel/store-access.ts";
+import {
+  signDeliveryQuote,
+  verifyDeliveryQuote,
+} from "../src/lib/server/signed-delivery-quote.ts";
 
 function deliverySettings(overrides = {}) {
   return {
@@ -73,6 +77,34 @@ test("delivery desactivado falla cerrado", () => {
   });
   assert.equal(quote.available, false);
   assert.equal(quote.feeUsd, 0);
+});
+
+test("cotizacion firmada conserva tarifa y bloquea manipulaciones", () => {
+  process.env.DELIVERY_QUOTE_SIGNING_SECRET = "contrato-local-cotizacion-delivery";
+  const params = {
+    storeId: "store-a",
+    latitude: 10.1582076,
+    longitude: -67.5541275,
+    subtotalUsd: 20.5,
+    zoneId: null,
+    quote: {
+      distanceKm: 10.8,
+      feeUsd: 5,
+      label: "10.80 km",
+      source: "route",
+      available: true,
+      provider: "transport_agency",
+      pricingType: "distance_ranges",
+    },
+  };
+  const token = signDeliveryQuote(params);
+  const verified = verifyDeliveryQuote({ ...params, token });
+
+  assert.equal(verified?.distanceKm, 10.8);
+  assert.equal(verified?.feeUsd, 5);
+  assert.equal(verifyDeliveryQuote({ ...params, token, subtotalUsd: 20.51 }), null);
+  assert.equal(verifyDeliveryQuote({ ...params, token, latitude: 10.1583 }), null);
+  assert.equal(verifyDeliveryQuote({ ...params, token: `${token}x` }), null);
 });
 
 test("fundador solo accede al comercio seleccionado", () => {

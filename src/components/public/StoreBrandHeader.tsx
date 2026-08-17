@@ -20,8 +20,8 @@ export function StoreBrandHeader({ store }: { store: BrandedStore }) {
     store.heroImageUrl ||
     "https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?q=80&w=1600&auto=format&fit=crop";
 
-  const primaryColor = store.primaryColor || "#2E3A79";
-  const accentColor = store.accentColor || "#FFB547";
+  const primaryColor = store.primaryColor || "#1F464C";
+  const accentColor = store.accentColor || "#F27533";
   const logoFallback = (
     <div
       className="grid h-20 w-20 place-items-center rounded-3xl border-4 border-white text-3xl font-black shadow-xl"

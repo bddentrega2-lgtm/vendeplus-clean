@@ -40,8 +40,8 @@ export default async function StoreOpenGraphImage({
     118
   );
   const imageUrl = toAbsoluteImageUrl(store?.logoUrl || store?.coverImageUrl || store?.heroImageUrl);
-  const primaryColor = store?.primaryColor || "#2E3A79";
-  const accentColor = store?.accentColor || "#FFB547";
+  const primaryColor = store?.primaryColor || "#1F464C";
+  const accentColor = store?.accentColor || "#F27533";
 
   return new ImageResponse(
     (

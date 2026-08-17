@@ -10,22 +10,37 @@ import { CartBar } from "@/components/public/CartBar";
 import { getCart } from "@/lib/cart";
 import { buildClientPublicUrl } from "@/lib/public-url";
 import { useLiveStoreOpenState } from "@/hooks/use-live-store-open-state";
+import {
+  getTableOrderContext,
+  saveTableOrderContext,
+  type TableOrderContext,
+} from "@/lib/table-orders";
 
 const FEATURED_PRODUCTS_LIMIT = 5;
 const CATEGORY_PREVIEW_LIMIT = 7;
 
 function getBrandStyle(store: any): CSSProperties {
   return {
-    "--brand-primary": store.primaryColor || "#2E3A79",
-    "--brand-accent": store.accentColor || "#FFB547",
+    "--brand-primary": store.primaryColor || "#1F464C",
+    "--brand-accent": store.accentColor || "#F27533",
     "--brand-button-text": store.buttonTextColor || "#25262B",
   } as CSSProperties;
 }
-export function CatalogClient({ store }: { store: Store }) {
+export function CatalogClient({
+  store,
+  tableOrder = null,
+  onChangeTable,
+}: {
+  store: Store;
+  tableOrder?: TableOrderContext | null;
+  onChangeTable?: () => void;
+}) {
   const [selectedCategoryId, setSelectedCategoryId] = useState("all");
   const [query, setQuery] = useState("");
   const [cartItems, setCartItems] = useState<ReturnType<typeof getCart>>([]);
   const [shareStatus, setShareStatus] = useState("");
+  const [savedTableOrder, setSavedTableOrder] = useState<TableOrderContext | null>(null);
+  const activeTableOrder = tableOrder || savedTableOrder;
 
   const products = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -123,6 +138,11 @@ export function CatalogClient({ store }: { store: Store }) {
   }, [cartItems]);
 
   useEffect(() => {
+    if (tableOrder) saveTableOrderContext(store.slug, tableOrder);
+    setSavedTableOrder(tableOrder || getTableOrderContext(store.slug));
+  }, [store.slug, tableOrder]);
+
+  useEffect(() => {
     function syncCart() {
       setCartItems(getCart(store.slug));
     }
@@ -139,6 +159,17 @@ export function CatalogClient({ store }: { store: Store }) {
   return (
     <main style={getBrandStyle(store)} className="vp-public-store vp-container pb-32 pt-5">
       <StoreBrandHeader store={store} />
+      {activeTableOrder ? (
+        <section className="mb-4 flex items-center justify-between gap-3 rounded-[24px] bg-[#FFB547] p-4 text-[#25262B] shadow-lg">
+          <div>
+            <p className="text-xs font-black uppercase">
+              {activeTableOrder.fulfillmentMode === "counter_pickup" ? "Entrega" : "Recibir en"}
+            </p>
+            <p className="text-base font-black">{activeTableOrder.tableName}{activeTableOrder.tableZone ? ` · ${activeTableOrder.tableZone}` : ""}</p>
+          </div>
+          {onChangeTable ? <button type="button" onClick={onChangeTable} className="text-xs font-black underline">Cambiar</button> : null}
+        </section>
+      ) : null}
       {!isStoreOpen ? (
         <section className="mb-4 rounded-[24px] bg-red-50 p-4 text-sm font-black text-red-700 ring-1 ring-red-100">
           {openState.label}. Puedes revisar el catálogo, pero el comercio no está recibiendo pedidos ahora.

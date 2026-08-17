@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
 const supabaseStorageRemotePatterns: NonNullable<NextConfig["images"]>["remotePatterns"] = [];
+supabaseStorageRemotePatterns.push({
+  protocol: "https",
+  hostname: "*.supabase.co",
+  pathname: "/storage/v1/object/public/**",
+});
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 let supabaseOrigin = "";
 let supabaseWebSocketOrigin = "";
@@ -36,7 +41,9 @@ const contentSecurityPolicy = [
   "base-uri 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",
-  "upgrade-insecure-requests",
+  ...(isProduction && supabaseOrigin.startsWith("https://")
+    ? ["upgrade-insecure-requests"]
+    : []),
 ].join("; ");
 
 const nextConfig: NextConfig = {
@@ -82,9 +89,9 @@ const nextConfig: NextConfig = {
     ],
   },
   allowedDevOrigins: [
-    "localhost:3000",
-    "127.0.0.1:3000",
-    "192.168.1.104:3000",
+    "localhost",
+    "127.0.0.1",
+    "192.168.1.102",
   ],
 };
 

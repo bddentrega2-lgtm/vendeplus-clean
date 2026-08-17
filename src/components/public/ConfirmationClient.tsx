@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CheckCircle2, Copy, Home, MessageCircle } from "lucide-react";
+import { Camera, CheckCircle2, Circle, Copy, Home, MessageCircle, UtensilsCrossed } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { SavedOrder, Store } from "@/types";
 import { formatBaseCurrency, formatBs } from "@/lib/currency";
@@ -15,6 +15,7 @@ export function ConfirmationClient({ store }: { store: Store }) {
   const [copiedPaymentLine, setCopiedPaymentLine] = useState("");
   const [paymentCopyPreview, setPaymentCopyPreview] = useState("");
   const [paymentCopyError, setPaymentCopyError] = useState("");
+  const [tableStatus, setTableStatus] = useState("received");
   const showPricesInBs = store.showPricesInBs !== false;
   const baseCurrency = store.baseCurrency || "USD";
 
@@ -27,6 +28,35 @@ export function ConfirmationClient({ store }: { store: Store }) {
       setOrder(null);
     }
   }, [store.slug]);
+
+  useEffect(() => {
+    if (!order?.databaseId || !order.tableOrder?.storeToken) return;
+
+    let active = true;
+    const refreshStatus = async () => {
+      try {
+        const params = new URLSearchParams({
+          orderId: order.databaseId || "",
+          token: order.tableOrder?.storeToken || "",
+        });
+        const response = await fetch(`/api/table-orders/status?${params}`, {
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (active && payload.order?.status) setTableStatus(payload.order.status);
+      } catch {
+        // The last known state remains visible during a temporary connection issue.
+      }
+    };
+
+    void refreshStatus();
+    const intervalId = window.setInterval(refreshStatus, 5000);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [order]);
 
   const paymentInfo = order
     ? buildPaymentInfo({
@@ -74,9 +104,11 @@ export function ConfirmationClient({ store }: { store: Store }) {
             <div className="mx-auto grid h-20 w-20 place-items-center rounded-[30px] bg-[#FFB547] text-[#25262B] shadow-xl shadow-[#FFB547]/20">
               <CheckCircle2 size={40} />
             </div>
-            <h1 className="mt-5 text-3xl font-black">Pedido listo</h1>
+            <h1 className="mt-5 text-3xl font-black">Pedido enviado</h1>
             <p className="mt-2 text-sm font-semibold leading-relaxed text-white/72">
-              Tu pedido fue registrado. El comercio lo revisara y te confirmara por WhatsApp.
+              {order?.form.deliveryType === "table"
+                ? "Tu pedido fue registrado. Puedes seguir su preparación en esta pantalla."
+                : "Tu pedido fue registrado. El comercio lo revisará y te confirmará por WhatsApp."}
             </p>
           </div>
         </section>
@@ -88,20 +120,82 @@ export function ConfirmationClient({ store }: { store: Store }) {
             </p>
             <h2 className="mt-1 text-2xl font-black text-[#25262B]">{order.storeName}</h2>
 
-            <div className="mt-5 space-y-3">
-              <div className="rounded-2xl bg-green-50 p-3 text-sm font-black leading-relaxed text-green-700">
-                Siguiente paso: revisa los datos de pago y envia la referencia o captura por WhatsApp si ya pagaste.
+            {order.tableOrder ? (
+              <div className="mt-5 rounded-[26px] bg-[#F3F5FF] p-4 ring-1 ring-[#2E3A79]/10">
+                <div className="flex items-center gap-2 text-[#2E3A79]">
+                  <UtensilsCrossed size={18} />
+                  <p className="font-black">
+                    {order.tableOrder.tableName}
+                    {order.tableOrder.tableZone ? ` · ${order.tableOrder.tableZone}` : ""}
+                  </p>
+                </div>
+                <div className="mt-4 grid grid-cols-4 gap-1" aria-label="Estado del pedido">
+                  {[
+                    ["received", "Enviado"],
+                    ["accepted", "Aprobado"],
+                    ["preparing", "Preparando"],
+                    ["ready", "Listo"],
+                  ].map(([status, label], index, statuses) => {
+                    const currentIndex = statuses.findIndex(([value]) => value === tableStatus);
+                    const isDone = tableStatus === "completed" || (currentIndex >= 0 && index <= currentIndex);
+                    return (
+                      <div key={status} className="min-w-0 text-center">
+                        {isDone ? (
+                          <CheckCircle2 className="mx-auto text-green-600" size={20} />
+                        ) : (
+                          <Circle className="mx-auto text-[#2E3A79]/25" size={20} />
+                        )}
+                        <span className="mt-1 block text-[10px] font-black text-[#746f69]">{label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-amber-900 ring-1 ring-amber-200">
+                  <Camera className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
+                  <p className="text-xs font-black leading-relaxed">
+                    Haz una captura de esta pantalla para confirmar tu pedido cuando esté listo.
+                  </p>
+                </div>
+                {tableStatus === "cancelled" ? (
+                  <p className="mt-3 rounded-xl bg-red-50 p-2 text-center text-xs font-black text-red-700">
+                    El pedido fue cancelado. Consulta al personal.
+                  </p>
+                ) : tableStatus === "ready" || tableStatus === "completed" ? (
+                  <p className="mt-3 rounded-xl bg-green-50 p-3 text-center text-sm font-black text-green-700">
+                    {order.tableOrder.fulfillmentMode === "counter_pickup"
+                      ? "Tu pedido está listo. Retíralo en la barra."
+                      : `Tu pedido está listo. Te lo llevaremos a ${order.tableOrder.tableName}.`}
+                  </p>
+                ) : null}
               </div>
+            ) : null}
+
+            <div className="mt-5 space-y-3">
+              {order.form.deliveryType !== "table" ? (
+                <div className="rounded-2xl bg-green-50 p-3 text-sm font-black leading-relaxed text-green-700">
+                  Siguiente paso: revisa los datos de pago y envia la referencia o captura por WhatsApp si ya pagaste.
+                </div>
+              ) : null}
               <div className="flex justify-between gap-4 rounded-2xl bg-[#FFF8F0] p-3 text-sm">
                 <span className="font-bold text-[#746f69]">Modalidad</span>
                 <span className="font-black text-[#25262B]">
-                  {order.form.deliveryType === "delivery"
+                  {order.form.deliveryType === "table"
+                    ? order.tableOrder?.tableName || "Mesa"
+                    : order.form.deliveryType === "delivery"
                     ? "Delivery"
                     : order.form.deliveryType === "national_shipping"
                       ? "Envio nacional"
                       : "Retiro (pick up)"}
                 </span>
               </div>
+              {order.form.deliveryType === "table" && order.form.paymentReference ? (
+                <div className="flex justify-between gap-4 rounded-2xl bg-green-50 p-3 text-sm">
+                  <span className="font-bold text-green-700">Referencia recibida</span>
+                  <span className="break-all text-right font-black text-green-800">
+                    {order.form.paymentReference}
+                  </span>
+                </div>
+              ) : null}
               <div className="flex justify-between gap-4 rounded-2xl bg-[#FFF8F0] p-3 text-sm">
                 <span className="font-bold text-[#746f69]">Total</span>
                 <span className="font-black text-[#25262B]">
@@ -140,7 +234,7 @@ export function ConfirmationClient({ store }: { store: Store }) {
               ) : null}
             </div>
 
-            {paymentInfo ? (
+            {paymentInfo && order.form.deliveryType !== "table" ? (
               <div className="mt-5 rounded-[26px] bg-[#2E3A79] p-4 text-white">
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-[#FFB547]">
                   Datos para realizar el pago
@@ -219,17 +313,21 @@ export function ConfirmationClient({ store }: { store: Store }) {
             ) : null}
 
             <div className="mt-5 grid gap-3">
-              <a
-                href={order.whatsappUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="vp-button-mango w-full"
-              >
-                <MessageCircle size={18} /> Enviar comprobante por WhatsApp
-              </a>
-              <button type="button" onClick={copyMessage} className="vp-button-soft w-full">
-                <Copy size={18} /> {copied ? "Copiado" : "Copiar pedido"}
-              </button>
+              {order.form.deliveryType !== "table" ? (
+                <>
+                  <a
+                    href={order.whatsappUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="vp-button-mango w-full"
+                  >
+                    <MessageCircle size={18} /> Enviar comprobante por WhatsApp
+                  </a>
+                  <button type="button" onClick={copyMessage} className="vp-button-soft w-full">
+                    <Copy size={18} /> {copied ? "Copiado" : "Copiar pedido"}
+                  </button>
+                </>
+              ) : null}
               <Link href={`/${store.slug}`} className="vp-button-primary w-full">
                 <Home size={18} /> Volver al catalogo
               </Link>

@@ -19,6 +19,7 @@ export type PanelStoreOption = {
   subscription_ends_at?: string | null;
   next_payment_due_at?: string | null;
   trial_ends_at?: string | null;
+  table_orders_access_enabled?: boolean;
 };
 
 type PanelAchievement = {

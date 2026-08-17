@@ -61,7 +61,11 @@ export type OrderRow = {
   customer_id?: string | null;
   customer_name: string;
   customer_phone: string;
-  delivery_type: "delivery" | "pickup" | "national_shipping";
+  delivery_type: "delivery" | "pickup" | "national_shipping" | "table";
+  store_table_id?: string | null;
+  table_name_snapshot?: string | null;
+  table_zone_snapshot?: string | null;
+  table_fulfillment_snapshot?: "table_service" | "counter_pickup" | null;
   payment_method: string;
   payment_status: PaymentStatus | string | null;
   payment_reference: string | null;
@@ -404,6 +408,10 @@ export function getStatusOptionsForOrder(order: OrderRow) {
 }
 
 export function getDeliverySummary(order: OrderRow) {
+  if (order.delivery_type === "table") {
+    const zone = order.table_zone_snapshot ? ` · ${order.table_zone_snapshot}` : "";
+    return `${order.table_name_snapshot || "Mesa"}${zone}`;
+  }
   if (order.delivery_pricing_type === "table") {
     return order.delivery_reference ? `Mesa · ${order.delivery_reference}` : "Mesa";
   }

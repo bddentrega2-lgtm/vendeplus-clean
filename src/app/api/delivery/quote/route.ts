@@ -17,6 +17,8 @@ import {
   createApiRequestContext,
   logApiError,
 } from "@/lib/server/observability";
+import { signDeliveryQuote } from "@/lib/server/signed-delivery-quote";
+import type { DeliveryQuote } from "@/types";
 
 function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
@@ -95,6 +97,7 @@ export async function POST(request: NextRequest) {
     const latitude = toSafeNumber(body?.latitude);
     const longitude = toSafeNumber(body?.longitude);
     const subtotalUsd = Math.max(0, toSafeNumber(body?.subtotalUsd, 0));
+    const zoneId = String(body?.zoneId || "").trim() || null;
 
     if (!storeId) return withHeaders(badRequest("Falta el comercio para cotizar delivery."));
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
@@ -114,10 +117,6 @@ export async function POST(request: NextRequest) {
     }
 
     const settings = await loadStoreDeliverySettings(supabase, store);
-    if (settings.deliveryProvider !== "entrega2") {
-      return withHeaders(badRequest("Este comercio no esta conectado a Entrega2 App."));
-    }
-
     const storeLat = toSafeNumber(store.latitude);
     const storeLng = toSafeNumber(store.longitude);
     if (!Number.isFinite(storeLat) || !Number.isFinite(storeLng)) {
@@ -133,6 +132,30 @@ export async function POST(request: NextRequest) {
       destinationLng: longitude,
     });
     const routeDistanceKm = Number(routeDistance.distanceKm.toFixed(2));
+    const attachQuoteToken = (quote: DeliveryQuote): DeliveryQuote => ({
+      ...quote,
+      quoteToken: signDeliveryQuote({
+        storeId,
+        latitude,
+        longitude,
+        subtotalUsd,
+        zoneId,
+        quote,
+      }),
+    });
+
+    if (settings.deliveryProvider !== "entrega2") {
+      const quote = calculateDeliveryQuoteFromSettings({
+        settings,
+        deliveryType: "delivery",
+        subtotalUsd,
+        distanceKm: routeDistanceKm,
+        zoneId,
+        source: routeDistance.source,
+      });
+
+      return withHeaders(NextResponse.json({ ok: true, quote: attachQuoteToken(quote) }));
+    }
 
     try {
       const entrega2Quote = await quoteEntrega2Delivery({
@@ -171,10 +194,7 @@ export async function POST(request: NextRequest) {
         source: routeDistance.source,
       });
 
-      return withHeaders(
-        NextResponse.json({
-          ok: true,
-          quote: {
+      const finalQuote = {
             ...quote,
             distanceKm: quotedDistance,
             feeUsd: roundedCost,
@@ -187,7 +207,12 @@ export async function POST(request: NextRequest) {
             pricingType: "manual",
             message: undefined,
             ruleSummary: detail || "Cotizado por Entrega2 App",
-          },
+          } satisfies DeliveryQuote;
+
+      return withHeaders(
+        NextResponse.json({
+          ok: true,
+          quote: attachQuoteToken(finalQuote),
         })
       );
     } catch (error) {
@@ -202,7 +227,7 @@ export async function POST(request: NextRequest) {
       return withHeaders(
         NextResponse.json({
           ok: true,
-          quote: fallbackQuote,
+          quote: attachQuoteToken(fallbackQuote),
           fallback: {
             provider: "entrega2",
             reason: "entrega2_quote_failed",

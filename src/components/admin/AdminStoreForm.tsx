@@ -44,6 +44,7 @@ type StoreDraft = {
   accepts_pickup: boolean;
   is_active: boolean;
   is_test: boolean;
+  table_orders_access_enabled: boolean;
   plan_type: string;
   product_limit: string;
   service_fee_usd: string;
@@ -81,15 +82,16 @@ const initialDraft: StoreDraft = {
   payment_methods: "Pago movil, Transferencia, Efectivo, Binance",
   usd_to_bs: "600",
   whatsapp_message_note: "",
-  primary_color: "#2E3A79",
-  accent_color: "#FFB547",
-  button_text_color: "#25262B",
+  primary_color: "#1F464C",
+  accent_color: "#F27533",
+  button_text_color: "#042332",
   logo_url: "",
   cover_image_url: "",
   accepts_delivery: false,
   accepts_pickup: true,
   is_active: true,
   is_test: false,
+  table_orders_access_enabled: false,
   plan_type: "monthly",
   product_limit: "30",
   service_fee_usd: "0",
@@ -261,9 +263,9 @@ function mapStoreToDraft(store: any, deliverySettings?: any): StoreDraft {
       : initialDraft.payment_methods,
     usd_to_bs: String(store.usd_to_bs || "600"),
     whatsapp_message_note: store.whatsapp_message_note || "",
-    primary_color: store.primary_color || "#2E3A79",
-    accent_color: store.accent_color || "#FFB547",
-    button_text_color: store.button_text_color || "#25262B",
+    primary_color: store.primary_color || "#1F464C",
+    accent_color: store.accent_color || "#F27533",
+    button_text_color: store.button_text_color || "#042332",
     logo_url: store.logo_url || "",
     cover_image_url: store.cover_image_url || "",
     accepts_delivery: store.accepts_delivery === true,
@@ -277,6 +279,7 @@ function mapStoreToDraft(store: any, deliverySettings?: any): StoreDraft {
       deliverySettings?.pickup_enabled ?? store.accepts_pickup !== false,
     is_active: store.is_active !== false,
     is_test: store.is_test === true,
+    table_orders_access_enabled: store.table_orders_access_enabled === true,
     plan_type: store.plan_type || "trial",
     product_limit: String(store.product_limit ?? "30"),
     service_fee_usd: String(
@@ -797,6 +800,29 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
           </button>
         </div>
       </div>
+
+      {isEditing ? (
+        <section className="mt-6 rounded-[28px] bg-[#F3F5FF] p-4 ring-1 ring-[#2E3A79]/10">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Funciones premium</p>
+              <h3 className="mt-1 text-lg font-black text-[#25262B]">Pedidos en Mesa</h3>
+              <p className="mt-1 text-sm font-bold text-[#746f69]">
+                Super Admin controla qué comercios pueden configurar mesas y usar el QR.
+              </p>
+            </div>
+            <label className="flex shrink-0 items-center gap-3 text-sm font-black text-[#25262B]">
+              <input
+                type="checkbox"
+                checked={draft.table_orders_access_enabled}
+                onChange={(event) => updateField("table_orders_access_enabled", event.target.checked)}
+                className="h-5 w-5 accent-[#1F464C]"
+              />
+              Acceso habilitado
+            </label>
+          </div>
+        </section>
+      ) : null}
 
       {isEditing ? <section className="mt-6 rounded-[28px] bg-white p-4 ring-1 ring-[#25262B]/[0.08]">
         <div>
