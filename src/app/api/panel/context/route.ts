@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from("stores")
-      .select("id, name, slug, logo_url, cover_image_url, subscription_status, subscription_ends_at, next_payment_due_at, trial_ends_at")
+      .select("id, name, slug, logo_url, cover_image_url, subscription_status, subscription_ends_at, next_payment_due_at, trial_ends_at, table_orders_access_enabled")
       .order("name", { ascending: true });
 
     if (!auth.isFounderMode) {

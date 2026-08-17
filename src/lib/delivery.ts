@@ -356,7 +356,7 @@ export function describeDistanceRangeFee(params: {
 
 export function calculateDeliveryQuoteFromSettings(params: {
   settings?: StoreDeliverySettings | null;
-  deliveryType: "delivery" | "pickup" | "national_shipping";
+  deliveryType: "delivery" | "pickup" | "national_shipping" | "table";
   subtotalUsd: number;
   distanceKm?: number | null;
   zoneId?: string | null;
@@ -369,6 +369,18 @@ export function calculateDeliveryQuoteFromSettings(params: {
     transportAgencyName: settings.transportAgencyName || null,
     transportAgencyLogoUrl: settings.transportAgencyLogoUrl || null,
   };
+
+  if (params.deliveryType === "table") {
+    return {
+      distanceKm: 0,
+      feeUsd: 0,
+      label: "Entrega en mesa",
+      source: "pickup",
+      available: true,
+      provider: "disabled",
+      pricingType: "manual",
+    };
+  }
 
   if (params.deliveryType === "national_shipping") {
     return {

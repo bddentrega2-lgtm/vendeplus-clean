@@ -6,6 +6,7 @@ import { PanelShell } from "@/components/panel/PanelShell";
 import { isSubscriptionPastDue } from "@/lib/subscription-status";
 import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
 import { PanelAnnouncements } from "@/components/panel/PanelAnnouncements";
+import { TableOrderNotifier } from "@/components/panel/TableOrderNotifier";
 
 const panelRouteMeta: Record<string, { active: string; title: string; subtitle: string }> = {
   "/panel": {
@@ -22,6 +23,11 @@ const panelRouteMeta: Record<string, { active: string; title: string; subtitle: 
     active: "/panel/pedidos",
     title: "Pedidos",
     subtitle: "",
+  },
+  "/panel/mesas": {
+    active: "/panel/mesas",
+    title: "Pedidos en Mesa",
+    subtitle: "Administra mesas, pagos y el QR único del comercio.",
   },
   "/panel/logros": {
     active: "/panel/logros",
@@ -143,6 +149,7 @@ export function PanelFrame({ children }: { children: React.ReactNode }) {
 
   return (
     <PanelShell active={meta.active} title={meta.title} subtitle={meta.subtitle}>
+      <TableOrderNotifier />
       <div key={selectedStoreId}>
         <PanelAnnouncements />
         {shouldBlockContent ? <ExpiredPanelBlock /> : lockedAchievementTitle ? <LockedFeatureBlock achievementTitle={lockedAchievementTitle} /> : children}

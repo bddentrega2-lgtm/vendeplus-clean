@@ -9,6 +9,7 @@ import { getCart, getCartSubtotal, removeCartItem, updateCartItemQuantity } from
 import { formatBaseCurrency, formatBs } from "@/lib/currency";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import { useLiveStoreOpenState } from "@/hooks/use-live-store-open-state";
+import { getTableOrderContext, type TableOrderContext } from "@/lib/table-orders";
 
 function formatSelectedOptions(item: CartItem, baseCurrency: "USD" | "EUR" | string) {
   const groups = new Map<string, string[]>();
@@ -32,6 +33,7 @@ function formatSelectedOptions(item: CartItem, baseCurrency: "USD" | "EUR" | str
 export function CartPageClient({ store }: { store: Store }) {
   const router = useRouter();
   const [items, setItems] = useState<CartItem[]>([]);
+  const [tableOrder, setTableOrder] = useState<TableOrderContext | null>(null);
 
   useEffect(() => {
     function sync() {
@@ -39,6 +41,7 @@ export function CartPageClient({ store }: { store: Store }) {
     }
 
     sync();
+    setTableOrder(getTableOrderContext(store.slug));
     window.addEventListener("vendeplus-cart-change", sync);
     window.addEventListener("storage", sync);
     return () => {
@@ -95,6 +98,13 @@ export function CartPageClient({ store }: { store: Store }) {
             </p>
           </div>
         </section>
+
+        {tableOrder ? (
+          <section className="mt-4 rounded-[24px] bg-[#FFB547] p-4 text-center text-sm font-black text-[#25262B]">
+            {tableOrder.fulfillmentMode === "counter_pickup" ? "Entrega: " : "Recibir en "}
+            {tableOrder.tableName}{tableOrder.tableZone ? ` · ${tableOrder.tableZone}` : ""}
+          </section>
+        ) : null}
 
         {!isStoreOpen ? (
           <section className="mt-5 rounded-[32px] bg-red-50 p-5 text-center text-red-700 ring-1 ring-red-100">

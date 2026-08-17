@@ -33,6 +33,10 @@ const ordersSelect = `
   customer_name,
   customer_phone,
   delivery_type,
+  store_table_id,
+  table_name_snapshot,
+  table_zone_snapshot,
+  table_fulfillment_snapshot,
   payment_method,
   payment_status,
   payment_reference,
@@ -106,6 +110,10 @@ const baseOrdersSelect = `
   customer_name,
   customer_phone,
   delivery_type,
+  store_table_id,
+  table_name_snapshot,
+  table_zone_snapshot,
+  table_fulfillment_snapshot,
   payment_method,
   subtotal_usd,
   delivery_usd,
@@ -145,6 +153,10 @@ const compactOrdersSelect = `
   customer_name,
   customer_phone,
   delivery_type,
+  store_table_id,
+  table_name_snapshot,
+  table_zone_snapshot,
+  table_fulfillment_snapshot,
   payment_method,
   payment_status,
   payment_reference,
@@ -574,8 +586,18 @@ export async function GET(request: NextRequest) {
       }
 
       if (deliveryType && deliveryType !== "all") {
-        if (deliveryType === "table" || deliveryType === "bar") {
-          query = query.eq("delivery_pricing_type", deliveryType);
+        if (deliveryType === "exclude_table") {
+          query = query
+            .neq("delivery_type", "table")
+            .or("delivery_pricing_type.is.null,delivery_pricing_type.neq.table");
+        } else if (deliveryType === "table") {
+          query = query.or(
+            "delivery_pricing_type.eq.table,and(delivery_type.eq.table,or(table_fulfillment_snapshot.is.null,table_fulfillment_snapshot.eq.table_service))"
+          );
+        } else if (deliveryType === "bar") {
+          query = query.or(
+            "delivery_pricing_type.eq.bar,and(delivery_type.eq.table,table_fulfillment_snapshot.eq.counter_pickup)"
+          );
         } else if (deliveryType === "pickup") {
           query = query.eq("delivery_type", "pickup").is("delivery_pricing_type", null);
         } else {

@@ -11,11 +11,14 @@ import {
   Lock,
   MapPin,
   Navigation,
+  PackageCheck,
   Plus,
   RefreshCcw,
   Search,
   Send,
+  ShoppingBag,
   Truck,
+  UtensilsCrossed,
   X,
 } from "lucide-react";
 import { formatBs, formatUsd } from "@/lib/currency";
@@ -1029,8 +1032,32 @@ export function OrdersManager() {
           </select>
         </div>
 
+        <div className="mt-3 flex flex-wrap gap-2" aria-label="Filtros rápidos de modalidad">
+          {[
+            { value: "all", label: "Todos" },
+            { value: "delivery", label: "Delivery" },
+            { value: "pickup", label: "Retiro" },
+            { value: "bar", label: "Barra" },
+            { value: "table", label: "Mesa" },
+          ].map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setSelectedDeliveryType(option.value)}
+              aria-pressed={selectedDeliveryType === option.value}
+              className={`rounded-full px-4 py-2 text-xs font-black transition ${
+                selectedDeliveryType === option.value
+                  ? "bg-[#2E3A79] text-white"
+                  : "bg-[#F8F3E8] text-[#2E3A79]"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
         {showAdvancedFilters && (
-        <div className="mt-3 grid gap-3 xl:grid-cols-4">
+        <div className="mt-3 grid gap-3 xl:grid-cols-3">
           <select
             value={selectedStatus}
             onChange={(event) => {
@@ -1076,21 +1103,6 @@ export function OrdersManager() {
             ))}
           </select>
 
-          <select
-            value={selectedDeliveryType}
-            onChange={(event) => {
-              const value = event.target.value;
-              setSelectedDeliveryType(value);
-            }}
-            className="rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
-          >
-            <option value="all">Todas las modalidades</option>
-            <option value="delivery">Solo Delivery</option>
-            <option value="pickup">Solo Retiro (pick up)</option>
-            <option value="table">Solo Mesa</option>
-            <option value="bar">Solo Barra</option>
-            <option value="national_shipping">Solo Envio nacional</option>
-          </select>
         </div>
         )}
       </section>
@@ -1138,6 +1150,17 @@ export function OrdersManager() {
           const isLoadingDetail = loadingDetailOrderId === order.id;
           const isNewOrder = order.status === "received";
           const paymentStatus = getOrderPaymentStatus(order);
+          const orderMode = order.delivery_type === "table" &&
+            order.table_fulfillment_snapshot !== "counter_pickup"
+            ? { label: "Mesa", Icon: UtensilsCrossed, style: "bg-violet-100 text-violet-800" }
+            : order.delivery_pricing_type === "bar" ||
+                order.table_fulfillment_snapshot === "counter_pickup"
+              ? { label: "Barra", Icon: ShoppingBag, style: "bg-amber-100 text-amber-800" }
+              : order.delivery_type === "pickup"
+                ? { label: "Retiro", Icon: PackageCheck, style: "bg-sky-100 text-sky-800" }
+                : order.delivery_type === "delivery"
+                  ? { label: "Delivery", Icon: Truck, style: "bg-emerald-100 text-emerald-800" }
+                  : { label: "Envío nacional", Icon: Truck, style: "bg-indigo-100 text-indigo-800" };
 
           return (
             <article
@@ -1157,12 +1180,18 @@ export function OrdersManager() {
                       Nuevo
                     </p>
                   ) : null}
+                  <span
+                    className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-black ${orderMode.style}`}
+                  >
+                    <orderMode.Icon size={12} aria-hidden="true" />
+                    {orderMode.label}
+                  </span>
                 </div>
 
                 <div className="min-w-0">
                   <p className="truncate text-sm font-black">{order.customer_name}</p>
                   <p className="truncate text-[11px] font-bold text-[#746f69]">
-                    {formatDate(order.created_at)} · {formatOrderAge(order.created_at, now)} · {getDeliverySummary(order)}
+                    {formatDate(order.created_at)} · {formatOrderAge(order.created_at, now)}
                   </p>
                   {order.delivery_notes ? (
                     <p className="truncate text-[11px] font-bold text-[#2E3A79]">

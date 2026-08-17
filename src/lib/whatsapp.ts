@@ -62,7 +62,9 @@ export function buildOrderMessage(params: {
         : formatBaseCurrency(totals.deliveryUsd, baseCurrency);
 
   const deliverySummary =
-    form.deliveryType === "pickup"
+    form.deliveryType === "table"
+      ? `Pedido en mesa: ${cleanText(form.deliveryReference) || "por confirmar"}`
+      : form.deliveryType === "pickup"
       ? `Retiro (pick up)`
       : form.deliveryType === "national_shipping"
         ? `Envio nacional\nCedula: ${cleanText(form.nationalIdNumber) || "por confirmar"}\nCiudad: ${cleanText(form.nationalShippingCity) || "por confirmar"}`

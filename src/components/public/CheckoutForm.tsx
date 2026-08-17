@@ -17,7 +17,6 @@ import {
   buildMapsUrl,
   buildRouteUrl,
   calculateDeliveryQuoteFromSettings,
-  calculateRouteDistanceKm,
   createDefaultDeliverySettings,
 } from "@/lib/delivery";
 import { isCashPaymentMethod } from "@/lib/payments";
@@ -26,6 +25,11 @@ import { buildOrderMessage, buildWhatsAppUrl } from "@/lib/whatsapp";
 import { saveOrderToSupabase } from "@/lib/supabase/orders";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import { useLiveStoreOpenState } from "@/hooks/use-live-store-open-state";
+import {
+  getTableOrderContext,
+  isPrepaidTablePaymentMethod,
+  type TableOrderContext,
+} from "@/lib/table-orders";
 
 const LocationPicker = dynamic(
   () => import("@/components/public/LocationPicker").then((mod) => mod.LocationPicker),
@@ -66,6 +70,27 @@ function createOrderId() {
   return `VP-${dayCode}-${random}`;
 }
 
+function createIdempotencyKey() {
+  const bytes = new Uint8Array(16);
+  const availableCrypto = globalThis.crypto;
+
+  if (availableCrypto?.getRandomValues) {
+    availableCrypto.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"));
+
+  return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex
+    .slice(6, 8)
+    .join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
+}
+
 function localizeQuoteText(text: string | undefined, baseCurrency: "USD" | "EUR" | string) {
   if (!text) return "";
   const symbol = String(baseCurrency || "USD").toUpperCase() === "EUR" ? "€" : "$";
@@ -97,6 +122,7 @@ export function CheckoutForm({ store }: { store: Store }) {
   const router = useRouter();
   const openState = useLiveStoreOpenState(store);
   const [items, setItems] = useState<ReturnType<typeof getCart>>([]);
+  const [tableOrder, setTableOrder] = useState<TableOrderContext | null>(null);
   const [form, setForm] = useState<CheckoutFormData>(initialForm);
   const [location, setLocation] = useState<DeliveryLocation | null>(null);
   const [quote, setQuote] = useState<DeliveryQuote>({
@@ -114,10 +140,22 @@ export function CheckoutForm({ store }: { store: Store }) {
   const [hasSavedCustomer, setHasSavedCustomer] = useState(false);
   const [customerProfileLoaded, setCustomerProfileLoaded] = useState(false);
   const lastQuoteRequestRef = useRef("");
-  const idempotencyKeyRef = useRef(crypto.randomUUID());
+  const idempotencyKeyRef = useRef(createIdempotencyKey());
 
   useEffect(() => {
     setItems(getCart(store.slug));
+    const context = getTableOrderContext(store.slug);
+    setTableOrder(context);
+    if (context) {
+      setForm((current) => ({
+        ...current,
+        deliveryType: "table",
+        deliveryReference: context.tableName,
+        paymentMethod: context.paymentMethods.includes(current.paymentMethod)
+          ? current.paymentMethod
+          : "",
+      }));
+    }
     router.prefetch(`/${store.slug}/confirmacion`);
   }, [router, store.slug]);
 
@@ -182,6 +220,11 @@ export function CheckoutForm({ store }: { store: Store }) {
 
   useEffect(() => {
     setForm((current) => {
+      if (tableOrder) {
+        return current.deliveryType === "table"
+          ? current
+          : { ...current, deliveryType: "table" };
+      }
       const availableTypes: CheckoutFormData["deliveryType"][] = [
         deliverySettings.deliveryEnabled ? "delivery" : null,
         deliverySettings.pickupEnabled ? "pickup" : null,
@@ -195,6 +238,7 @@ export function CheckoutForm({ store }: { store: Store }) {
       return { ...current, deliveryType: availableTypes[0] };
     });
   }, [
+    tableOrder,
     deliverySettings.deliveryEnabled,
     deliverySettings.pickupEnabled,
     deliverySettings.nationalShippingEnabled,
@@ -240,79 +284,59 @@ export function CheckoutForm({ store }: { store: Store }) {
       }
 
       setIsCalculating(true);
-      if (deliverySettings.deliveryProvider === "entrega2") {
-        const requestKey = [
-          store.id,
-          location.latitude.toFixed(6),
-          location.longitude.toFixed(6),
-          subtotalUsd.toFixed(2),
-        ].join(":");
-        lastQuoteRequestRef.current = requestKey;
+      const requestKey = [
+        store.id,
+        location.latitude.toFixed(6),
+        location.longitude.toFixed(6),
+        subtotalUsd.toFixed(2),
+      ].join(":");
+      lastQuoteRequestRef.current = requestKey;
 
-        try {
-          const response = await fetch("/api/delivery/quote", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              storeId: store.id,
-              latitude: location.latitude,
-              longitude: location.longitude,
-              subtotalUsd,
-            }),
-          });
-          const data = await response.json().catch(() => ({}));
-          if (!active || lastQuoteRequestRef.current !== requestKey) return;
-          if (!response.ok || !data?.quote) {
-            setQuote({
-              distanceKm: null,
-              feeUsd: 0,
-              label: data?.error || "No pudimos cotizar el delivery con Entrega2 App.",
-              source: "pending",
-              available: false,
-              provider: "entrega2",
-              pricingType: "manual",
-              message: data?.error || "No pudimos cotizar el delivery con Entrega2 App.",
-            });
-            return;
-          }
-          setQuote(data.quote);
-        } catch {
-          if (!active || lastQuoteRequestRef.current !== requestKey) return;
+      try {
+        const response = await fetch("/api/delivery/quote", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            storeId: store.id,
+            latitude: location.latitude,
+            longitude: location.longitude,
+            subtotalUsd,
+            zoneId: form.deliveryZoneId || null,
+          }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!active || lastQuoteRequestRef.current !== requestKey) return;
+        if (!response.ok || !data?.quote) {
+          const message = data?.error || "No pudimos cotizar el delivery. Intenta de nuevo.";
           setQuote({
             distanceKm: null,
             feeUsd: 0,
-            label: "No pudimos cotizar el delivery con Entrega2 App.",
+            label: message,
             source: "pending",
             available: false,
-            provider: "entrega2",
-            pricingType: "manual",
-            message: "No pudimos cotizar el delivery con Entrega2 App. Intenta de nuevo.",
+            provider: deliverySettings.deliveryProvider,
+            pricingType: deliverySettings.pricingType,
+            message,
           });
-        } finally {
-          if (active) setIsCalculating(false);
+          return;
         }
-        return;
+        setQuote(data.quote);
+      } catch {
+        if (!active || lastQuoteRequestRef.current !== requestKey) return;
+        const message = "No pudimos cotizar el delivery. Intenta de nuevo.";
+        setQuote({
+          distanceKm: null,
+          feeUsd: 0,
+          label: message,
+          source: "pending",
+          available: false,
+          provider: deliverySettings.deliveryProvider,
+          pricingType: deliverySettings.pricingType,
+          message,
+        });
+      } finally {
+        if (active) setIsCalculating(false);
       }
-
-      const result = await calculateRouteDistanceKm({
-        originLat: store.latitude,
-        originLng: store.longitude,
-        destinationLat: location.latitude,
-        destinationLng: location.longitude,
-      });
-
-      if (!active) return;
-      setQuote(
-        calculateDeliveryQuoteFromSettings({
-          settings: deliverySettings,
-          deliveryType: "delivery",
-          subtotalUsd,
-          distanceKm: result.distanceKm,
-          zoneId: form.deliveryZoneId || null,
-          source: result.source,
-        })
-      );
-      setIsCalculating(false);
     }
 
     calculate();
@@ -336,6 +360,7 @@ export function CheckoutForm({ store }: { store: Store }) {
   const baseCurrency = store.baseCurrency || "USD";
   const isEntrega2Provider = deliverySettings.deliveryProvider === "entrega2";
   const fulfillmentOptions = [
+    tableOrder ? { value: "table" as const, label: tableOrder.tableName } : null,
     deliverySettings.deliveryEnabled
       ? { value: "delivery" as const, label: deliveryOptionLabel }
       : null,
@@ -345,7 +370,9 @@ export function CheckoutForm({ store }: { store: Store }) {
       : null,
   ].filter(Boolean) as Array<{ value: CheckoutFormData["deliveryType"]; label: string }>;
   const fulfillmentLabel =
-    form.deliveryType === "delivery"
+    form.deliveryType === "table"
+      ? tableOrder?.tableName || "Mesa"
+      : form.deliveryType === "delivery"
       ? deliveryOptionLabel
       : form.deliveryType === "national_shipping"
         ? "Envio nacional"
@@ -380,6 +407,9 @@ export function CheckoutForm({ store }: { store: Store }) {
       : 0;
   const totalUsd = subtotalUsd + deliveryUsd + serviceFeeUsd;
   const totalBs = totalUsd * (store.usdToBs || 600);
+  const availablePaymentMethods = tableOrder
+    ? tableOrder.paymentMethods.filter(isPrepaidTablePaymentMethod)
+    : store.paymentMethods;
   const isCashPayment = isCashPaymentMethod(form.paymentMethod);
   const paymentInfo = form.paymentMethod
     ? buildPaymentInfo({
@@ -415,6 +445,9 @@ export function CheckoutForm({ store }: { store: Store }) {
     if (!form.customerName.trim()) return "Escribe el nombre del cliente.";
     if (!form.customerPhone.trim()) return "Escribe el teléfono del cliente.";
     if (!form.paymentMethod.trim()) return "Selecciona un método de pago.";
+    if (tableOrder && !availablePaymentMethods.includes(form.paymentMethod)) {
+      return "Selecciona un método de pago previo disponible para pedidos en mesa.";
+    }
     if (form.deliveryType === "delivery" && quote.available === false) {
       return quote.message || quote.label || "Delivery no disponible.";
     }
@@ -469,6 +502,7 @@ export function CheckoutForm({ store }: { store: Store }) {
       routeUrl: form.deliveryType === "delivery" ? routeUrl : null,
       whatsappMessage,
       whatsappUrl,
+      tableOrder,
     };
   }
 
@@ -512,6 +546,10 @@ export function CheckoutForm({ store }: { store: Store }) {
       }
       clearCart(store.slug);
       setItems([]);
+      if (saveResult.order.form.deliveryType === "table") {
+        router.replace(`/${store.slug}/confirmacion`);
+        return;
+      }
       window.history.replaceState(null, "", `/${store.slug}/confirmacion`);
       window.location.href = saveResult.order.whatsappUrl;
       return;
@@ -583,7 +621,14 @@ export function CheckoutForm({ store }: { store: Store }) {
 
             <section className="vp-card p-4 sm:p-5">
               <span className="vp-label">2. ¿Cómo deseas recibir tu pedido?</span>
-              <div className="mt-2">
+              {tableOrder ? (
+                <div className="mt-3 rounded-[22px] bg-[#FFB547] p-4 text-[#25262B]">
+                  <p className="text-xs font-black uppercase">
+                    {tableOrder.fulfillmentMode === "counter_pickup" ? "Entrega" : "Recibir en"}
+                  </p>
+                  <p className="mt-1 text-lg font-black">{tableOrder.tableName}{tableOrder.tableZone ? ` · ${tableOrder.tableZone}` : ""}</p>
+                </div>
+              ) : <div className="mt-2">
                 <select
                   className="vp-input"
                   value={form.deliveryType}
@@ -597,13 +642,24 @@ export function CheckoutForm({ store }: { store: Store }) {
                     </option>
                   ))}
                 </select>
-              </div>
+              </div>}
               {form.deliveryType === "delivery" && deliveryModeCopy ? (
                 <p className="mt-3 text-sm font-bold text-[#746f69]">{deliveryModeCopy}</p>
               ) : null}
             </section>
 
-            {form.deliveryType === "delivery" ? (
+            {form.deliveryType === "table" && tableOrder ? (
+              <section className="vp-card p-4 sm:p-5">
+                <h2 className="text-xl font-black text-[#25262B]">
+                  3. {tableOrder.fulfillmentMode === "counter_pickup" ? "Retiro en barra" : "Entrega en mesa"}
+                </h2>
+                <p className="mt-2 rounded-[24px] bg-[#FFF8F0] p-4 text-sm font-bold leading-relaxed text-[#746f69]">
+                  {tableOrder.fulfillmentMode === "counter_pickup"
+                    ? "Prepararemos el pedido después de verificar tu pago. Te avisaremos cuando esté listo para retirar en la barra."
+                    : `Prepararemos el pedido después de verificar tu pago y lo llevaremos a ${tableOrder.tableName}.`}
+                </p>
+              </section>
+            ) : form.deliveryType === "delivery" ? (
               <section className="vp-card p-4 sm:p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -722,7 +778,7 @@ export function CheckoutForm({ store }: { store: Store }) {
                   <span className="vp-label">Método de pago</span>
                   <select className="vp-input" value={form.paymentMethod} onChange={(event) => updateField("paymentMethod", event.target.value)}>
                     <option value="">Seleccionar</option>
-                    {store.paymentMethods.map((method) => <option key={method} value={method}>{method}</option>)}
+                    {availablePaymentMethods.map((method) => <option key={method} value={method}>{method}</option>)}
                   </select>
                 </label>
               </div>
@@ -834,14 +890,12 @@ export function CheckoutForm({ store }: { store: Store }) {
                 <div className="my-4 h-px bg-[#25262B]/10" />
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between"><span className="font-bold text-[#746f69]">Subtotal</span><span className="font-black">{formatBaseCurrency(subtotalUsd, baseCurrency)}</span></div>
-                  <div className="flex justify-between">
-                    <span className="font-bold text-[#746f69]">
-                      {fulfillmentLabel}
-                    </span>
-                    <span className="font-black">
-                      {deliveryAmountLabel}
-                    </span>
-                  </div>
+                  {form.deliveryType === "delivery" ? (
+                    <div className="flex justify-between">
+                      <span className="font-bold text-[#746f69]">{fulfillmentLabel}</span>
+                      <span className="font-black">{deliveryAmountLabel}</span>
+                    </div>
+                  ) : null}
                   {form.deliveryType === "delivery" && Number(quote.discountUsd || 0) > 0 ? (
                     <div className="flex justify-between text-green-700">
                       <span className="font-bold">Promo delivery</span>
@@ -884,10 +938,18 @@ export function CheckoutForm({ store }: { store: Store }) {
             >
               {isSubmitting ? (
                 <Loader2 size={18} className="animate-spin" />
+              ) : form.deliveryType === "table" ? (
+                <ShieldCheck size={18} />
               ) : (
                 <MessageCircle size={18} />
               )}
-              {isSubmitting ? "Guardando pedido..." : !openState.isOpen ? "Comercio cerrado" : "Confirmar pedido por WhatsApp"}
+              {isSubmitting
+                ? "Guardando pedido..."
+                : !openState.isOpen
+                  ? "Comercio cerrado"
+                  : form.deliveryType === "table"
+                    ? "Confirmar pedido"
+                    : "Confirmar pedido por WhatsApp"}
             </button>
                 </div>
               </div>

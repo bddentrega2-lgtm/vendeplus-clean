@@ -8,19 +8,17 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isStoreSubscriptionPastDue } from "@/lib/supabase/catalog";
 import { isMissingColumnError } from "@/lib/supabase/schema-compat";
 import { normalizePhone } from "@/lib/customers/normalize-phone";
+import {
+  isPrepaidTablePaymentMethod,
+} from "@/lib/table-orders";
 import { safeUpsertCustomerFromOrder } from "@/lib/customers/upsert-customer-from-order";
 import {
-  calculateEntrega2FallbackQuote,
   calculateDeliveryQuoteFromSettings,
-  calculateRouteDistanceKm,
   disableUnavailableTransportAgencySettings,
   mapStoreDeliverySettings,
 } from "@/lib/delivery";
 import { loadTransportAgencyDeliverySettings } from "@/lib/transport";
-import {
-  getEntrega2DefaultVehicleType,
-  quoteEntrega2Delivery,
-} from "@/lib/integrations/entrega2";
+import { verifyDeliveryQuote } from "@/lib/server/signed-delivery-quote";
 import { getStoreOpenState } from "@/lib/business-hours";
 import {
   checkDistributedRateLimit,
@@ -261,6 +259,7 @@ export async function POST(request: NextRequest) {
     const order = body.order as SavedOrder | undefined;
     const storeId = cleanText(body.storeId);
     const idempotencyKey = cleanText(body.idempotencyKey, 100);
+    const tableOrder = order?.tableOrder;
 
     if (!order || !storeId) return requestBadRequest("Pedido inválido.");
     if (!isUuid(idempotencyKey)) {
@@ -299,7 +298,9 @@ export async function POST(request: NextRequest) {
 
 
     const requestedDeliveryType: CheckoutFormData["deliveryType"] =
-      order.form?.deliveryType === "pickup"
+      order.form?.deliveryType === "table"
+        ? "table"
+        : order.form?.deliveryType === "pickup"
         ? "pickup"
         : order.form?.deliveryType === "national_shipping"
           ? "national_shipping"
@@ -308,7 +309,7 @@ export async function POST(request: NextRequest) {
     const supabase = createSupabaseAdminClient();
     let storeResult = await supabase
       .from("stores")
-      .select("id, slug, name, whatsapp, usd_to_bs, base_currency, is_active, latitude, longitude, opening_hours, business_hours, manual_open_status, manual_open_note, accepts_delivery, accepts_pickup, accepts_national_shipping, plan_type, monthly_price_usd, service_fee_payer, service_fee_billing_cycle, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
+      .select("id, slug, name, whatsapp, usd_to_bs, base_currency, is_active, latitude, longitude, opening_hours, business_hours, manual_open_status, manual_open_note, accepts_delivery, accepts_pickup, accepts_national_shipping, payment_methods, table_orders_access_enabled, table_orders_enabled, table_order_token, table_payment_methods, table_order_fulfillment_mode, plan_type, monthly_price_usd, service_fee_payer, service_fee_billing_cycle, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
       .eq("id", storeId)
       .single();
 
@@ -324,11 +325,16 @@ export async function POST(request: NextRequest) {
         "trial_ends_at",
         "subscription_ends_at",
         "next_payment_due_at",
+        "table_orders_enabled",
+        "table_orders_access_enabled",
+        "table_order_token",
+        "table_payment_methods",
+        "table_order_fulfillment_mode",
       ])
     ) {
       storeResult = await supabase
         .from("stores")
-        .select("id, slug, name, whatsapp, usd_to_bs, is_active, latitude, longitude, accepts_delivery, accepts_pickup, plan_type, monthly_price_usd, service_fee_payer, service_fee_billing_cycle")
+        .select("id, slug, name, whatsapp, usd_to_bs, is_active, latitude, longitude, accepts_delivery, accepts_pickup, payment_methods, plan_type, monthly_price_usd, service_fee_payer, service_fee_billing_cycle")
         .eq("id", storeId)
         .single();
     }
@@ -338,6 +344,60 @@ export async function POST(request: NextRequest) {
     if (storeError) throw storeError;
     if (!store || (store as any).is_active === false) {
       return requestBadRequest("El comercio no está disponible.");
+    }
+
+    let validatedTable: { id: string | null; name: string; zone: string | null } | null = null;
+    let tableFulfillmentMode: "table_service" | "counter_pickup" | null = null;
+    if (requestedDeliveryType === "table") {
+      if (!tableOrder?.storeToken) {
+        return requestBadRequest("Vuelve a escanear el QR para continuar.");
+      }
+      if (
+        (store as any).table_orders_access_enabled !== true ||
+        (store as any).table_orders_enabled !== true ||
+        String((store as any).table_order_token || "") !== tableOrder.storeToken
+      ) {
+        return requestBadRequest("Los pedidos en mesa no están disponibles en este momento.");
+      }
+
+      const storePaymentMethods = Array.isArray((store as any).payment_methods)
+        ? (store as any).payment_methods
+        : [];
+      const tablePaymentMethods = Array.isArray((store as any).table_payment_methods)
+        ? (store as any).table_payment_methods
+        : [];
+      const paymentMethod = cleanText(order.form.paymentMethod);
+      if (
+        !isPrepaidTablePaymentMethod(paymentMethod) ||
+        !storePaymentMethods.includes(paymentMethod) ||
+        !tablePaymentMethods.includes(paymentMethod)
+      ) {
+        return requestBadRequest("Ese método de pago no está disponible para pedidos en mesa.");
+      }
+
+      tableFulfillmentMode = (store as any).table_order_fulfillment_mode === "counter_pickup"
+        ? "counter_pickup"
+        : "table_service";
+
+      if (tableFulfillmentMode === "counter_pickup") {
+        validatedTable = { id: null, name: "Retiro en barra", zone: null };
+        order.form.deliveryReference = "Retiro en barra";
+      } else {
+        if (!tableOrder.tableId) {
+          return requestBadRequest("Vuelve a escanear el QR y selecciona tu mesa.");
+        }
+        const { data: table, error: tableError } = await supabase
+        .from("store_tables")
+        .select("id, name, zone")
+        .eq("id", tableOrder.tableId)
+        .eq("store_id", storeId)
+        .eq("is_enabled", true)
+        .maybeSingle();
+      if (tableError) throw tableError;
+      if (!table) return requestBadRequest("La mesa seleccionada ya no está disponible.");
+      validatedTable = table;
+      order.form.deliveryReference = table.name;
+      }
     }
 
     if (isStoreSubscriptionPastDue(store as any)) {
@@ -546,108 +606,39 @@ export async function POST(request: NextRequest) {
       return requestBadRequest("Escribe la ciudad de destino para el envio nacional.");
     }
 
-    if (
+    const requiresLocationQuote =
       order.form.deliveryType === "delivery" &&
-      deliverySettings.pricingType === "zones" &&
-      !["manual_quote", "disabled"].includes(deliverySettings.deliveryProvider) &&
-      !order.location
-    ) {
-      return requestBadRequest("Carga la ubicación GPS para que el repartidor pueda llegar.");
+      (deliverySettings.deliveryProvider === "entrega2" ||
+        ["zones", "fixed_distance", "distance_ranges"].includes(deliverySettings.pricingType));
+
+    if (requiresLocationQuote && !order.location) {
+      return requestBadRequest("Carga la ubicación GPS para cotizar el delivery.");
     }
 
-    const serverDistance =
-      order.form.deliveryType === "delivery" && order.location
-        ? await calculateRouteDistanceKm({
-            originLat: toSafeNumber((store as any).latitude, 0),
-            originLng: toSafeNumber((store as any).longitude, 0),
-            destinationLat: order.location.latitude,
-            destinationLng: order.location.longitude,
-          })
-        : null;
-    const serverDistanceKm = serverDistance?.distanceKm ?? null;
-    let serverQuote = calculateDeliveryQuoteFromSettings({
-      settings: deliverySettings,
-      deliveryType: order.form.deliveryType,
-      subtotalUsd,
-      distanceKm: serverDistanceKm,
-      zoneId: order.form.deliveryZoneId || order.quote.zoneId || null,
-      source: serverDistance?.source || "manual",
-    });
-
-    if (
-      order.form.deliveryType === "delivery" &&
-      deliverySettings.deliveryProvider === "entrega2"
-    ) {
-      if (!order.location) {
-        return requestBadRequest("Comparte tu ubicacion para cotizar el delivery con Entrega2 App.");
+    let serverQuote;
+    if (requiresLocationQuote && order.location) {
+      serverQuote = verifyDeliveryQuote({
+        token: order.quote.quoteToken,
+        storeId,
+        latitude: order.location.latitude,
+        longitude: order.location.longitude,
+        subtotalUsd,
+        zoneId: order.form.deliveryZoneId || order.quote.zoneId || null,
+      });
+      if (!serverQuote) {
+        return requestBadRequest(
+          "La cotización de delivery cambió o venció. Vuelve a cotizar antes de confirmar."
+        );
       }
-
-      const storeLat = toSafeNumber((store as any).latitude, Number.NaN);
-      const storeLng = toSafeNumber((store as any).longitude, Number.NaN);
-      if (!Number.isFinite(storeLat) || !Number.isFinite(storeLng)) {
-        return requestBadRequest("El comercio necesita ubicacion GPS configurada para cotizar con Entrega2 App.");
-      }
-
-      try {
-        const entrega2Quote = await quoteEntrega2Delivery({
-          latitud_retiro: storeLat,
-          longitud_retiro: storeLng,
-          latitud_entrega: order.location.latitude,
-          longitud_entrega: order.location.longitude,
-          tipo_vehiculo: getEntrega2DefaultVehicleType(),
-        });
-        const payload = (entrega2Quote.payload || {}) as any;
-        const cost = toSafeNumber(payload.costo_total, Number.NaN);
-
-        if (!Number.isFinite(cost) || cost < 0) {
-          throw new Error("Entrega2 App no devolvio una cotizacion valida para este delivery.");
-        }
-
-        const roundedCost = Number(cost.toFixed(2));
-        const entrega2Distance = Number.isFinite(Number(payload.distancia_km))
-          ? Number(Number(payload.distancia_km).toFixed(2))
-          : null;
-        const quotedDistance =
-          entrega2Distance !== null && entrega2Distance > 0
-            ? entrega2Distance
-            : serverQuote.distanceKm;
-        const duration = String(payload.duracion_estimada || "").trim();
-        const quoteDetail = [
-          quotedDistance !== null ? `${quotedDistance.toFixed(2)} km` : null,
-          duration && duration.toLowerCase() !== "n/a" ? duration : null,
-        ].filter(Boolean).join(" · ");
-
-        serverQuote = {
-          ...serverQuote,
-          distanceKm: quotedDistance,
-          feeUsd: roundedCost,
-          originalFeeUsd: roundedCost,
-          discountUsd: 0,
-          label: quoteDetail
-            ? `Entrega2 App · ${quoteDetail} · $${roundedCost.toFixed(2)}`
-            : `Entrega2 App · $${roundedCost.toFixed(2)}`,
-          source: "route",
-          available: true,
-          provider: "entrega2",
-          pricingType: "manual",
-          message: undefined,
-          ruleSummary: quoteDetail || "Cotizado por Entrega2 App",
-        };
-      } catch (error) {
-        logApiError(apiContext, "entrega2_quote_failed", error, {
-          storeId,
-        });
-        const fallbackDistanceKm =
-          serverQuote.distanceKm !== null && serverQuote.distanceKm !== undefined
-            ? serverQuote.distanceKm
-            : serverDistanceKm;
-        serverQuote = calculateEntrega2FallbackQuote({
-          settings: deliverySettings,
-          subtotalUsd,
-          distanceKm: fallbackDistanceKm,
-          source: serverDistance?.source || "fallback",
-        });
-      }
+    } else {
+      serverQuote = calculateDeliveryQuoteFromSettings({
+        settings: deliverySettings,
+        deliveryType: order.form.deliveryType,
+        subtotalUsd,
+        distanceKm: null,
+        zoneId: order.form.deliveryZoneId || order.quote.zoneId || null,
+        source: "manual",
+      });
     }
 
     if (serverQuote.available === false) {
@@ -724,6 +715,10 @@ export async function POST(request: NextRequest) {
         order.form.deliveryType === "national_shipping"
           ? cleanText(order.form.nationalIdNumber) || null
           : order.form.deliveryReference || null,
+      store_table_id: validatedTable?.id || null,
+      table_name_snapshot: validatedTable?.name || null,
+      table_zone_snapshot: validatedTable?.zone || null,
+      table_fulfillment_snapshot: tableFulfillmentMode,
       delivery_provider: order.form.deliveryType === "delivery" ? serverQuote.provider || null : null,
       delivery_fee_usd: deliveryUsd,
       delivery_zone_id: serverQuote.zoneId || null,
@@ -789,6 +784,7 @@ export async function POST(request: NextRequest) {
         const savedOrder: SavedOrder = {
           ...order,
           id: existingOrder.public_code || publicCode,
+          databaseId: existingOrder.id,
           storeName: (store as any).name || order.storeName,
           items: validatedItems,
           quote: serverQuote,
@@ -798,6 +794,16 @@ export async function POST(request: NextRequest) {
             (store as any).whatsapp || "",
             existingOrder.whatsapp_message || whatsappMessage
           ),
+          tableOrder: validatedTable
+            ? {
+                storeToken: String((store as any).table_order_token),
+                tableId: validatedTable.id || "",
+                tableName: validatedTable.name,
+                tableZone: validatedTable.zone,
+                paymentMethods: [],
+                fulfillmentMode: tableFulfillmentMode || "table_service",
+              }
+            : null,
         };
         return withApiHeaders(NextResponse.json({
           orderId: existingOrder.id,
@@ -807,7 +813,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (orderError && isMissingColumnError(orderError, ["payment_", "customer_", "delivery_", "platform_service_"])) {
+    if (orderError && isMissingColumnError(orderError, ["payment_", "customer_", "delivery_", "platform_service_", "store_table_id", "table_"])) {
       const {
         payment_status: _paymentStatus,
         payment_reference: _paymentReference,
@@ -832,6 +838,10 @@ export async function POST(request: NextRequest) {
         transport_agency_pricing_type: _transportAgencyPricingType,
         transport_agency_zone_name: _transportAgencyZoneName,
         transport_agency_status: _transportAgencyStatus,
+        store_table_id: _storeTableId,
+        table_name_snapshot: _tableNameSnapshot,
+        table_zone_snapshot: _tableZoneSnapshot,
+        table_fulfillment_snapshot: _tableFulfillmentSnapshot,
         ...baseOrderPayload
       } = orderPayload;
       const fallbackResult = await supabase.from("orders").insert(baseOrderPayload);
@@ -905,12 +915,23 @@ export async function POST(request: NextRequest) {
     const savedOrder: SavedOrder = {
       ...order,
       id: publicCode,
+      databaseId: orderDbId,
       storeName: (store as any).name || order.storeName,
       items: validatedItems,
       quote: serverQuote,
       totals,
       whatsappMessage,
       whatsappUrl,
+      tableOrder: validatedTable
+        ? {
+            storeToken: String((store as any).table_order_token),
+            tableId: validatedTable.id || "",
+            tableName: validatedTable.name,
+            tableZone: validatedTable.zone,
+            paymentMethods: [],
+            fulfillmentMode: tableFulfillmentMode || "table_service",
+          }
+        : null,
     };
 
     const response = NextResponse.json({

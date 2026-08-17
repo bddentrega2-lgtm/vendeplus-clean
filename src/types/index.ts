@@ -1,4 +1,4 @@
-export type DeliveryType = "delivery" | "pickup" | "national_shipping";
+export type DeliveryType = "delivery" | "pickup" | "national_shipping" | "table";
 export type DeliverySource = "none" | "current" | "map";
 export type DeliveryProvider =
   | "own_delivery"
@@ -226,6 +226,7 @@ export type DeliveryLocation = {
 };
 
 export type DeliveryQuote = {
+  quoteToken?: string;
   distanceKm: number | null;
   feeUsd: number;
   originalFeeUsd?: number;
@@ -268,6 +269,7 @@ export type OrderTotals = {
 
 export type SavedOrder = {
   id: string;
+  databaseId?: string;
   storeSlug: string;
   storeName: string;
   createdAt: string;
@@ -280,6 +282,14 @@ export type SavedOrder = {
   routeUrl: string | null;
   whatsappMessage: string;
   whatsappUrl: string;
+  tableOrder?: {
+    storeToken: string;
+    tableId: string;
+    tableName: string;
+    tableZone: string | null;
+    paymentMethods: string[];
+    fulfillmentMode: "table_service" | "counter_pickup";
+  } | null;
 };
 
 
