@@ -1,3 +1,9 @@
+# P1 Open Graph 2026-08-17
+
+- Causa confirmada en logs: `ImageResponse` no admite directamente logos WebP de Supabase.
+- La ruta OG pasa a Node.js, restringe imágenes a HTTPS del dominio público o `*.supabase.co`, limita descargas a 5 MB y convierte a PNG con Sharp.
+- Si la imagen falla, muestra la inicial del comercio y evita romper la generación.
+
 # Punto de reanudacion
 
 ## Pedidos en Mesa V1 local (2026-08-16)

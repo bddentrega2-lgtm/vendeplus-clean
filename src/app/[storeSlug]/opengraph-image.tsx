@@ -1,8 +1,9 @@
 import { ImageResponse } from "next/og";
+import sharp from "sharp";
 import { getPublicStoreShellBySlug } from "@/lib/supabase/catalog";
 import { buildPublicUrl } from "@/lib/public-url";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 export const alt = "Catálogo Somos";
 export const size = {
   width: 1200,
@@ -10,14 +11,41 @@ export const size = {
 };
 export const contentType = "image/png";
 
-function toAbsoluteImageUrl(value?: string | null) {
+function toAllowedImageUrl(value?: string | null) {
   const raw = String(value || "").trim();
-  if (!raw) return buildPublicUrl("/favicon.png");
+  if (!raw) return null;
 
   try {
-    return new URL(raw).toString();
+    const url = new URL(raw, buildPublicUrl("/"));
+    const publicHost = new URL(buildPublicUrl("/")).hostname;
+    const isAllowedHost = url.hostname === publicHost || url.hostname.endsWith(".supabase.co");
+    return url.protocol === "https:" && isAllowedHost ? url.toString() : null;
   } catch {
-    return buildPublicUrl(raw.startsWith("/") ? raw : `/${raw}`);
+    return null;
+  }
+}
+
+async function loadPngDataUrl(value?: string | null) {
+  const imageUrl = toAllowedImageUrl(value);
+  if (!imageUrl) return null;
+
+  try {
+    const response = await fetch(imageUrl, { cache: "force-cache" });
+    if (!response.ok) return null;
+
+    const declaredSize = Number(response.headers.get("content-length") || 0);
+    if (declaredSize > 5 * 1024 * 1024) return null;
+
+    const source = Buffer.from(await response.arrayBuffer());
+    if (!source.length || source.length > 5 * 1024 * 1024) return null;
+
+    const png = await sharp(source)
+      .resize(330, 330, { fit: "contain", withoutEnlargement: true })
+      .png()
+      .toBuffer();
+    return `data:image/png;base64,${png.toString("base64")}`;
+  } catch {
+    return null;
   }
 }
 
@@ -39,7 +67,9 @@ export default async function StoreOpenGraphImage({
     store?.description || `Catálogo digital de ${storeName}. Arma tu pedido y envíalo por WhatsApp.`,
     118
   );
-  const imageUrl = toAbsoluteImageUrl(store?.logoUrl || store?.coverImageUrl || store?.heroImageUrl);
+  const imageUrl = await loadPngDataUrl(
+    store?.logoUrl || store?.coverImageUrl || store?.heroImageUrl
+  );
   const primaryColor = store?.primaryColor || "#1F464C";
   const accentColor = store?.accentColor || "#F27533";
 
@@ -185,17 +215,23 @@ export default async function StoreOpenGraphImage({
                 overflow: "hidden",
               }}
             >
-              <img
-                src={imageUrl}
-                alt=""
-                width={330}
-                height={330}
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "contain",
-                }}
-              />
+              {imageUrl ? (
+                <img
+                  src={imageUrl}
+                  alt=""
+                  width={330}
+                  height={330}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "contain",
+                  }}
+                />
+              ) : (
+                <span style={{ color: primaryColor, fontSize: 124, fontWeight: 900 }}>
+                  {storeName.slice(0, 1).toUpperCase()}
+                </span>
+              )}
             </div>
           </div>
         </div>
