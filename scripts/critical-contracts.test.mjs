@@ -180,6 +180,63 @@ test("mapa permite mosaicos seguros y seleccion directa sin boton confuso", () =
   assert.doesNotMatch(locationPicker, /selectMapCenter/);
 });
 
+test("home presenta mesa y barra en un banner despues de delivery sin alterar el contenido base", () => {
+  const home = readFileSync(
+    new URL("../src/components/public/HomeClient.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(home, /Nueva modalidad/);
+  assert.match(home, /Pedidos en mesa o barra/);
+  assert.match(home, /Pedido con QR/);
+  assert.match(home, /Menos filas/);
+  assert.match(home, /Estado visible/);
+  assert.doesNotMatch(home, /seguimiento (?:del pedido )?en tiempo real/i);
+  assert.ok(home.indexOf("Para empresas delivery") < home.indexOf("Nueva modalidad"));
+  assert.match(home, /Vende mejor desde tu catálogo digital/);
+  assert.match(home, /Creado para operaciones locales reales/);
+  assert.match(home, /Otras apps/);
+  assert.match(home, /Pagos directos a tu cuenta/);
+});
+
+test("panel de comercios usa logo Somos y la paleta nueva queda como default", () => {
+  const panelShell = readFileSync(
+    new URL("../src/components/panel/PanelShell.tsx", import.meta.url),
+    "utf8",
+  );
+  const signupRoute = readFileSync(
+    new URL("../src/app/api/signup/route.ts", import.meta.url),
+    "utf8",
+  );
+  const settingsRoute = readFileSync(
+    new URL("../src/app/api/panel/settings/route.ts", import.meta.url),
+    "utf8",
+  );
+  const migration = readFileSync(
+    new URL("../supabase/migrations/20260816063446_update_legacy_default_store_palette.sql", import.meta.url),
+    "utf8",
+  );
+  const panelFrame = readFileSync(
+    new URL("../src/components/panel/PanelFrame.tsx", import.meta.url),
+    "utf8",
+  );
+  const tablesManager = readFileSync(
+    new URL("../src/components/panel/TablesManager.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(panelShell, /<BrandLogo size="sm" priority \/>/);
+  assert.match(panelShell, /label: "Mesa \/ Barra"/);
+  assert.match(panelFrame, /title: "Mesa \/ Barra"/);
+  assert.match(tablesManager, /Pedidos en Mesa \/ Barra/);
+  assert.doesNotMatch(signupRoute, /primary_color:\s*"#2E3A79"/);
+  assert.match(signupRoute, /primary_color:\s*"#1F464C"/);
+  assert.match(settingsRoute, /accent_color:.*"#F27533"/);
+  assert.match(migration, /lower\(primary_color\) = '#2e3a79'/);
+  assert.match(migration, /lower\(accent_color\) = '#ffb547'/);
+  assert.match(migration, /alter column primary_color set default '#1F464C'/);
+});
+
 test("fundador solo accede al comercio seleccionado", () => {
   const founder = { isAuthorized: true, mode: "user", method: "auth", isFounderMode: true, storeIds: ["store-a"], role: "owner" };
   assert.equal(canAccessStore(founder, "store-a"), true);

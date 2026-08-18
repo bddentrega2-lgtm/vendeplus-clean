@@ -199,9 +199,9 @@ function normalizeStorePayload(body: any) {
       ? String(body.exchange_rate_updated_at)
       : null,
     whatsapp_message_note: body.whatsapp_message_note ? String(body.whatsapp_message_note).trim() : null,
-    primary_color: body.primary_color ? String(body.primary_color).trim() : "#2E3A79",
-    accent_color: body.accent_color ? String(body.accent_color).trim() : "#FFB547",
-    button_text_color: body.button_text_color ? String(body.button_text_color).trim() : "#25262B",
+    primary_color: body.primary_color ? String(body.primary_color).trim() : "#1F464C",
+    accent_color: body.accent_color ? String(body.accent_color).trim() : "#F27533",
+    button_text_color: body.button_text_color ? String(body.button_text_color).trim() : "#042332",
     accepts_delivery: Boolean(body.accepts_delivery),
     accepts_pickup: Boolean(body.accepts_pickup),
     accepts_national_shipping: Boolean(body.accepts_national_shipping),

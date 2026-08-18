@@ -439,3 +439,18 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 - Preview aprobada por el usuario y promovida a producción como `dpl_5rtPk12FGKxa8RfmpEevcyfSdGaQ` (`vendeplus-clean-qi9lcdl2p-entrega2-s-projects.vercel.app`). Los dominios `www.somos-ve.com`, `somos-ve.com` y `vendeplus-clean.vercel.app` apuntan al nuevo despliegue.
 - Smoke test posterior: Home, Marketplace, Smash, login del panel y Transporte respondieron HTTP 200; la CSP incluye mosaicos de OpenStreetMap; API de panel sin sesión respondió 401 y cotización inválida 400. Sin errores ni HTTP 500 en logs del nuevo deployment.
 - Rollback exacto disponible: `dpl_CXyMauRpq6Vc688kUo84SWVSYfao` (`vendeplus-clean-rhiisqhoc-entrega2-s-projects.vercel.app`). No hubo migración ni escritura en Supabase durante la promoción.
+
+# Home mesas/barra, logo del panel y paleta default (2026-08-17)
+
+- Home conserva sus textos y secciones originales. Después de las dos soluciones principales se agregó un banner compacto `Nueva modalidad: Pedidos en mesa o barra`, con pedido por QR, menos filas/atención más rápida y estado visible. Delivery aparece antes del banner; no se menciona seguimiento en tiempo real ni se modifica la comparación con otras apps.
+- El encabezado lateral del panel de comercios usa el logo oficial de Somos en lugar del isotipo genérico y el texto escrito; Super Admin no fue modificado.
+- Registro, API de configuración, formulario del panel y catálogos locales de respaldo usan como defaults `#1F464C`, `#F27533` y `#042332`.
+- Auditoría remota solo lectura: 19 de 34 comercios conservan exactamente una combinación legacy; los otros 15 tienen colores personalizados o distintos y no deben cambiar.
+- La migración `20260816063446_update_legacy_default_store_palette.sql` solo reemplaza las dos combinaciones legacy exactas y actualiza defaults de columnas. Aplicada a Supabase remoto con autorización explícita: 19 comercios pasaron a la paleta `#1F464C/#F27533/#042332`, quedaron 0 legacy y los 15 personalizados conservaron exactamente la misma huella SHA-256 previa.
+- Verificación pública posterior: Alkkon Fit sirve HTTP 200 con `--brand-primary:#1F464C`, `--brand-accent:#F27533` y `--brand-button-text:#042332` después de renovar la caché del catálogo.
+- Validaciones: ESLint completo, 15/15 contratos críticos y build local/remoto de 167 páginas aprobados.
+- Preview vigente: `https://vendeplus-clean-mzd86fgh9-entrega2-s-projects.vercel.app`, deployment `dpl_A8bqAwhJ1ZsNUzcrD6uGHoTKR1kn`. Producción no fue modificada.
+- Ajuste final: el módulo del panel se presenta como `Mesa / Barra` en navegación y encabezado, y como `Pedidos en Mesa / Barra` dentro de la gestión.
+- Preview final: `https://vendeplus-clean-6kmv887gd-entrega2-s-projects.vercel.app`, deployment `dpl_4KU853RLs1dw5tBKVzcvkLpBHXed`.
+- Preview promovida a producción: `dpl_3EPtZx3JNWHcYvLauAYHLKqP3Ybt` (`vendeplus-clean-9jldj5rhe-entrega2-s-projects.vercel.app`). `www.somos-ve.com` apunta al deployment nuevo en estado Ready.
+- Smoke productivo: Home, Marketplace, Smash, login del panel y Transporte HTTP 200; banner Mesa/Barra y comparación con otras apps presentes; sin errores ni HTTP 500 en logs. Rollback anterior: `dpl_C59dpBfMhLHJ4dzzuwTW4Lnp7rSy`.

@@ -259,9 +259,9 @@ function StoreSettingsCard({
     exchange_rate_updated_at: store.exchange_rate_updated_at || "",
     location_link: store.location_link || "",
     whatsapp_message_note: store.whatsapp_message_note || "",
-    primary_color: store.primary_color || "#2E3A79",
-    accent_color: store.accent_color || "#FFB547",
-    button_text_color: store.button_text_color || "#25262B",
+    primary_color: store.primary_color || "#1F464C",
+    accent_color: store.accent_color || "#F27533",
+    button_text_color: store.button_text_color || "#042332",
     accepts_delivery: store.accepts_delivery === true,
     accepts_pickup: store.accepts_pickup !== false,
     accepts_national_shipping: store.accepts_national_shipping === true,
@@ -370,7 +370,7 @@ function StoreSettingsCard({
       ([field]) => !/^#[0-9a-f]{6}$/i.test(String(draft[field] || ""))
     );
     if (invalidColor) {
-      setMessage(`${invalidColor[1]} debe tener formato HEX. Ejemplo: #2E3A79.`);
+      setMessage(`${invalidColor[1]} debe tener formato HEX. Ejemplo: #1F464C.`);
       setIsSaving(false);
       return;
     }
@@ -380,9 +380,9 @@ function StoreSettingsCard({
         method: "PATCH",
         body: JSON.stringify({
           ...draft,
-          primary_color: draft.primary_color || "#2E3A79",
-          accent_color: draft.accent_color || "#FFB547",
-          button_text_color: draft.button_text_color || "#25262B",
+          primary_color: draft.primary_color || "#1F464C",
+          accent_color: draft.accent_color || "#F27533",
+          button_text_color: draft.button_text_color || "#042332",
           payment_methods: draft.payment_methods,
           payment_details: draft.payment_details,
           usd_to_bs: Number(draft.usd_to_bs || 600),
@@ -740,8 +740,8 @@ function StoreSettingsCard({
           <div
             className="rounded-2xl px-4 py-3 text-sm font-black shadow-sm"
             style={{
-              backgroundColor: draft.accent_color || "#FFB547",
-              color: draft.button_text_color || "#25262B",
+              backgroundColor: draft.accent_color || "#F27533",
+              color: draft.button_text_color || "#042332",
             }}
           >
             Vista botón
@@ -788,7 +788,7 @@ function StoreSettingsCard({
                   disabled={!canCustomizeColors}
                   value={colorValue}
                   onChange={(event) => updateField(item.field, event.target.value)}
-                  placeholder="#2E3A79"
+                  placeholder="#1F464C"
                   maxLength={7}
                   className="min-w-0 flex-1 rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold uppercase outline-none focus:border-[#2E3A79] disabled:cursor-not-allowed disabled:bg-[#F8F3E8] disabled:opacity-60"
                 />
@@ -804,7 +804,7 @@ function StoreSettingsCard({
         <div className="mt-4 overflow-hidden rounded-[24px] bg-white shadow-sm ring-1 ring-[#25262B]/[0.06]">
           <div
             className="p-4 text-white"
-            style={{ backgroundColor: draft.primary_color || "#2E3A79" }}
+            style={{ backgroundColor: draft.primary_color || "#1F464C" }}
           >
             <p className="text-xs font-black uppercase tracking-[0.16em] opacity-80">
               Vista previa catálogo
@@ -816,8 +816,8 @@ function StoreSettingsCard({
               type="button"
               className="rounded-full px-5 py-3 text-sm font-black"
               style={{
-                backgroundColor: draft.accent_color || "#FFB547",
-                color: draft.button_text_color || "#25262B",
+                backgroundColor: draft.accent_color || "#F27533",
+                color: draft.button_text_color || "#042332",
               }}
             >
               Agregar al carrito

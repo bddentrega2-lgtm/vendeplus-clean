@@ -26,8 +26,8 @@ const panelRouteMeta: Record<string, { active: string; title: string; subtitle: 
   },
   "/panel/mesas": {
     active: "/panel/mesas",
-    title: "Pedidos en Mesa",
-    subtitle: "Administra mesas, pagos y el QR único del comercio.",
+    title: "Mesa / Barra",
+    subtitle: "Administra pedidos, mesas, pagos y el QR único del comercio.",
   },
   "/panel/logros": {
     active: "/panel/logros",

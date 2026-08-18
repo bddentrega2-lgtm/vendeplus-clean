@@ -7,6 +7,7 @@ import { PanelStoreIdentity } from "@/components/panel/PanelStoreIdentity";
 import { PanelStoreSelector } from "@/components/panel/PanelStoreSelector";
 import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
 import { PwaInstallButton } from "@/components/pwa/PwaInstallButton";
+import { BrandLogo } from "@/components/public/BrandLogo";
 import {
   BarChart3,
   Boxes,
@@ -26,7 +27,7 @@ import {
 const navItems = [
   { href: "/panel", label: "Inicio", icon: LayoutDashboard },
   { href: "/panel/pedidos", label: "Pedidos", icon: ClipboardList },
-  { href: "/panel/mesas", label: "Mesas", icon: UtensilsCrossed, premiumFeature: "table_orders" },
+  { href: "/panel/mesas", label: "Mesa / Barra", icon: UtensilsCrossed, premiumFeature: "table_orders" },
   { href: "/panel/logros", label: "Logros", icon: Trophy, featured: true },
   { href: "/panel/productos", label: "Productos", icon: Boxes },
   { href: "/panel/catalogo", label: "Categorías", icon: Tags },
@@ -76,14 +77,9 @@ export function PanelShell({
       <div className="mx-auto flex min-h-screen w-full max-w-[1440px]">
         <aside className="sticky top-0 hidden h-screen w-72 shrink-0 self-start overflow-y-auto border-r border-[#25262B]/10 bg-white/70 p-5 backdrop-blur-xl lg:block">
           <Link href="/panel" className="flex items-center gap-3">
-            <div className="grid h-12 w-12 place-items-center rounded-3xl bg-[#2E3A79] text-[#FFB547] shadow-lg shadow-[#2E3A79]/20">
-              <Sparkles size={22} />
-            </div>
             <div>
-              <p className="text-xl font-black leading-none text-[#2E3A79]">
-                Somos
-              </p>
-              <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-[#746f69]">
+              <BrandLogo size="sm" priority />
+              <p className="mt-1 text-xs font-extrabold uppercase tracking-[0.18em] text-[#746f69]">
                 Panel
               </p>
             </div>

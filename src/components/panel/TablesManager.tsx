@@ -233,7 +233,7 @@ export function TablesManager() {
     return (
       <section className="rounded-[28px] bg-white p-6 text-center shadow-lg ring-1 ring-[#25262B]/10">
         <UtensilsCrossed className="mx-auto text-[#2E3A79]" size={38} />
-        <h2 className="mt-3 text-xl font-black">Pedidos en Mesa</h2>
+        <h2 className="mt-3 text-xl font-black">Pedidos en Mesa / Barra</h2>
         <p className="mt-2 text-sm font-bold text-[#746f69]">
           Esta función premium no está habilitada para este comercio.
         </p>
@@ -324,7 +324,7 @@ export function TablesManager() {
 
         <div className="rounded-[28px] bg-white p-5 text-center shadow-lg ring-1 ring-[#25262B]/10">
           <h2 className="flex items-center justify-center gap-2 text-lg font-black"><QrCode size={20} /> QR del comercio</h2>
-          {qrDataUrl ? <Image src={qrDataUrl} alt={`QR de ${selectedStore?.name || "Pedidos en Mesa"}`} width={220} height={220} unoptimized className="mx-auto mt-3 h-52 w-52" /> : null}
+          {qrDataUrl ? <Image src={qrDataUrl} alt={`QR de ${selectedStore?.name || "Mesa / Barra"}`} width={220} height={220} unoptimized className="mx-auto mt-3 h-52 w-52" /> : null}
           <button type="button" onClick={downloadQr} disabled={!qrDataUrl} className="vp-button-mango mt-3 w-full">
             <Download size={17} /> Descargar QR
           </button>

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Check, ClipboardList, PackageCheck, Settings2, ShoppingBag, Store as StoreIcon, Truck } from "lucide-react";
+import { ArrowRight, Check, ClipboardList, PackageCheck, QrCode, Settings2, ShoppingBag, Store as StoreIcon, Truck, UtensilsCrossed } from "lucide-react";
 import type { Store } from "@/types";
 import type { PublicTransportAgencyLogo } from "@/lib/transport";
 import { AffiliatedDeliveryLogos } from "@/components/public/AffiliatedDeliveryLogos";
@@ -66,6 +66,29 @@ export function HomeClient({ stores = [], transportAgencies = [] }: { stores?: S
             <FeatureList items={deliveryFeatures} light />
             <ButtonLink href="/transporte/registro" variant="light" className="mt-7 w-full sm:w-fit">Registrar empresa delivery <ArrowRight size={17} /></ButtonLink>
           </SurfaceCard>
+        </div>
+
+        <div className="mt-5 overflow-hidden rounded-[32px] bg-[var(--somos-teal)] p-6 text-white shadow-xl shadow-[var(--somos-teal)]/15 sm:p-8">
+          <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+            <div className="flex items-start gap-4">
+              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[var(--somos-amber)] text-[var(--somos-navy)]"><UtensilsCrossed size={23} /></span>
+              <div>
+                <p className="text-sm font-semibold text-[var(--somos-amber)]">Nueva modalidad</p>
+                <h2 className="mt-2 text-2xl font-bold leading-tight tracking-tight sm:text-3xl">Pedidos en mesa o barra</h2>
+                <p className="mt-3 max-w-xl text-sm font-medium leading-6 text-white/75 sm:text-base">Tus clientes escanean el QR, hacen su pedido desde el teléfono y revisan su estado hasta que esté listo.</p>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {[
+                { icon: QrCode, title: "Pedido con QR", text: "Sin esperar para ser atendido." },
+                { icon: UtensilsCrossed, title: "Menos filas", text: "Atención más rápida en mesa o barra." },
+                { icon: ClipboardList, title: "Estado visible", text: "El cliente sabe cómo avanza su pedido." },
+              ].map((item) => {
+                const Icon = item.icon;
+                return <article key={item.title} className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/10"><Icon size={19} className="text-[var(--somos-amber)]" /><h3 className="mt-3 text-sm font-bold">{item.title}</h3><p className="mt-1 text-xs font-medium leading-5 text-white/65">{item.text}</p></article>;
+              })}
+            </div>
+          </div>
         </div>
       </div>
     </section>
