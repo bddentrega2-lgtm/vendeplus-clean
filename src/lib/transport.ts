@@ -292,6 +292,68 @@ export function mapTransportAgencyDeliverySettings(params: {
   };
 }
 
+export async function loadTransportAgencyDeliverySettingsBySlug(
+  supabase: any,
+  agencySlug: string,
+  options?: {
+    pickupEnabled?: boolean;
+    promoSettings?: Partial<StoreDeliverySettings> | null;
+  }
+) {
+  const { data: agency, error: agencyError } = await supabase
+    .from("transport_agencies")
+    .select("*")
+    .eq("slug", agencySlug)
+    .eq("status", "active")
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (agencyError || !agency?.id) return null;
+
+  const [rateResult, zonesResult, distanceRatesResult] = await Promise.all([
+    supabase
+      .from("transport_agency_rates")
+      .select("*")
+      .eq("agency_id", agency.id)
+      .eq("is_active", true)
+      .maybeSingle(),
+    supabase
+      .from("transport_agency_zones")
+      .select("*")
+      .eq("agency_id", agency.id)
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("transport_agency_distance_rates")
+      .select("*")
+      .eq("agency_id", agency.id)
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true }),
+  ]);
+
+  if (rateResult.error || zonesResult.error || distanceRatesResult.error) {
+    return null;
+  }
+
+  const configuration = {
+    agency,
+    rate: rateResult.data,
+    zones: zonesResult.data || [],
+    distanceRates: distanceRatesResult.data || [],
+  };
+
+  if (!isTransportAgencyReady(configuration)) return null;
+
+  return {
+    ...configuration,
+    settings: mapTransportAgencyDeliverySettings({
+      ...configuration,
+      pickupEnabled: options?.pickupEnabled,
+      promoSettings: options?.promoSettings,
+    }),
+  };
+}
+
 export async function loadTransportAgencyDeliverySettings(
   supabase: any,
   storeId: string,

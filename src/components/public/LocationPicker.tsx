@@ -5,6 +5,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { DeliveryLocation } from "@/types";
 import type { Map as LeafletMap, Marker } from "leaflet";
 
+let leafletPromise: Promise<typeof import("leaflet")> | null = null;
+
+function loadLeaflet() {
+  leafletPromise ||= import("leaflet");
+  return leafletPromise;
+}
+
 type Props = {
   storeLatitude: number;
   storeLongitude: number;
@@ -46,6 +53,10 @@ export function LocationPicker({
   }, [onChange]);
 
   useEffect(() => {
+    void loadLeaflet();
+  }, []);
+
+  useEffect(() => {
     if (!showMap) {
       initialCenterRef.current = {
         latitude: storeLatitude,
@@ -59,7 +70,7 @@ export function LocationPicker({
     async (latitude: number, longitude: number) => {
       if (!leafletMapRef.current) return;
 
-      const leaflet = await import("leaflet");
+      const leaflet = await loadLeaflet();
       const latLng: [number, number] = [latitude, longitude];
       const icon = leaflet.divIcon({
         className: "vendeplus-destination-marker",
@@ -104,7 +115,7 @@ export function LocationPicker({
     async function init() {
       if (!showMap || !mapRef.current || leafletMapRef.current) return;
 
-      const leaflet = await import("leaflet");
+      const leaflet = await loadLeaflet();
       if (!mounted || !mapRef.current) return;
       const initialCenter = initialCenterRef.current;
 
@@ -244,20 +255,6 @@ export function LocationPicker({
     );
   }
 
-  async function selectMapCenter() {
-    const map = leafletMapRef.current;
-    if (!map) return;
-
-    const center = map.getCenter();
-    await selectDestination(center.lat, center.lng, selectedLabel, "map");
-    setMessageType("success");
-    setMessage(
-      mode === "store"
-        ? "Centro del mapa marcado como ubicacion del negocio. Puedes mover el mapa y marcar de nuevo."
-        : "Centro del mapa marcado como punto de entrega. Puedes mover el mapa y marcar de nuevo."
-    );
-  }
-
   return (
     <div className="space-y-3">
       <div className="grid gap-2 sm:grid-cols-2">
@@ -290,19 +287,10 @@ export function LocationPicker({
       {showMap ? (
         <div className="overflow-hidden rounded-[28px] border border-[#25262B]/10 bg-white shadow-sm">
           <div ref={mapRef} className="h-[340px] w-full" />
-          <div className="flex flex-col gap-2 border-t border-[#25262B]/10 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs font-bold text-[#746f69]">
-              En PC puedes hacer clic sobre el mapa o moverlo y marcar el centro.
+          <div className="border-t border-[#25262B]/10 bg-white p-3">
+            <p className="text-center text-xs font-bold text-[#746f69]">
+              Toca el mapa para elegir el punto. Puedes moverlo y tocar otra zona para cambiarlo.
             </p>
-            <button
-              type="button"
-              onClick={selectMapCenter}
-              disabled={!isReady}
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-4 py-2 text-xs font-black text-white disabled:opacity-60"
-            >
-              <MapPin size={15} />
-              Marcar centro del mapa
-            </button>
           </div>
         </div>
       ) : null}

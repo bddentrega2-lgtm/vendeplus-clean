@@ -32,7 +32,7 @@ const contentSecurityPolicy = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isProduction ? "" : " 'unsafe-eval'"}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://*.supabase.co https://images.unsplash.com",
+  "img-src 'self' data: blob: https://*.supabase.co https://images.unsplash.com https://*.tile.openstreetmap.org",
   "font-src 'self' data:",
   `connect-src 'self'${supabaseOrigin ? ` ${supabaseOrigin} ${supabaseWebSocketOrigin}` : ""}`,
   "media-src 'self' blob:",

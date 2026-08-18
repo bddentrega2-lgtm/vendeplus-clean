@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   calculateDeliveryQuoteFromSettings,
+  calculateEntrega2FallbackQuote,
   createDefaultDeliverySettings,
 } from "../src/lib/delivery.ts";
 import {
@@ -105,6 +106,78 @@ test("cotizacion firmada conserva tarifa y bloquea manipulaciones", () => {
   assert.equal(verifyDeliveryQuote({ ...params, token, subtotalUsd: 20.51 }), null);
   assert.equal(verifyDeliveryQuote({ ...params, token, latitude: 10.1583 }), null);
   assert.equal(verifyDeliveryQuote({ ...params, token: `${token}x` }), null);
+});
+
+test("respaldo Entrega2 usa los rangos cargados de la empresa", () => {
+  const settings = deliverySettings({
+    deliveryProvider: "transport_agency",
+    pricingType: "distance_ranges",
+    distanceRates: [
+      { id: "e2-1", minKm: 0, maxKm: 1.5, feeUsd: 1, isActive: true, sortOrder: 1 },
+      { id: "e2-2", minKm: 1.51, maxKm: 3, feeUsd: 1.5, isActive: true, sortOrder: 2 },
+      { id: "e2-3", minKm: 3.01, maxKm: 4, feeUsd: 2.5, isActive: true, sortOrder: 3 },
+      { id: "e2-4", minKm: 4.01, maxKm: 6, feeUsd: 3, isActive: true, sortOrder: 4 },
+    ],
+  });
+  const quote = calculateEntrega2FallbackQuote({
+    settings,
+    subtotalUsd: 10,
+    distanceKm: 4.78,
+    source: "route",
+  });
+
+  assert.equal(quote.available, true);
+  assert.equal(quote.feeUsd, 3);
+  assert.equal(quote.provider, "entrega2");
+  assert.equal(quote.source, "fallback");
+  assert.match(quote.label, /respaldo/i);
+});
+
+test("cotizacion de delivery limita abuso por IP y comercio", () => {
+  const route = readFileSync(
+    new URL("../src/app/api/delivery/quote/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(route, /key:\s*`delivery-quote:ip:\$\{clientIp\}`/);
+  assert.match(route, /key:\s*`delivery-quote:store:\$\{storeId\}:ip:\$\{clientIp\}`/);
+  assert.match(route, /status:\s*429/);
+  assert.match(route, /rateLimitHeaders\(globalLimit, DELIVERY_QUOTE_IP_LIMIT\)/);
+  assert.match(route, /rateLimitHeaders\(storeLimit, DELIVERY_QUOTE_STORE_IP_LIMIT\)/);
+  assert.match(route, /loadTransportAgencyDeliverySettingsBySlug/);
+  assert.match(route, /rateSource:\s*entrega2FallbackSettings \? "entrega2_agency" : "store"/);
+});
+
+test("cotizacion rechaza coordenadas ausentes o fuera de rango", () => {
+  const route = readFileSync(
+    new URL("../src/app/api/delivery/quote/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(route, /value === null/);
+  assert.match(route, /value === undefined/);
+  assert.match(route, /latitude >= -90/);
+  assert.match(route, /latitude <= 90/);
+  assert.match(route, /longitude >= -180/);
+  assert.match(route, /longitude <= 180/);
+  assert.match(route, /hasValidCoordinates\(storeLat, storeLng\)/);
+});
+
+test("mapa permite mosaicos seguros y seleccion directa sin boton confuso", () => {
+  const nextConfig = readFileSync(
+    new URL("../next.config.ts", import.meta.url),
+    "utf8",
+  );
+  const locationPicker = readFileSync(
+    new URL("../src/components/public/LocationPicker.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(nextConfig, /https:\/\/\*\.tile\.openstreetmap\.org/);
+  assert.match(locationPicker, /void loadLeaflet\(\)/);
+  assert.match(locationPicker, /Toca el mapa para elegir el punto/);
+  assert.doesNotMatch(locationPicker, /Marcar centro del mapa/);
+  assert.doesNotMatch(locationPicker, /selectMapCenter/);
 });
 
 test("fundador solo accede al comercio seleccionado", () => {

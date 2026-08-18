@@ -11,22 +11,53 @@ import {
   quoteEntrega2Delivery,
 } from "@/lib/integrations/entrega2";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { loadTransportAgencyDeliverySettings } from "@/lib/transport";
+import {
+  loadTransportAgencyDeliverySettings,
+  loadTransportAgencyDeliverySettingsBySlug,
+} from "@/lib/transport";
 import {
   attachApiResponseHeaders,
   createApiRequestContext,
   logApiError,
 } from "@/lib/server/observability";
+import {
+  checkDistributedRateLimit,
+  getClientIp,
+  rateLimitHeaders,
+} from "@/lib/server/rate-limit";
 import { signDeliveryQuote } from "@/lib/server/signed-delivery-quote";
 import type { DeliveryQuote } from "@/types";
+
+const DELIVERY_QUOTE_IP_LIMIT = 90;
+const DELIVERY_QUOTE_STORE_IP_LIMIT = 30;
+const DELIVERY_QUOTE_RATE_WINDOW_MS = 10 * 60 * 1000;
 
 function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
 }
 
 function toSafeNumber(value: unknown, fallback = Number.NaN) {
+  if (
+    value === null ||
+    value === undefined ||
+    (typeof value === "string" && !value.trim())
+  ) {
+    return fallback;
+  }
+
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function hasValidCoordinates(latitude: number, longitude: number) {
+  return (
+    Number.isFinite(latitude) &&
+    latitude >= -90 &&
+    latitude <= 90 &&
+    Number.isFinite(longitude) &&
+    longitude >= -180 &&
+    longitude <= 180
+  );
 }
 
 async function loadStoreDeliverySettings(
@@ -92,6 +123,25 @@ export async function POST(request: NextRequest) {
     attachApiResponseHeaders(response, apiContext, "delivery-quote");
 
   try {
+    const clientIp = getClientIp(request);
+    const globalLimit = await checkDistributedRateLimit({
+      key: `delivery-quote:ip:${clientIp}`,
+      limit: DELIVERY_QUOTE_IP_LIMIT,
+      windowMs: DELIVERY_QUOTE_RATE_WINDOW_MS,
+    });
+
+    if (!globalLimit.allowed) {
+      return withHeaders(
+        NextResponse.json(
+          { error: "Demasiadas cotizaciones. Espera unos minutos y vuelve a intentar." },
+          {
+            status: 429,
+            headers: rateLimitHeaders(globalLimit, DELIVERY_QUOTE_IP_LIMIT),
+          }
+        )
+      );
+    }
+
     const body = await request.json().catch(() => null);
     const storeId = String(body?.storeId || "").trim();
     const latitude = toSafeNumber(body?.latitude);
@@ -100,8 +150,26 @@ export async function POST(request: NextRequest) {
     const zoneId = String(body?.zoneId || "").trim() || null;
 
     if (!storeId) return withHeaders(badRequest("Falta el comercio para cotizar delivery."));
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    if (!hasValidCoordinates(latitude, longitude)) {
       return withHeaders(badRequest("Comparte tu ubicacion para cotizar el delivery."));
+    }
+
+    const storeLimit = await checkDistributedRateLimit({
+      key: `delivery-quote:store:${storeId}:ip:${clientIp}`,
+      limit: DELIVERY_QUOTE_STORE_IP_LIMIT,
+      windowMs: DELIVERY_QUOTE_RATE_WINDOW_MS,
+    });
+
+    if (!storeLimit.allowed) {
+      return withHeaders(
+        NextResponse.json(
+          { error: "Has solicitado muchas cotizaciones para este comercio. Espera unos minutos e intenta de nuevo." },
+          {
+            status: 429,
+            headers: rateLimitHeaders(storeLimit, DELIVERY_QUOTE_STORE_IP_LIMIT),
+          }
+        )
+      );
     }
 
     const supabase = createSupabaseAdminClient();
@@ -119,7 +187,7 @@ export async function POST(request: NextRequest) {
     const settings = await loadStoreDeliverySettings(supabase, store);
     const storeLat = toSafeNumber(store.latitude);
     const storeLng = toSafeNumber(store.longitude);
-    if (!Number.isFinite(storeLat) || !Number.isFinite(storeLng)) {
+    if (!hasValidCoordinates(storeLat, storeLng)) {
       return withHeaders(
         badRequest("El comercio necesita ubicacion GPS configurada para cotizar con Entrega2 App.")
       );
@@ -217,8 +285,22 @@ export async function POST(request: NextRequest) {
       );
     } catch (error) {
       logApiError(apiContext, "entrega2_quote_fallback_used", error, { storeId });
+      const entrega2FallbackSettings = await loadTransportAgencyDeliverySettingsBySlug(
+        supabase,
+        "entrega2",
+        {
+          pickupEnabled: settings.pickupEnabled,
+          promoSettings: {
+            freeDeliveryMinUsd: settings.freeDeliveryMinUsd,
+            deliveryPromoEnabled: settings.deliveryPromoEnabled,
+            deliveryPromoMinSubtotalUsd: settings.deliveryPromoMinSubtotalUsd,
+            deliveryPromoDiscountType: settings.deliveryPromoDiscountType,
+            deliveryPromoDiscountValue: settings.deliveryPromoDiscountValue,
+          },
+        }
+      );
       const fallbackQuote = calculateEntrega2FallbackQuote({
-        settings,
+        settings: entrega2FallbackSettings?.settings || settings,
         subtotalUsd,
         distanceKm: routeDistanceKm,
         source: routeDistance.source,
@@ -231,6 +313,7 @@ export async function POST(request: NextRequest) {
           fallback: {
             provider: "entrega2",
             reason: "entrega2_quote_failed",
+            rateSource: entrega2FallbackSettings ? "entrega2_agency" : "store",
           },
         })
       );
