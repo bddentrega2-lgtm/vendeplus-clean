@@ -11,6 +11,7 @@ import {
 import {
   isPrepaidTablePaymentMethod,
 } from "@/lib/table-orders";
+import { getTableOrderTokenForStore } from "@/lib/server/table-order-tokens";
 
 const TABLE_SELECT = "id, name, zone, is_enabled, created_at, updated_at";
 
@@ -18,7 +19,7 @@ async function loadTableOrderStore(storeId: string) {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("stores")
-    .select("id, slug, payment_methods, table_orders_access_enabled, table_orders_enabled, table_order_token, table_payment_methods, table_order_fulfillment_mode")
+    .select("id, slug, payment_methods, table_orders_access_enabled, table_orders_enabled, table_payment_methods, table_order_fulfillment_mode")
     .eq("id", storeId)
     .single();
 
@@ -39,8 +40,9 @@ export async function GET(request: NextRequest) {
     const storeId = request.nextUrl.searchParams.get("storeId") || "";
     assertStoreAccess(auth, storeId);
     const { supabase, store } = await loadTableOrderStore(storeId);
-    const [{ data: tables, error: tablesError }, { data: activeOrders, error: ordersError }] =
+    const [qrToken, { data: tables, error: tablesError }, { data: activeOrders, error: ordersError }] =
       await Promise.all([
+        getTableOrderTokenForStore(supabase, storeId),
         supabase
           .from("store_tables")
           .select(TABLE_SELECT)
@@ -67,7 +69,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       enabled: store.table_orders_enabled === true,
-      qrToken: store.table_order_token,
+      qrToken,
       paymentMethods: availableMethods,
       selectedPaymentMethods: configuredMethods.filter((method: string) =>
         availableMethods.includes(method)

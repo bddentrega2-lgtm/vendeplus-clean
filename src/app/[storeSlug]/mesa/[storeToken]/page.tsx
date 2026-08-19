@@ -5,6 +5,7 @@ import { getPublicStoreBySlug } from "@/lib/supabase/catalog";
 import {
   isPrepaidTablePaymentMethod,
 } from "@/lib/table-orders";
+import { getStoreIdByTableOrderToken } from "@/lib/server/table-order-tokens";
 
 export const dynamic = "force-dynamic";
 
@@ -16,12 +17,15 @@ export default async function TableOrderPage({
   const { storeSlug, storeToken } = await params;
 
   const supabase = createSupabaseAdminClient();
+  const tableStoreId = await getStoreIdByTableOrderToken(supabase, storeToken);
+  if (!tableStoreId) notFound();
+
   const [{ data: tableStore }, store] = await Promise.all([
     supabase
       .from("stores")
-      .select("id, table_orders_access_enabled, table_orders_enabled, table_order_token, table_order_fulfillment_mode, payment_methods, table_payment_methods")
+      .select("id, table_orders_access_enabled, table_orders_enabled, table_order_fulfillment_mode, payment_methods, table_payment_methods")
+      .eq("id", tableStoreId)
       .eq("slug", storeSlug)
-      .eq("table_order_token", storeToken)
       .eq("is_active", true)
       .maybeSingle(),
     getPublicStoreBySlug(storeSlug),

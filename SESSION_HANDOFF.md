@@ -1,5 +1,71 @@
 # P1 Open Graph 2026-08-17
 
+# Auditoría de arquitectura para 5.000+ pedidos/día (2026-08-18)
+
+## P0.1 tokens privados de Mesa / Barra (2026-08-18)
+
+- Migración remota autorizada y aplicada el 2026-08-19; no hubo promoción a producción web, commit ni push.
+- Los tokens QR se movieron a `private.store_table_order_tokens`, con RLS, privilegios exclusivos de `service_role` y funciones RPC inaccesibles para `anon`/`authenticated`.
+- La migración genera tokens nuevos para todos los comercios. El código nuevo resuelve y valida esos tokens exclusivamente en servidor; mantiene un fallback temporal al campo legacy solo cuando las RPC aún no existen, para permitir un despliegue escalonado seguro.
+- Página pública, estado de pedido, creación de pedido y API del panel ya usan el helper privado. No quedan lecturas directas del token público en la aplicación.
+- Validación local: token privado nuevo funciona, token público anterior deja de resolver con el código nuevo, acceso anónimo a las RPC falla con `42501` y el panel autenticado recibe el token privado.
+- Validaciones aprobadas: TypeScript, ESLint, 16/16 contratos críticos, contrato Entrega2, lint SQL local y build Next.js 16.3.0 de 167 páginas.
+- `20260818054500_move_table_order_tokens_to_private.sql` quedó registrada en Supabase remoto. Verificación: 34/34 comercios con token privado, 34 tokens únicos, todos distintos al legacy; resolución server-side correcta y RPC anónima denegada con `42501`.
+- La producción web actual conserva el código anterior y su QR legacy operativo (HTTP 200), por lo que la migración aditiva no interrumpió el servicio.
+- Preview P0: `https://vendeplus-clean-dsdwjrxt8-entrega2-s-projects.vercel.app`, deployment `dpl_oBe2ukpPC3ZJPmWWiBeJeSKsEr66`, target Preview, estado Ready; build remoto limpio de 167 páginas aprobado.
+- Smoke protegido de Preview: el QR privado nuevo reconoce el comercio y muestra el flujo Mesa / Barra; el token legacy no reconoce el comercio y devuelve la vista de no encontrado. Home consultado mediante bypass de Preview.
+- Siguiente paso exacto: prueba manual del usuario en Preview, incluyendo obtener/regenerar el QR desde `/panel/mesas` y abrirlo en una sesión separada. No promover sin aprobación explícita.
+- Usuario aprobó la prueba manual y la Preview fue promovida a producción el 2026-08-19 como `dpl_w6GifRf2NskVY5QfQMKPQYK7t8c8` (`vendeplus-clean-kzyf3kkdw-entrega2-s-projects.vercel.app`). Los dominios productivos apuntan al deployment nuevo en estado Ready.
+- Smoke productivo aprobado: Home, Marketplace, Smash, login y Transporte HTTP 200; QR privado reconoce Smash y muestra Mesa / Barra; token legacy devuelve la vista de no encontrado; API del panel sin sesión 401; sin logs de error en el deployment.
+- Siguiente paso exacto: respaldar este P0 con commit/push excluyendo `scripts/import-don-aniello-menu.mjs`; después preparar y validar una migración separada para eliminar `stores.table_order_token` y su índice legacy.
+- Impacto operativo al promover el código: los QR impresos o compartidos anteriormente deben regenerarse porque el token se rota. Luego de verificar producción, una migración separada debe eliminar `stores.table_order_token` y su índice para cerrar definitivamente la exposición.
+
+- Auditoría solo lectura; no se modificó producción ni código funcional.
+- Capacidad actual: 5.000 pedidos/día son 0,058 pedidos/s promedio; el stack Vercel + Supabase puede soportarlo, pero el sistema aún no debe declararse listo para picos sin corregir P0/P1.
+- P0 seguridad confirmado con cliente anónimo: `stores` concede SELECT público a toda la tabla y expone `table_order_token`. Se pudieron leer tokens no nulos de los 31 comercios activos; 1 tiene Mesas habilitado. No se mostraron ni guardaron los tokens. Separar el token en tabla privada o restringir columnas/usar API pública con DTO y rotar tokens.
+- P0 consistencia: `/api/orders` inserta `orders`, `order_items`, `order_item_options` y cliente en operaciones separadas. Hay limpieza compensatoria, pero una terminación entre pasos puede dejar pedidos incompletos. Migrar la escritura a una función PostgreSQL transaccional e idempotente. El pedido manual repite el mismo patrón.
+- P1 catálogo: `getPublicStores()` hidrata delivery con 3 consultas por comercio mediante `Promise.all` (N+1). Con 31 comercios activos una regeneración puede lanzar ~93 consultas adicionales. Cambiar a 3 consultas masivas y agrupar por `store_id`.
+- P1 infraestructura: Vercel ejecuta en `iad1`, mientras Supabase producción está en AWS `us-west-2`; probar Preview en `sfo1` contra `iad1` y fijar la región ganadora por p95.
+- P1 proveedores: llamadas Entrega2 no tienen timeout/AbortSignal; ya hubo una espera real de ~60,7 s. Definir timeout corto, circuit breaker y fallback inmediato. Nominatim también carece de timeout.
+- P1 estadísticas: `/api/panel/stats` descarga y agrega pedidos en Node y limita a 1.000; con 5.000/día devuelve cifras truncadas. Mover agregaciones a SQL/RPC y materializaciones por día/comercio.
+- P1 observabilidad/DR: no hay APM/alertas operativas persistentes; logs informativos dependen de `ENABLE_API_EVENT_LOGS`. Hay backup DB validado, pero recuperabilidad de Storage sigue pendiente y no consta PITR habilitado. Definir SLO, alertas, PITR y prueba periódica de restauración DB + Storage.
+- P2 panel: `OrdersManager` sondea cada 30 s además de Realtime; `TableOrderNotifier` cada 20 s. Reducir a Realtime con sondeo adaptativo solo como respaldo para evitar carga multiplicada por sesiones abiertas.
+- P2 rate limits: el límite de pedidos por IP/comercio puede bloquear muchos pedidos de Mesa/Barra compartiendo Wi-Fi/NAT. Hacer prueba de pico y ajustar por modalidad sin debilitar abuso.
+- P2 mantenibilidad: rutas críticas muy grandes (`panel/orders` ~1.085 líneas, `orders` ~954, `stats` ~667); separar servicios y agregar integración real, caos y carga de escritura.
+- Base remota saludable y pequeña: 28 MB, 1.242 pedidos estimados, 1.724 items, hit rate de tablas/índices 1,00, sin consultas largas ni bloqueo relevante; 11 conexiones de authenticator sobre límite 60. Esto no simula todavía 5.000 pedidos/día.
+- Vercel: deployment productivo Ready; sin logs error ni 5xx en 24 h. Lecturas secuenciales públicas: TTFB ~0,94-1,31 s. Smoke de 10 concurrentes devolvió todo 200 pero p95 ~10,6 s desde este entorno; requiere prueba k6/Artillery desde región controlada antes de usarlo como capacidad.
+- Seguridad positiva: precios/opciones/delivery se recalculan en servidor, idempotencia por comercio, rate limit distribuido, APIs panel/admin con controles multi-tenant, webhooks Entrega2 con secreto, RLS sin escrituras públicas de pedidos. `npm audit --omit=dev`: 0 vulnerabilidades; no se detectaron secretos versionados.
+- Validación: ESLint aprobado, 15/15 contratos críticos, contrato Entrega2 y build Next.js 16.3.0 de 167 páginas aprobados.
+- Orden recomendado: 1) cerrar/rotar token Mesas; 2) transacción atómica de pedidos; 3) timeouts/circuit breaker; 4) eliminar N+1; 5) SQL de estadísticas; 6) región y pruebas de carga; 7) alertas/PITR/restore; 8) sondeo adaptativo.
+
+# Opciones La Cremita Gourmet (2026-08-18)
+
+- Respaldo previo completo: `C:\Users\Windows\Desktop\RESPALDOS\somos-backups\2026-08-18\la-cremita-gourmet-before-flavor-options.json`; SHA-256 `59ee60ab699394e25e4336b78964729e3f393244a0d43d6d96d753c941b4c8f7`.
+- Grupo obligatorio `Sabores de chantilly` asignado solo a `Fresas con crema`: Chantilly tradicional, Chantilly Pistacho y Chantilly Oreo, todos USD 0; permite seleccionar mínimo 1 y máximo 2.
+- Grupo obligatorio `Tipo de chocolate` asignado a `Fresas con Chocolate` y `Fresas Dubai`: Chocolate blanco, Chocolate oscuro y Chocolate combinado, todos USD 0; exige exactamente 1.
+- Los grupos existentes Toppings, Untar y Toppings Extras permanecieron intactos.
+- API pública productiva verificada para los tres productos: grupos, obligatoriedad, límites y precios correctos.
+- No hubo cambios de código, migración, SQL, commit, push ni despliegue.
+
+# Curaduría productiva Don Aniello (2026-08-18)
+
+- Usuario aprobó la propuesta basada en ventas visibles del 2026-05-01 al 2026-07-31. La suma visible fue 1.362 unidades aunque el archivo indicaba total 3.935; la selección se basó en las filas visibles aprobadas.
+- Respaldo previo completo del catálogo: `C:\Users\Windows\Desktop\RESPALDOS\somos-backups\2026-08-18\don-aniello-catalog-before-sales-curation.json`; SHA-256 `809ab448cfc325c3a3aba26d17a6f7940e5ed698177d5bbae4fe4fcbc2d6c83a`.
+- Resultado remoto verificado: 108 productos totales, 66 activos y 42 ocultos. Se conservaron/actualizaron 49 productos existentes y se agregaron 17 productos vendidos que faltaban.
+- `Gnocchi Napolitano` fue agregado como producto distinto; `Gnocchi di Zucca` quedó oculto.
+- Exactamente cinco destacados, cubriendo tres categorías: Margherita Classica, Charcutera, Refrescos, Tricolor y Lomito alla Griglia. `Menú de la Nonna` está activo en `Promo` a USD 17, pero no destacado para respetar el límite de cinco.
+- Grupo `Extras para pizzas`: 12 extras con precio, asignado a 21 productos activos de Pizze.
+- Grupo obligatorio `Contorno incluido`: Vegetales, Puré de papa, Papas rústicas y Papas fritas, todos USD 0, asignado a 8 proteínas activas.
+- Grupo obligatorio `Tipo de pasta`: Penne, Linguini y Spaghetti, todos USD 0, asignado a 10 pastas activas.
+- `Alternativa de pasta` quedó inactiva y sin asignaciones; Sin gluten/Tiras de calabacín ya no aparecen.
+- Auditoría comprobó 0 productos ocultos asociados a los grupos nuevos. Catálogo público HTTP 200 con caché renovada: muestra Menú de la Nonna y Gnocchi Napolitano, y no muestra Marinara Original.
+- API pública verificada: Margherita devuelve 12 extras, Lomito 4 contornos y Fettuccine 3 tipos de pasta.
+- No hubo cambios de código, migración, SQL, commit, push ni despliegue. El único archivo no versionado sigue siendo `scripts/import-don-aniello-menu.mjs`, excluido por indicación del usuario.
+- Segunda curaduría aprobada: ocultar todo producto activo con 7 ventas o menos y retirar Café por completo, sin ocultar ningún otro producto con 8 o más ventas. Respaldo previo: `C:\Users\Windows\Desktop\RESPALDOS\somos-backups\2026-08-18\don-aniello-catalog-before-second-curation.json`, SHA-256 `6ef375b9b8030c06efb08d5fccd8dc79734c8e0583c1f9b1c10c3e18b2cbdf8c`.
+- Se ocultaron 12 adicionales: Quattro Estagioni, Panzerotti Charcutero, Focaccia Mortadella Italiana, Risotto di Funghi, Filetto di Mero, Panna Cotta, Profiterol, Ración de Tequeños, Agua Mineral 335 ml, Limón, Caffè Latte y Caffè Marrone. La categoría Caffè quedó inactiva.
+- Resultado final de esta regla: 108 productos totales, 54 activos y 54 ocultos; siguen exactamente 5 destacados. No es posible bajar de 50 sin ocultar al menos cinco productos con 8 ventas o más.
+- Grupos limpiados y verificados: 19 pizzas con extras, 7 proteínas con contorno, 10 pastas con tipo; 0 asignaciones a productos ocultos. Catálogo público renovado y HTTP 200: Cafè, Quattro Estagioni y Tequeños ya no aparecen; Menú de la Nonna y Margherita permanecen.
+
 - Causa confirmada en logs: `ImageResponse` no admite directamente logos WebP de Supabase.
 - La ruta OG pasa a Node.js, restringe imágenes a HTTPS del dominio público o `*.supabase.co`, limita descargas a 5 MB y convierte a PNG con Sharp.
 - Si la imagen falla, muestra la inicial del comercio y evita romper la generación.

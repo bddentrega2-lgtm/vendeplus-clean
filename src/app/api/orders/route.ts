@@ -31,6 +31,7 @@ import {
   logApiError,
   logApiEvent,
 } from "@/lib/server/observability";
+import { isValidTableOrderTokenForStore } from "@/lib/server/table-order-tokens";
 
 const MAX_ORDER_BODY_BYTES = 180_000;
 const MAX_ORDER_ITEMS = 80;
@@ -309,7 +310,7 @@ export async function POST(request: NextRequest) {
     const supabase = createSupabaseAdminClient();
     let storeResult = await supabase
       .from("stores")
-      .select("id, slug, name, whatsapp, usd_to_bs, base_currency, is_active, latitude, longitude, opening_hours, business_hours, manual_open_status, manual_open_note, accepts_delivery, accepts_pickup, accepts_national_shipping, payment_methods, table_orders_access_enabled, table_orders_enabled, table_order_token, table_payment_methods, table_order_fulfillment_mode, plan_type, monthly_price_usd, service_fee_payer, service_fee_billing_cycle, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
+      .select("id, slug, name, whatsapp, usd_to_bs, base_currency, is_active, latitude, longitude, opening_hours, business_hours, manual_open_status, manual_open_note, accepts_delivery, accepts_pickup, accepts_national_shipping, payment_methods, table_orders_access_enabled, table_orders_enabled, table_payment_methods, table_order_fulfillment_mode, plan_type, monthly_price_usd, service_fee_payer, service_fee_billing_cycle, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
       .eq("id", storeId)
       .single();
 
@@ -327,7 +328,6 @@ export async function POST(request: NextRequest) {
         "next_payment_due_at",
         "table_orders_enabled",
         "table_orders_access_enabled",
-        "table_order_token",
         "table_payment_methods",
         "table_order_fulfillment_mode",
       ])
@@ -355,7 +355,7 @@ export async function POST(request: NextRequest) {
       if (
         (store as any).table_orders_access_enabled !== true ||
         (store as any).table_orders_enabled !== true ||
-        String((store as any).table_order_token || "") !== tableOrder.storeToken
+        !(await isValidTableOrderTokenForStore(supabase, storeId, tableOrder.storeToken))
       ) {
         return requestBadRequest("Los pedidos en mesa no están disponibles en este momento.");
       }
@@ -796,7 +796,7 @@ export async function POST(request: NextRequest) {
           ),
           tableOrder: validatedTable
             ? {
-                storeToken: String((store as any).table_order_token),
+                storeToken: tableOrder?.storeToken || "",
                 tableId: validatedTable.id || "",
                 tableName: validatedTable.name,
                 tableZone: validatedTable.zone,
@@ -924,7 +924,7 @@ export async function POST(request: NextRequest) {
       whatsappUrl,
       tableOrder: validatedTable
         ? {
-            storeToken: String((store as any).table_order_token),
+            storeToken: tableOrder?.storeToken || "",
             tableId: validatedTable.id || "",
             tableName: validatedTable.name,
             tableZone: validatedTable.zone,

@@ -254,6 +254,45 @@ test("fundador sin seleccion y comercio normal fallan fuera de su tenant", () =>
   assert.equal(canAccessStore(merchant, "store-b"), false);
 });
 
+test("tokens de Mesa se resuelven desde almacenamiento privado", () => {
+  const tokenStore = readFileSync(
+    new URL("../src/lib/server/table-order-tokens.ts", import.meta.url),
+    "utf8",
+  );
+  const tablePage = readFileSync(
+    new URL("../src/app/[storeSlug]/mesa/[storeToken]/page.tsx", import.meta.url),
+    "utf8",
+  );
+  const tableApi = readFileSync(
+    new URL("../src/app/api/panel/tables/route.ts", import.meta.url),
+    "utf8",
+  );
+  const statusApi = readFileSync(
+    new URL("../src/app/api/table-orders/status/route.ts", import.meta.url),
+    "utf8",
+  );
+  const orderApi = readFileSync(
+    new URL("../src/app/api/orders/route.ts", import.meta.url),
+    "utf8",
+  );
+  const migration = readFileSync(
+    new URL("../supabase/migrations/20260818054500_move_table_order_tokens_to_private.sql", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(tokenStore, /rpc\("table_order_token_for_store"/);
+  assert.match(tokenStore, /rpc\("table_order_store_id_for_token"/);
+  assert.match(tablePage, /getStoreIdByTableOrderToken/);
+  assert.match(tableApi, /getTableOrderTokenForStore/);
+  assert.match(statusApi, /getStoreIdByTableOrderToken/);
+  assert.match(orderApi, /isValidTableOrderTokenForStore/);
+  assert.doesNotMatch(tablePage, /eq\("table_order_token"/);
+  assert.doesNotMatch(statusApi, /eq\("table_order_token"/);
+  assert.match(migration, /private\.store_table_order_tokens/);
+  assert.match(migration, /revoke all on function public\.table_order_token_for_store\(uuid\) from public, anon, authenticated/);
+  assert.match(migration, /grant execute on function public\.table_order_token_for_store\(uuid\) to service_role/);
+});
+
 test("Entrega2 recibe cliente en contacto y comercio en telefono_comercio", () => {
   const route = readFileSync(
     new URL("../src/app/api/panel/orders/[orderId]/send-delivery/route.ts", import.meta.url),
