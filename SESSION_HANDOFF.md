@@ -18,6 +18,14 @@
 - Usuario aprobó la prueba manual y la Preview fue promovida a producción el 2026-08-19 como `dpl_w6GifRf2NskVY5QfQMKPQYK7t8c8` (`vendeplus-clean-kzyf3kkdw-entrega2-s-projects.vercel.app`). Los dominios productivos apuntan al deployment nuevo en estado Ready.
 - Smoke productivo aprobado: Home, Marketplace, Smash, login y Transporte HTTP 200; QR privado reconoce Smash y muestra Mesa / Barra; token legacy devuelve la vista de no encontrado; API del panel sin sesión 401; sin logs de error en el deployment.
 - Siguiente paso exacto: respaldar este P0 con commit/push excluyendo `scripts/import-don-aniello-menu.mjs`; después preparar y validar una migración separada para eliminar `stores.table_order_token` y su índice legacy.
+- P0 respaldado en GitHub: commit `f8da889` (`security: proteger tokens de mesa y barra`) publicado en `origin/main`; el importador de Don Aniello permaneció excluido.
+- Limpieza legacy preparada localmente: el helper ya no tiene fallback a `stores.table_order_token` y la migración `20260819223000_drop_legacy_table_order_token.sql` elimina solamente el índice y la columna antiguos. No se aplicó SQL remoto.
+- Validaciones de la limpieza: TypeScript, ESLint, 16/16 contratos críticos, contrato Entrega2 y build local/remoto de 167 páginas aprobados.
+- Preview de limpieza legacy: `https://vendeplus-clean-7g4x50g9s-entrega2-s-projects.vercel.app`, deployment `dpl_9rtbND9y4vS7SEEFoBBMwCWDqnos`, estado Ready. Pendiente prueba manual del QR privado; no promover ni ejecutar la migración destructiva sin aprobación.
+- Usuario aprobó la Preview de limpieza. Promovida a producción como `dpl_s5XG4Qzr9txZTXQTiDquBzRFVC8b` (`vendeplus-clean-hpaj0vp9r-entrega2-s-projects.vercel.app`), estado Ready y dominios productivos asignados.
+- Antes del SQL, producción sin fallback aprobó Home, Marketplace, Smash, login, Transporte y QR privado. Luego se aplicó `20260819223000_drop_legacy_table_order_token.sql` en Supabase remoto.
+- Cierre P0 verificado: `stores.table_order_token` ya no existe (`42703`), token privado presente, QR HTTP 200 reconociendo el comercio, panel sin sesión 401 y cero logs de error del deployment. El lint remoto conserva solo el fallo interno conocido de `extensions.index_advisor` por `hypopg_reset()`.
+- Siguiente prioridad: P0 de atomicidad de pedidos. Auditar y diseñar una función PostgreSQL transaccional e idempotente para pedido público y manual; implementar y probar local/Preview antes de cualquier SQL o promoción adicional.
 - Impacto operativo al promover el código: los QR impresos o compartidos anteriormente deben regenerarse porque el token se rota. Luego de verificar producción, una migración separada debe eliminar `stores.table_order_token` y su índice para cerrar definitivamente la exposición.
 
 - Auditoría solo lectura; no se modificó producción ni código funcional.

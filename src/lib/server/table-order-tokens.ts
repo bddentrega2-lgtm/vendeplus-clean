@@ -4,12 +4,6 @@ type SupabaseAdminClient = ReturnType<
   typeof import("@/lib/supabase/admin").createSupabaseAdminClient
 >;
 
-function isMissingPrivateTokenStore(error: { code?: string; message?: string } | null) {
-  if (!error) return false;
-  return ["42883", "PGRST202"].includes(error.code || "") ||
-    /table_order_token_(for_store|store_id)/i.test(error.message || "");
-}
-
 export async function getTableOrderTokenForStore(
   supabase: SupabaseAdminClient,
   storeId: string
@@ -18,17 +12,8 @@ export async function getTableOrderTokenForStore(
     p_store_id: storeId,
   });
 
-  if (!privateResult.error) return String(privateResult.data || "");
-  if (!isMissingPrivateTokenStore(privateResult.error)) throw privateResult.error;
-
-  const legacyResult = await supabase
-    .from("stores")
-    .select("table_order_token")
-    .eq("id", storeId)
-    .maybeSingle();
-  if (legacyResult.error) throw legacyResult.error;
-
-  return String(legacyResult.data?.table_order_token || "");
+  if (privateResult.error) throw privateResult.error;
+  return String(privateResult.data || "");
 }
 
 export async function getStoreIdByTableOrderToken(
@@ -39,17 +24,8 @@ export async function getStoreIdByTableOrderToken(
     p_token: token,
   });
 
-  if (!privateResult.error) return String(privateResult.data || "");
-  if (!isMissingPrivateTokenStore(privateResult.error)) throw privateResult.error;
-
-  const legacyResult = await supabase
-    .from("stores")
-    .select("id")
-    .eq("table_order_token", token)
-    .maybeSingle();
-  if (legacyResult.error) throw legacyResult.error;
-
-  return String(legacyResult.data?.id || "");
+  if (privateResult.error) throw privateResult.error;
+  return String(privateResult.data || "");
 }
 
 export async function isValidTableOrderTokenForStore(

@@ -279,9 +279,16 @@ test("tokens de Mesa se resuelven desde almacenamiento privado", () => {
     new URL("../supabase/migrations/20260818054500_move_table_order_tokens_to_private.sql", import.meta.url),
     "utf8",
   );
+  const cleanupMigration = readFileSync(
+    new URL("../supabase/migrations/20260819223000_drop_legacy_table_order_token.sql", import.meta.url),
+    "utf8",
+  );
 
   assert.match(tokenStore, /rpc\("table_order_token_for_store"/);
   assert.match(tokenStore, /rpc\("table_order_store_id_for_token"/);
+  assert.doesNotMatch(tokenStore, /\.from\("stores"\)/);
+  assert.doesNotMatch(tokenStore, /select\("table_order_token"\)/);
+  assert.doesNotMatch(tokenStore, /eq\("table_order_token"/);
   assert.match(tablePage, /getStoreIdByTableOrderToken/);
   assert.match(tableApi, /getTableOrderTokenForStore/);
   assert.match(statusApi, /getStoreIdByTableOrderToken/);
@@ -291,6 +298,8 @@ test("tokens de Mesa se resuelven desde almacenamiento privado", () => {
   assert.match(migration, /private\.store_table_order_tokens/);
   assert.match(migration, /revoke all on function public\.table_order_token_for_store\(uuid\) from public, anon, authenticated/);
   assert.match(migration, /grant execute on function public\.table_order_token_for_store\(uuid\) to service_role/);
+  assert.match(cleanupMigration, /drop index if exists public\.stores_table_order_token_uidx/);
+  assert.match(cleanupMigration, /drop column if exists table_order_token/);
 });
 
 test("Entrega2 recibe cliente en contacto y comercio en telefono_comercio", () => {
