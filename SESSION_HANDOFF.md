@@ -633,4 +633,4 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 - Usuario aprobó los colores e iconos locales y autorizó producción. Se creó primero Preview limpia `dpl_DFiyaRukMMF9ufWGfK1DA6M4Dnrp` (`vendeplus-clean-9g2d9wtws-entrega2-s-projects.vercel.app`), Ready y sin errores, y se promovió exactamente ese deployment.
 - Producción vigente: `dpl_GJYsWyxbiFhzfNezLfXbeGdSbzyV` (`vendeplus-clean-3bhstoy2t-entrega2-s-projects.vercel.app`), Ready; dominios `www.somos-ve.com`, `somos-ve.com` y `vendeplus-clean.vercel.app` asignados.
 - Smoke productivo: Home, Marketplace, Alkkon Fit, login y Transporte HTTP 200; API de panel sin sesión HTTP 401 esperado; sin HTTP 500 ni errores en logs. Rollback web anterior: `dpl_CabbMnCyz82gzQkHwQseVKXj7EnD`.
-- No hubo migración ni SQL en este ajuste. Los cambios siguen pendientes de commit/push a GitHub.
+- No hubo migración ni SQL en este ajuste. Paquete completo respaldado en Git mediante commit `9debfff` (`feat: optimizar empresas delivery y renovar home`) y enviado a `origin/main`.
