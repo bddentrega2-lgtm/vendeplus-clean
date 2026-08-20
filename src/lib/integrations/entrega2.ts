@@ -1,6 +1,15 @@
 import "server-only";
 
 const PROVIDER = "entrega2";
+const ENTREGA2_QUOTE_TIMEOUT_MS = 4_500;
+const ENTREGA2_ORDER_TIMEOUT_MS = 8_000;
+const ENTREGA2_CIRCUIT_FAILURE_LIMIT = 3;
+const ENTREGA2_CIRCUIT_OPEN_MS = 30_000;
+
+const quoteCircuit = {
+  failures: 0,
+  openUntil: 0,
+};
 
 export class Entrega2ConfigError extends Error {
   constructor(message: string) {
@@ -72,16 +81,11 @@ export async function sendEntrega2Order(payload: Record<string, unknown>) {
   const config = getEntrega2Config();
   const endpoint = `${config.baseUrl}/pedidos`;
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "X-API-Key": config.apiKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-    cache: "no-store",
-  });
-  const responsePayload = await parseResponse(response);
+  const { response, responsePayload } = await requestEntrega2(
+    endpoint,
+    payload,
+    ENTREGA2_ORDER_TIMEOUT_MS
+  );
 
   if (!response.ok) {
     throw new Entrega2ApiError(
@@ -101,35 +105,105 @@ export async function sendEntrega2Order(payload: Record<string, unknown>) {
 export async function quoteEntrega2Delivery(payload: Record<string, unknown>) {
   const config = getEntrega2Config();
   const endpoint = `${config.baseUrl}/cotiza2`;
+  assertEntrega2QuoteCircuitAvailable();
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "X-API-Key": config.apiKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-    cache: "no-store",
-  });
-  const responsePayload = await parseResponse(response);
-
-  if (!response.ok) {
-    throw new Entrega2ApiError(
-      "Entrega2 App no pudo cotizar el delivery.",
-      response.status,
-      responsePayload
+  try {
+    const { response, responsePayload } = await requestEntrega2(
+      endpoint,
+      payload,
+      ENTREGA2_QUOTE_TIMEOUT_MS
     );
-  }
 
-  return {
-    endpoint,
-    status: response.status,
-    payload: responsePayload,
-  };
+    if (!response.ok) {
+      throw new Entrega2ApiError(
+        "Entrega2 App no pudo cotizar el delivery.",
+        response.status,
+        responsePayload
+      );
+    }
+
+    recordEntrega2QuoteSuccess();
+    return {
+      endpoint,
+      status: response.status,
+      payload: responsePayload,
+    };
+  } catch (error) {
+    recordEntrega2QuoteFailure(error);
+    throw error;
+  }
 }
 
 export function getEntrega2CreatedByUserId() {
   return "somos_ve@entrega2company.com";
+}
+
+async function requestEntrega2(
+  endpoint: string,
+  payload: Record<string, unknown>,
+  timeoutMs: number
+) {
+  const config = getEntrega2Config();
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "X-API-Key": config.apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+      signal: controller.signal,
+    });
+
+    return { response, responsePayload: await parseResponse(response) };
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Entrega2ApiError(
+        "Entrega2 App tardó demasiado en responder.",
+        504,
+        { reason: "timeout", timeoutMs }
+      );
+    }
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
+}
+
+function assertEntrega2QuoteCircuitAvailable() {
+  if (quoteCircuit.openUntil <= Date.now()) {
+    if (quoteCircuit.openUntil) {
+      quoteCircuit.failures = 0;
+      quoteCircuit.openUntil = 0;
+    }
+    return;
+  }
+
+  throw new Entrega2ApiError(
+    "Entrega2 App está temporalmente en contingencia.",
+    503,
+    { reason: "circuit_open", retryAt: quoteCircuit.openUntil }
+  );
+}
+
+function recordEntrega2QuoteFailure(error: unknown) {
+  const shouldCount =
+    !(error instanceof Entrega2ApiError) || error.status === 429 || error.status >= 500;
+  if (!shouldCount) return;
+
+  quoteCircuit.failures += 1;
+  if (quoteCircuit.failures >= ENTREGA2_CIRCUIT_FAILURE_LIMIT) {
+    quoteCircuit.openUntil = Date.now() + ENTREGA2_CIRCUIT_OPEN_MS;
+  }
+}
+
+function recordEntrega2QuoteSuccess() {
+  quoteCircuit.failures = 0;
+  quoteCircuit.openUntil = 0;
 }
 
 export function getEntrega2DefaultVehicleType() {

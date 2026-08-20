@@ -821,9 +821,75 @@ async function hydrateStoreDeliveryRelations(row: AnyRecord | null): Promise<Any
 }
 
 async function hydrateStoresDeliveryRelations(rows: AnyRecord[]): Promise<AnyRecord[]> {
-  return Promise.all(
-    rows.map(async (row) => (await hydrateStoreDeliveryRelations(row)) || row)
+  const storeIds = Array.from(
+    new Set(rows.map((row) => String(row?.id || "")).filter(Boolean))
   );
+  if (!storeIds.length) return rows;
+
+  try {
+    const supabase = createSupabaseAdminClient();
+    const [settingsResult, zonesResult, ratesResult] = await Promise.all([
+      supabase
+        .from("store_delivery_settings")
+        .select(
+          "store_id, delivery_enabled, pickup_enabled, national_shipping_enabled, delivery_provider, pricing_type, fixed_fee_usd, free_delivery_min_usd, delivery_promo_enabled, delivery_promo_min_subtotal_usd, delivery_promo_discount_type, delivery_promo_discount_value, max_distance_km, distance_factor, manual_quote_message, transport_agency_connection_id, transport_agency_id"
+        )
+        .in("store_id", storeIds),
+      supabase
+        .from("store_delivery_zones")
+        .select("id, store_id, name, description, fee_usd, is_active, sort_order")
+        .in("store_id", storeIds)
+        .order("sort_order", { ascending: true }),
+      supabase
+        .from("store_delivery_distance_rates")
+        .select("id, store_id, min_km, max_km, fee_usd, is_active, sort_order")
+        .in("store_id", storeIds)
+        .order("sort_order", { ascending: true }),
+    ]);
+
+    const settingsByStore = new Map<string, AnyRecord>();
+    const zonesByStore = new Map<string, AnyRecord[]>();
+    const ratesByStore = new Map<string, AnyRecord[]>();
+
+    if (!settingsResult.error) {
+      for (const setting of settingsResult.data || []) {
+        settingsByStore.set(String(setting.store_id), setting);
+      }
+    }
+    if (!zonesResult.error) {
+      for (const zone of zonesResult.data || []) {
+        const storeId = String(zone.store_id);
+        zonesByStore.set(storeId, [...(zonesByStore.get(storeId) || []), zone]);
+      }
+    }
+    if (!ratesResult.error) {
+      for (const rate of ratesResult.data || []) {
+        const storeId = String(rate.store_id);
+        ratesByStore.set(storeId, [...(ratesByStore.get(storeId) || []), rate]);
+      }
+    }
+
+    return rows.map((row) => {
+      const storeId = String(row.id);
+      const setting = settingsByStore.get(storeId);
+      return {
+        ...row,
+        store_delivery_settings: settingsResult.error
+          ? row.store_delivery_settings || []
+          : setting
+            ? [setting]
+            : [],
+        store_delivery_zones: zonesResult.error
+          ? row.store_delivery_zones || []
+          : zonesByStore.get(storeId) || [],
+        store_delivery_distance_rates: ratesResult.error
+          ? row.store_delivery_distance_rates || []
+          : ratesByStore.get(storeId) || [],
+      };
+    });
+  } catch {
+    return rows;
+  }
 }
 
 async function getMarketplaceEligibleStoreIds(

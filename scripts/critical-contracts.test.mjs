@@ -530,3 +530,41 @@ test("super admin activa el pack premium de empresas delivery", () => {
   assert.match(route, /premium_dispatch_enabled: body\.enabled/);
   assert.match(route, /await requireAdminAuth\(request\)/);
 });
+
+test("Entrega2 corta esperas largas y activa contingencia temporal", () => {
+  const integration = readFileSync(
+    new URL("../src/lib/integrations/entrega2.ts", import.meta.url),
+    "utf8",
+  );
+  const quoteRoute = readFileSync(
+    new URL("../src/app/api/delivery/quote/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(integration, /ENTREGA2_QUOTE_TIMEOUT_MS = 4_500/);
+  assert.match(integration, /ENTREGA2_ORDER_TIMEOUT_MS = 8_000/);
+  assert.match(integration, /signal: controller\.signal/);
+  assert.match(integration, /globalThis\.clearTimeout\(timeout\)/);
+  assert.match(integration, /ENTREGA2_CIRCUIT_FAILURE_LIMIT = 3/);
+  assert.match(integration, /assertEntrega2QuoteCircuitAvailable/);
+  assert.match(quoteRoute, /entrega2_quote_fallback_used/);
+  assert.match(quoteRoute, /calculateEntrega2FallbackQuote/);
+});
+
+test("Home y Marketplace hidratan delivery en tres consultas por lote", () => {
+  const catalog = readFileSync(
+    new URL("../src/lib/supabase/catalog.ts", import.meta.url),
+    "utf8",
+  );
+  const batchHydrator = catalog.slice(
+    catalog.indexOf("async function hydrateStoresDeliveryRelations"),
+    catalog.indexOf("async function getMarketplaceEligibleStoreIds"),
+  );
+
+  assert.match(batchHydrator, /Promise\.all/);
+  assert.match(batchHydrator, /\.in\("store_id", storeIds\)/);
+  assert.match(batchHydrator, /settingsByStore/);
+  assert.match(batchHydrator, /zonesByStore/);
+  assert.match(batchHydrator, /ratesByStore/);
+  assert.doesNotMatch(batchHydrator, /rows\.map\(async/);
+});

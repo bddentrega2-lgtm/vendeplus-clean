@@ -634,3 +634,23 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 - Producción vigente: `dpl_GJYsWyxbiFhzfNezLfXbeGdSbzyV` (`vendeplus-clean-3bhstoy2t-entrega2-s-projects.vercel.app`), Ready; dominios `www.somos-ve.com`, `somos-ve.com` y `vendeplus-clean.vercel.app` asignados.
 - Smoke productivo: Home, Marketplace, Alkkon Fit, login y Transporte HTTP 200; API de panel sin sesión HTTP 401 esperado; sin HTTP 500 ni errores en logs. Rollback web anterior: `dpl_CabbMnCyz82gzQkHwQseVKXj7EnD`.
 - No hubo migración ni SQL en este ajuste. Paquete completo respaldado en Git mediante commit `9debfff` (`feat: optimizar empresas delivery y renovar home`) y enviado a `origin/main`.
+
+# P1 resiliencia Entrega2 y catálogo público (2026-08-20)
+
+- Prioridades 1 y 3 implementadas localmente, sin producción: las cotizaciones de Entrega2 abortan a los 4,5 s y los envíos de pedidos a los 8 s. El timeout cubre también la lectura del cuerpo y siempre limpia el temporizador.
+- Se agregó cortacircuito de cotización por instancia: después de 3 fallos de red, HTTP 429/5xx o timeout, evita nuevas esperas durante 30 s y permite que `/api/delivery/quote` use inmediatamente las tarifas de contingencia ya existentes. Los errores 4xx normales no abren el circuito.
+- Home y Marketplace dejaron de ejecutar tres consultas delivery por comercio. `hydrateStoresDeliveryRelations` hace solo tres consultas masivas por lote (`settings`, `zones`, `distance_rates`) y agrupa los resultados por `store_id`; con 31 comercios pasa de hasta ~93 consultas adicionales a 3.
+- El hidratador conserva los datos ya incluidos si una consulta masiva específica falla, evitando borrar configuración por una incompatibilidad temporal.
+- Validaciones aprobadas: TypeScript, ESLint, 26/26 contratos críticos y build Next.js 16.3.0 de 159 páginas. Smoke local: Home, Marketplace y Alkkon Fit HTTP 200.
+- Preview: `https://vendeplus-clean-2empl8kpk-entrega2-s-projects.vercel.app`, deployment `dpl_Gnd6m8jgCJPKbjnr1Mu5gTNEaxfM`, target Preview, Ready, build remoto aprobado y sin logs de error.
+- No hubo migración ni SQL. Producción sigue intacta. Próximo paso: validar Home/Marketplace/catálogos en Preview y una cotización Entrega2; promover solo con aprobación explícita.
+- Usuario aprobó la Preview y autorizó producción. Se promovió exactamente `dpl_Gnd6m8jgCJPKbjnr1Mu5gTNEaxfM` como deployment productivo `dpl_JDnrqBD1F1FgpH5j4CXTt8pP96HE` (`vendeplus-clean-qw4is7gj3-entrega2-s-projects.vercel.app`), estado Ready.
+- Alias productivos confirmados: `www.somos-ve.com`, `somos-ve.com` y `vendeplus-clean.vercel.app`. Smoke: Home, Marketplace, Alkkon Fit y Transporte HTTP 200; API de panel sin sesión rechazada; sin HTTP 500 ni errores en logs.
+- Rollback web anterior: `dpl_5ZfdoVqSFZxFKtuvsJAukqxDPQ78` (`vendeplus-clean-el30ljxyw-entrega2-s-projects.vercel.app`). Pendiente respaldar este P1 en GitHub cuando el usuario lo autorice.
+
+# Próxima prioridad - TDK multisede (2026-08-20)
+
+- Crear dos comercios independientes adicionales: `TDK Delicias` y `TDK Los Cedros`, inicialmente con el mismo catálogo/productos de la sede TDK existente.
+- Cada sede debe conservar operación independiente: pedidos, configuración, delivery, horarios, usuarios y futuras modificaciones de catálogo no deben mezclarse automáticamente.
+- Se necesita una vista central autorizada para consultar los pedidos de todas las sedes. Antes de implementar, revisar el plan existente `docs/MODULO_CADENAS_PLAN.md` y elegir la solución mínima segura: agrupación de sedes + permisos explícitos, manteniendo `store_id` en cada pedido.
+- No se crearon sedes ni se copiaron datos en esta sesión. Próximo paso exacto: auditar la sede TDK actual, definir los slugs/datos básicos y presentar el alcance del panel consolidado antes de cualquier escritura remota.
