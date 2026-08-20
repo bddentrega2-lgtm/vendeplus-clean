@@ -15,10 +15,10 @@ import {
 import {
   canTransitionTransportOrder,
   getTransportOrderTimestampField,
-  insertTransportOrderEvent,
   mapTransportStatusToOrderDeliveryStatus,
   normalizeTransportOrderStatus,
 } from "@/lib/transport/orders";
+import { mutateTransportOrderAtomic } from "@/lib/server/mutate-transport-order-atomic";
 
 function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
@@ -42,7 +42,7 @@ export async function PATCH(
 
     const { data: transportOrder, error: orderError } = await supabase
       .from("transport_orders")
-      .select("*")
+      .select("id, order_id, agency_id, status, agency_status_note, sent_to_agency_at, agency_received_at, accepted_at, rejected_at, assigned_at, picked_up_at, on_the_way_at, delivered_at, cancelled_at")
       .eq("id", transportOrderId)
       .maybeSingle();
 
@@ -77,45 +77,26 @@ export async function PATCH(
       agency_status_note: note || transportOrder.agency_status_note || null,
       updated_at: now,
     };
-    if (timestampField && !transportOrder[timestampField]) payload[timestampField] = now;
+    if (timestampField && !(transportOrder as Record<string, unknown>)[timestampField]) {
+      payload[timestampField] = now;
+    }
     if (nextStatus === "agency_rejected") payload.rejection_reason = note || "Rechazado por empresa delivery.";
 
-    const { data: updated, error: updateError } = await supabase
-      .from("transport_orders")
-      .update(payload)
-      .eq("id", transportOrder.id)
-      .select("*")
-      .single();
-
-    if (updateError) throw updateError;
-
-    await insertTransportOrderEvent(supabase, {
+    const updated = await mutateTransportOrderAtomic(supabase, {
       transportOrderId: transportOrder.id,
-      eventType: "status_changed",
-      statusFrom: currentStatus,
-      statusTo: nextStatus,
-      note,
-      actorType: auth.isFounderMode ? "admin" : "agency",
-      actorUserId: auth.userId,
-      actorName: auth.email || "Empresa delivery",
+      transportPayload: payload,
+      eventPayload: {
+        event_type: "status_changed",
+        status_from: currentStatus,
+        status_to: nextStatus,
+        note,
+        actor_type: auth.isFounderMode ? "admin" : "agency",
+        actor_user_id: auth.userId,
+        actor_name: auth.email || "Empresa delivery",
+      },
+      orderDeliveryStatus: mapTransportStatusToOrderDeliveryStatus(nextStatus),
+      integrationStatus: nextStatus,
     });
-
-    await supabase
-      .from("orders")
-      .update({
-        delivery_status: mapTransportStatusToOrderDeliveryStatus(nextStatus),
-        transport_agency_status: nextStatus,
-      })
-      .eq("id", transportOrder.order_id);
-
-    await supabase
-      .from("order_integrations")
-      .update({
-        status: nextStatus,
-        updated_at: now,
-      })
-      .eq("order_id", transportOrder.order_id)
-      .eq("provider", "transport_agency");
 
     logApiEvent(apiContext, "transport_order_status_changed", {
       transportOrderId: transportOrder.id,

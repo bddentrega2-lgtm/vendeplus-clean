@@ -30,17 +30,17 @@ interface TransportOrdersTabProps {
   stores: any[];
 }
 
-const statusActions = [
-  ["agency_received", "Recibido"],
-  ["agency_accepted", "Aceptar"],
-  ["agency_rejected", "Rechazar"],
-  ["pickup_pending", "Pendiente por retirar"],
-  ["picked_up", "Retirado"],
-  ["on_the_way", "En camino"],
-  ["delivered", "Entregado"],
-  ["delivery_failed", "Entrega fallida"],
-  ["issue_reported", "Novedad"],
-] as const;
+const statusActionsByCurrent: Record<string, Array<readonly [string, string]>> = {
+  pending_agency: [["agency_accepted", "Aceptar"], ["agency_rejected", "Rechazar"]],
+  sent_to_agency: [["agency_accepted", "Aceptar"], ["agency_rejected", "Rechazar"]],
+  agency_received: [["agency_accepted", "Aceptar"], ["agency_rejected", "Rechazar"]],
+  agency_accepted: [["on_the_way", "En camino"], ["issue_reported", "Reportar novedad"]],
+  driver_assigned: [["on_the_way", "En camino"], ["issue_reported", "Reportar novedad"]],
+  pickup_pending: [["on_the_way", "En camino"], ["issue_reported", "Reportar novedad"]],
+  picked_up: [["on_the_way", "En camino"], ["issue_reported", "Reportar novedad"]],
+  on_the_way: [["delivered", "Entregado"], ["delivery_failed", "Entrega fallida"], ["issue_reported", "Reportar novedad"]],
+  issue_reported: [["agency_accepted", "Retomar"], ["on_the_way", "En camino"], ["cancelled", "Cancelar"]],
+};
 
 const closedStatuses = ["delivered", "agency_rejected", "cancelled", "delivery_failed"];
 
@@ -308,9 +308,7 @@ export function TransportOrdersTab({
                         aria-label={`Actualizar estado de ${entry.orders?.public_code || "pedido"}`}
                       >
                         <option value={entry.status}>{isSaving ? "Actualizando..." : statusLabel}</option>
-                        {statusActions
-                          .filter(([status]) => status !== entry.status)
-                          .map(([status, label]) => (
+                        {(statusActionsByCurrent[entry.status] || []).map(([status, label]) => (
                             <option key={status} value={status}>
                               {label}
                             </option>

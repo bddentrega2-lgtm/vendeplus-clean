@@ -60,19 +60,23 @@ export async function requireTransportAgencyAuth(
   }
 
   const normalizedEmail = normalizeAuthEmail(email);
-  const { data: userRows, error: userRowsError } = await supabase
-    .from("transport_agency_users")
-    .select("agency_id, role")
-    .eq("user_id", data.user.id);
+  const [
+    { data: userRows, error: userRowsError },
+    { data: emailRows, error: emailRowsError },
+  ] = await Promise.all([
+    supabase
+      .from("transport_agency_users")
+      .select("agency_id, role")
+      .eq("user_id", data.user.id),
+    normalizedEmail
+      ? supabase
+          .from("transport_agency_users")
+          .select("agency_id, role")
+          .eq("email", normalizedEmail)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
 
   if (userRowsError) throw userRowsError;
-
-  const { data: emailRows, error: emailRowsError } = normalizedEmail
-    ? await supabase
-        .from("transport_agency_users")
-        .select("agency_id, role")
-        .eq("email", normalizedEmail)
-    : { data: [], error: null };
 
   if (emailRowsError) throw emailRowsError;
 

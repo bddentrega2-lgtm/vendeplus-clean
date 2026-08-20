@@ -106,7 +106,7 @@ export async function GET(request: NextRequest) {
     const buildOrdersQuery = (selectClause: string) => {
       let query = supabase
         .from("transport_orders")
-        .select(selectClause, { count: "exact" })
+        .select(selectClause)
         .in("agency_id", agencyIds)
         .order("created_at", { ascending: false });
 
@@ -127,7 +127,7 @@ export async function GET(request: NextRequest) {
         query = query.gte("created_at", week.start).lt("created_at", week.end);
       }
 
-      return query.range(from, to);
+      return query.range(from, to + 1);
     };
 
     let result = await buildOrdersQuery(transportOrdersSummarySelect);
@@ -135,8 +135,10 @@ export async function GET(request: NextRequest) {
       result = await buildOrdersQuery(transportOrdersSummarySelectWithoutDrivers);
     }
 
-    const { data, error, count } = result;
+    const { data: rawData, error } = result;
     if (error) throw error;
+    const hasMore = (rawData?.length || 0) > limit;
+    const data = (rawData || []).slice(0, limit);
 
     const storeMap = new Map<string, any>();
     for (const order of (data || []) as any[]) {
@@ -151,8 +153,7 @@ export async function GET(request: NextRequest) {
       pagination: {
         page,
         limit,
-        total: count || 0,
-        hasMore: from + (data?.length || 0) < (count || 0),
+        hasMore,
       },
     });
   } catch (error) {

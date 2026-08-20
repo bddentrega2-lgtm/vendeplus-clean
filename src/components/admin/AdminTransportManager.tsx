@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, Loader2, PauseCircle, RefreshCcw, XCircle } from "lucide-react";
+import { CheckCircle2, Crown, Loader2, PauseCircle, RefreshCcw, XCircle } from "lucide-react";
 import {
   getPanelAuthHeaders,
   getSavedPanelPin,
@@ -22,6 +22,7 @@ export function AdminTransportManager() {
   const [storeQuery, setStoreQuery] = useState("");
   const [ordersPage, setOrdersPage] = useState(1);
   const [ordersHasMore, setOrdersHasMore] = useState(false);
+  const [savingPremiumAgencyId, setSavingPremiumAgencyId] = useState("");
 
   const load = useCallback(async (currentPin?: string, options: { ordersPage?: number; appendOrders?: boolean } = {}) => {
     setIsLoading(true);
@@ -77,6 +78,36 @@ export function AdminTransportManager() {
     }
     setMessage("Empresa delivery actualizada.");
     load();
+  }
+
+  async function updatePremiumDispatch(agencyId: string, enabled: boolean) {
+    setSavingPremiumAgencyId(agencyId);
+    setMessage("");
+    try {
+      const response = await fetch("/api/admin/transport/agencies", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(await getPanelAuthHeaders(pin)) },
+        body: JSON.stringify({
+          action: "update_premium_dispatch",
+          agencyId,
+          enabled,
+        }),
+      });
+      const next = await response.json();
+      if (!response.ok) throw new Error(next.error || "No se pudo actualizar el pack premium.");
+
+      setData((current: any) => ({
+        ...current,
+        agencies: (current.agencies || []).map((agency: any) =>
+          agency.id === agencyId ? { ...agency, ...next.agency } : agency
+        ),
+      }));
+      setMessage(enabled ? "Pack premium activado." : "Pack premium desactivado.");
+    } catch (error: any) {
+      setMessage(error.message || "No se pudo actualizar el pack premium.");
+    } finally {
+      setSavingPremiumAgencyId("");
+    }
   }
 
   async function disengageConnection(connectionId: string) {
@@ -171,6 +202,26 @@ export function AdminTransportManager() {
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updatePremiumDispatch(agency.id, agency.premium_dispatch_enabled !== true)
+                    }
+                    disabled={savingPremiumAgencyId === agency.id}
+                    aria-pressed={agency.premium_dispatch_enabled === true}
+                    className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-black disabled:opacity-60 ${
+                      agency.premium_dispatch_enabled
+                        ? "bg-[#2E3A79] text-white"
+                        : "bg-white text-[#2E3A79] ring-1 ring-[#2E3A79]/20"
+                    }`}
+                  >
+                    {savingPremiumAgencyId === agency.id ? (
+                      <Loader2 size={15} className="animate-spin" />
+                    ) : (
+                      <Crown size={15} />
+                    )}
+                    {agency.premium_dispatch_enabled ? "Premium activo" : "Activar premium"}
+                  </button>
                   <button
                     onClick={() => updateAgency(agency.id, "active")}
                     className="inline-flex items-center gap-2 rounded-full bg-green-100 px-4 py-2 text-xs font-black text-green-700"

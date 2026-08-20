@@ -1,3 +1,19 @@
+# P0 rendimiento panel de empresas delivery (2026-08-19)
+
+- Implementación local y Preview listas; producción intacta, sin migración ni SQL.
+- Estados y asignaciones actualizan solo la fila afectada; se eliminaron las recargas completas de pedidos/panel y el recálculo de facturación desde la vista operativa.
+- Realtime ignora durante 2 segundos únicamente el servicio mutado por el mismo navegador; cambios externos continúan invalidando la lista. Polling de respaldo pasó de 30 a 180 segundos.
+- La lista dejó de pedir conteo exacto: usa `limit + 1`, devuelve 40 filas y determina `hasMore`. La API de estados dejó de usar `select(*)`.
+- Las búsquedas de membresía por usuario y correo se ejecutan en paralelo después de validar el token; controles de rol y tenant permanecen.
+- Validaciones: TypeScript, ESLint, 21/21 contratos críticos y build local/remoto Next.js 16.3.0 de 167 páginas aprobados.
+- Preview: `https://vendeplus-clean-li8qbnhhy-entrega2-s-projects.vercel.app`, deployment `dpl_2MpJGuoJ1y2hzfQDCQ2kKfLebUQt`, Ready, sin logs de error.
+- Próximo paso exacto: validar con sesión real en `/transporte/panel/pedidos`: carga, cambio de estado, asignación, aparición inmediata del botón WhatsApp, filtros y recepción de un pedido externo. No promover sin aprobación explícita.
+- Segunda fase preparada localmente: la navegación usa pestañas internas con `history.pushState`, conserva el panel montado y soporta Atrás/Adelante, eliminando “Cargando empresa delivery” entre módulos.
+- Estados visibles simplificados por etapa: pendiente solo Aceptar/Rechazar; aceptado o asignado pasa a En camino/Novedad; En camino pasa a Entregado/Fallido/Novedad. Se habilitó server-side `pending_agency -> agency_rejected` y `driver_assigned -> on_the_way/delivered`, que antes podían dejar el flujo atascado.
+- Nueva migración aditiva pendiente `20260820033000_mutate_transport_order_atomic_rpc.sql`: actualiza servicio, evento, pedido e integración en una sola transacción para estados y asignaciones. RPC revocada a `anon/authenticated`, solo `service_role`.
+- Dry-run remoto de Supabase aprobado; no se aplicó SQL. TypeScript, ESLint, 22/22 contratos y build local de 167 páginas aprobados.
+- Próximo paso exacto: con autorización explícita, validar la RPC en `BEGIN/ROLLBACK`, aplicar la migración aditiva y desplegar nueva Preview. El código nuevo no debe desplegarse antes de la RPC.
+
 # Configuración opcional de cédula del cliente (2026-08-19)
 
 - Migración aditiva aplicada y registrada en Supabase remoto; producción web permanece intacta.
@@ -584,3 +600,37 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 - Validaciones aprobadas: TypeScript, ESLint, 19/19 contratos críticos y build local/remoto Next.js 16.3.0 de 167 páginas.
 - Preview corregida: `https://vendeplus-clean-ikrrdya0s-entrega2-s-projects.vercel.app`, deployment `dpl_CK628EP1CcyDCs6CMHb2EgVgDcSd`, Ready, sin logs de error ni HTTP 500. Producción intacta; sin migración ni SQL.
 - Próximo paso exacto: usuario valida papelera y un producto manual con tamaño + extras (incluyendo cambio de precio); promover solo con aprobación explícita.
+
+# Estado 2026-08-19 - P0 empresas delivery
+
+- Se eliminó el remount entre módulos del panel delivery: la navegación interna cambia de pestaña y URL sin desmontar `TransportAgencyPanel`, conserva historial Atrás/Adelante y evita la pantalla blanca de “Cargando empresa delivery”.
+- Los estados visibles se redujeron a las siguientes acciones válidas según el estado actual. Se corrigieron transiciones faltantes desde pendiente hacia rechazo y desde repartidor asignado hacia en camino/entregado.
+- Las mutaciones de estado y repartidor ahora pasan por `mutate_transport_order_atomic`: servicio, evento, pedido origen e integración se actualizan dentro de una sola transacción PostgreSQL.
+- La migración aditiva `20260820033000_mutate_transport_order_atomic_rpc.sql` fue aplicada a Supabase remoto con autorización del usuario. Permisos verificados: denegada a anon y disponible solo para service role. La prueba de error controlado no alteró pedidos ni eventos reales.
+- Performance P0 adicional: sin refetch completo tras cambios propios, supresión del evento Realtime propio, debounce de Realtime, polling de respaldo de 30 a 180 segundos, consulta de membresía paralela, lista sin conteo exacto y paginación mediante `limit + 1`.
+- Validaciones aprobadas: TypeScript, ESLint, 22/22 contratos críticos y build local Next.js 16.3.0 de 167 páginas.
+- Preview conjunta: `https://vendeplus-clean-jbs5s46w9-entrega2-s-projects.vercel.app`, deployment `dpl_AC2H2YwfJE4S8GaMsR31DGxWkFap`, target Preview, estado Ready, sin logs de error. La ruta protegida responde 302 hacia autenticación sin sesión, comportamiento esperado.
+- Producción web no fue promovida. Próximo paso exacto: validar con sesión real (1) cambiar entre Pedidos/Repartidores/Tarifas sin pantalla blanca, (2) aceptar o rechazar un pedido pendiente, (3) asignar repartidor, pasar a En camino y Entregado, (4) abrir WhatsApp y confirmar que aparece inmediatamente. Promover solo con aprobación explícita.
+- Usuario aprobó funcionalmente el P0, pero pidió antes agregar filtro por repartidor en Facturación. `TransportBillingTab` ahora permite elegir todos, un repartidor histórico/actual o servicios sin asignar; el filtro actualiza el total filtrado, el detalle y el bloque de pagos sin nuevas consultas al servidor.
+- Validaciones finales aprobadas: TypeScript, ESLint, 23/23 contratos críticos y build local/remoto Next.js 16.3.0 de 159 páginas estáticas generadas.
+- Nueva Preview conjunta: `https://vendeplus-clean-65s6n4syv-entrega2-s-projects.vercel.app`, deployment `dpl_3DyCZTesVfuH1wno5iBHfrjZf5rV`, target Preview, estado Ready, sin logs de error. Facturación protegida responde 302 hacia autenticación sin sesión, esperado.
+- No hubo migración nueva ni SQL adicional. Producción web continúa intacta. Próximo paso exacto: usuario valida el filtro en Facturación y, con aprobación explícita, promover esta Preview conjunta a producción y ejecutar smoke + logs.
+- Se agregó en Super Admin → Transporte un control independiente por empresa: `Activar premium` / `Premium activo`. Es reversible, actualiza la tarjeta inmediatamente y no altera aprobación, publicación, tarifas ni conexiones.
+- El endpoint PATCH valida `enabled` como booleano y reutiliza `requireAdminAuth`, por lo que solo una sesión founder puede modificar `premium_dispatch_enabled`.
+- Validaciones aprobadas: TypeScript, ESLint, 24/24 contratos críticos y build local/remoto Next.js 16.3.0 de 159 páginas estáticas generadas.
+- Preview final conjunta: `https://vendeplus-clean-a7d395wg6-entrega2-s-projects.vercel.app`, deployment `dpl_3sgqXDx6zH9ya2SvFVfnVFGPjQt5`, target Preview, Ready, sin logs de error. `/admin/transporte` sin sesión responde 302 esperado.
+- Sin migración ni SQL nuevo; producción intacta. Próximo paso: usuario prueba activar/desactivar Premium desde `/admin/transporte`, verifica acceso de repartidores en el panel delivery y autoriza explícitamente la promoción.
+- Usuario validó la Preview completa y autorizó promoción. Vercel promovió exactamente la Preview aprobada a producción como `dpl_CabbMnCyz82gzQkHwQseVKXj7EnD` (`vendeplus-clean-dlau9cs5w-entrega2-s-projects.vercel.app`), estado Ready.
+- Alias productivos confirmados: `www.somos-ve.com`, `somos-ve.com`, `vendeplus-clean.vercel.app` y alias del equipo.
+- Smoke productivo aprobado: Home, Marketplace, Alkkon Fit, login y Transporte HTTP 200; API Admin sin sesión HTTP 401 esperado. Logs del deployment sin HTTP 500 ni errores de ejecución.
+- Rollback web inmediato disponible al deployment productivo anterior `dpl_5vVUiXtUsbJgs8YEcLMy4gFrsdph` / `vendeplus-clean-boz38o2xw-entrega2-s-projects.vercel.app`. La migración atómica delivery ya es aditiva y compatible hacia atrás.
+- Pendiente de respaldo Git: los cambios están desplegados pero continúan sin commit/push porque el usuario no lo ha solicitado todavía.
+- Ajuste posterior solo local: en el Home se intercambiaron los temas visuales de las tarjetas principales. `Para comercios` ahora usa fondo verde oscuro, texto claro y botón claro; `Para empresas delivery` usa tarjeta blanca, texto verde oscuro y botón naranja. Textos, enlaces y estructura no cambiaron.
+- Validaciones locales: 24/24 contratos críticos, ESLint y build Next.js 16.3.0 aprobados. Servidor local disponible en `http://127.0.0.1:3000/` con HTTP 200.
+- Este ajuste de color no fue desplegado a Preview ni producción. Próximo paso: usuario revisa el Home local y decide si se prepara Preview.
+- Ajuste local adicional: los dos iconos de camión del Home vinculados a delivery fueron sustituidos por `Motorbike` (tarjeta `Para empresas delivery` y beneficio `Delivery conectado`).
+- Validaciones posteriores: 24/24 contratos críticos, ESLint y build aprobados; servidor local reiniciado y Home HTTP 200 en `http://127.0.0.1:3000/`. Sigue sin Preview ni producción.
+- Usuario aprobó los colores e iconos locales y autorizó producción. Se creó primero Preview limpia `dpl_DFiyaRukMMF9ufWGfK1DA6M4Dnrp` (`vendeplus-clean-9g2d9wtws-entrega2-s-projects.vercel.app`), Ready y sin errores, y se promovió exactamente ese deployment.
+- Producción vigente: `dpl_GJYsWyxbiFhzfNezLfXbeGdSbzyV` (`vendeplus-clean-3bhstoy2t-entrega2-s-projects.vercel.app`), Ready; dominios `www.somos-ve.com`, `somos-ve.com` y `vendeplus-clean.vercel.app` asignados.
+- Smoke productivo: Home, Marketplace, Alkkon Fit, login y Transporte HTTP 200; API de panel sin sesión HTTP 401 esperado; sin HTTP 500 ni errores en logs. Rollback web anterior: `dpl_CabbMnCyz82gzQkHwQseVKXj7EnD`.
+- No hubo migración ni SQL en este ajuste. Los cambios siguen pendientes de commit/push a GitHub.

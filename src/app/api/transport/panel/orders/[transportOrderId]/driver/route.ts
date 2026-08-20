@@ -12,10 +12,10 @@ import {
 } from "@/lib/transport/driver-dispatch";
 import {
   canTransitionTransportOrder,
-  insertTransportOrderEvent,
   mapTransportStatusToOrderDeliveryStatus,
   normalizeTransportOrderStatus,
 } from "@/lib/transport/orders";
+import { mutateTransportOrderAtomic } from "@/lib/server/mutate-transport-order-atomic";
 
 function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
@@ -139,56 +139,24 @@ export async function PATCH(
       }
     }
 
-    const { data: updated, error: updateError } = await supabase
-      .from("transport_orders")
-      .update(payload)
-      .eq("id", transportOrder.id)
-      .select(
-        `
-        id,
-        status,
-        driver_id,
-        driver_name_snapshot,
-        driver_commission_percent,
-        driver_payout_usd,
-        driver_assigned_at,
-        assigned_at,
-        updated_at
-      `
-      )
-      .single();
-
-    if (updateError) throw updateError;
-
-    await insertTransportOrderEvent(supabase, {
+    const updated = await mutateTransportOrderAtomic(supabase, {
       transportOrderId: transportOrder.id,
-      eventType,
-      statusFrom: currentStatus,
-      statusTo: nextStatus,
-      note: eventNote,
-      actorType: auth.isFounderMode ? "admin" : "agency",
-      actorUserId: auth.userId,
-      actorName: auth.email || "Empresa delivery",
+      transportPayload: payload,
+      eventPayload: {
+        event_type: eventType,
+        status_from: currentStatus,
+        status_to: nextStatus,
+        note: eventNote,
+        actor_type: auth.isFounderMode ? "admin" : "agency",
+        actor_user_id: auth.userId,
+        actor_name: auth.email || "Empresa delivery",
+      },
+      orderDeliveryStatus:
+        nextStatus !== currentStatus
+          ? mapTransportStatusToOrderDeliveryStatus(nextStatus)
+          : null,
+      integrationStatus: nextStatus !== currentStatus ? nextStatus : null,
     });
-
-    if (nextStatus !== currentStatus) {
-      await supabase
-        .from("orders")
-        .update({
-          delivery_status: mapTransportStatusToOrderDeliveryStatus(nextStatus),
-          transport_agency_status: nextStatus,
-        })
-        .eq("id", transportOrder.order_id);
-
-      await supabase
-        .from("order_integrations")
-        .update({
-          status: nextStatus,
-          updated_at: now,
-        })
-        .eq("order_id", transportOrder.order_id)
-        .eq("provider", "transport_agency");
-    }
 
     return NextResponse.json({ ok: true, order: updated });
   } catch (error) {

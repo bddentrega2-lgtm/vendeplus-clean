@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Check, ClipboardList, PackageCheck, QrCode, Settings2, ShoppingBag, Store as StoreIcon, Truck, UtensilsCrossed } from "lucide-react";
+import { ArrowRight, Check, ClipboardList, Motorbike, PackageCheck, QrCode, Settings2, ShoppingBag, Store as StoreIcon, UtensilsCrossed } from "lucide-react";
 import type { Store } from "@/types";
 import type { PublicTransportAgencyLogo } from "@/lib/transport";
 import { AffiliatedDeliveryLogos } from "@/components/public/AffiliatedDeliveryLogos";
@@ -18,7 +18,7 @@ const deliveryFeatures = ["Panel para empresas delivery", "Solicitudes de afilia
 const benefits = [
   { icon: ShoppingBag, title: "Catálogo digital", text: "Productos, precios e imágenes en un enlace fácil de compartir." },
   { icon: ClipboardList, title: "Pedidos más ordenados", text: "Información clara para que el comercio gestione cada solicitud." },
-  { icon: Truck, title: "Delivery conectado", text: "Delivery propio, retiro o empresas afiliadas según la configuración." },
+  { icon: Motorbike, title: "Delivery conectado", text: "Delivery propio, retiro o empresas afiliadas según la configuración." },
   { icon: Settings2, title: "Configuración flexible", text: "Opciones adaptables a la forma real de operar de cada comercio." },
   { icon: PackageCheck, title: "Operación centralizada", text: "Catálogo, pedidos, clientes y entregas desde un mismo panel." },
 ];
@@ -50,21 +50,21 @@ export function HomeClient({ stores = [], transportAgencies = [] }: { stores?: S
         </div>
 
         <div id="soluciones" className="mt-12 grid gap-5 lg:grid-cols-2">
-          <SurfaceCard className="flex flex-col p-6 sm:p-8">
-            <span className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--somos-orange)] text-[var(--somos-navy)]"><StoreIcon size={23} /></span>
-            <p className="mt-6 text-sm font-semibold text-[var(--somos-orange)]">Para comercios</p>
-            <h2 className="mt-2 text-3xl font-bold leading-tight tracking-tight text-[var(--somos-navy)]">Vende mejor desde tu catálogo digital.</h2>
-            <p className="somos-muted mt-4 text-base font-medium leading-7">Muestra tus productos, recibe pedidos y ofrece una experiencia de compra más ordenada para tus clientes.</p>
-            <FeatureList items={commerceFeatures} />
-            <ButtonLink href="/registro" className="mt-7 w-full sm:w-fit">Registrar comercio <ArrowRight size={17} /></ButtonLink>
-          </SurfaceCard>
           <SurfaceCard dark className="flex flex-col p-6 sm:p-8">
-            <span className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--somos-amber)] text-[var(--somos-navy)]"><Truck size={23} /></span>
-            <p className="mt-6 text-sm font-semibold text-[var(--somos-amber)]">Para empresas delivery</p>
-            <h2 className="mt-2 text-3xl font-bold leading-tight tracking-tight">Conecta con comercios y organiza tu operación.</h2>
-            <p className="mt-4 text-base font-medium leading-7 text-white/70">Configura tarifas, cobertura y datos operativos para que los comercios puedan solicitar afiliación a tu empresa.</p>
-            <FeatureList items={deliveryFeatures} light />
-            <ButtonLink href="/transporte/registro" variant="light" className="mt-7 w-full sm:w-fit">Registrar empresa delivery <ArrowRight size={17} /></ButtonLink>
+            <span className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--somos-amber)] text-[var(--somos-navy)]"><StoreIcon size={23} /></span>
+            <p className="mt-6 text-sm font-semibold text-[var(--somos-amber)]">Para comercios</p>
+            <h2 className="mt-2 text-3xl font-bold leading-tight tracking-tight">Vende mejor desde tu catálogo digital.</h2>
+            <p className="mt-4 text-base font-medium leading-7 text-white/70">Muestra tus productos, recibe pedidos y ofrece una experiencia de compra más ordenada para tus clientes.</p>
+            <FeatureList items={commerceFeatures} light />
+            <ButtonLink href="/registro" variant="light" className="mt-7 w-full sm:w-fit">Registrar comercio <ArrowRight size={17} /></ButtonLink>
+          </SurfaceCard>
+          <SurfaceCard className="flex flex-col p-6 sm:p-8">
+            <span className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--somos-orange)] text-[var(--somos-navy)]"><Motorbike size={23} /></span>
+            <p className="mt-6 text-sm font-semibold text-[var(--somos-orange)]">Para empresas delivery</p>
+            <h2 className="mt-2 text-3xl font-bold leading-tight tracking-tight text-[var(--somos-navy)]">Conecta con comercios y organiza tu operación.</h2>
+            <p className="somos-muted mt-4 text-base font-medium leading-7">Configura tarifas, cobertura y datos operativos para que los comercios puedan solicitar afiliación a tu empresa.</p>
+            <FeatureList items={deliveryFeatures} />
+            <ButtonLink href="/transporte/registro" className="mt-7 w-full sm:w-fit">Registrar empresa delivery <ArrowRight size={17} /></ButtonLink>
           </SurfaceCard>
         </div>
 

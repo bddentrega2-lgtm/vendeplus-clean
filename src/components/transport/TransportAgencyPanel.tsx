@@ -147,6 +147,8 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     Boolean(hasUsableInitialCache && transportPanelCache?.billing)
   );
   const transportOrdersLoadedRef = useRef(false);
+  const localTransportMutationsRef = useRef(new Set<string>());
+  const recentLocalTransportMutationsRef = useRef(new Map<string, number>());
 
   const agency =
     agencies.find((entry) => entry.id === selectedAgencyId) ||
@@ -335,6 +337,15 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
   useEffect(() => {
     setTab(initialTab);
   }, [initialTab]);
+
+  useEffect(() => {
+    const syncTabFromUrl = () => {
+      const item = panelNavItems.find((entry) => entry.href === window.location.pathname);
+      if (item) setTab(item.key);
+    };
+    window.addEventListener("popstate", syncTabFromUrl);
+    return () => window.removeEventListener("popstate", syncTabFromUrl);
+  }, []);
 
   useEffect(() => {
     const unlock = () => void unlockOrderNotificationSound();
@@ -540,10 +551,18 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     let refreshTimer: number | null = null;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
-    const refreshOrders = () => {
+    const refreshOrders = (message?: { payload?: Record<string, unknown> }) => {
       if (!active || document.visibilityState !== "visible") return;
+      const changedOrderId = String(message?.payload?.transport_order_id || "");
+      const ignoredUntil = recentLocalTransportMutationsRef.current.get(changedOrderId) || 0;
+      if (
+        changedOrderId &&
+        (localTransportMutationsRef.current.has(changedOrderId) || ignoredUntil > Date.now())
+      ) {
+        return;
+      }
       if (refreshTimer) window.clearTimeout(refreshTimer);
-      refreshTimer = window.setTimeout(() => void loadTransportOrders({ notifyNew: "true" }), 120);
+      refreshTimer = window.setTimeout(() => void loadTransportOrders({ notifyNew: "true" }), 300);
     };
 
     void (async () => {
@@ -578,7 +597,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     const interval = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
       void loadTransportOrders({ notifyNew: "true" });
-    }, 30_000);
+    }, 180_000);
 
     return () => window.clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -996,6 +1015,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
 
   async function updateTransportOrderStatus(orderId: string, status: string, note = "") {
     setSavingTransportOrderId(orderId);
+    localTransportMutationsRef.current.add(orderId);
     setMessage("");
 
     try {
@@ -1007,27 +1027,31 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "No se pudo actualizar el estado.");
       setTransportOrders((current) =>
-        current.map((order) =>
-          order.id === orderId
-            ? {
-                ...order,
-                ...(data.order || {}),
-                status,
-              }
-            : order
-        )
+        current
+          .map((order) =>
+            order.id === orderId
+              ? {
+                  ...order,
+                  ...(data.order || {}),
+                  status,
+                }
+              : order
+          )
+          .filter((order) => {
+            if (transportOrderStatusFilter === "all") return true;
+            if (transportOrderStatusFilter === "pending") {
+              return ["sent_to_agency", "agency_received", "pending_agency"].includes(order.status);
+            }
+            return order.status === transportOrderStatusFilter;
+          })
       );
       setMessage("Estado actualizado.");
-      if (transportOrderStatusFilter !== "all" && transportOrderStatusFilter !== status) {
-        setTransportOrderStatusFilter("all");
-        await loadTransportOrders({ status: "all" });
-      } else {
-        await loadTransportOrders();
-      }
-      await load();
     } catch (error: any) {
       setMessage(error.message || "No se pudo actualizar el estado.");
     } finally {
+      recentLocalTransportMutationsRef.current.set(orderId, Date.now() + 2_000);
+      localTransportMutationsRef.current.delete(orderId);
+      window.setTimeout(() => recentLocalTransportMutationsRef.current.delete(orderId), 2_100);
       setSavingTransportOrderId(null);
     }
   }
@@ -1076,6 +1100,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
 
   async function assignTransportOrderDriver(orderId: string, driverId: string) {
     setSavingTransportOrderId(orderId);
+    localTransportMutationsRef.current.add(orderId);
     setMessage("");
 
     try {
@@ -1090,12 +1115,12 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
         current.map((order) => (order.id === orderId ? { ...order, ...(data.order || {}) } : order))
       );
       setMessage(driverId ? "Repartidor asignado." : "Repartidor removido.");
-      if (hasLoadedBilling) {
-        void load({ silent: true, includeBilling: true, includeRelations: false });
-      }
     } catch (error: any) {
       setMessage(error.message || "No se pudo asignar el repartidor.");
     } finally {
+      recentLocalTransportMutationsRef.current.set(orderId, Date.now() + 2_000);
+      localTransportMutationsRef.current.delete(orderId);
+      window.setTimeout(() => recentLocalTransportMutationsRef.current.delete(orderId), 2_100);
       setSavingTransportOrderId(null);
     }
   }
@@ -1283,16 +1308,16 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
 
       <nav className="grid grid-cols-2 gap-2 md:grid-cols-7" aria-label="Secciones de empresa delivery">
         {panelNavItems.map((item) => (
-          <Link
+          <button
+            type="button"
             key={item.key}
-            href={item.href}
-            onClick={(event) => {
+            onClick={() => {
               if (!confirmNavigation()) {
-                event.preventDefault();
                 return;
               }
               setHasUnsavedChanges(false);
               setTab(item.key);
+              window.history.pushState({}, "", item.href);
             }}
             className={[
               "rounded-2xl px-3 py-3 text-center text-xs font-black",
@@ -1300,7 +1325,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
             ].join(" ")}
           >
             {item.label}
-          </Link>
+          </button>
         ))}
       </nav>
 

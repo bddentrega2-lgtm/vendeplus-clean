@@ -98,10 +98,17 @@ function getPayoutAmount(entry: TransportDriverPayout) {
   return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 }
 
+function getDriverFilterValue(order: TransportBillingOrder) {
+  if (order.driver_id) return `id:${order.driver_id}`;
+  if (order.driver_name_snapshot) return `name:${order.driver_name_snapshot.trim().toLocaleLowerCase("es")}`;
+  return "unassigned";
+}
+
 export function TransportBillingTab({ billing, currency, symbol }: TransportBillingTabProps) {
   const [billingData, setBillingData] = useState<TransportBilling | null>(billing);
   const [storeFilter, setStoreFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [driverFilter, setDriverFilter] = useState("all");
   const [range, setRange] = useState("this_week");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -143,6 +150,7 @@ export function TransportBillingTab({ billing, currency, symbol }: TransportBill
 
   const stats = useMemo(() => {
     const orders = billingData?.orders || [];
+    const driverMap = new Map<string, string>();
     const storeMap = new Map<
       string,
       {
@@ -156,6 +164,10 @@ export function TransportBillingTab({ billing, currency, symbol }: TransportBill
     >();
 
     for (const order of orders) {
+      const driverValue = getDriverFilterValue(order);
+      if (driverValue !== "unassigned") {
+        driverMap.set(driverValue, order.driver_name_snapshot || "Repartidor");
+      }
       const storeId = String(order.store_id || "sin-comercio");
       const status = String(order.status || "");
       const current = storeMap.get(storeId) || {
@@ -180,24 +192,34 @@ export function TransportBillingTab({ billing, currency, symbol }: TransportBill
     const filteredOrders = orders.filter((order) => {
       const matchesStore = storeFilter === "all" || order.store_id === storeFilter;
       const matchesStatus = statusFilter === "all" || String(order.status || "") === statusFilter;
-      return matchesStore && matchesStatus;
+      const matchesDriver = driverFilter === "all" || getDriverFilterValue(order) === driverFilter;
+      return matchesStore && matchesStatus && matchesDriver;
     });
 
     return {
       byStore: Array.from(storeMap.values()).sort((a, b) => b.total - a.total),
       deliveredCount: orders.filter((order) => String(order.status || "") === "delivered").length,
+      drivers: Array.from(driverMap, ([value, label]) => ({ value, label })).sort((a, b) =>
+        a.label.localeCompare(b.label, "es")
+      ),
       filteredOrders,
       filteredTotal: filteredOrders.reduce((sum, order) => sum + getAmount(order), 0),
       pendingCount: orders.filter((order) => String(order.status || "") !== "delivered").length,
       totalOrders: orders.length,
       totalUsd: Number(billingData?.totalUsd || 0),
     };
-  }, [billingData, statusFilter, storeFilter]);
+  }, [billingData, driverFilter, statusFilter, storeFilter]);
 
-  const driverPayouts = useMemo(
-    () => (billingData?.driverPayouts || []).filter((entry) => getPayoutAmount(entry) > 0),
-    [billingData]
-  );
+  const driverPayouts = useMemo(() => {
+    return (billingData?.driverPayouts || []).filter((entry) => {
+      if (getPayoutAmount(entry) <= 0) return false;
+      if (driverFilter === "all") return true;
+      const entryFilter = entry.driverId
+        ? `id:${entry.driverId}`
+        : `name:${entry.driverName.trim().toLocaleLowerCase("es")}`;
+      return entryFilter === driverFilter;
+    });
+  }, [billingData, driverFilter]);
 
   return (
     <section className="space-y-4">
@@ -313,25 +335,45 @@ export function TransportBillingTab({ billing, currency, symbol }: TransportBill
           ))}
         </div>
 
-        <label className="mt-4 block space-y-1">
-          <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
-            Estado
-          </span>
-          <select
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
-            className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
-          >
-            <option value="all">Todos</option>
-            <option value="sent_to_agency">Enviado</option>
-            <option value="agency_received">Recibido</option>
-            <option value="agency_accepted">Aceptado</option>
-            <option value="picked_up">Retirado</option>
-            <option value="on_the_way">En camino</option>
-            <option value="delivered">Entregado</option>
-            <option value="issue_reported">Novedad</option>
-          </select>
-        </label>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <label className="block space-y-1">
+            <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
+              Estado
+            </span>
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
+            >
+              <option value="all">Todos</option>
+              <option value="sent_to_agency">Enviado</option>
+              <option value="agency_received">Recibido</option>
+              <option value="agency_accepted">Aceptado</option>
+              <option value="picked_up">Retirado</option>
+              <option value="on_the_way">En camino</option>
+              <option value="delivered">Entregado</option>
+              <option value="issue_reported">Novedad</option>
+            </select>
+          </label>
+          <label className="block space-y-1">
+            <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
+              Repartidor
+            </span>
+            <select
+              value={driverFilter}
+              onChange={(event) => setDriverFilter(event.target.value)}
+              className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
+            >
+              <option value="all">Todos los repartidores</option>
+              {stats.drivers.map((driver) => (
+                <option key={driver.value} value={driver.value}>
+                  {driver.label}
+                </option>
+              ))}
+              <option value="unassigned">Sin asignar</option>
+            </select>
+          </label>
+        </div>
 
         {message ? (
           <p className="mt-3 rounded-2xl bg-red-50 p-3 text-sm font-black text-red-700">{message}</p>

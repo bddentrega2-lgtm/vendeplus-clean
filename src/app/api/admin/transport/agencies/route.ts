@@ -104,11 +104,31 @@ export async function PATCH(request: NextRequest) {
     await requireAdminAuth(request);
     const body = await request.json();
     const agencyId = cleanTransportText(body.agencyId);
-    const status = normalizeAgencyStatus(body.status);
 
     if (!agencyId) return badRequest("Falta la empresa delivery.");
 
     const supabase = createSupabaseAdminClient();
+
+    if (body.action === "update_premium_dispatch") {
+      if (typeof body.enabled !== "boolean") {
+        return badRequest("Indica si el pack premium debe estar activo.");
+      }
+
+      const { data: agency, error } = await supabase
+        .from("transport_agencies")
+        .update({
+          premium_dispatch_enabled: body.enabled,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", agencyId)
+        .select("id, name, status, is_active, premium_dispatch_enabled")
+        .single();
+
+      if (error) throw error;
+      return NextResponse.json({ agency });
+    }
+
+    const status = normalizeAgencyStatus(body.status);
     let shouldPublish = false;
 
     if (status === "active") {

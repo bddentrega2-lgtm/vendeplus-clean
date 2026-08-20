@@ -435,3 +435,98 @@ test("cada comercio decide si solicita y recuerda la cedula del cliente", () => 
   assert.match(orders, /normalizeCustomerId/);
   assert.match(migration, /request_customer_id_number boolean not null default false/);
 });
+
+test("panel delivery evita recargas duplicadas en operaciones frecuentes", () => {
+  const panel = readFileSync(
+    new URL("../src/components/transport/TransportAgencyPanel.tsx", import.meta.url),
+    "utf8",
+  );
+  const ordersRoute = readFileSync(
+    new URL("../src/app/api/transport/panel/orders/route.ts", import.meta.url),
+    "utf8",
+  );
+  const access = readFileSync(
+    new URL("../src/lib/transport/access.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(panel, /localTransportMutationsRef/);
+  assert.match(panel, /recentLocalTransportMutationsRef/);
+  assert.match(panel, /180_000/);
+  assert.doesNotMatch(panel, /await loadTransportOrders\(\);\s*await load\(\);/);
+  assert.doesNotMatch(panel, /hasLoadedBilling[\s\S]{0,100}includeBilling: true/);
+  assert.doesNotMatch(ordersRoute, /count:\s*"exact"/);
+  assert.match(ordersRoute, /range\(from, to \+ 1\)/);
+  assert.match(access, /Promise\.all/);
+});
+
+test("panel delivery navega sin pantalla blanca y muta servicios atomicamente", () => {
+  const panel = readFileSync(
+    new URL("../src/components/transport/TransportAgencyPanel.tsx", import.meta.url),
+    "utf8",
+  );
+  const ordersTab = readFileSync(
+    new URL("../src/components/transport/TransportOrdersTab.tsx", import.meta.url),
+    "utf8",
+  );
+  const transitions = readFileSync(
+    new URL("../src/lib/transport/orders.ts", import.meta.url),
+    "utf8",
+  );
+  const statusRoute = readFileSync(
+    new URL("../src/app/api/transport/panel/orders/[transportOrderId]/status/route.ts", import.meta.url),
+    "utf8",
+  );
+  const driverRoute = readFileSync(
+    new URL("../src/app/api/transport/panel/orders/[transportOrderId]/driver/route.ts", import.meta.url),
+    "utf8",
+  );
+  const migration = readFileSync(
+    new URL("../supabase/migrations/20260820033000_mutate_transport_order_atomic_rpc.sql", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(panel, /window\.history\.pushState/);
+  assert.match(panel, /popstate/);
+  assert.match(ordersTab, /statusActionsByCurrent/);
+  assert.match(transitions, /driver_assigned:[^\n]*"on_the_way"/);
+  assert.match(statusRoute, /mutateTransportOrderAtomic/);
+  assert.match(driverRoute, /mutateTransportOrderAtomic/);
+  assert.doesNotMatch(statusRoute, /insertTransportOrderEvent/);
+  assert.doesNotMatch(driverRoute, /insertTransportOrderEvent/);
+  assert.match(migration, /create or replace function public\.mutate_transport_order_atomic/);
+  assert.match(migration, /for update/);
+  assert.match(migration, /revoke all on function public\.mutate_transport_order_atomic/);
+});
+
+test("facturacion delivery permite filtrar servicios y pagos por repartidor", () => {
+  const billingTab = readFileSync(
+    new URL("../src/components/transport/TransportBillingTab.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(billingTab, /const \[driverFilter, setDriverFilter\]/);
+  assert.match(billingTab, /getDriverFilterValue\(order\) === driverFilter/);
+  assert.match(billingTab, /Todos los repartidores/);
+  assert.match(billingTab, /Sin asignar/);
+  assert.match(billingTab, /entryFilter === driverFilter/);
+});
+
+test("super admin activa el pack premium de empresas delivery", () => {
+  const manager = readFileSync(
+    new URL("../src/components/admin/AdminTransportManager.tsx", import.meta.url),
+    "utf8",
+  );
+  const route = readFileSync(
+    new URL("../src/app/api/admin/transport/agencies/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(manager, /updatePremiumDispatch/);
+  assert.match(manager, /Activar premium/);
+  assert.match(manager, /aria-pressed/);
+  assert.match(route, /body\.action === "update_premium_dispatch"/);
+  assert.match(route, /typeof body\.enabled !== "boolean"/);
+  assert.match(route, /premium_dispatch_enabled: body\.enabled/);
+  assert.match(route, /await requireAdminAuth\(request\)/);
+});
