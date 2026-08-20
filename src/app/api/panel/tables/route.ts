@@ -179,3 +179,43 @@ export async function PATCH(request: NextRequest) {
     );
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const auth = await requirePanelAuth(request);
+    const body = await request.json();
+    const storeId = String(body.storeId || "");
+    const tableId = String(body.tableId || "");
+    if (!tableId) return badRequest("No se pudo identificar la mesa.");
+
+    assertStoreManager(auth, storeId);
+    const { supabase } = await loadTableOrderStore(storeId);
+    const { count, error: activeOrdersError } = await supabase
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .eq("store_id", storeId)
+      .eq("store_table_id", tableId)
+      .not("status", "in", "(completed,cancelled)");
+    if (activeOrdersError) throw activeOrdersError;
+    if ((count || 0) > 0) {
+      return badRequest("Esta mesa tiene pedidos activos. Complétalos o cancélalos antes de eliminarla.");
+    }
+
+    const { data, error } = await supabase
+      .from("store_tables")
+      .delete()
+      .eq("id", tableId)
+      .eq("store_id", storeId)
+      .select("id")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return badRequest("La mesa ya no existe o no pertenece a este comercio.");
+
+    return NextResponse.json({ deleted: true, tableId });
+  } catch (error) {
+    return panelErrorResponse(
+      error,
+      error instanceof Error ? error.message : "No se pudo eliminar la mesa."
+    );
+  }
+}

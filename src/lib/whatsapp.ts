@@ -67,7 +67,7 @@ export function buildOrderMessage(params: {
       : form.deliveryType === "pickup"
       ? `Retiro (pick up)`
       : form.deliveryType === "national_shipping"
-        ? `Envio nacional\nCedula: ${cleanText(form.nationalIdNumber) || "por confirmar"}\nCiudad: ${cleanText(form.nationalShippingCity) || "por confirmar"}`
+        ? `Envio nacional\nCiudad: ${cleanText(form.nationalShippingCity) || "por confirmar"}`
         : `Delivery: ${deliveryPriceText} | ${
             quote.zoneName ||
             quote.message ||
@@ -87,7 +87,7 @@ export function buildOrderMessage(params: {
 Código: ${orderId}
 Comercio: ${store.name}
 
-Cliente: ${form.customerName} | ${form.customerPhone}
+Cliente: ${form.customerName} | ${form.customerPhone}${cleanText(form.nationalIdNumber) ? `\nCédula: ${cleanText(form.nationalIdNumber)}` : ""}
 
 📦 Pedido:
 ${itemsText}${orderDetails}

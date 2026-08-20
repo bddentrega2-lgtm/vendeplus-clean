@@ -1,3 +1,20 @@
+# Configuración opcional de cédula del cliente (2026-08-19)
+
+- Migración aditiva aplicada y registrada en Supabase remoto; producción web permanece intacta.
+- Nueva preferencia por comercio `request_customer_id_number`, apagada por defecto mediante la migración aditiva `20260820023000_add_customer_id_request_setting.sql`.
+- El comercio puede activar “Solicitar cédula”. Checkout la muestra junto a nombre y teléfono, y la API la exige según la configuración real. Envío nacional conserva su requisito sin duplicar el campo.
+- “Recordar mis datos” guarda y recupera la cédula solo cuando el comercio la solicita. Perfiles anteriores siguen siendo compatibles.
+- La cédula queda en el detalle congelado del pedido, WhatsApp y confirmación.
+- Verificación remota: 34 comercios, 0 con la opción activa y 34 apagados; no cambió el checkout de ninguno.
+- TypeScript, ESLint, 20/20 contratos críticos y build local/remoto Next.js 16.3.0 de 167 páginas aprobados sin fallback de catálogo.
+- Preview: `https://vendeplus-clean-5uyoa8wdp-entrega2-s-projects.vercel.app`, deployment `dpl_2yrKfYoS54yioydCcKHAAxpzEwFq`, target Preview, estado Ready. Home HTTP 200; producción no fue promovida.
+- Próximo paso exacto: validar en `/panel/configuracion` activar “Solicitar cédula”; abrir el checkout del comercio, comprobar campo/obligatoriedad y memoria; luego apagar y comprobar que desaparece. No promover a producción sin aprobación posterior.
+- Ajuste posterior: la cédula ahora separa un selector `V / E / J` (V por defecto) y un campo exclusivamente numérico; se almacena normalizada como `V-12345678`. La API normaliza y valida el formato antes de crear el pedido.
+- Nueva Preview: `https://vendeplus-clean-2iybb6fnu-entrega2-s-projects.vercel.app`, deployment `dpl_5aH276RVHr5woiq54W1HBM2iftdf`; build remoto de 167 páginas aprobado. Producción intacta.
+- Usuario aprobó visualmente y autorizó producción. Promovida como `dpl_HQ8HsoFAFtRmS1YkSSmAu97CnwoJ` (`vendeplus-clean-qf0mex1x2-entrega2-s-projects.vercel.app`), estado Ready; dominios `www.somos-ve.com`, `somos-ve.com` y `vendeplus-clean.vercel.app` asignados.
+- Smoke productivo: Home, Marketplace, Smash, checkout Smash, login y Transporte HTTP 200; APIs protegidas de pedidos/configuración sin sesión HTTP 401 esperado. Sin logs de error iniciales.
+- Rollback web disponible: `dpl_4khixG8RUcpaFzvuCdo4gtLkuxjU`. No hubo nueva migración durante la promoción; la preferencia de cédula sigue apagada en los 34 comercios hasta que cada comercio la active.
+
 # P1 Open Graph 2026-08-17
 
 # Auditoría de arquitectura para 5.000+ pedidos/día (2026-08-18)
@@ -528,3 +545,42 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 - Preview final: `https://vendeplus-clean-6kmv887gd-entrega2-s-projects.vercel.app`, deployment `dpl_4KU853RLs1dw5tBKVzcvkLpBHXed`.
 - Preview promovida a producción: `dpl_3EPtZx3JNWHcYvLauAYHLKqP3Ybt` (`vendeplus-clean-9jldj5rhe-entrega2-s-projects.vercel.app`). `www.somos-ve.com` apunta al deployment nuevo en estado Ready.
 - Smoke productivo: Home, Marketplace, Smash, login del panel y Transporte HTTP 200; banner Mesa/Barra y comparación con otras apps presentes; sin errores ni HTTP 500 en logs. Rollback anterior: `dpl_C59dpBfMhLHJ4dzzuwTW4Lnp7rSy`.
+# Estado 2026-08-19 - P0 creación atómica de pedidos
+
+- Implementación local lista, todavía sin aplicar a Supabase remoto ni desplegar.
+- Se agregó `create_order_atomic(jsonb,jsonb)` como migración aditiva para guardar cabecera, ítems y opciones dentro de una sola transacción, con idempotencia por comercio.
+- Las rutas pública y manual ya usan el helper RPC; el pedido manual conserva una clave estable durante reintentos.
+- La actualización CRM del cliente queda después del commit y en modo no crítico: una falla allí no invalida ni duplica el pedido.
+- Validaciones superadas: `test:critical` 17/17, `test:entrega2-contract` 1/1 y `npm.cmd run build` exitoso con Next.js 16.3.0.
+- Docker y WSL quedaron detenidos. Las imágenes locales de Supabase habían sido eliminadas durante la limpieza del equipo; `supabase start` no logró descargarlas dentro de un tiempo razonable.
+- No se tocó producción. Próximo paso exacto: con autorización explícita, validar la migración contra Supabase remoto dentro de `BEGIN ... ROLLBACK`, incluyendo creación correcta, repetición idempotente y fallo forzado sin residuos. Si pasa, solicitar/aplicar la migración aditiva y preparar Preview; producción solo después de validación del usuario.
+- Validación remota transaccional autorizada y aprobada el 2026-08-19: la función temporal creó cabecera + ítem + opción, reconoció el segundo intento sin duplicar y el fallo forzado por cantidad inválida no dejó cabecera parcial. La consulta independiente posterior confirmó `function_exists_after_rollback=false` y cero pedidos, ítems u opciones QA; no quedó ningún cambio persistente en producción.
+- Próximo paso exacto: solicitar autorización separada para aplicar permanentemente la migración aditiva `20260820013000_create_order_atomic_rpc.sql`. Después desplegar solamente a Preview y validar pedidos público, manual y Mesa/Barra antes de cualquier promoción.
+- Usuario autorizó avanzar. Migración aditiva `20260820013000_create_order_atomic_rpc.sql` aplicada a `vendeplus-production` y registrada en el historial remoto. Verificación: función presente; `anon=false`, `authenticated=false`, `service_role=true`; cero pedidos QA residuales.
+- Preview atómica creada: `https://vendeplus-clean-7op8ek9cr-entrega2-s-projects.vercel.app`, deployment `dpl_GruL1DzRNpFcALv49ghSdvnoQKmp`, target Preview, estado Ready, build remoto exitoso de 167 páginas. No se promovió producción.
+- Smoke de infraestructura: Preview protegida por Vercel; bypass alcanzó la aplicación y `/api/panel/orders` sin sesión respondió sin error de servidor. Cero logs de nivel error y cero HTTP 500 en el deployment.
+- Próximo paso exacto: usuario debe validar en Preview (1) pedido público normal, (2) pedido manual desde panel y (3) pedido Mesa/Barra si tiene una mesa disponible. Confirmar que cada uno aparece con productos/extras y una sola vez. No promover a producción sin aprobación explícita.
+- Usuario aprobó funcionalmente la Preview atómica y autorizó promover, pero solicitó antes compactar el botón “Enviar a Entrega2 App”. Se cambió únicamente `OrdersManager`: ahora muestra icono `Motorbike` + texto `Entrega2`; conserva título/aria-label contextual para envío o reintento y no cambia la acción.
+- Validaciones posteriores aprobadas: ESLint, 17/17 contratos críticos, contrato Entrega2 1/1 y build local Next.js 16.3.0 de 167 páginas.
+- Nueva Preview conjunta: `https://vendeplus-clean-96io5f8kd-entrega2-s-projects.vercel.app`, deployment `dpl_CgFLJuZkDoc2a3AS8qWVL3JeRiRE`, estado Ready, build remoto exitoso, sin logs de error ni HTTP 500.
+- Próximo paso exacto: usuario valida visualmente el botón compacto en `/panel/pedidos`; después promover este deployment a producción y hacer smoke + revisión de logs. Producción aún no fue promovida.
+- Usuario aprobó el botón compacto. Preview promovida a producción como `dpl_4khixG8RUcpaFzvuCdo4gtLkuxjU` (`vendeplus-clean-dt0xulyoi-entrega2-s-projects.vercel.app`), estado Ready. Alias activos: `www.somos-ve.com`, `somos-ve.com`, `vendeplus-clean.vercel.app` y alias del equipo.
+- Smoke productivo aprobado sobre el dominio canónico: Home 200, Marketplace 200, catálogo Smash 200, panel login 200 y `/api/panel/orders` sin sesión 401. Supabase confirma función atómica presente, ejecución denegada a `anon`/`authenticated` y permitida solo a `service_role`. Cero logs de error y cero HTTP 500 del deployment.
+- P0 atomicidad completado en producción. Pendiente de respaldo en Git: no hacer commit/push hasta que el usuario lo solicite.
+- Usuario confirmó que Don Aniello ya está listo y ordenó eliminar el importador temporal. `scripts/import-don-aniello-menu.mjs` fue eliminado localmente; nunca estuvo versionado, por lo que no produce un cambio Git ni afecta Supabase, Vercel o el catálogo existente.
+- Mejora UX Mesa/Barra preparada: `TablesManager` ya no reemplaza toda la vista con loading después de guardar configuración, crear/editar mesa o actualizar un estado; refresca en segundo plano y actualiza el pedido de forma inmediata, conservando la posición visual.
+- La configuración + QR se abre automáticamente solo si el módulo está inactivo; cuando ya está activo aparece plegada en una franja compacta con resumen y botón “Editar configuración”. Al guardar una configuración activa vuelve a plegarse. “Nueva mesa” se movió debajo de pedidos y mesas para priorizar la operación diaria.
+- Validaciones: ESLint, 18/18 contratos críticos y build local/remoto Next.js 16.3.0 de 167 páginas aprobados.
+- Preview UX Mesa/Barra: `https://vendeplus-clean-53rpvy9tj-entrega2-s-projects.vercel.app`, deployment `dpl_8wf6gP39Noj93fsnvPgyiorG33Hg`, Ready, sin logs de error ni HTTP 500. No se promovió producción.
+- Próximo paso exacto: usuario valida en `/panel/mesas` que configuración inicia plegada y que cambiar un estado no lo devuelve arriba; promover solo con aprobación explícita.
+- Usuario aprobó UX plegada y pidió dos mejoras adicionales. Se agregó DELETE protegido de mesas: exige manager y `store_id`, bloquea si existen pedidos activos, confirma en UI y conserva los snapshots de pedidos históricos gracias al FK existente `on delete set null`. No requiere migración.
+- Pedido manual: tamaños/extras/notas salieron del resumen lateral. Al agregar un producto con opciones se abre un diálogo enfocado; en móvil ocupa la parte útil de la pantalla y en PC queda centrado. Incluye cantidad, grupos obligatorios/opcionales, precios extra, nota, validación de requeridos y total. El resumen queda compacto con opciones elegidas y botón “Personalizar”.
+- Validaciones aprobadas: TypeScript, ESLint, 19/19 contratos críticos y build local/remoto Next.js 16.3.0 de 167 páginas.
+- Preview conjunta: `https://vendeplus-clean-edcvumg8l-entrega2-s-projects.vercel.app`, deployment `dpl_B21u8AuXcfLbX5tma7zYY6qaHeRH`, Ready, sin logs de error ni HTTP 500. No se promovió producción y no hubo SQL.
+- Próximo paso exacto: usuario valida eliminar una mesa sin pedidos, bloqueo de una mesa con pedido activo y personalización manual desde teléfono/PC; promover solo con aprobación explícita.
+- Usuario reportó que el botón eliminar se veía mal y que faltaban tamaños. Se dejó solo un botón circular con icono de papelera, tooltip y aria-label; la confirmación y protecciones permanecen.
+- Causa de tamaños: las presentaciones viven en `product_variants`, no en grupos de extras, y `/api/panel/catalogo` no las incluía. Ahora el catálogo del panel carga variantes; el diálogo exige tamaño/presentación cuando existen, muestra precio, lo resume y lo envía como `variantId`.
+- Seguridad/precio: `/api/panel/orders` valida server-side que la variante pertenezca al producto y esté disponible, usa su precio real, congela `variant_name` y aplica `product_option_value_variant_prices` cuando un extra cambia de precio según tamaño. WhatsApp incluye variante + extras.
+- Validaciones aprobadas: TypeScript, ESLint, 19/19 contratos críticos y build local/remoto Next.js 16.3.0 de 167 páginas.
+- Preview corregida: `https://vendeplus-clean-ikrrdya0s-entrega2-s-projects.vercel.app`, deployment `dpl_CK628EP1CcyDCs6CMHb2EgVgDcSd`, Ready, sin logs de error ni HTTP 500. Producción intacta; sin migración ni SQL.
+- Próximo paso exacto: usuario valida papelera y un producto manual con tamaño + extras (incluyendo cambio de precio); promover solo con aprobación explícita.

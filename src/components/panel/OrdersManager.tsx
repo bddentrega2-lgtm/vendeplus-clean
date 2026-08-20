@@ -10,6 +10,7 @@ import {
   Loader2,
   Lock,
   MapPin,
+  Motorbike,
   Navigation,
   PackageCheck,
   Plus,
@@ -1291,14 +1292,16 @@ export function OrdersManager() {
                           type="button"
                           onClick={() => sendOrderToDelivery(order.id)}
                           disabled={isSendingDelivery}
+                          title={entrega2Integration ? "Reintentar envío a Entrega2" : "Enviar a Entrega2"}
+                          aria-label={entrega2Integration ? "Reintentar envío a Entrega2" : "Enviar a Entrega2"}
                           className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-[#2E3A79] px-2.5 text-[11px] font-black text-white disabled:opacity-60"
                         >
                           {isSendingDelivery ? (
                             <Loader2 size={16} className="animate-spin" />
                           ) : (
-                            <Truck size={16} />
+                            <Motorbike size={16} />
                           )}
-                          {entrega2Integration ? "Reintentar Entrega2 App" : "Enviar a Entrega2 App"}
+                          Entrega2
                         </button>
                       )}
 

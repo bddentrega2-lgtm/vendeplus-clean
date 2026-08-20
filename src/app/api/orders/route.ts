@@ -32,6 +32,7 @@ import {
   logApiEvent,
 } from "@/lib/server/observability";
 import { isValidTableOrderTokenForStore } from "@/lib/server/table-order-tokens";
+import { createOrderAtomic } from "@/lib/server/create-order-atomic";
 
 const MAX_ORDER_BODY_BYTES = 180_000;
 const MAX_ORDER_ITEMS = 80;
@@ -67,6 +68,11 @@ function orderErrorResponse(error: unknown) {
 
 function cleanText(value: unknown, maxLength = 500) {
   return String(value || "").trim().slice(0, maxLength);
+}
+
+function normalizeCustomerId(value: unknown) {
+  const match = cleanText(value, 30).toUpperCase().match(/^([VEJ])[-\s]?([0-9]{1,12})$/);
+  return match ? `${match[1]}-${match[2]}` : "";
 }
 
 function toSafeNumber(value: unknown, fallback = 0) {
@@ -310,7 +316,7 @@ export async function POST(request: NextRequest) {
     const supabase = createSupabaseAdminClient();
     let storeResult = await supabase
       .from("stores")
-      .select("id, slug, name, whatsapp, usd_to_bs, base_currency, is_active, latitude, longitude, opening_hours, business_hours, manual_open_status, manual_open_note, accepts_delivery, accepts_pickup, accepts_national_shipping, payment_methods, table_orders_access_enabled, table_orders_enabled, table_payment_methods, table_order_fulfillment_mode, plan_type, monthly_price_usd, service_fee_payer, service_fee_billing_cycle, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
+      .select("id, slug, name, whatsapp, usd_to_bs, base_currency, is_active, latitude, longitude, opening_hours, business_hours, manual_open_status, manual_open_note, accepts_delivery, accepts_pickup, accepts_national_shipping, request_customer_id_number, payment_methods, table_orders_access_enabled, table_orders_enabled, table_payment_methods, table_order_fulfillment_mode, plan_type, monthly_price_usd, service_fee_payer, service_fee_billing_cycle, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
       .eq("id", storeId)
       .single();
 
@@ -322,6 +328,7 @@ export async function POST(request: NextRequest) {
         "manual_open_note",
         "base_currency",
         "accepts_national_shipping",
+        "request_customer_id_number",
         "subscription_status",
         "trial_ends_at",
         "subscription_ends_at",
@@ -599,12 +606,17 @@ export async function POST(request: NextRequest) {
     if (order.form.deliveryType === "national_shipping" && !deliverySettings.nationalShippingEnabled) {
       return requestBadRequest("Este comercio no tiene envio nacional activo en este momento.");
     }
-    if (order.form.deliveryType === "national_shipping" && !cleanText(order.form.nationalIdNumber)) {
+    const customerIdNumber = normalizeCustomerId(order.form.nationalIdNumber);
+    if ((store as any).request_customer_id_number === true && !customerIdNumber) {
+      return requestBadRequest("Escribe la cédula del cliente.");
+    }
+    if (order.form.deliveryType === "national_shipping" && !customerIdNumber) {
       return requestBadRequest("Escribe la cedula para el envio nacional.");
     }
     if (order.form.deliveryType === "national_shipping" && !cleanText(order.form.nationalShippingCity)) {
       return requestBadRequest("Escribe la ciudad de destino para el envio nacional.");
     }
+    order.form.nationalIdNumber = customerIdNumber;
 
     const requiresLocationQuote =
       order.form.deliveryType === "delivery" &&
@@ -671,7 +683,6 @@ export async function POST(request: NextRequest) {
       mapsUrl: order.mapsUrl,
       routeUrl: order.routeUrl,
     });
-    const whatsappUrl = buildWhatsAppUrl((store as any).whatsapp || "", whatsappMessage);
     const orderDbId = randomUUID();
     const paymentReference = cleanText(order.form.paymentReference);
     const initialPaymentStatus = getInitialPaymentStatus(order.form.paymentMethod);
@@ -763,110 +774,19 @@ export async function POST(request: NextRequest) {
         order.form.deliveryType === "delivery" && serverQuote.provider === "transport_agency"
           ? "pending"
           : null,
-      order_details: order.form.orderDetails || null,
+      order_details: [
+        cleanText(order.form.nationalIdNumber)
+          ? `Cédula: ${cleanText(order.form.nationalIdNumber)}`
+          : "",
+        cleanText(order.form.orderDetails),
+      ].filter(Boolean).join("\n") || null,
       notes: order.form.notes || null,
       status: "received",
       whatsapp_message: whatsappMessage,
     };
 
-    let { error: orderError } = await supabase.from("orders").insert(orderPayload);
-
-    if (orderError?.code === "23505") {
-      const { data: existingOrder, error: existingOrderError } = await supabase
-        .from("orders")
-        .select("id, public_code, whatsapp_message")
-        .eq("store_id", storeId)
-        .eq("idempotency_key", idempotencyKey)
-        .maybeSingle();
-
-      if (existingOrderError) throw existingOrderError;
-      if (existingOrder) {
-        const savedOrder: SavedOrder = {
-          ...order,
-          id: existingOrder.public_code || publicCode,
-          databaseId: existingOrder.id,
-          storeName: (store as any).name || order.storeName,
-          items: validatedItems,
-          quote: serverQuote,
-          totals,
-          whatsappMessage: existingOrder.whatsapp_message || whatsappMessage,
-          whatsappUrl: buildWhatsAppUrl(
-            (store as any).whatsapp || "",
-            existingOrder.whatsapp_message || whatsappMessage
-          ),
-          tableOrder: validatedTable
-            ? {
-                storeToken: tableOrder?.storeToken || "",
-                tableId: validatedTable.id || "",
-                tableName: validatedTable.name,
-                tableZone: validatedTable.zone,
-                paymentMethods: [],
-                fulfillmentMode: tableFulfillmentMode || "table_service",
-              }
-            : null,
-        };
-        return withApiHeaders(NextResponse.json({
-          orderId: existingOrder.id,
-          order: savedOrder,
-          idempotentReplay: true,
-        }));
-      }
-    }
-
-    if (orderError && isMissingColumnError(orderError, ["payment_", "customer_", "delivery_", "platform_service_", "store_table_id", "table_"])) {
-      const {
-        payment_status: _paymentStatus,
-        payment_reference: _paymentReference,
-        payment_currency: _paymentCurrency,
-        customer_phone_normalized: _customerPhoneNormalized,
-        platform_service_fee_usd: _platformServiceFeeUsd,
-        platform_service_fee_payer: _platformServiceFeePayer,
-        platform_service_fee_customer_usd: _platformServiceFeeCustomerUsd,
-        platform_service_fee_billing_cycle: _platformServiceFeeBillingCycle,
-        delivery_provider: _deliveryProvider,
-        delivery_fee_usd: _deliveryFeeUsd,
-        delivery_zone_id: _deliveryZoneId,
-        delivery_zone_name: _deliveryZoneName,
-        delivery_distance_km: _deliveryDistanceKm,
-        delivery_pricing_type: _deliveryPricingType,
-        delivery_status: _deliveryStatus,
-        delivery_notes: _deliveryNotes,
-        delivery_address: _deliveryAddress,
-        transport_agency_id: _transportAgencyId,
-        transport_agency_name: _transportAgencyName,
-        transport_agency_fee_usd: _transportAgencyFeeUsd,
-        transport_agency_pricing_type: _transportAgencyPricingType,
-        transport_agency_zone_name: _transportAgencyZoneName,
-        transport_agency_status: _transportAgencyStatus,
-        store_table_id: _storeTableId,
-        table_name_snapshot: _tableNameSnapshot,
-        table_zone_snapshot: _tableZoneSnapshot,
-        table_fulfillment_snapshot: _tableFulfillmentSnapshot,
-        ...baseOrderPayload
-      } = orderPayload;
-      const fallbackResult = await supabase.from("orders").insert(baseOrderPayload);
-      orderError = fallbackResult.error;
-    }
-
-    if (orderError) throw orderError;
-
-    const customerUpsertPromise = safeUpsertCustomerFromOrder(supabase, {
-      id: orderDbId,
-      store_id: storeId,
-      customer_name: cleanText(order.form.customerName),
-      customer_phone: cleanText(order.form.customerPhone),
-      delivery_type: order.form.deliveryType,
-      payment_method: cleanText(order.form.paymentMethod),
-      delivery_reference:
-        order.form.deliveryType === "national_shipping"
-          ? cleanText(order.form.nationalIdNumber) || null
-          : order.form.deliveryReference || null,
-      total_usd: totalUsd,
-      created_at: new Date().toISOString(),
-    });
-
     const itemsPayload = validatedItems.map((item) => ({
-      order_id: orderDbId,
+      id: randomUUID(),
       product_id: isUuid(item.productId) ? item.productId : null,
       product_name: item.productName,
       variant_name: item.variantName || null,
@@ -874,54 +794,50 @@ export async function POST(request: NextRequest) {
       unit_price_usd: item.unitPriceUsd,
       total_usd: item.unitPriceUsd * item.quantity,
       notes: item.notes || null,
-    }));
-
-    const { data: insertedItems, error: itemsError } = await supabase
-      .from("order_items")
-      .insert(itemsPayload)
-      .select("id");
-
-    if (itemsError) {
-      await supabase.from("orders").delete().eq("id", orderDbId);
-      throw itemsError;
-    }
-
-    const optionRows = validatedItems.flatMap((item, index) => {
-      const orderItemId = insertedItems?.[index]?.id;
-      if (!orderItemId) return [];
-
-      return (item.selectedOptions || []).map((option) => ({
-        order_item_id: orderItemId,
+      options: (item.selectedOptions || []).map((option) => ({
         option_group_name: option.groupName,
         option_name: option.valueName,
         price_delta_usd: option.priceDeltaUsd,
         quantity: 1,
-      }));
+      })),
+    }));
+
+    const atomicResult = await createOrderAtomic({
+      supabase,
+      order: orderPayload,
+      items: itemsPayload,
     });
+    const persistedOrder = atomicResult.order;
 
-    if (optionRows.length) {
-      const { error: optionsError } = await supabase
-        .from("order_item_options")
-        .insert(optionRows);
-
-      if (optionsError) {
-        await supabase.from("orders").delete().eq("id", orderDbId);
-        throw optionsError;
-      }
+    if (!atomicResult.idempotentReplay) {
+      await safeUpsertCustomerFromOrder(supabase, {
+        id: persistedOrder.id,
+        store_id: storeId,
+        customer_name: cleanText(order.form.customerName),
+        customer_phone: cleanText(order.form.customerPhone),
+        delivery_type: order.form.deliveryType,
+        payment_method: cleanText(order.form.paymentMethod),
+        delivery_reference:
+          order.form.deliveryType === "national_shipping"
+            ? cleanText(order.form.nationalIdNumber) || null
+            : order.form.deliveryReference || null,
+        total_usd: totalUsd,
+        created_at: persistedOrder.created_at || new Date().toISOString(),
+      });
     }
-
-    await customerUpsertPromise;
-
     const savedOrder: SavedOrder = {
       ...order,
-      id: publicCode,
-      databaseId: orderDbId,
+      id: persistedOrder.public_code || publicCode,
+      databaseId: persistedOrder.id,
       storeName: (store as any).name || order.storeName,
       items: validatedItems,
       quote: serverQuote,
       totals,
-      whatsappMessage,
-      whatsappUrl,
+      whatsappMessage: persistedOrder.whatsapp_message || whatsappMessage,
+      whatsappUrl: buildWhatsAppUrl(
+        (store as any).whatsapp || "",
+        persistedOrder.whatsapp_message || whatsappMessage
+      ),
       tableOrder: validatedTable
         ? {
             storeToken: tableOrder?.storeToken || "",
@@ -935,11 +851,12 @@ export async function POST(request: NextRequest) {
     };
 
     const response = NextResponse.json({
-      orderId: orderDbId,
+      orderId: persistedOrder.id,
       order: savedOrder,
+      idempotentReplay: atomicResult.idempotentReplay,
     });
     logApiEvent(apiContext, "order_created", {
-      orderId: orderDbId,
+      orderId: persistedOrder.id,
       storeId,
       itemCount: validatedItems.length,
       deliveryType: order.form.deliveryType,

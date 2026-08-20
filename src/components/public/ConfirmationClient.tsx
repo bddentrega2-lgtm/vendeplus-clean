@@ -209,16 +209,16 @@ export function ConfirmationClient({ store }: { store: Store }) {
                   {order.form.paymentMethod || "Por confirmar"}
                 </span>
               </div>
-              {order.form.deliveryType === "national_shipping" ? (
+              {order.form.nationalIdNumber || order.form.deliveryType === "national_shipping" ? (
                 <div className="space-y-2 rounded-2xl bg-[#FFF8F0] p-3 text-sm">
                   <div className="flex justify-between gap-4">
                     <span className="font-bold text-[#746f69]">Cedula</span>
                     <span className="font-black text-[#25262B]">{order.form.nationalIdNumber || "Por confirmar"}</span>
                   </div>
-                  <div className="flex justify-between gap-4">
+                  {order.form.deliveryType === "national_shipping" ? <div className="flex justify-between gap-4">
                     <span className="font-bold text-[#746f69]">Ciudad</span>
                     <span className="font-black text-[#25262B]">{order.form.nationalShippingCity || "Por confirmar"}</span>
-                  </div>
+                  </div> : null}
                 </div>
               ) : order.form.deliveryType === "delivery" ? (
                 <div className="flex justify-between gap-4 rounded-2xl bg-[#FFF8F0] p-3 text-sm">

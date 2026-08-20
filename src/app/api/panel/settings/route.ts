@@ -205,6 +205,7 @@ function normalizeStorePayload(body: any) {
     accepts_delivery: Boolean(body.accepts_delivery),
     accepts_pickup: Boolean(body.accepts_pickup),
     accepts_national_shipping: Boolean(body.accepts_national_shipping),
+    request_customer_id_number: Boolean(body.request_customer_id_number),
     is_active: Boolean(body.is_active),
     service_fee_payer: body.service_fee_payer === "customer" ? "customer" : "merchant",
     service_fee_billing_cycle: "monthly",
@@ -246,6 +247,7 @@ const storeSelect = `
   accepts_delivery,
   accepts_pickup,
   accepts_national_shipping,
+  request_customer_id_number,
   is_active
   ,service_fee_payer
   ,service_fee_billing_cycle
@@ -324,6 +326,7 @@ export async function GET(request: NextRequest) {
       "manual_open_note",
       "exchange_rate_source",
         "exchange_rate_updated_at",
+        "request_customer_id_number",
         "accepts_national_shipping",
       ])
     ) {
@@ -426,6 +429,7 @@ export async function PATCH(request: NextRequest) {
         exchange_rate_source: _exchangeRateSource,
         exchange_rate_updated_at: _exchangeRateUpdatedAt,
         accepts_national_shipping: _acceptsNationalShipping,
+        request_customer_id_number: _requestCustomerIdNumber,
         ...basePayload
       } = payload;
       const fallbackResult = await supabase

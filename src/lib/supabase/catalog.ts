@@ -259,6 +259,7 @@ function mapStore(
     serviceFeeUsd: Number(row.monthly_price_usd ?? (row.plan_type === "per_service" ? 0.1 : 0)),
     serviceFeePayer: row.service_fee_payer === "customer" ? "customer" : "merchant",
     serviceFeeBillingCycle: "monthly",
+    requestCustomerIdNumber: row.request_customer_id_number === true,
   };
 }
 
@@ -300,6 +301,7 @@ const storeSelect = `
   next_payment_due_at,
   accepts_delivery,
   accepts_pickup,
+  request_customer_id_number,
   accepts_national_shipping,
   store_delivery_settings (
     delivery_enabled,
@@ -398,6 +400,7 @@ const baseStoreSelect = `
   next_payment_due_at,
   accepts_delivery,
   accepts_pickup,
+  request_customer_id_number,
   categories (
     id,
     name,
@@ -467,6 +470,7 @@ const storeShellSelect = `
   next_payment_due_at,
   accepts_delivery,
   accepts_pickup,
+  request_customer_id_number,
   accepts_national_shipping,
   store_delivery_settings (
     delivery_enabled,
@@ -538,6 +542,7 @@ const storeShellCompatibleSelect = `
   next_payment_due_at,
   accepts_delivery,
   accepts_pickup,
+  request_customer_id_number,
   store_delivery_settings (
     delivery_enabled,
     pickup_enabled,
@@ -607,6 +612,7 @@ const deliveryCompatibleStoreSelect = `
   next_payment_due_at,
   accepts_delivery,
   accepts_pickup,
+  request_customer_id_number,
   store_delivery_settings (
     delivery_enabled,
     pickup_enabled,
@@ -697,6 +703,7 @@ const legacyStoreSelect = `
   is_active,
   accepts_delivery,
   accepts_pickup,
+  request_customer_id_number,
   categories (
     id,
     name,

@@ -48,7 +48,8 @@ export async function GET(request: NextRequest) {
         sort_order,
         created_at,
         stores(name, slug),
-        categories(name)
+        categories(name),
+        product_variants(id, name, price_usd, is_available, sort_order)
       `
       )
       .order("sort_order", { ascending: true })

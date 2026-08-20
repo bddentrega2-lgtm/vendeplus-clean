@@ -4,16 +4,19 @@ import Image from "next/image";
 import QRCode from "qrcode";
 import {
   Check,
+  ChevronDown,
   Download,
   Edit3,
   Loader2,
   Plus,
   QrCode,
   Save,
+  Settings2,
+  Trash2,
   UtensilsCrossed,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
 import { getPanelAuthHeaders } from "@/lib/panel/client-auth";
 import { formatUsd } from "@/lib/currency";
@@ -74,6 +77,8 @@ export function TablesManager() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [isSetupOpen, setIsSetupOpen] = useState(false);
+  const setupVisibilityInitialized = useRef(false);
 
   const hasPremiumAccess = selectedStore?.table_orders_access_enabled === true;
   const qrUrl = useMemo(() => {
@@ -103,12 +108,20 @@ export function TablesManager() {
       setPaymentMethods(data.paymentMethods || []);
       setSelectedPaymentMethods(data.selectedPaymentMethods || []);
       setFulfillmentMode(data.fulfillmentMode === "counter_pickup" ? "counter_pickup" : "table_service");
+      if (!setupVisibilityInitialized.current) {
+        setIsSetupOpen(!data.enabled);
+        setupVisibilityInitialized.current = true;
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar las mesas.");
     } finally {
       if (!background) setIsLoading(false);
     }
   }, [hasPremiumAccess, selectedStoreId]);
+
+  useEffect(() => {
+    setupVisibilityInitialized.current = false;
+  }, [selectedStoreId]);
 
   useEffect(() => {
     void load();
@@ -141,7 +154,7 @@ export function TablesManager() {
     };
   }, [qrUrl]);
 
-  async function request(method: "POST" | "PATCH", body: Record<string, unknown>) {
+  async function request(method: "POST" | "PATCH" | "DELETE", body: Record<string, unknown>) {
     const response = await fetch("/api/panel/tables", {
       method,
       headers: { ...(await getPanelAuthHeaders()), "Content-Type": "application/json" },
@@ -163,8 +176,9 @@ export function TablesManager() {
         fulfillmentMode,
       });
       setNotice("Configuración guardada.");
+      if (enabled) setIsSetupOpen(false);
       window.setTimeout(() => setNotice(""), 2200);
-      await load();
+      await load(true);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "No se pudo guardar.");
     } finally {
@@ -180,7 +194,7 @@ export function TablesManager() {
       await request("POST", { name, zone });
       setName("");
       setZone("");
-      await load();
+      await load(true);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "No se pudo crear la mesa.");
     } finally {
@@ -194,9 +208,31 @@ export function TablesManager() {
     try {
       await request("PATCH", { tableId, ...updates });
       setEditingId("");
-      await load();
+      await load(true);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "No se pudo actualizar la mesa.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function deleteTable(table: TableRow) {
+    const confirmed = window.confirm(
+      `¿Eliminar ${table.name}? Los pedidos históricos conservarán el nombre de la mesa.`
+    );
+    if (!confirmed) return;
+
+    setIsSaving(true);
+    setError("");
+    try {
+      await request("DELETE", { tableId: table.id });
+      setEditingId("");
+      setTables((current) => current.filter((row) => row.id !== table.id));
+      setNotice(`${table.name} fue eliminada.`);
+      window.setTimeout(() => setNotice(""), 2200);
+      await load(true);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "No se pudo eliminar la mesa.");
     } finally {
       setIsSaving(false);
     }
@@ -213,7 +249,12 @@ export function TablesManager() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "No se pudo actualizar el pedido.");
-      await load();
+      setActiveOrders((current) =>
+        ["completed", "cancelled"].includes(status)
+          ? current.filter((order) => order.id !== orderId)
+          : current.map((order) => order.id === orderId ? { ...order, status } : order)
+      );
+      await load(true);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "No se pudo actualizar el pedido.");
     } finally {
@@ -260,7 +301,30 @@ export function TablesManager() {
       {error ? <p className="rounded-2xl bg-red-50 p-3 text-sm font-black text-red-700">{error}</p> : null}
       {notice ? <p className="rounded-2xl bg-green-50 p-3 text-sm font-black text-green-700">{notice}</p> : null}
 
-      <section className="grid gap-5 lg:grid-cols-[1fr_320px]">
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] bg-white p-4 shadow-lg ring-1 ring-[#25262B]/10">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#F8F3E8] text-[#2E3A79]">
+            <Settings2 size={19} />
+          </span>
+          <div className="min-w-0">
+            <p className="font-black">Configuración de Mesa / Barra</p>
+            <p className="truncate text-xs font-bold text-[#746f69]">
+              {enabled ? "Activa" : "Inactiva"} · {fulfillmentMode === "counter_pickup" ? "Retiro en barra" : "Servicio en mesa"}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setIsSetupOpen((current) => !current)}
+          className="vp-button-soft"
+          aria-expanded={isSetupOpen}
+        >
+          {isSetupOpen ? "Ocultar" : "Editar configuración"}
+          <ChevronDown size={17} className={isSetupOpen ? "rotate-180 transition-transform" : "transition-transform"} />
+        </button>
+      </section>
+
+      {isSetupOpen ? <section className="grid gap-5 lg:grid-cols-[1fr_320px]">
         <div className="rounded-[28px] bg-white p-5 shadow-lg ring-1 ring-[#25262B]/10">
           <div className="flex items-center justify-between gap-4">
             <div>
@@ -329,16 +393,7 @@ export function TablesManager() {
             <Download size={17} /> Descargar QR
           </button>
         </div>
-      </section>
-
-      <section className="rounded-[28px] bg-white p-5 shadow-lg ring-1 ring-[#25262B]/10">
-        <h2 className="text-xl font-black">Nueva mesa</h2>
-        <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
-          <input className="vp-input" value={name} onChange={(event) => setName(event.target.value)} placeholder="Ej. Mesa 01" maxLength={40} />
-          <input className="vp-input" value={zone} onChange={(event) => setZone(event.target.value)} placeholder="Zona opcional: Terraza" maxLength={40} />
-          <button type="button" onClick={createTable} disabled={isSaving || !name.trim()} className="vp-button-mango"><Plus size={17} /> Crear</button>
-        </div>
-      </section>
+      </section> : null}
 
       {counterOrders.length ? (
         <section className="rounded-[28px] bg-white p-5 shadow-lg ring-1 ring-[#25262B]/10">
@@ -387,6 +442,16 @@ export function TablesManager() {
                   <div className="flex gap-2">
                     <button type="button" className="vp-button-primary" onClick={() => updateTable(table.id, { name: editingName, zone: editingZone })}><Check size={16} /> Guardar</button>
                     <button type="button" className="vp-button-soft" onClick={() => setEditingId("")} aria-label="Cancelar edición"><X size={16} /></button>
+                    <button
+                      type="button"
+                      className="ml-auto grid h-10 w-10 place-items-center rounded-full bg-red-50 text-red-700 disabled:opacity-60"
+                      onClick={() => deleteTable(table)}
+                      disabled={isSaving}
+                      aria-label={`Eliminar ${table.name}`}
+                      title={`Eliminar ${table.name}`}
+                    >
+                      <Trash2 size={17} />
+                    </button>
                   </div>
                 </div>
               ) : (
@@ -451,6 +516,15 @@ export function TablesManager() {
             </article>
           );
         })}
+      </section>
+
+      <section className="rounded-[28px] bg-white p-5 shadow-lg ring-1 ring-[#25262B]/10">
+        <h2 className="text-xl font-black">Nueva mesa</h2>
+        <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+          <input className="vp-input" value={name} onChange={(event) => setName(event.target.value)} placeholder="Ej. Mesa 01" maxLength={40} />
+          <input className="vp-input" value={zone} onChange={(event) => setZone(event.target.value)} placeholder="Zona opcional: Terraza" maxLength={40} />
+          <button type="button" onClick={createTable} disabled={isSaving || !name.trim()} className="vp-button-mango"><Plus size={17} /> Crear</button>
+        </div>
       </section>
     </div>
   );

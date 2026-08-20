@@ -68,6 +68,7 @@ type StoreRow = {
   accepts_delivery: boolean;
   accepts_pickup: boolean;
   accepts_national_shipping?: boolean;
+  request_customer_id_number?: boolean;
   is_active: boolean;
   service_fee_payer?: "merchant" | "customer";
   service_fee_billing_cycle?: "weekly" | "monthly";
@@ -265,6 +266,7 @@ function StoreSettingsCard({
     accepts_delivery: store.accepts_delivery === true,
     accepts_pickup: store.accepts_pickup !== false,
     accepts_national_shipping: store.accepts_national_shipping === true,
+    request_customer_id_number: store.request_customer_id_number === true,
     is_active: store.is_active !== false,
     service_fee_payer: store.service_fee_payer === "customer" ? "customer" : "merchant",
     service_fee_billing_cycle: "monthly",
@@ -1309,6 +1311,27 @@ function StoreSettingsCard({
           {draft.is_active ? "Visible en la web" : "Oculto en la web"}
         </button>
       </div>
+
+      <section className="mt-5 rounded-2xl bg-[#F6F4EF] p-4 ring-1 ring-[#25262B]/10">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-base font-black text-[#25262B]">Cédula del cliente</h3>
+            <p className="mt-1 text-xs font-bold text-[#746f69]">
+              Si la activas, será obligatoria junto al nombre y teléfono al finalizar el pedido.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => updateField("request_customer_id_number", !draft.request_customer_id_number)}
+            className={[
+              "shrink-0 rounded-full px-4 py-2 text-xs font-black",
+              draft.request_customer_id_number ? "bg-green-100 text-green-700" : "bg-white text-[#746f69]",
+            ].join(" ")}
+          >
+            {draft.request_customer_id_number ? "Solicitar cédula" : "No solicitar cédula"}
+          </button>
+        </div>
+      </section>
 
       {store.plan_type === "per_service" ? (
         <section className="mt-5 rounded-2xl bg-[#F8F3E8] p-4">

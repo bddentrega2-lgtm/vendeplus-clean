@@ -3,6 +3,7 @@ const CUSTOMER_PROFILE_KEY = "somos_customer_profile_v1";
 export type CustomerBrowserProfile = {
   name: string;
   phone: string;
+  idNumber?: string;
   updatedAt: string;
 };
 
@@ -25,6 +26,7 @@ export function getCustomerBrowserProfile(): CustomerBrowserProfile | null {
     return {
       name,
       phone,
+      idNumber: cleanText(parsed?.idNumber, 30),
       updatedAt: cleanText(parsed?.updatedAt, 40),
     };
   } catch {
@@ -32,12 +34,13 @@ export function getCustomerBrowserProfile(): CustomerBrowserProfile | null {
   }
 }
 
-export function saveCustomerBrowserProfile(name: string, phone: string) {
+export function saveCustomerBrowserProfile(name: string, phone: string, idNumber = "") {
   if (typeof window === "undefined") return false;
 
   const profile: CustomerBrowserProfile = {
     name: cleanText(name, 120),
     phone: cleanText(phone, 40),
+    idNumber: cleanText(idNumber, 30),
     updatedAt: new Date().toISOString(),
   };
 

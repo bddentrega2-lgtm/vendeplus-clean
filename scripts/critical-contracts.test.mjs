@@ -302,6 +302,94 @@ test("tokens de Mesa se resuelven desde almacenamiento privado", () => {
   assert.match(cleanupMigration, /drop column if exists table_order_token/);
 });
 
+test("pedidos publicos y manuales se crean en una transaccion idempotente", () => {
+  const publicRoute = readFileSync(
+    new URL("../src/app/api/orders/route.ts", import.meta.url),
+    "utf8",
+  );
+  const manualRoute = readFileSync(
+    new URL("../src/app/api/panel/orders/route.ts", import.meta.url),
+    "utf8",
+  );
+  const manualManager = readFileSync(
+    new URL("../src/components/panel/ManualOrderManager.tsx", import.meta.url),
+    "utf8",
+  );
+  const atomicHelper = readFileSync(
+    new URL("../src/lib/server/create-order-atomic.ts", import.meta.url),
+    "utf8",
+  );
+  const migration = readFileSync(
+    new URL("../supabase/migrations/20260820013000_create_order_atomic_rpc.sql", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(publicRoute, /createOrderAtomic/);
+  assert.match(manualRoute, /createOrderAtomic/);
+  assert.match(manualManager, /idempotencyKey/);
+  assert.match(atomicHelper, /rpc\("create_order_atomic"/);
+  assert.doesNotMatch(publicRoute, /from\("order_items"\)\.insert/);
+  assert.doesNotMatch(manualRoute, /from\("order_items"\)\.insert/);
+  assert.doesNotMatch(publicRoute, /from\("orders"\)\.delete/);
+  assert.doesNotMatch(manualRoute, /from\("orders"\)\.delete/);
+  assert.match(migration, /create or replace function public\.create_order_atomic/);
+  assert.match(migration, /on conflict \(store_id, idempotency_key\)/);
+  assert.match(migration, /insert into public\.order_items/);
+  assert.match(migration, /insert into public\.order_item_options/);
+  assert.match(migration, /revoke all on function public\.create_order_atomic\(jsonb, jsonb\) from public, anon, authenticated/);
+  assert.match(migration, /grant execute on function public\.create_order_atomic\(jsonb, jsonb\) to service_role/);
+});
+
+test("Mesa y Barra actualiza pedidos sin reiniciar la vista y oculta su configuracion", () => {
+  const manager = readFileSync(
+    new URL("../src/components/panel/TablesManager.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(manager, /setIsSetupOpen\(!data\.enabled\)/);
+  assert.match(manager, /Editar configuración/);
+  assert.match(manager, /setActiveOrders\(\(current\) =>/);
+  assert.match(manager, /await load\(true\)/);
+  assert.doesNotMatch(manager, /if \(!response\.ok\)[\s\S]{0,160}await load\(\);/);
+});
+
+test("Mesa se elimina de forma protegida y pedido manual personaliza fuera del resumen", () => {
+  const tablesApi = readFileSync(
+    new URL("../src/app/api/panel/tables/route.ts", import.meta.url),
+    "utf8",
+  );
+  const tablesManager = readFileSync(
+    new URL("../src/components/panel/TablesManager.tsx", import.meta.url),
+    "utf8",
+  );
+  const manualManager = readFileSync(
+    new URL("../src/components/panel/ManualOrderManager.tsx", import.meta.url),
+    "utf8",
+  );
+  const manualOrdersApi = readFileSync(
+    new URL("../src/app/api/panel/orders/route.ts", import.meta.url),
+    "utf8",
+  );
+  const catalogApi = readFileSync(
+    new URL("../src/app/api/panel/catalogo/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(tablesApi, /export async function DELETE/);
+  assert.match(tablesApi, /assertStoreManager\(auth, storeId\)/);
+  assert.match(tablesApi, /Esta mesa tiene pedidos activos/);
+  assert.match(tablesApi, /\.eq\("store_id", storeId\)/);
+  assert.match(tablesManager, /¿Eliminar \$\{table\.name\}\?/);
+  assert.match(manualManager, /role="dialog"/);
+  assert.match(manualManager, /Cargando tamaños y extras/);
+  assert.match(manualManager, /Personalizar/);
+  assert.match(manualManager, /Tamaño o presentación/);
+  assert.match(manualManager, /selectVariant/);
+  assert.match(catalogApi, /product_variants\(id, name, price_usd, is_available, sort_order\)/);
+  assert.match(manualOrdersApi, /Selecciona un tamaño o presentación/);
+  assert.match(manualOrdersApi, /product_option_value_variant_prices/);
+});
+
 test("Entrega2 recibe cliente en contacto y comercio en telefono_comercio", () => {
   const route = readFileSync(
     new URL("../src/app/api/panel/orders/[orderId]/send-delivery/route.ts", import.meta.url),
@@ -310,4 +398,40 @@ test("Entrega2 recibe cliente en contacto y comercio en telefono_comercio", () =
 
   assert.match(route, /telefono_contacto:\s*normalizeInternationalPhone\(order\.customer_phone\)/);
   assert.match(route, /telefono_comercio:\s*normalizeInternationalPhone\(order\.stores\?\.whatsapp\)/);
+});
+
+test("cada comercio decide si solicita y recuerda la cedula del cliente", () => {
+  const checkout = readFileSync(
+    new URL("../src/components/public/CheckoutForm.tsx", import.meta.url),
+    "utf8",
+  );
+  const settings = readFileSync(
+    new URL("../src/app/api/panel/settings/route.ts", import.meta.url),
+    "utf8",
+  );
+  const orders = readFileSync(
+    new URL("../src/app/api/orders/route.ts", import.meta.url),
+    "utf8",
+  );
+  const profile = readFileSync(
+    new URL("../src/lib/customer-browser-profile.ts", import.meta.url),
+    "utf8",
+  );
+  const migration = readFileSync(
+    new URL("../supabase/migrations/20260820023000_add_customer_id_request_setting.sql", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(settings, /request_customer_id_number:\s*Boolean/);
+  assert.match(checkout, /store\.requestCustomerIdNumber/);
+  assert.match(checkout, /profile\.idNumber/);
+  assert.match(checkout, /<option value="V">V<\/option>/);
+  assert.match(checkout, /<option value="E">E<\/option>/);
+  assert.match(checkout, /<option value="J">J<\/option>/);
+  assert.match(checkout, /inputMode="numeric"/);
+  assert.match(profile, /idNumber:\s*cleanText/);
+  assert.match(orders, /request_customer_id_number === true/);
+  assert.match(orders, /Escribe la cédula del cliente/);
+  assert.match(orders, /normalizeCustomerId/);
+  assert.match(migration, /request_customer_id_number boolean not null default false/);
 });

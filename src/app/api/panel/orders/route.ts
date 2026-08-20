@@ -9,11 +9,11 @@ import {
 } from "@/lib/panel/access";
 import { getInitialPaymentStatus, getSuggestedPaymentCurrency, isPaymentStatus } from "@/lib/payments";
 import { isStoreSubscriptionPastDue } from "@/lib/supabase/catalog";
-import { isMissingColumnError } from "@/lib/supabase/schema-compat";
 import { normalizePhone } from "@/lib/customers/normalize-phone";
 import { safeUpsertCustomerFromOrder } from "@/lib/customers/upsert-customer-from-order";
 import { getVenezuelaRelativeRange } from "@/lib/time/venezuela";
 import { getStoreServiceFeeUsd } from "@/lib/plans";
+import { createOrderAtomic } from "@/lib/server/create-order-atomic";
 
 const allowedStatuses = [
   "received",
@@ -24,6 +24,10 @@ const allowedStatuses = [
   "completed",
   "cancelled",
 ];
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
 
 const ordersSelect = `
   id,
@@ -248,6 +252,7 @@ function normalizeManualItems(value: unknown) {
   return value
     .map((item) => ({
       productId: cleanText(item?.productId),
+      variantId: cleanText(item?.variantId),
       quantity: Math.max(1, Math.floor(toSafeNumber(item?.quantity, 1))),
       notes: cleanText(item?.notes),
       selectedOptions: Array.isArray(item?.selectedOptions)
@@ -280,11 +285,15 @@ async function loadManualOptionAssignments(
         min_select,
         max_select,
         is_active,
-        product_option_values (
-          id,
-          name,
-          price_delta_usd,
-          is_active
+          product_option_values (
+            id,
+            name,
+            price_delta_usd,
+            is_active,
+            product_option_value_variant_prices (
+              variant_id,
+              price_delta_usd
+            )
         )
       )
     `)
@@ -323,7 +332,7 @@ function buildManualMessage({
   deliveryReference: string;
   orderDetails: string;
   originalMessage: string;
-  items: Array<{ product_name: string; quantity: number; total_usd: number; selectedOptions?: Array<{ groupName: string; valueName: string }> }>;
+  items: Array<{ product_name: string; variant_name?: string | null; quantity: number; total_usd: number; selectedOptions?: Array<{ groupName: string; valueName: string }> }>;
   subtotalUsd: number;
   deliveryUsd: number;
   totalUsd: number;
@@ -341,7 +350,8 @@ function buildManualMessage({
     ...items.map(
       (item) => {
         const options = (item.selectedOptions || []).map((option) => option.valueName).join(", ");
-        return `- ${item.quantity}x ${item.product_name}${options ? ` (${options})` : ""} ($${item.total_usd.toFixed(2)})`;
+        const customization = [item.variant_name, options].filter(Boolean).join(", ");
+        return `- ${item.quantity}x ${item.product_name}${customization ? ` (${customization})` : ""} ($${item.total_usd.toFixed(2)})`;
       }
     ),
     "",
@@ -704,6 +714,8 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requirePanelAuth(request);
     const body = await request.json();
+    const idempotencyKey = cleanText(body.idempotencyKey);
+    if (!isUuid(idempotencyKey)) return badRequest("Falta la identificación segura del pedido.");
 
     const storeId = cleanText(body.storeId);
     const customerName = cleanText(body.customerName);
@@ -752,7 +764,7 @@ export async function POST(request: NextRequest) {
     );
     const { data: products, error: productsError } = await supabase
       .from("products")
-      .select("id, store_id, name, price_usd, is_available")
+      .select("id, store_id, name, price_usd, is_available, product_variants(id, name, price_usd, is_available)")
       .eq("store_id", storeId)
       .in("id", productIds);
 
@@ -773,6 +785,19 @@ export async function POST(request: NextRequest) {
 
       if (product.is_available === false) {
         throw new Error(`El producto ${product.name} no está disponible.`);
+      }
+
+      const availableVariants = Array.isArray(product.product_variants)
+        ? product.product_variants.filter((variant: any) => variant.is_available !== false)
+        : [];
+      const selectedVariant = availableVariants.length
+        ? availableVariants.find((variant: any) => String(variant.id) === item.variantId)
+        : null;
+      if (availableVariants.length && !selectedVariant) {
+        throw new Error(`Selecciona un tamaño o presentación para ${product.name}.`);
+      }
+      if (!availableVariants.length && item.variantId) {
+        throw new Error(`La presentación elegida para ${product.name} ya no está disponible.`);
       }
 
       const groups = (optionAssignments.get(item.productId) || [])
@@ -810,10 +835,18 @@ export async function POST(request: NextRequest) {
         return selectedValueIds.map((valueId) => {
           const value = values.find((entry: any) => String(entry.id) === valueId);
           if (!value) throw new Error(`Una opción de ${group.name} ya no está disponible.`);
+          const variantPrice = item.variantId && Array.isArray(value.product_option_value_variant_prices)
+            ? value.product_option_value_variant_prices.find(
+                (entry: any) => String(entry.variant_id) === item.variantId
+              )
+            : null;
           return {
             groupName: group.name || "Opciones",
             valueName: value.name || "Opción",
-            priceDeltaUsd: Math.max(0, toSafeNumber(value.price_delta_usd, 0)),
+            priceDeltaUsd: Math.max(
+              0,
+              toSafeNumber(variantPrice?.price_delta_usd ?? value.price_delta_usd, 0)
+            ),
           };
         });
       });
@@ -822,13 +855,13 @@ export async function POST(request: NextRequest) {
         (sum, option) => sum + option.priceDeltaUsd,
         0
       );
-      const unitPriceUsd = toSafeNumber(product.price_usd, 0) + optionExtraUsd;
+      const unitPriceUsd = toSafeNumber(selectedVariant?.price_usd ?? product.price_usd, 0) + optionExtraUsd;
       const totalUsd = unitPriceUsd * item.quantity;
 
       return {
         product_id: item.productId,
         product_name: product.name || "Producto",
-        variant_name: null,
+        variant_name: selectedVariant?.name || null,
         quantity: item.quantity,
         unit_price_usd: unitPriceUsd,
         total_usd: totalUsd,
@@ -873,6 +906,7 @@ export async function POST(request: NextRequest) {
       id: orderId,
       public_code: publicCode,
       store_id: storeId,
+      idempotency_key: idempotencyKey,
       customer_name: effectiveCustomerName,
       customer_phone: customerPhone || "",
       customer_phone_normalized: normalizePhone(customerPhone) || null,
@@ -912,47 +946,8 @@ export async function POST(request: NextRequest) {
       whatsapp_message: whatsappMessage,
     };
 
-    let { data: order, error: orderError } = await supabase
-      .from("orders")
-      .insert(orderPayload)
-      .select()
-      .single();
-
-    if (orderError && isMissingColumnError(orderError, ["payment_", "customer_", "delivery_", "platform_service_"])) {
-      const {
-        payment_status: _paymentStatus,
-        payment_currency: _paymentCurrency,
-        customer_phone_normalized: _customerPhoneNormalized,
-        platform_service_fee_usd: _platformServiceFeeUsd,
-        platform_service_fee_payer: _platformServiceFeePayer,
-        platform_service_fee_customer_usd: _platformServiceFeeCustomerUsd,
-        platform_service_fee_billing_cycle: _platformServiceFeeBillingCycle,
-        delivery_provider: _deliveryProvider,
-        delivery_fee_usd: _deliveryFeeUsd,
-        delivery_zone_id: _deliveryZoneId,
-        delivery_zone_name: _deliveryZoneName,
-        delivery_distance_km: _deliveryDistanceKm,
-        delivery_pricing_type: _deliveryPricingType,
-        delivery_status: _deliveryStatus,
-        delivery_notes: _deliveryNotes,
-        delivery_address: _deliveryAddress,
-        ...baseOrderPayload
-      } = orderPayload;
-
-      const fallbackResult = await supabase
-        .from("orders")
-        .insert(baseOrderPayload)
-        .select()
-        .single();
-
-      order = fallbackResult.data;
-      orderError = fallbackResult.error;
-    }
-
-    if (orderError) throw orderError;
-
-    const { data: insertedItems, error: itemsError } = await supabase.from("order_items").insert(
-      itemsPayload.map((item) => ({
+    const atomicItems = itemsPayload.map((item) => ({
+        id: randomUUID(),
         product_id: item.product_id,
         product_name: item.product_name,
         variant_name: item.variant_name,
@@ -960,36 +955,20 @@ export async function POST(request: NextRequest) {
         unit_price_usd: item.unit_price_usd,
         total_usd: item.total_usd,
         notes: item.notes,
-        order_id: orderId,
-      }))
-    ).select("id");
-
-    if (itemsError) {
-      await supabase.from("orders").delete().eq("id", orderId);
-      throw itemsError;
-    }
-
-    const optionRows = itemsPayload.flatMap((item, index) => {
-      const orderItemId = insertedItems?.[index]?.id;
-      if (!orderItemId) return [];
-      return item.selectedOptions.map((option) => ({
-        order_item_id: orderItemId,
-        option_group_name: option.groupName,
-        option_name: option.valueName,
-        price_delta_usd: option.priceDeltaUsd,
-        quantity: 1,
+        options: item.selectedOptions.map((option) => ({
+          option_group_name: option.groupName,
+          option_name: option.valueName,
+          price_delta_usd: option.priceDeltaUsd,
+          quantity: 1,
+        })),
       }));
-    });
 
-    if (optionRows.length) {
-      const { error: optionsError } = await supabase
-        .from("order_item_options")
-        .insert(optionRows);
-      if (optionsError) {
-        await supabase.from("orders").delete().eq("id", orderId);
-        throw optionsError;
-      }
-    }
+    const atomicResult = await createOrderAtomic({
+      supabase,
+      order: orderPayload,
+      items: atomicItems,
+    });
+    const order = atomicResult.order;
 
     if (customerPhone) {
       await safeUpsertCustomerFromOrder(supabase, {
@@ -1001,7 +980,7 @@ export async function POST(request: NextRequest) {
         payment_method: paymentMethod,
         delivery_reference: deliveryReference || null,
         total_usd: totalUsd,
-        created_at: new Date().toISOString(),
+        created_at: order.created_at || new Date().toISOString(),
       });
     }
 

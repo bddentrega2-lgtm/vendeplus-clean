@@ -51,7 +51,7 @@ const initialForm: CheckoutFormData = {
   paymentReference: "",
   deliveryReference: "",
   deliveryZoneId: "",
-  nationalIdNumber: "",
+  nationalIdNumber: "V-",
   nationalShippingCity: "",
   orderDetails: "",
   notes: "",
@@ -59,6 +59,15 @@ const initialForm: CheckoutFormData = {
 
 export function getOrderKey(storeSlug: string) {
   return `vendeplus_last_order_${storeSlug}`;
+}
+
+function getCustomerIdParts(value: string) {
+  const normalized = String(value || "").trim().toUpperCase();
+  const match = normalized.match(/^([VEJ])[-\s]?([0-9]*)$/);
+  return {
+    type: match?.[1] || "V",
+    number: match?.[2] || normalized.replace(/[^0-9]/g, ""),
+  };
 }
 
 function createOrderId() {
@@ -166,11 +175,14 @@ export function CheckoutForm({ store }: { store: Store }) {
         ...current,
         customerName: current.customerName || profile.name,
         customerPhone: current.customerPhone || profile.phone,
+        nationalIdNumber: store.requestCustomerIdNumber && profile.idNumber
+          ? `${getCustomerIdParts(profile.idNumber).type}-${getCustomerIdParts(profile.idNumber).number}`
+          : current.nationalIdNumber,
       }));
       setHasSavedCustomer(true);
     }
     setCustomerProfileLoaded(true);
-  }, []);
+  }, [store.requestCustomerIdNumber]);
 
   const subtotalUsd = useMemo(() => getCartSubtotal(items), [items]);
   const deliverySettings = useMemo(
@@ -437,6 +449,12 @@ export function CheckoutForm({ store }: { store: Store }) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
+  function updateCustomerId(type: string, number: string) {
+    const safeType = ["V", "E", "J"].includes(type) ? type : "V";
+    const safeNumber = number.replace(/[^0-9]/g, "").slice(0, 12);
+    updateField("nationalIdNumber", `${safeType}-${safeNumber}`);
+  }
+
   function validate() {
     if (items.length === 0) return "Tu carrito está vacío.";
     if (!openState.isOpen) {
@@ -444,6 +462,9 @@ export function CheckoutForm({ store }: { store: Store }) {
     }
     if (!form.customerName.trim()) return "Escribe el nombre del cliente.";
     if (!form.customerPhone.trim()) return "Escribe el teléfono del cliente.";
+    if (store.requestCustomerIdNumber && !/^[VEJ]-\d+$/.test(form.nationalIdNumber)) {
+      return "Escribe la cédula del cliente.";
+    }
     if (!form.paymentMethod.trim()) return "Selecciona un método de pago.";
     if (tableOrder && !availablePaymentMethods.includes(form.paymentMethod)) {
       return "Selecciona un método de pago previo disponible para pedidos en mesa.";
@@ -451,7 +472,7 @@ export function CheckoutForm({ store }: { store: Store }) {
     if (form.deliveryType === "delivery" && quote.available === false) {
       return quote.message || quote.label || "Delivery no disponible.";
     }
-    if (form.deliveryType === "national_shipping" && !form.nationalIdNumber.trim()) {
+    if (form.deliveryType === "national_shipping" && !/^[VEJ]-\d+$/.test(form.nationalIdNumber)) {
       return "Escribe la cedula para el envio nacional.";
     }
     if (form.deliveryType === "national_shipping" && !form.nationalShippingCity.trim()) {
@@ -537,7 +558,8 @@ export function CheckoutForm({ store }: { store: Store }) {
       if (rememberCustomer) {
         const saved = saveCustomerBrowserProfile(
           saveResult.order.form.customerName,
-          saveResult.order.form.customerPhone
+          saveResult.order.form.customerPhone,
+          store.requestCustomerIdNumber ? saveResult.order.form.nationalIdNumber : ""
         );
         setHasSavedCustomer(saved);
       } else {
@@ -588,6 +610,24 @@ export function CheckoutForm({ store }: { store: Store }) {
                   <span className="vp-label">Teléfono</span>
                   <input className="vp-input" value={form.customerPhone} onChange={(event) => updateField("customerPhone", event.target.value)} placeholder="Ej: 0412-0000000" />
                 </label>
+                {store.requestCustomerIdNumber ? (
+                  <label>
+                    <span className="vp-label">Cédula</span>
+                    <div className="flex overflow-hidden rounded-2xl border border-[#25262B]/10 bg-white focus-within:border-[#2E3A79]">
+                      <select
+                        aria-label="Tipo de cédula"
+                        value={getCustomerIdParts(form.nationalIdNumber).type}
+                        onChange={(event) => updateCustomerId(event.target.value, getCustomerIdParts(form.nationalIdNumber).number)}
+                        className="border-r border-[#25262B]/10 bg-[#F6F4EF] px-3 py-3 text-sm font-black outline-none"
+                      >
+                        <option value="V">V</option>
+                        <option value="E">E</option>
+                        <option value="J">J</option>
+                      </select>
+                      <input inputMode="numeric" className="min-w-0 flex-1 px-4 py-3 text-sm font-bold outline-none" value={getCustomerIdParts(form.nationalIdNumber).number} onChange={(event) => updateCustomerId(getCustomerIdParts(form.nationalIdNumber).type, event.target.value)} placeholder="12345678" />
+                    </div>
+                  </label>
+                ) : null}
               </div>
               {customerProfileLoaded ? (
                 <div className="mt-4 rounded-2xl bg-[#F6F4EF] px-4 py-3 ring-1 ring-[#25262B]/10">
@@ -752,10 +792,15 @@ export function CheckoutForm({ store }: { store: Store }) {
                 <h2 className="text-xl font-black text-[#25262B]">3. Envio nacional</h2>
                 <p className="mt-1 text-sm font-bold text-[#746f69]">El comercio coordinará los detalles por WhatsApp.</p>
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                  <label>
+                  {!store.requestCustomerIdNumber ? <label>
                     <span className="vp-label">Cedula</span>
-                    <input className="vp-input" value={form.nationalIdNumber} onChange={(event) => updateField("nationalIdNumber", event.target.value)} placeholder="Ej: V-12345678" />
-                  </label>
+                    <div className="flex overflow-hidden rounded-2xl border border-[#25262B]/10 bg-white focus-within:border-[#2E3A79]">
+                      <select aria-label="Tipo de cédula" value={getCustomerIdParts(form.nationalIdNumber).type} onChange={(event) => updateCustomerId(event.target.value, getCustomerIdParts(form.nationalIdNumber).number)} className="border-r border-[#25262B]/10 bg-[#F6F4EF] px-3 py-3 text-sm font-black outline-none">
+                        <option value="V">V</option><option value="E">E</option><option value="J">J</option>
+                      </select>
+                      <input inputMode="numeric" className="min-w-0 flex-1 px-4 py-3 text-sm font-bold outline-none" value={getCustomerIdParts(form.nationalIdNumber).number} onChange={(event) => updateCustomerId(getCustomerIdParts(form.nationalIdNumber).type, event.target.value)} placeholder="12345678" />
+                    </div>
+                  </label> : null}
                   <label>
                     <span className="vp-label">Ciudad de destino</span>
                     <input className="vp-input" value={form.nationalShippingCity} onChange={(event) => updateField("nationalShippingCity", event.target.value)} placeholder="Ej: Valencia" />

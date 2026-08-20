@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -15,6 +15,7 @@ import {
   Sparkles,
   ShoppingCart,
   Trash2,
+  X,
 } from "lucide-react";
 import { formatUsd } from "@/lib/currency";
 import type { ProductOptionGroup, SelectedCartOption } from "@/types";
@@ -51,10 +52,19 @@ type ProductRow = {
   price_usd: number | string;
   is_available: boolean;
   categories?: { name?: string } | null;
+  product_variants?: Array<{
+    id: string;
+    name: string;
+    price_usd: number | string;
+    is_available: boolean;
+    sort_order: number;
+  }>;
 };
 
 type SelectedItem = {
   productId: string;
+  variantId: string;
+  variantName: string;
   quantity: number;
   notes: string;
   selectedOptions: SelectedCartOption[];
@@ -104,6 +114,7 @@ async function panelRequest(pin: string, url: string, options?: RequestInit) {
 }
 
 export function ManualOrderManager() {
+  const idempotencyKeyRef = useRef<string | null>(null);
   const router = useRouter();
   const [pin, setPin] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -127,6 +138,7 @@ export function ManualOrderManager() {
   const [items, setItems] = useState<SelectedItem[]>([]);
   const [optionGroupsByProduct, setOptionGroupsByProduct] = useState<Record<string, ProductOptionGroup[]>>({});
   const [loadingOptionsFor, setLoadingOptionsFor] = useState("");
+  const [customizingProductId, setCustomizingProductId] = useState("");
   const [interpretDetails, setInterpretDetails] = useState<InterpretDetails>({
     mode: "",
     warnings: [],
@@ -165,11 +177,14 @@ export function ManualOrderManager() {
           const product = products.find((row) => row.id === item.productId);
           if (!product) return null;
 
+          const selectedVariant = (product.product_variants || []).find(
+            (variant) => variant.id === item.variantId && variant.is_available !== false
+          );
           const optionExtraUsd = (item.selectedOptions || []).reduce(
             (sum, option) => sum + Number(option.priceDeltaUsd || 0),
             0
           );
-          const unitPriceUsd = Number(product.price_usd || 0) + optionExtraUsd;
+          const unitPriceUsd = Number(selectedVariant?.price_usd ?? product.price_usd ?? 0) + optionExtraUsd;
           return {
             ...item,
             product,
@@ -191,6 +206,26 @@ export function ManualOrderManager() {
   const safeDeliveryUsd = deliveryType === "delivery" ? Math.max(0, Number(deliveryUsd || 0)) : 0;
   const totalUsd = subtotalUsd + safeDeliveryUsd;
   const totalQuantity = selectedRows.reduce((sum, item) => sum + item.quantity, 0);
+  const customizingRow = selectedRows.find((item) => item.productId === customizingProductId);
+  const customizingGroups = customizingProductId
+    ? optionGroupsByProduct[customizingProductId] || []
+    : [];
+  const customizingVariants = customizingRow
+    ? [...(customizingRow.product.product_variants || [])]
+        .filter((variant) => variant.is_available !== false)
+        .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
+    : [];
+  const missingVariantCustomization = Boolean(
+    customizingRow && customizingVariants.length && !customizingRow.variantId
+  );
+  const missingRequiredCustomization = customizingRow
+    ? customizingGroups.some((group) => {
+        const selectedCount = customizingRow.selectedOptions.filter(
+          (option) => option.groupId === group.id
+        ).length;
+        return group.required && selectedCount < Math.max(1, Number(group.minSelect || 0));
+      })
+    : false;
 
   async function loadData(currentPin: string) {
     setIsLoading(true);
@@ -252,7 +287,17 @@ export function ManualOrderManager() {
         )
       )
     );
+    setCustomizingProductId("");
   }, [products, selectedStore, selectedStoreId]);
+
+  useEffect(() => {
+    if (!customizingProductId) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [customizingProductId]);
 
   async function addProduct(product: ProductRow) {
     setItems((current) => {
@@ -266,10 +311,16 @@ export function ManualOrderManager() {
         );
       }
 
-      return [...current, { productId: product.id, quantity: 1, notes: "", selectedOptions: [] }];
+      return [...current, { productId: product.id, variantId: "", variantName: "", quantity: 1, notes: "", selectedOptions: [] }];
     });
 
-    if (!selectedStore?.slug || optionGroupsByProduct[product.id]) return;
+    const hasVariants = (product.product_variants || []).some((variant) => variant.is_available !== false);
+    const cachedGroups = optionGroupsByProduct[product.id];
+    if (cachedGroups) {
+      if (hasVariants || cachedGroups.length) setCustomizingProductId(product.id);
+      return;
+    }
+    if (!selectedStore?.slug) return;
 
     setLoadingOptionsFor(product.id);
     try {
@@ -279,10 +330,9 @@ export function ManualOrderManager() {
       });
       const response = await fetch(`/api/catalog/product-options?${params.toString()}`);
       const data = await response.json().catch(() => ({}));
-      setOptionGroupsByProduct((current) => ({
-        ...current,
-        [product.id]: response.ok && Array.isArray(data.optionGroups) ? data.optionGroups : [],
-      }));
+      const nextGroups = response.ok && Array.isArray(data.optionGroups) ? data.optionGroups : [];
+      setOptionGroupsByProduct((current) => ({ ...current, [product.id]: nextGroups }));
+      if (hasVariants || nextGroups.length) setCustomizingProductId(product.id);
     } catch {
       setOptionGroupsByProduct((current) => ({ ...current, [product.id]: [] }));
     } finally {
@@ -312,7 +362,9 @@ export function ManualOrderManager() {
         groupName: group.name,
         valueId: value.id,
         valueName: value.name,
-        priceDeltaUsd: Number(value.priceDeltaUsd || 0),
+        priceDeltaUsd: item.variantId && value.variantPriceDeltas && Object.prototype.hasOwnProperty.call(value.variantPriceDeltas, item.variantId)
+          ? Number(value.variantPriceDeltas[item.variantId] || 0)
+          : Number(value.priceDeltaUsd || 0),
       };
       const maxSelect = group.selectionType === "single" ? 1 : Number(group.maxSelect || 0);
       const nextGroup = maxSelect > 0 && currentGroup.length >= maxSelect
@@ -337,6 +389,28 @@ export function ManualOrderManager() {
 
   function removeProduct(productId: string) {
     setItems((current) => current.filter((item) => item.productId !== productId));
+    if (customizingProductId === productId) setCustomizingProductId("");
+  }
+
+  function selectVariant(productId: string, variantId: string) {
+    const product = products.find((row) => row.id === productId);
+    const variant = (product?.product_variants || []).find(
+      (row) => row.id === variantId && row.is_available !== false
+    );
+    if (!variant) return;
+
+    setItems((current) => current.map((item) => {
+      if (item.productId !== productId) return item;
+      const selectedOptions = item.selectedOptions.map((option) => {
+        const group = (optionGroupsByProduct[productId] || []).find((row) => row.id === option.groupId);
+        const value = group?.values.find((row) => row.id === option.valueId);
+        const priceDeltaUsd = value?.variantPriceDeltas && Object.prototype.hasOwnProperty.call(value.variantPriceDeltas, variantId)
+          ? Number(value.variantPriceDeltas[variantId] || 0)
+          : Number(value?.priceDeltaUsd || 0);
+        return { ...option, priceDeltaUsd };
+      });
+      return { ...item, variantId: variant.id, variantName: variant.name, selectedOptions };
+    }));
   }
 
   function updateItemNotes(productId: string, notes: string) {
@@ -381,6 +455,8 @@ export function ManualOrderManager() {
             )
             .map((item: any) => ({
               productId: String(item.productId),
+              variantId: "",
+              variantName: "",
               quantity: Math.max(1, Math.floor(Number(item.quantity || 1))),
               notes: String(item.notes || ""),
               selectedOptions: [],
@@ -470,6 +546,15 @@ export function ManualOrderManager() {
     }
 
     for (const item of items) {
+      const product = products.find((row) => row.id === item.productId);
+      const availableVariants = (product?.product_variants || []).filter(
+        (variant) => variant.is_available !== false
+      );
+      if (availableVariants.length && !availableVariants.some((variant) => variant.id === item.variantId)) {
+        setError(`Selecciona un tamaño o presentación para ${product?.name || "el producto"}.`);
+        setCustomizingProductId(item.productId);
+        return;
+      }
       for (const group of optionGroupsByProduct[item.productId] || []) {
         const selectedCount = item.selectedOptions.filter((option) => option.groupId === group.id).length;
         const minSelect = group.required ? Math.max(1, Number(group.minSelect || 1)) : 0;
@@ -485,10 +570,12 @@ export function ManualOrderManager() {
     setIsSaving(true);
 
     try {
+      idempotencyKeyRef.current ||= globalThis.crypto.randomUUID();
       const data = await panelRequest(pin, "/api/panel/orders", {
         method: "POST",
         body: JSON.stringify({
           storeId: selectedStoreId,
+          idempotencyKey: idempotencyKeyRef.current,
           customerName: customerName.trim() || (deliveryType === "table" ? "Cliente de mesa" : "Cliente de barra"),
           customerPhone,
           deliveryType,
@@ -542,6 +629,7 @@ export function ManualOrderManager() {
   }
 
   return (
+    <>
     <div className="grid gap-5 xl:grid-cols-[1fr_380px]">
       <div className="space-y-5">
         <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
@@ -784,10 +872,11 @@ export function ManualOrderManager() {
                   <button
                     type="button"
                     onClick={() => addProduct(product)}
+                    disabled={loadingOptionsFor === product.id}
                     className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
                   >
-                    <Plus size={16} />
-                    Agregar
+                    {loadingOptionsFor === product.id ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                    {loadingOptionsFor === product.id ? "Cargando..." : "Agregar"}
                   </button>
                 </article>
               );
@@ -819,6 +908,7 @@ export function ManualOrderManager() {
                   <div className="flex justify-between gap-3">
                     <div>
                       <p className="font-black">{item.product.name}</p>
+                      {item.variantName ? <p className="text-xs font-black text-[#2E3A79]">{item.variantName}</p> : null}
                       <p className="text-xs font-bold text-[#746f69]">
                         {formatUsd(item.unitPriceUsd)} unitario
                       </p>
@@ -852,45 +942,19 @@ export function ManualOrderManager() {
                     </div>
                     <p className="font-black">{formatUsd(item.totalUsd)}</p>
                   </div>
-                  {loadingOptionsFor === item.productId ? (
-                    <p className="mt-3 text-xs font-bold text-[#746f69]">Cargando opciones...</p>
-                  ) : null}
-                  {(optionGroupsByProduct[item.productId] || []).map((group) => (
-                    <div key={group.id} className="mt-3 rounded-2xl bg-[#F8F3E8] p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs font-black">{group.name}</p>
-                        <span className="text-[10px] font-black uppercase text-[#746f69]">
-                          {group.required ? "Obligatorio" : "Opcional"}
-                        </span>
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {group.values.filter((value) => value.isActive !== false).map((value) => {
-                          const selected = item.selectedOptions.some((option) => option.valueId === value.id);
-                          return (
-                            <button
-                              key={value.id}
-                              type="button"
-                              onClick={() => toggleOption(item.productId, group, value.id)}
-                              className={[
-                                "rounded-full px-3 py-2 text-xs font-black ring-1",
-                                selected
-                                  ? "bg-[#2E3A79] text-white ring-[#2E3A79]"
-                                  : "bg-white text-[#25262B] ring-[#25262B]/10",
-                              ].join(" ")}
-                            >
-                              {value.name}{Number(value.priceDeltaUsd || 0) > 0 ? ` +${formatUsd(Number(value.priceDeltaUsd))}` : ""}
-                            </button>
-                          );
-                        })}
-                      </div>
+                  {item.selectedOptions.length || item.notes ? (
+                    <div className="mt-3 rounded-2xl bg-[#F8F3E8] p-3 text-xs font-bold text-[#746f69]">
+                      {item.selectedOptions.map((option) => option.valueName).join(" · ")}
+                      {item.notes ? <p className="mt-1">Nota: {item.notes}</p> : null}
                     </div>
-                  ))}
-                  <input
-                    value={item.notes}
-                    onChange={(event) => updateItemNotes(item.productId, event.target.value)}
-                    placeholder="Nota para cocina (opcional)"
-                    className="mt-3 w-full rounded-2xl border border-[#25262B]/10 px-3 py-2 text-xs font-bold outline-none focus:border-[#2E3A79]"
-                  />
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => setCustomizingProductId(item.productId)}
+                    className="vp-button-soft mt-3 w-full"
+                  >
+                    Personalizar
+                  </button>
                 </div>
               ))
             )}
@@ -967,5 +1031,150 @@ export function ManualOrderManager() {
         </section>
       </aside>
     </div>
+    {customizingRow ? (
+      <div
+        className="fixed inset-0 z-[70] flex items-end justify-center bg-[#042332]/70 sm:items-center sm:p-5"
+        role="presentation"
+        onClick={() => setCustomizingProductId("")}
+      >
+        <section
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="manual-product-customization-title"
+          onClick={(event) => event.stopPropagation()}
+          className="flex max-h-[92dvh] w-full flex-col rounded-t-[30px] bg-white shadow-2xl sm:max-w-2xl sm:rounded-[30px]"
+        >
+          <header className="flex items-start justify-between gap-4 border-b border-[#25262B]/10 p-5">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wide text-[#2E3A79]">Personalizar producto</p>
+              <h2 id="manual-product-customization-title" className="mt-1 text-2xl font-black">
+                {customizingRow.product.name}
+              </h2>
+              <p className="mt-1 text-sm font-bold text-[#746f69]">{formatUsd(customizingRow.unitPriceUsd)} por unidad</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCustomizingProductId("")}
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#F8F3E8]"
+              aria-label="Cerrar personalización"
+            >
+              <X size={19} />
+            </button>
+          </header>
+
+          <div className="overflow-y-auto p-5">
+            <div className="flex items-center justify-between rounded-2xl bg-[#F8F3E8] p-4">
+              <span className="text-sm font-black">Cantidad</span>
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={() => updateQuantity(customizingRow.productId, -1)} className="grid h-10 w-10 place-items-center rounded-full bg-white"><Minus size={16} /></button>
+                <span className="w-8 text-center text-lg font-black">{customizingRow.quantity}</span>
+                <button type="button" onClick={() => updateQuantity(customizingRow.productId, 1)} className="grid h-10 w-10 place-items-center rounded-full bg-white"><Plus size={16} /></button>
+              </div>
+            </div>
+
+            {customizingVariants.length ? (
+              <div className="mt-4 rounded-2xl border border-[#25262B]/10 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="font-black">Tamaño o presentación</h3>
+                  <span className="rounded-full bg-[#FFF0C9] px-2.5 py-1 text-[10px] font-black uppercase text-amber-800">Obligatorio</span>
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {customizingVariants.map((variant) => {
+                    const selected = customizingRow.variantId === variant.id;
+                    return (
+                      <button
+                        key={variant.id}
+                        type="button"
+                        onClick={() => selectVariant(customizingRow.productId, variant.id)}
+                        className={[
+                          "flex min-h-12 items-center justify-between gap-3 rounded-2xl px-4 py-3 text-left text-sm font-black ring-1",
+                          selected
+                            ? "bg-[#2E3A79] text-white ring-[#2E3A79]"
+                            : "bg-white text-[#25262B] ring-[#25262B]/10",
+                        ].join(" ")}
+                      >
+                        <span>{variant.name}</span>
+                        <span>{formatUsd(Number(variant.price_usd || 0))}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            {loadingOptionsFor === customizingRow.productId ? (
+              <p className="mt-4 flex items-center gap-2 rounded-2xl bg-[#F8F3E8] p-4 text-sm font-black text-[#746f69]">
+                <Loader2 size={17} className="animate-spin" /> Cargando tamaños y extras...
+              </p>
+            ) : null}
+
+            <div className="mt-4 space-y-4">
+              {customizingGroups.map((group) => (
+                <div key={group.id} className="rounded-2xl border border-[#25262B]/10 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-black">{group.name}</h3>
+                      {group.description ? <p className="mt-1 text-xs font-bold text-[#746f69]">{group.description}</p> : null}
+                    </div>
+                    <span className="shrink-0 rounded-full bg-[#F8F3E8] px-2.5 py-1 text-[10px] font-black uppercase text-[#746f69]">
+                      {group.required ? "Obligatorio" : "Opcional"}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {group.values.filter((value) => value.isActive !== false).map((value) => {
+                      const selected = customizingRow.selectedOptions.some((option) => option.valueId === value.id);
+                      return (
+                        <button
+                          key={value.id}
+                          type="button"
+                          onClick={() => toggleOption(customizingRow.productId, group, value.id)}
+                          className={[
+                            "flex min-h-12 items-center justify-between gap-3 rounded-2xl px-4 py-3 text-left text-sm font-black ring-1",
+                            selected
+                              ? "bg-[#2E3A79] text-white ring-[#2E3A79]"
+                              : "bg-white text-[#25262B] ring-[#25262B]/10",
+                          ].join(" ")}
+                        >
+                          <span>{value.name}</span>
+                          {Number(value.priceDeltaUsd || 0) > 0 ? <span>+{formatUsd(Number(value.priceDeltaUsd))}</span> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <label className="mt-4 block text-sm font-black">
+              Nota para cocina
+              <textarea
+                value={customizingRow.notes}
+                onChange={(event) => updateItemNotes(customizingRow.productId, event.target.value)}
+                placeholder="Ej. Sin cebolla, salsa aparte..."
+                rows={3}
+                className="mt-2 w-full resize-none rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+              />
+            </label>
+          </div>
+
+          <footer className="border-t border-[#25262B]/10 bg-white p-4 sm:rounded-b-[30px]">
+            {missingVariantCustomization || missingRequiredCustomization ? (
+              <p className="mb-3 text-center text-xs font-black text-amber-700">
+                {missingVariantCustomization ? "Selecciona un tamaño o presentación." : "Completa las opciones obligatorias."}
+              </p>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setCustomizingProductId("")}
+              disabled={missingVariantCustomization || missingRequiredCustomization || loadingOptionsFor === customizingRow.productId}
+              className="vp-button-mango w-full"
+            >
+              Listo · {formatUsd(customizingRow.totalUsd)}
+            </button>
+          </footer>
+        </section>
+      </div>
+    ) : null}
+    </>
   );
 }
