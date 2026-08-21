@@ -755,3 +755,158 @@ test("TDK puede estar activa sin aparecer en Marketplace", () => {
   assert.match(migration, /stores\.marketplace_visible is true/);
   assert.match(catalog, /row\.marketplace_visible !== false/);
 });
+
+test("super admin calcula crecimiento en PostgreSQL sin descargar pedidos", () => {
+  const migration = readFileSync(
+    new URL("../supabase/migrations/20260821040000_admin_growth_metrics.sql", import.meta.url),
+    "utf8",
+  );
+  const route = readFileSync(
+    new URL("../src/app/api/admin/summary/route.ts", import.meta.url),
+    "utf8",
+  );
+  const dashboard = readFileSync(
+    new URL("../src/components/admin/AdminDashboard.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(migration, /create or replace function public\.admin_growth_metrics/);
+  assert.match(migration, /stores\.is_test is not true/);
+  assert.match(migration, /where is_cancelled is false/);
+  assert.match(migration, /revoke all on function public\.admin_growth_metrics\(integer\) from public, anon, authenticated/);
+  assert.match(migration, /grant execute on function public\.admin_growth_metrics\(integer\) to service_role/);
+  assert.match(route, /supabase\.rpc\("admin_growth_metrics", \{ p_months: 12 \}\)/);
+  assert.match(dashboard, /Pedidos mes a mes/);
+  assert.match(dashboard, /Ranking de comercios este mes/);
+  assert.match(dashboard, /Pedidos por modalidad este mes/);
+});
+
+test("Marketplace usa ofertas ventas y ubicacion reales sin pedir permiso al abrir", () => {
+  const migration = readFileSync(
+    new URL("../supabase/migrations/20260821041000_marketplace_discovery.sql", import.meta.url),
+    "utf8",
+  );
+  const marketplace = readFileSync(
+    new URL("../src/components/public/MarketplaceClient.tsx", import.meta.url),
+    "utf8",
+  );
+  const page = readFileSync(
+    new URL("../src/app/marketplace/page.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(migration, /sum\(order_items\.quantity\)/);
+  assert.match(migration, /orders\.created_at >= now\(\) - interval '7 days'/);
+  assert.match(migration, /weekly_sales\.units_sold >= 10/);
+  assert.match(migration, /partition by eligible_products\.store_id/);
+  assert.match(migration, /where store_rank = 1/);
+  assert.match(migration, /products\.discount_percent/);
+  assert.match(migration, /where created_at >= now\(\) - interval '45 days'/);
+  assert.match(migration, /stores\.marketplace_visible is true/);
+  assert.match(migration, /revoke all on function public\.marketplace_discovery\(integer\) from public, anon, authenticated/);
+  assert.match(migration, /grant execute on function public\.marketplace_discovery\(integer\) to service_role/);
+  assert.match(page, /getMarketplaceDiscovery\(\)/);
+  assert.match(readFileSync(new URL("../src/lib/supabase/catalog.ts", import.meta.url), "utf8"), /row\.is_test !== true/);
+  assert.match(marketplace, /onClick=\{requestLocation\}/);
+  assert.doesNotMatch(marketplace, /useEffect\(\(\) => \{[^}]*requestLocation\(\)/);
+  assert.match(marketplace, /distanceKm\(coordinates, store\)/);
+  assert.match(marketplace, /Ofertas que valen la pena/);
+  assert.match(marketplace, /Los favoritos de la semana/);
+  assert.doesNotMatch(marketplace, /Tiendas recomendadas/);
+  assert.match(marketplace, /grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4/);
+  assert.match(marketplace, /placeholder="¿Que quieres pedir hoy\?"/);
+  assert.match(marketplace, /"Abiertos", "Delivery", "Retiro", "Ofertas"/);
+  assert.doesNotMatch(marketplace, />Ver catalogo/);
+  assert.match(marketplace, /Recien llegados/);
+  assert.match(marketplace, /No autorizaste la ubicacion/);
+  assert.match(marketplace, /products=\{filteredOffers\}/);
+  assert.match(marketplace, /products=\{filteredBestSellers\}/);
+  assert.doesNotMatch(marketplace, /Escribe tu zona, ciudad o sector/);
+});
+
+test("registro configuracion y Marketplace comparten los mismos rubros", () => {
+  const businessTypes = readFileSync(
+    new URL("../src/lib/business-types.ts", import.meta.url),
+    "utf8",
+  );
+  const signup = readFileSync(
+    new URL("../src/components/public/SignupForm.tsx", import.meta.url),
+    "utf8",
+  );
+  const marketplace = readFileSync(
+    new URL("../src/components/public/MarketplaceClient.tsx", import.meta.url),
+    "utf8",
+  );
+  const settings = readFileSync(
+    new URL("../src/components/panel/ConfigManager.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(businessTypes, /value: "food", label: "Comida"/);
+  assert.match(businessTypes, /value: "desserts", label: "Postres"/);
+  assert.match(businessTypes, /value: "fashion", label: "Ropa"/);
+  assert.match(businessTypes, /value: "tech", label: "Tecnología"/);
+  assert.match(businessTypes, /value: "general", label: "Otros"/);
+  assert.match(businessTypes, /\["fashion", "ropa", "moda", "ropa \/ moda"\]/);
+  assert.match(signup, /BUSINESS_TYPES\.map/);
+  assert.match(settings, /BUSINESS_TYPES\.map/);
+  assert.match(marketplace, /businessTypeLabel\(store\.category\)/);
+  assert.match(marketplace, /\["Todos", \.\.\.BUSINESS_TYPES\.map/);
+});
+
+test("Home pregunta una sola vez si el visitante quiere comprar o vender", () => {
+  const welcome = readFileSync(
+    new URL("../src/components/public/WelcomeChoice.tsx", import.meta.url),
+    "utf8",
+  );
+  const home = readFileSync(
+    new URL("../src/components/public/HomeClient.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(welcome, /somos-welcome-choice-v1/);
+  assert.match(welcome, /localStorage\.getItem\(WELCOME_CHOICE_KEY\)/);
+  assert.match(welcome, /localStorage\.setItem\(WELCOME_CHOICE_KEY, choice\)/);
+  assert.match(welcome, /href="\/marketplace"/);
+  assert.match(welcome, /Quiero comprar/);
+  assert.match(welcome, /Quiero vender con Somos/);
+  assert.match(welcome, /aria-modal="true"/);
+  assert.match(welcome, /setAttribute\("inert", ""\)/);
+  assert.match(welcome, /event\.key === "Escape"/);
+  assert.match(welcome, /firstChoiceRef\.current\?\.focus\(\)/);
+  assert.match(welcome, /Ahora no, ver inicio/);
+  assert.match(home, /<WelcomeChoice \/>/);
+});
+
+test("Somos usa su WhatsApp oficial en Home y despues de cada registro", () => {
+  const whatsapp = readFileSync(new URL("../src/lib/whatsapp.ts", import.meta.url), "utf8");
+  const home = readFileSync(new URL("../src/components/public/HomeClient.tsx", import.meta.url), "utf8");
+  const signup = readFileSync(new URL("../src/components/public/SignupForm.tsx", import.meta.url), "utf8");
+  const transport = readFileSync(new URL("../src/components/transport/TransportRegistrationForm.tsx", import.meta.url), "utf8");
+
+  assert.match(whatsapp, /SOMOS_WHATSAPP_PHONE = "584224600742"/);
+  assert.match(home, /Contactar por WhatsApp/);
+  assert.match(signup, /window\.location\.assign\(officialWhatsappUrl\)/);
+  assert.match(signup, /Enviar registro a Somos/);
+  assert.doesNotMatch(signup, /`Cédula: \$\{representativeIdNumber/);
+  assert.match(transport, /window\.location\.assign\(whatsappUrl\)/);
+  assert.match(transport, /Enviar registro a Somos/);
+});
+
+test("catalogo compacta acciones instala Somos y oculta el horario predeterminado", () => {
+  const catalog = readFileSync(new URL("../src/components/public/CatalogClient.tsx", import.meta.url), "utf8");
+  const header = readFileSync(new URL("../src/components/public/StoreBrandHeader.tsx", import.meta.url), "utf8");
+  const mapper = readFileSync(new URL("../src/lib/supabase/catalog.ts", import.meta.url), "utf8");
+
+  assert.match(catalog, /grid grid-cols-4/);
+  assert.match(catalog, /<PwaInstallButton tile label="Instalar Somos" \/>/);
+  assert.match(catalog, /<span className="sr-only">WhatsApp<\/span>/);
+  assert.doesNotMatch(catalog, />Promocional<\/p>/);
+  assert.doesNotMatch(catalog, /ShieldCheck/);
+  assert.doesNotMatch(catalog, /store\.deliveryEstimate \|\| "Delivery"/);
+  assert.match(header, /toLowerCase\(\) !== "disponible hoy"/);
+  assert.doesNotMatch(header, /store\.openingHours \|\| "Disponible hoy"/);
+  assert.match(mapper, /toLowerCase\(\) === "disponible hoy"/);
+  const install = readFileSync(new URL("../src/components/pwa/PwaInstallButton.tsx", import.meta.url), "utf8");
+  assert.match(install, /if \(tile\)[\s\S]*href="\/"[\s\S]*somos-isotipo-preview\.png/);
+});

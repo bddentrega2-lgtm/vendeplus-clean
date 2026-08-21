@@ -10,6 +10,7 @@ import {
 import { isMissingColumnError } from "@/lib/supabase/schema-compat";
 import { loadTransportAgencyDeliverySettings } from "@/lib/transport";
 import { assertAchievementFeature, loadStoreAchievements } from "@/lib/achievements";
+import { normalizeBusinessType } from "@/lib/business-types";
 
 function optionalNumber(value: unknown) {
   if (value === "" || value === null || value === undefined) return null;
@@ -168,7 +169,7 @@ function normalizeStorePayload(body: any) {
   return {
     name: String(body.name || "").trim(),
     description: body.description ? String(body.description).trim() : null,
-    business_type: String(body.business_type || "general").trim(),
+    business_type: normalizeBusinessType(body.business_type),
     whatsapp: body.whatsapp ? String(body.whatsapp).replace(/[^0-9]/g, "") : null,
     address: body.address ? String(body.address).trim() : null,
     latitude: optionalNumber(body.latitude),

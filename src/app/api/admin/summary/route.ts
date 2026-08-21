@@ -51,6 +51,7 @@ export async function GET(request: NextRequest) {
       summaryMetricsResult,
       storeMetricsResult,
       financialMetricsResult,
+      growthMetricsResult,
     ] = await Promise.all([
       supabase.from("stores").select(`
         id,
@@ -79,6 +80,7 @@ export async function GET(request: NextRequest) {
       supabase.rpc("admin_summary_metrics").maybeSingle(),
       supabase.rpc("admin_store_metrics"),
       supabase.rpc("admin_financial_metrics").maybeSingle(),
+      supabase.rpc("admin_growth_metrics", { p_months: 12 }),
     ]);
 
     if (storesResult.error) throw storesResult.error;
@@ -88,6 +90,9 @@ export async function GET(request: NextRequest) {
     }
     if (storeMetricsResult.error && !isMissingAdminMetricsRpc(storeMetricsResult.error)) {
       throw storeMetricsResult.error;
+    }
+    if (growthMetricsResult.error && !isMissingAdminMetricsRpc(growthMetricsResult.error)) {
+      throw growthMetricsResult.error;
     }
     const stores = storesResult.data || [];
     let financialMetrics = financialMetricsResult.error
@@ -221,6 +226,7 @@ export async function GET(request: NextRequest) {
       },
       recentStores: recentStoresResult.data || [],
       alerts: alerts.slice(0, 12),
+      growth: growthMetricsResult.error ? null : growthMetricsResult.data,
       auth: {
         mode: auth.mode,
         email: auth.email || null,

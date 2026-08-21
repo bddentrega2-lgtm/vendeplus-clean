@@ -25,6 +25,7 @@ import {
   shouldShowPanelInitialAccessGate,
 } from "@/lib/panel/client-auth";
 import { compressImageForUpload } from "@/lib/images/client-compress";
+import { BUSINESS_TYPES } from "@/lib/business-types";
 import type {
   BusinessDayKey,
   BusinessHours,
@@ -75,16 +76,6 @@ type StoreRow = {
   service_fee_balance?: { orders_count?: number; amount_usd?: number | string; period_start?: string } | null;
   achievement_features?: { brand_colors?: boolean };
 };
-
-const businessTypes = [
-  { value: "food", label: "Comida / Restaurante" },
-  { value: "fashion", label: "Ropa / Moda" },
-  { value: "accessories", label: "Accesorios" },
-  { value: "tech", label: "Tecnología" },
-  { value: "desserts", label: "Dulces / Postres" },
-  { value: "beauty", label: "Belleza" },
-  { value: "general", label: "General / Otro" },
-];
 
 const businessDayOptions: Array<{ key: BusinessDayKey; label: string }> = [
   { key: "mon", label: "Lun" },
@@ -573,7 +564,7 @@ function StoreSettingsCard({
             onChange={(event) => updateField("business_type", event.target.value)}
             className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
           >
-            {businessTypes.map((type) => (
+            {BUSINESS_TYPES.map((type) => (
               <option key={type.value} value={type.value}>
                 {type.label}
               </option>

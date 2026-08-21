@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Eye, EyeOff, Loader2, Send } from "lucide-react";
+import { CheckCircle2, Eye, EyeOff, Loader2, MessageCircle, Send } from "lucide-react";
 import { AuthCaptcha } from "@/components/shared/AuthCaptcha";
+import { buildSomosWhatsAppUrl } from "@/lib/whatsapp";
 
 export function TransportRegistrationForm() {
   const [form, setForm] = useState({
@@ -20,6 +21,7 @@ export function TransportRegistrationForm() {
   const [message, setMessage] = useState("");
   const [captchaToken, setCaptchaToken] = useState("");
   const [saved, setSaved] = useState(false);
+  const [officialWhatsappUrl, setOfficialWhatsappUrl] = useState("");
 
   function update(field: string, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -44,9 +46,19 @@ export function TransportRegistrationForm() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "No se pudo registrar.");
+      const whatsappUrl = buildSomosWhatsAppUrl([
+        "Hola Somos, acabo de registrar una empresa delivery.",
+        `Empresa: ${form.name.trim()}`,
+        form.rif.trim() ? `RIF: ${form.rif.trim()}` : "",
+        `Responsable: ${form.contactName.trim()}`,
+        `Teléfono: ${form.contactPhone.trim()}`,
+        `Correo: ${form.contactEmail.trim()}`,
+      ].filter(Boolean).join("\n"));
       setSaved(true);
+      setOfficialWhatsappUrl(whatsappUrl);
       setMessage(data.message || "Solicitud recibida.");
       setCaptchaToken("");
+      window.location.assign(whatsappUrl);
     } catch (error: any) {
       setMessage(error.message || "No se pudo registrar.");
     } finally {
@@ -63,8 +75,14 @@ export function TransportRegistrationForm() {
         <h2 className="mt-4 text-2xl font-black text-[#25262B]">Solicitud recibida</h2>
         <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">{message}</p>
         <a
+          href={officialWhatsappUrl}
+          className="mt-5 inline-flex items-center justify-center gap-2 rounded-full bg-[#25D366] px-5 py-3 text-sm font-black text-[#143D42]"
+        >
+          <MessageCircle size={17} /> Enviar registro a Somos
+        </a>
+        <a
           href="/transporte"
-          className="mt-5 inline-flex items-center justify-center rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
+          className="mt-3 inline-flex items-center justify-center rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
         >
           Volver a transporte
         </a>
@@ -123,6 +141,10 @@ export function TransportRegistrationForm() {
         {isSaving ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} />}
         Enviar solicitud
       </button>
+
+      <p className="mt-3 text-xs font-bold leading-5 text-[#746f69]">
+        Al completar el registro abriremos el WhatsApp oficial de Somos con tus datos prellenados. Tú confirmarás el envío.
+      </p>
 
       {message ? <p className="mt-3 text-sm font-black text-red-600">{message}</p> : null}
     </form>

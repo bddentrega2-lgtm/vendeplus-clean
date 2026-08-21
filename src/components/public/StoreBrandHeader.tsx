@@ -72,9 +72,9 @@ export function StoreBrandHeader({ store }: { store: BrandedStore }) {
               <h1 className="mt-1 text-3xl font-black leading-tight md:text-5xl">
                 {store.name}
               </h1>
-              <p className="mt-1 text-sm font-bold text-white/80">
-                {store.openingHours || "Disponible hoy"}
-              </p>
+              {store.openingHours?.trim() && store.openingHours.trim().toLowerCase() !== "disponible hoy" ? (
+                <p className="mt-1 text-sm font-bold text-white/80">{store.openingHours}</p>
+              ) : null}
             </div>
           </div>
 

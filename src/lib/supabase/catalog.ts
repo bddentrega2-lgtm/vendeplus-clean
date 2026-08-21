@@ -228,7 +228,9 @@ function mapStore(
     address: row.address || fallback?.address || "Maracay, Aragua",
     latitude: toNumber(row.latitude, fallback?.latitude || 0),
     longitude: toNumber(row.longitude, fallback?.longitude || 0),
-    openingHours: row.opening_hours || fallback?.openingHours || "Disponible hoy",
+    openingHours: String(row.opening_hours || "").trim().toLowerCase() === "disponible hoy"
+      ? ""
+      : String(row.opening_hours || "").trim(),
     deliveryEstimate: row.delivery_estimate || fallback?.deliveryEstimate || "25-40 min",
     pickupEstimate: row.pickup_estimate || fallback?.pickupEstimate || "15-25 min",
     badge: fallback?.badge || "Aliado Somos",
@@ -435,6 +437,7 @@ const baseStoreSelect = `
 
 const storeShellSelect = `
   id,
+  is_test,
   plan_type,
   monthly_price_usd,
   service_fee_payer,
@@ -958,6 +961,7 @@ export async function getPublicStores(): Promise<Store[]> {
 
   const candidateRows = (data as AnyRecord[]).filter(
     (row) =>
+      row.is_test !== true &&
       row.marketplace_visible !== false &&
       !isStoreSubscriptionPastDue(row) &&
       Boolean(String(row.logo_url || "").trim())

@@ -1,12 +1,13 @@
 ﻿"use client";
 import { StoreBrandHeader } from "@/components/public/StoreBrandHeader";
 import type { CSSProperties } from "react";
-import { Clock, MessageCircle, Search, Share2, ShieldCheck } from "lucide-react";
+import { MessageCircle, Search, Share2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { Store } from "@/types";
 import { CategoryTabs } from "@/components/public/CategoryTabs";
 import { ProductListItem } from "@/components/public/ProductCard";
 import { CartBar } from "@/components/public/CartBar";
+import { PwaInstallButton } from "@/components/pwa/PwaInstallButton";
 import { getCart } from "@/lib/cart";
 import { buildClientPublicUrl } from "@/lib/public-url";
 import { useLiveStoreOpenState } from "@/hooks/use-live-store-open-state";
@@ -175,8 +176,8 @@ export function CatalogClient({
           {openState.label}. Puedes revisar el catálogo, pero el comercio no está recibiendo pedidos ahora.
         </section>
       ) : null}
-      <section className="mb-4 rounded-[30px] bg-white/90 p-4 shadow-xl shadow-[#2E3A79]/[0.08] ring-1 ring-[#25262B]/[0.07]">
-        <div className="flex items-center gap-3 rounded-2xl bg-[#FFF8F0] px-4 py-3 ring-1 ring-[#25262B]/[0.06]">
+      <section className="mb-4 rounded-3xl bg-white/90 p-3 shadow-lg shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.07]">
+        <div className="flex items-center gap-3 rounded-2xl bg-[#FFF8F0] px-4 py-2.5 ring-1 ring-[#25262B]/[0.06]">
           <Search size={18} className="text-[#746f69]" />
           <input
             value={query}
@@ -185,43 +186,40 @@ export function CatalogClient({
             className="w-full bg-transparent text-sm font-bold text-[#25262B] outline-none placeholder:text-[#746f69]/70"
           />
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
+        <div className="mt-2 grid grid-cols-4 gap-1.5 text-center sm:gap-2">
           <a
             href={whatsappUrl || undefined}
             target={whatsappUrl ? "_blank" : undefined}
             rel={whatsappUrl ? "noopener noreferrer" : undefined}
             aria-disabled={!whatsappUrl}
             className={[
-              "rounded-2xl bg-[#2E3A79] p-3 text-white transition",
+              "grid h-14 place-items-center rounded-xl bg-[#2E3A79] text-white transition sm:rounded-2xl",
               whatsappUrl ? "hover:-translate-y-0.5 hover:shadow-lg hover:shadow-[#2E3A79]/15" : "pointer-events-none opacity-60",
             ].join(" ")}
           >
-            <MessageCircle className="mx-auto mb-1 text-[#FFB547]" size={17} />
-            <p className="text-sm font-black">WhatsApp</p>
+            <MessageCircle className="text-[#FFB547]" size={19} />
+            <span className="sr-only">WhatsApp</span>
           </a>
           {showPricesInBs ? (
-            <div className="rounded-2xl bg-[#FFB547] p-3 text-[#25262B]">
-              <ShieldCheck className="mx-auto mb-1" size={17} />
-              <p className="text-sm font-black">{baseCurrency === "EUR" ? "€" : "$"}1 = Bs. {store.usdToBs || 600}</p>
+            <div className="flex h-14 flex-col items-center justify-center rounded-xl bg-[#FFB547] px-1 text-[#25262B] sm:rounded-2xl">
+              <p className="text-[10px] font-black leading-none sm:text-xs">1{baseCurrency === "EUR" ? "€" : "$"}</p>
+              <p className="mt-1.5 text-[10px] font-black leading-none sm:text-xs">Bs. {store.usdToBs || 600}</p>
             </div>
           ) : (
-            <div className="rounded-2xl bg-[#FFB547] p-3 text-[#25262B]">
-              <ShieldCheck className="mx-auto mb-1" size={17} />
-              <p className="text-sm font-black">{baseCurrency === "EUR" ? "€ Euro" : "$ Dólar"}</p>
+            <div className="flex h-14 flex-col items-center justify-center rounded-xl bg-[#FFB547] px-1 text-[#25262B] sm:rounded-2xl">
+              <p className="text-[10px] font-black leading-none sm:text-xs">1{baseCurrency === "EUR" ? "€" : "$"}</p>
+              <p className="mt-1.5 text-[9px] font-black leading-none sm:text-[10px]">Sin conversión</p>
             </div>
           )}
-          <div className="rounded-2xl bg-[#FFF8F0] p-3 text-[#25262B] ring-1 ring-[#25262B]/[0.06]">
-            <Clock className="mx-auto mb-1 text-[#2E3A79]" size={17} />
-            <p className="text-sm font-black">{store.deliveryEstimate || "Delivery"}</p>
-          </div>
           <button
             type="button"
             onClick={shareCatalog}
-            className="rounded-2xl bg-white p-3 text-[#25262B] ring-1 ring-[#25262B]/[0.06] transition hover:-translate-y-0.5 hover:shadow-lg hover:shadow-[#2E3A79]/10"
+            className="flex h-14 flex-col items-center justify-center rounded-xl bg-white px-1 text-[#25262B] ring-1 ring-[#25262B]/[0.06] transition hover:-translate-y-0.5 hover:shadow-lg hover:shadow-[#2E3A79]/10 sm:rounded-2xl"
           >
-            <Share2 className="mx-auto mb-1 text-[#2E3A79]" size={17} />
-            <p className="text-sm font-black">{shareStatus || "Compartir"}</p>
+            <Share2 className="mx-auto mb-1 text-[#2E3A79]" size={15} />
+            <p className="text-[10px] font-black leading-tight sm:text-xs">{shareStatus || "Compartir"}</p>
           </button>
+          <PwaInstallButton tile label="Instalar Somos" />
         </div>
       </section>
 
@@ -231,7 +229,6 @@ export function CatalogClient({
         <section className="mb-6">
           <div className="mb-3 flex items-center justify-between gap-4">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#746f69]">Promocional</p>
               <h2 className="text-2xl font-black text-[#25262B]">Favoritos del momento</h2>
             </div>
           </div>
