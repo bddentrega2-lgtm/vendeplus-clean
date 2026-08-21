@@ -877,3 +877,18 @@ test("Home pregunta una sola vez si el visitante quiere comprar o vender", () =>
   assert.match(welcome, /Ahora no, ver inicio/);
   assert.match(home, /<WelcomeChoice \/>/);
 });
+
+test("Somos usa su WhatsApp oficial en Home y despues de cada registro", () => {
+  const whatsapp = readFileSync(new URL("../src/lib/whatsapp.ts", import.meta.url), "utf8");
+  const home = readFileSync(new URL("../src/components/public/HomeClient.tsx", import.meta.url), "utf8");
+  const signup = readFileSync(new URL("../src/components/public/SignupForm.tsx", import.meta.url), "utf8");
+  const transport = readFileSync(new URL("../src/components/transport/TransportRegistrationForm.tsx", import.meta.url), "utf8");
+
+  assert.match(whatsapp, /SOMOS_WHATSAPP_PHONE = "584224600742"/);
+  assert.match(home, /Contactar por WhatsApp/);
+  assert.match(signup, /window\.location\.assign\(officialWhatsappUrl\)/);
+  assert.match(signup, /Enviar registro a Somos/);
+  assert.doesNotMatch(signup, /`Cédula: \$\{representativeIdNumber/);
+  assert.match(transport, /window\.location\.assign\(whatsappUrl\)/);
+  assert.match(transport, /Enviar registro a Somos/);
+});

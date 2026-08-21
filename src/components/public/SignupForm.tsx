@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRight, Check, Eye, EyeOff, ImageUp, Loader2, Lock, Store } from "lucide-react";
+import { ArrowRight, Check, Eye, EyeOff, ImageUp, Loader2, Lock, MessageCircle, Store } from "lucide-react";
 import { AuthCaptcha } from "@/components/shared/AuthCaptcha";
-import { BUSINESS_TYPES } from "@/lib/business-types";
+import { BUSINESS_TYPES, businessTypeLabel } from "@/lib/business-types";
+import { buildSomosWhatsAppUrl } from "@/lib/whatsapp";
 
 
 export function SignupForm() {
@@ -28,6 +29,7 @@ export function SignupForm() {
     trialEndsAt: string;
     message: string;
     requiresEmailConfirmation: boolean;
+    whatsappUrl: string;
   } | null>(null);
 
   useEffect(() => {
@@ -91,15 +93,27 @@ export function SignupForm() {
         throw new Error(data.error || "No se pudo crear la cuenta.");
       }
 
+      const officialWhatsappUrl = buildSomosWhatsAppUrl([
+        "Hola Somos, acabo de registrar un comercio.",
+        `Comercio: ${storeName.trim()}`,
+        `Rubro: ${businessTypeLabel(businessType)}`,
+        `Representante: ${representativeName.trim()}`,
+        `WhatsApp: ${whatsapp.trim()}`,
+        `Correo: ${email.trim()}`,
+        data.store?.slug ? `Catálogo: ${window.location.origin}/${data.store.slug}` : "",
+      ].filter(Boolean).join("\n"));
+
       setSuccess({
         slug: data.store?.slug || "",
         trialEndsAt: data.trialEndsAt,
         message: data.message || "Cuenta creada.",
         requiresEmailConfirmation: Boolean(data.requiresEmailConfirmation),
+        whatsappUrl: officialWhatsappUrl,
       });
       setPassword("");
       setConfirmPassword("");
       setCaptchaToken("");
+      window.location.assign(officialWhatsappUrl);
     } catch (error: any) {
       setError(error.message || "No se pudo crear la cuenta.");
     } finally {
@@ -122,6 +136,12 @@ export function SignupForm() {
             productos y delivery.
           </p>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <a
+              href={success.whatsappUrl}
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#25D366] px-5 py-4 text-sm font-black text-[#143D42] sm:col-span-2"
+            >
+              <MessageCircle size={18} /> Enviar registro a Somos
+            </a>
             <Link
               href="/panel/login"
               className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B]"
@@ -359,6 +379,10 @@ export function SignupForm() {
             {isSaving ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
             Crear comercio
           </button>
+
+          <p className="mt-3 text-center text-xs font-bold leading-5 text-[#746f69]">
+            Al completar el registro abriremos el WhatsApp oficial de Somos con tus datos prellenados. Tú confirmarás el envío.
+          </p>
 
           <p className="mt-4 text-center text-xs font-bold text-[#746f69]">
             ¿Ya tienes cuenta?{" "}

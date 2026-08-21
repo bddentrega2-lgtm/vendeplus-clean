@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Check, ClipboardList, Motorbike, PackageCheck, QrCode, Settings2, ShoppingBag, Store as StoreIcon, UtensilsCrossed } from "lucide-react";
+import { ArrowRight, Check, ClipboardList, MessageCircle, Motorbike, PackageCheck, QrCode, Settings2, ShoppingBag, Store as StoreIcon, UtensilsCrossed } from "lucide-react";
 import type { Store } from "@/types";
 import type { PublicTransportAgencyLogo } from "@/lib/transport";
 import { AffiliatedDeliveryLogos } from "@/components/public/AffiliatedDeliveryLogos";
@@ -13,6 +13,7 @@ import { SurfaceCard } from "@/components/public/SurfaceCard";
 import { PwaInstallButton } from "@/components/pwa/PwaInstallButton";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import { WelcomeChoice } from "@/components/public/WelcomeChoice";
+import { buildSomosWhatsAppUrl } from "@/lib/whatsapp";
 
 const commerceFeatures = ["Catálogo público por comercio", "Productos, precios, imágenes y variantes", "Carrito y finalización de pedido", "Solicitud de pedido por WhatsApp", "Delivery o retiro según configuración"];
 const deliveryFeatures = ["Panel para empresas delivery", "Solicitudes de afiliación", "Tarifas por rango de km", "Cobertura máxima configurable", "Datos operativos y de contacto"];
@@ -98,6 +99,10 @@ export function HomeClient({ stores = [], transportAgencies = [] }: { stores?: S
     <section className="bg-white py-14 sm:py-20"><div className="vp-container">
       <SectionHeading eyebrow="Operaciones locales" title="Creado para operaciones locales reales" description="Somos está diseñado para comercios y empresas delivery que necesitan ordenar pedidos, mostrar mejor sus productos y trabajar con reglas claras de cobertura y tarifas." />
       <div className="mt-9 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">{benefits.map((benefit) => { const Icon = benefit.icon; return <article key={benefit.title} className="rounded-3xl border border-[var(--somos-navy)]/8 bg-[var(--somos-off-white)] p-5"><Icon size={22} className="text-[var(--somos-orange)]" /><h3 className="mt-4 text-base font-bold text-[var(--somos-navy)]">{benefit.title}</h3><p className="somos-muted mt-2 text-sm font-medium leading-6">{benefit.text}</p></article>; })}</div>
+      <div className="mt-6 flex flex-col gap-4 rounded-3xl bg-[var(--somos-off-white)] p-5 ring-1 ring-[var(--somos-navy)]/8 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+        <div><p className="text-base font-bold text-[var(--somos-navy)]">¿Necesitas ayuda o quieres conocer Somos?</p><p className="somos-muted mt-1 text-sm font-medium">Escríbenos directamente al WhatsApp oficial.</p></div>
+        <a href={buildSomosWhatsAppUrl()} target="_blank" rel="noopener noreferrer" className="somos-button-primary w-full shrink-0 sm:w-auto"><MessageCircle size={17} /> Contactar por WhatsApp</a>
+      </div>
     </div></section>
 
     {affiliatedStores.length || transportAgencies.length ? <section className="bg-[var(--somos-teal)] py-14 text-white sm:py-20"><div className="vp-container">

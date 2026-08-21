@@ -1,9 +1,15 @@
 ﻿import type { CartItem, CheckoutFormData, DeliveryLocation, DeliveryQuote, OrderTotals, Store } from "@/types";
 import { formatBaseCurrency, formatBs } from "@/lib/currency";
 
+export const SOMOS_WHATSAPP_PHONE = "584224600742";
+
 export function buildWhatsAppUrl(phone: string, message: string) {
   const cleanPhone = phone.replace(/[^0-9]/g, "");
   return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+}
+
+export function buildSomosWhatsAppUrl(message = "Hola Somos, necesito información sobre la plataforma.") {
+  return buildWhatsAppUrl(SOMOS_WHATSAPP_PHONE, message);
 }
 
 function cleanText(value?: string | null) {
