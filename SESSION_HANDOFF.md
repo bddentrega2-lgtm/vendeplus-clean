@@ -704,3 +704,24 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 - Usuario aprobó la Preview y autorizó continuar. Se promovió exactamente `dpl_GBKUnofBWRKmBMxNSFfYygNFRaxN`; Vercel creó el deployment productivo `dpl_FzvGmHkcKHZztgYnDmky4bEcKHVq` (`vendeplus-clean-6edplbpwq-entrega2-s-projects.vercel.app`), estado Ready, con alias `www.somos-ve.com`, `somos-ve.com` y `vendeplus-clean.vercel.app`.
 - Smoke productivo aprobado: Home, Marketplace, `/tdk`, los tres catálogos TDK y login HTTP 200; `/api/panel/orders` sin sesión HTTP 401 esperado. TDK no aparece en el HTML de Marketplace y los tres catálogos contienen Efectivo. Sin logs de error iniciales y `git diff --check` limpio.
 - Rollback web disponible al deployment productivo anterior registrado por Vercel; la migración de visibilidad y la clonación de sedes ya estaban aplicadas y verificadas antes de promover.
+
+# Pendientes de producto priorizados (2026-08-21)
+
+## Marketplace orientado a ventas
+
+- Mejorar la interfaz del Marketplace para que sea más atractiva, visual y orientada a conversión, manteniendo una carga rápida en móviles.
+- Incorporar bloques de ofertas y productos más vendidos; definir reglas verificables para destacados y evitar que un comercio monopolice la portada.
+- Mostrar u ordenar comercios según cercanía cuando el cliente autorice su ubicación, con selector manual y funcionamiento normal si rechaza el permiso. No almacenar ni transmitir coordenadas sin necesidad.
+- Considerar secciones como `Cerca de ti`, `Ofertas`, `Más vendidos`, `Nuevos` y categorías/rubros, sin recargar la pantalla.
+- Antes de implementar: auditar datos disponibles, definir cómo se identifica una oferta y calcular rankings server-side sin consultas N+1 ni exponer datos privados.
+
+## Estadísticas de crecimiento para Super Admin
+
+- Mejorar el tablero Founder/Super Admin con pedidos acumulados históricos, pedidos del mes y comparación contra el mes anterior, incluyendo variación absoluta y porcentual.
+- Mostrar facturación/GMV mensual y comparativo mes a mes, dejando claro que representa ventas procesadas y no necesariamente ingresos de Somos.
+- Métricas valiosas propuestas: comercios activos y nuevos por mes, comercios con al menos un pedido, pedidos promedio por comercio activo, ticket promedio, clientes nuevos/recurrentes, repetición de compra, pedidos por canal (delivery, retiro, mesa/barra), pedidos por estado/cancelación y crecimiento de sedes.
+- Incluir rango de fechas, serie mensual y tabla por comercio; proteger todo exclusivamente para Founder/Super Admin.
+- Implementar agregaciones en PostgreSQL/RPC e índices adecuados, evitando descargar todos los pedidos a Next.js. Validar definiciones, zona horaria, moneda y tratamiento de pedidos cancelados antes de construir los indicadores.
+
+- Orden sugerido para la próxima sesión: primero auditar tablas y calidad de datos; luego diseñar definiciones y wireframe; implementar una iniciativa a la vez en local/Preview, sin tocar producción hasta aprobación.
+- Usuario confirmó visualmente que producción se ve bien. Revisión final: deployment `dpl_FzvGmHkcKHZztgYnDmky4bEcKHVq` continúa Ready; Home, Marketplace, `/tdk`, los tres catálogos y login HTTP 200; API privada de pedidos sin sesión HTTP 401 esperado; sin logs de error. No se hizo un nuevo despliegue ni cambio funcional.
