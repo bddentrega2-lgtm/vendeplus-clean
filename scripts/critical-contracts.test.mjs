@@ -892,3 +892,21 @@ test("Somos usa su WhatsApp oficial en Home y despues de cada registro", () => {
   assert.match(transport, /window\.location\.assign\(whatsappUrl\)/);
   assert.match(transport, /Enviar registro a Somos/);
 });
+
+test("catalogo compacta acciones instala Somos y oculta el horario predeterminado", () => {
+  const catalog = readFileSync(new URL("../src/components/public/CatalogClient.tsx", import.meta.url), "utf8");
+  const header = readFileSync(new URL("../src/components/public/StoreBrandHeader.tsx", import.meta.url), "utf8");
+  const mapper = readFileSync(new URL("../src/lib/supabase/catalog.ts", import.meta.url), "utf8");
+
+  assert.match(catalog, /grid grid-cols-4/);
+  assert.match(catalog, /<PwaInstallButton tile label="Instalar Somos" \/>/);
+  assert.match(catalog, /<span className="sr-only">WhatsApp<\/span>/);
+  assert.doesNotMatch(catalog, />Promocional<\/p>/);
+  assert.doesNotMatch(catalog, /ShieldCheck/);
+  assert.doesNotMatch(catalog, /store\.deliveryEstimate \|\| "Delivery"/);
+  assert.match(header, /toLowerCase\(\) !== "disponible hoy"/);
+  assert.doesNotMatch(header, /store\.openingHours \|\| "Disponible hoy"/);
+  assert.match(mapper, /toLowerCase\(\) === "disponible hoy"/);
+  const install = readFileSync(new URL("../src/components/pwa/PwaInstallButton.tsx", import.meta.url), "utf8");
+  assert.match(install, /if \(tile\)[\s\S]*href="\/"[\s\S]*somos-isotipo-preview\.png/);
+});
