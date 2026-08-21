@@ -435,6 +435,7 @@ const baseStoreSelect = `
 
 const storeShellSelect = `
   id,
+  is_test,
   plan_type,
   monthly_price_usd,
   service_fee_payer,
@@ -958,6 +959,7 @@ export async function getPublicStores(): Promise<Store[]> {
 
   const candidateRows = (data as AnyRecord[]).filter(
     (row) =>
+      row.is_test !== true &&
       row.marketplace_visible !== false &&
       !isStoreSubscriptionPastDue(row) &&
       Boolean(String(row.logo_url || "").trim())

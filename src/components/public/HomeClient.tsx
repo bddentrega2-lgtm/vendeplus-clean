@@ -12,6 +12,7 @@ import { SectionHeading } from "@/components/public/SectionHeading";
 import { SurfaceCard } from "@/components/public/SurfaceCard";
 import { PwaInstallButton } from "@/components/pwa/PwaInstallButton";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
+import { WelcomeChoice } from "@/components/public/WelcomeChoice";
 
 const commerceFeatures = ["Catálogo público por comercio", "Productos, precios, imágenes y variantes", "Carrito y finalización de pedido", "Solicitud de pedido por WhatsApp", "Delivery o retiro según configuración"];
 const deliveryFeatures = ["Panel para empresas delivery", "Solicitudes de afiliación", "Tarifas por rango de km", "Cobertura máxima configurable", "Datos operativos y de contacto"];
@@ -36,6 +37,7 @@ export function HomeClient({ stores = [], transportAgencies = [] }: { stores?: S
   }));
 
   return <main className="somos-page">
+    <WelcomeChoice />
     <PublicHeader />
 
     <section className="relative overflow-hidden">

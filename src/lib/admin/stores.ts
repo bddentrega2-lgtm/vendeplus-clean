@@ -1,4 +1,5 @@
 import { DEFAULT_PRODUCT_LIMIT, PER_SERVICE_FEE_USD } from "@/lib/plans";
+import { normalizeBusinessType } from "@/lib/business-types";
 
 export const adminStoreSelect = `
   id,
@@ -157,7 +158,7 @@ export function normalizeAdminStorePayload(body: any) {
     slug,
     name,
     description: cleanText(body.description) || null,
-    business_type: cleanText(body.business_type) || "general",
+    business_type: normalizeBusinessType(body.business_type),
     whatsapp: cleanText(body.whatsapp).replace(/[^0-9]/g, "") || null,
     address: cleanText(body.address) || null,
     latitude: optionalNumber(body.latitude),

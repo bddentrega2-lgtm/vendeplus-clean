@@ -17,6 +17,7 @@ import {
 } from "@/lib/server/observability";
 import { buildPublicSiteUrl } from "@/lib/server/site-url";
 import { TRIAL_DAYS } from "@/lib/plans";
+import { normalizeBusinessType } from "@/lib/business-types";
 
 const MAX_LOGO_BYTES = 2 * 1024 * 1024;
 const MAX_SIGNUP_BODY_BYTES = MAX_LOGO_BYTES + 120_000;
@@ -222,7 +223,7 @@ export async function POST(request: NextRequest) {
     const password = cleanText(body.get("password"));
     const confirmPassword = cleanText(body.get("confirmPassword"));
     const whatsapp = cleanText(body.get("whatsapp")).replace(/[^0-9]/g, "");
-    const businessType = cleanText(body.get("businessType")) || "general";
+    const businessType = normalizeBusinessType(body.get("businessType"));
     const captchaToken = cleanText(body.get("captchaToken"));
     const referralCode = slugifyStore(cleanText(body.get("referralCode")));
 

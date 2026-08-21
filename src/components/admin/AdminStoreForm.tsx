@@ -19,6 +19,7 @@ import {
   hasSavedPanelAuth,
 } from "@/lib/panel/client-auth";
 import { PER_SERVICE_FEE_USD } from "@/lib/plans";
+import { BUSINESS_TYPES } from "@/lib/business-types";
 
 type StoreDraft = {
   name: string;
@@ -113,16 +114,6 @@ const initialDraft: StoreDraft = {
   admin_delivery_enabled: false,
   admin_pickup_enabled: true,
 };
-
-const businessTypes = [
-  { value: "food", label: "Comida / Restaurante" },
-  { value: "fashion", label: "Ropa / Moda" },
-  { value: "accessories", label: "Accesorios" },
-  { value: "tech", label: "Tecnologia" },
-  { value: "desserts", label: "Dulces / Postres" },
-  { value: "beauty", label: "Belleza" },
-  { value: "general", label: "General / Otro" },
-];
 
 function slugify(value: string) {
   return value
@@ -1093,7 +1084,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
       <div className="mt-4 grid gap-4 xl:grid-cols-3">
         <Field label="Rubro">
           <select value={draft.business_type} onChange={(event) => updateField("business_type", event.target.value)} className={inputClass}>
-            {businessTypes.map((type) => (
+            {BUSINESS_TYPES.map((type) => (
               <option key={type.value} value={type.value}>
                 {type.label}
               </option>

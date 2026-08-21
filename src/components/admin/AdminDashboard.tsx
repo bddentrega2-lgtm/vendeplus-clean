@@ -12,7 +12,9 @@ import {
   Package,
   PlusCircle,
   RefreshCcw,
+  TrendingUp,
   UserRoundPlus,
+  XCircle,
 } from "lucide-react";
 import {
   getPanelAuthHeaders,
@@ -37,6 +39,47 @@ type Summary = {
   approvedPaymentsUsd: number;
   pendingServiceFeesUsd: number;
   attentionStores: number;
+};
+
+type MonthlyGrowthPoint = {
+  label: string;
+  orders: number;
+  salesUsd: number;
+  averageTicketUsd: number;
+};
+
+type GrowthMetrics = {
+  timezone: string;
+  historical: {
+    orders: number;
+    salesUsd: number;
+    averageTicketUsd: number;
+    cancelledOrders: number;
+  };
+  currentMonth: {
+    label: string;
+    orders: number;
+    salesUsd: number;
+    averageTicketUsd: number;
+    cancelledOrders: number;
+    cancellationRate: number;
+  };
+  comparison: {
+    previousLabel: string;
+    previousOrders: number;
+    previousSalesUsd: number;
+    ordersGrowthPct: number | null;
+    salesGrowthPct: number | null;
+  };
+  monthly: MonthlyGrowthPoint[];
+  channels: Array<{ channel: string; orders: number; salesUsd: number }>;
+  ranking: Array<{
+    storeId: string;
+    storeName: string;
+    orders: number;
+    salesUsd: number;
+    averageTicketUsd: number;
+  }>;
 };
 
 type RecentStore = {
@@ -106,6 +149,83 @@ function formatUsd(value: number) {
   }).format(value || 0);
 }
 
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("es-VE").format(Number(value || 0));
+}
+
+function formatMonth(value: string) {
+  const [year, month] = value.split("-").map(Number);
+  if (!year || !month) return value;
+  return new Intl.DateTimeFormat("es-VE", { month: "short", year: "2-digit", timeZone: "UTC" })
+    .format(new Date(Date.UTC(year, month - 1, 1)))
+    .replace(" de ", " ");
+}
+
+function GrowthValue({ value }: { value: number | null }) {
+  if (value === null || !Number.isFinite(value)) {
+    return <span className="text-[#746f69]">Sin base anterior</span>;
+  }
+
+  const positive = value >= 0;
+  return (
+    <span className={positive ? "text-emerald-700" : "text-red-600"}>
+      {positive ? "+" : ""}{value.toFixed(1)}% vs. mismo periodo anterior
+    </span>
+  );
+}
+
+function MonthlyBars({
+  title,
+  data,
+  value,
+  formatValue,
+  color,
+}: {
+  title: string;
+  data: MonthlyGrowthPoint[];
+  value: "orders" | "salesUsd";
+  formatValue: (value: number) => string;
+  color: string;
+}) {
+  const maximum = Math.max(1, ...data.map((item) => Number(item[value] || 0)));
+
+  return (
+    <div className="rounded-[28px] bg-[#F8F3E8] p-4">
+      <p className="text-sm font-black">{title}</p>
+      <div className="mt-5 overflow-x-auto pb-2">
+        <div className="flex h-52 min-w-[620px] items-end gap-2">
+          {data.map((item) => {
+            const metric = Number(item[value] || 0);
+            const height = metric > 0 ? Math.max(8, Math.round(metric / maximum * 150)) : 3;
+            return (
+              <div key={item.label} className="flex min-w-0 flex-1 flex-col items-center justify-end">
+                <span className="mb-1 text-[10px] font-black text-[#746f69]">{formatValue(metric)}</span>
+                <div
+                  className={`w-full max-w-9 rounded-t-xl ${color}`}
+                  style={{ height }}
+                  title={`${formatMonth(item.label)}: ${formatValue(metric)}`}
+                />
+                <span className="mt-2 whitespace-nowrap text-[10px] font-bold capitalize text-[#746f69]">
+                  {formatMonth(item.label)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const channelLabels: Record<string, string> = {
+  delivery: "Delivery",
+  pickup: "Retiro",
+  table: "Mesa",
+  bar: "Barra",
+  national_shipping: "Envio nacional",
+  other: "Otros",
+};
+
 function AccessBox({
   error,
   authCheck,
@@ -171,6 +291,7 @@ export function AdminDashboard() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [recentStores, setRecentStores] = useState<RecentStore[]>([]);
   const [alerts, setAlerts] = useState<AdminAlert[]>([]);
+  const [growth, setGrowth] = useState<GrowthMetrics | null>(null);
 
   async function loadSummary() {
     setIsLoading(true);
@@ -181,6 +302,7 @@ export function AdminDashboard() {
       setSummary(data.summary);
       setRecentStores(data.recentStores || []);
       setAlerts(data.alerts || []);
+      setGrowth(data.growth || null);
       setIsUnlocked(true);
       setAuthCheck(null);
     } catch (error: any) {
@@ -229,8 +351,8 @@ export function AdminDashboard() {
     { label: "Pausados", value: summary.inactiveStores, icon: Lock },
     { label: "Trial", value: summary.trialStores, icon: PlusCircle },
     { label: "Vencidos", value: summary.expiredStores, icon: RefreshCcw },
-    { label: "Pedidos hoy", value: summary.ordersToday, icon: ClipboardList },
-    { label: "Pedidos 7 dias", value: summary.ordersLast7Days, icon: ClipboardList },
+    { label: "Pedidos historicos", value: growth ? formatNumber(growth.historical.orders) : summary.totalOrders, icon: ClipboardList },
+    { label: "Pedidos este mes", value: growth ? formatNumber(growth.currentMonth.orders) : summary.ordersLast7Days, icon: TrendingUp },
     { label: "Productos", value: summary.totalProducts, icon: Package },
     { label: "Clientes", value: summary.totalCustomers, icon: UserRoundPlus },
     { label: "Usuarios", value: summary.totalAssignments, icon: UserRoundPlus },
@@ -258,6 +380,88 @@ export function AdminDashboard() {
           );
         })}
       </section>
+
+      {growth ? (
+        <section className="space-y-4 rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
+          <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.18em] text-[#746f69]">Crecimiento global</p>
+              <h2 className="mt-1 text-3xl font-black">Ventas y pedidos</h2>
+              <p className="mt-1 text-sm font-bold text-[#746f69]">Sin comercios de prueba · ventas sin pedidos cancelados · hora de Venezuela</p>
+            </div>
+            <p className="text-sm font-black capitalize text-[#2E3A79]">Mes actual: {formatMonth(growth.currentMonth.label)}</p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <article className="rounded-[26px] bg-[#25262B] p-5 text-white">
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-white/60">Ventas historicas</p>
+              <p className="mt-2 text-3xl font-black">{formatUsd(growth.historical.salesUsd)}</p>
+              <p className="mt-2 text-xs font-bold text-white/70">{formatNumber(growth.historical.orders)} pedidos validos</p>
+            </article>
+            <article className="rounded-[26px] bg-[#FFF0C9] p-5">
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Ventas del mes</p>
+              <p className="mt-2 text-3xl font-black">{formatUsd(growth.currentMonth.salesUsd)}</p>
+              <p className="mt-2 text-xs font-black"><GrowthValue value={growth.comparison.salesGrowthPct} /></p>
+            </article>
+            <article className="rounded-[26px] bg-[#DDF7E8] p-5">
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Ticket promedio</p>
+              <p className="mt-2 text-3xl font-black">{formatUsd(growth.currentMonth.averageTicketUsd)}</p>
+              <p className="mt-2 text-xs font-bold text-[#746f69]">Promedio por pedido este mes</p>
+            </article>
+            <article className="rounded-[26px] bg-[#FCE5E2] p-5">
+              <p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-[#746f69]"><XCircle size={15} /> Cancelaciones</p>
+              <p className="mt-2 text-3xl font-black">{formatNumber(growth.currentMonth.cancelledOrders)}</p>
+              <p className="mt-2 text-xs font-bold text-[#746f69]">{Number(growth.currentMonth.cancellationRate || 0).toFixed(1)}% de pedidos del mes</p>
+            </article>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <MonthlyBars title="Pedidos mes a mes" data={growth.monthly} value="orders" formatValue={formatNumber} color="bg-[#0F6B63]" />
+            <MonthlyBars title="Ventas mes a mes" data={growth.monthly} value="salesUsd" formatValue={(amount) => `$${Math.round(amount)}`} color="bg-[#FF7133]" />
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
+            <div className="rounded-[28px] bg-[#F8F3E8] p-5">
+              <p className="text-sm font-black">Pedidos por modalidad este mes</p>
+              <div className="mt-4 space-y-2">
+                {growth.channels.map((channel) => (
+                  <div key={channel.channel} className="flex items-center justify-between rounded-2xl bg-white px-4 py-3">
+                    <span className="text-sm font-black">{channelLabels[channel.channel] || channel.channel}</span>
+                    <span className="text-right text-sm font-black">{formatNumber(channel.orders)}<small className="ml-2 block text-[10px] text-[#746f69] sm:inline">{formatUsd(channel.salesUsd)}</small></span>
+                  </div>
+                ))}
+                {!growth.channels.length ? <p className="text-sm font-bold text-[#746f69]">Todavia no hay pedidos este mes.</p> : null}
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-[28px] ring-1 ring-[#25262B]/[0.08]">
+              <div className="bg-[#25262B] px-5 py-4 text-white">
+                <p className="text-sm font-black">Ranking de comercios este mes</p>
+                <p className="mt-1 text-xs font-bold text-white/65">Ordenado por ventas procesadas</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[620px] text-left text-sm">
+                  <thead className="bg-[#F8F3E8] text-xs uppercase tracking-[0.12em] text-[#746f69]">
+                    <tr><th className="px-4 py-3">#</th><th className="px-4 py-3">Comercio</th><th className="px-4 py-3 text-right">Pedidos</th><th className="px-4 py-3 text-right">Ventas</th><th className="px-4 py-3 text-right">Ticket</th></tr>
+                  </thead>
+                  <tbody>
+                    {growth.ranking.map((store, index) => (
+                      <tr key={store.storeId} className="border-t border-[#25262B]/[0.06]">
+                        <td className="px-4 py-3 font-black text-[#FF7133]">{index + 1}</td>
+                        <td className="px-4 py-3 font-black">{store.storeName}</td>
+                        <td className="px-4 py-3 text-right font-bold">{formatNumber(store.orders)}</td>
+                        <td className="px-4 py-3 text-right font-black">{formatUsd(store.salesUsd)}</td>
+                        <td className="px-4 py-3 text-right font-bold text-[#746f69]">{formatUsd(store.averageTicketUsd)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {!growth.ranking.length ? <p className="p-5 text-sm font-bold text-[#746f69]">Sin ventas para ordenar este mes.</p> : null}
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section className="grid gap-4 xl:grid-cols-[1fr_380px]">
         <div className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
