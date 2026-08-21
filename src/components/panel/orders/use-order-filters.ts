@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 
 export type OrderFilters = {
+  storeId: string;
   status: string;
   paymentStatus: string;
   date: string;
@@ -14,6 +15,7 @@ export function buildOrdersQueryString(
   options: { compact?: boolean; limit?: number; offset?: number } = {}
 ) {
   const params = new URLSearchParams();
+  if (filters.storeId !== "all") params.set("storeId", filters.storeId);
   if (filters.status !== "all") params.set("status", filters.status);
   if (filters.paymentStatus !== "all") params.set("paymentStatus", filters.paymentStatus);
   if (filters.date !== "all") params.set("date", filters.date);
@@ -28,11 +30,11 @@ export function buildOrdersQueryString(
 }
 
 export function useOrderFilters(filters: OrderFilters) {
-  const { status, paymentStatus, date, paymentMethod, deliveryType, search } = filters;
+  const { storeId, status, paymentStatus, date, paymentMethod, deliveryType, search } = filters;
 
   const currentFilters = useMemo(
-    () => ({ status, paymentStatus, date, paymentMethod, deliveryType, search }),
-    [status, paymentStatus, date, paymentMethod, deliveryType, search]
+    () => ({ storeId, status, paymentStatus, date, paymentMethod, deliveryType, search }),
+    [storeId, status, paymentStatus, date, paymentMethod, deliveryType, search]
   );
 
   const filterSignature = useMemo(

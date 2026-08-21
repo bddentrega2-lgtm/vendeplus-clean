@@ -141,7 +141,9 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const storeId = String(searchParams.get("storeId") || "").trim();
+    const storeId = String(
+      searchParams.get("storeId") || request.headers.get("x-panel-store-id") || ""
+    ).trim();
     const search = cleanSearch(searchParams.get("search"));
     const segment = String(searchParams.get("segment") || "all");
     const supabase = createSupabaseAdminClient();

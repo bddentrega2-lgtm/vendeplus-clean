@@ -1,6 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
+  assertStoreAccess,
   assertStoreManager,
   badRequest,
   panelErrorResponse,
@@ -20,6 +21,11 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requirePanelAuth(request);
     const supabase = createSupabaseAdminClient();
+    const requestedStoreId = String(request.headers.get("x-panel-store-id") || "").trim();
+
+    if (requestedStoreId) {
+      assertStoreAccess(auth, requestedStoreId, "No tienes permiso para consultar esta sede.");
+    }
 
     let storesQuery = supabase
       .from("stores")
@@ -59,6 +65,12 @@ export async function GET(request: NextRequest) {
       storesQuery = storesQuery.in("id", auth.storeIds);
       categoriesQuery = categoriesQuery.in("store_id", auth.storeIds);
       productsQuery = productsQuery.in("store_id", auth.storeIds);
+    }
+
+    if (requestedStoreId) {
+      storesQuery = storesQuery.eq("id", requestedStoreId);
+      categoriesQuery = categoriesQuery.eq("store_id", requestedStoreId);
+      productsQuery = productsQuery.eq("store_id", requestedStoreId);
     }
 
     const [storesResult, categoriesResult, productsResult] = await Promise.all([

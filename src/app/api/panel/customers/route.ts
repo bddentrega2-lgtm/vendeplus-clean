@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { panelErrorResponse, requirePanelAuth } from "@/lib/panel/access";
+import { assertStoreAccess, panelErrorResponse, requirePanelAuth } from "@/lib/panel/access";
 import { getCustomerBadges, shouldContactCustomer } from "@/lib/customers/customer-segments";
 import { buildContactAgainMessage, buildRepeatLastOrderMessage, buildWhatsappUrl } from "@/lib/customers/customer-messages";
 import { safeUpsertCustomerFromOrder } from "@/lib/customers/upsert-customer-from-order";
@@ -86,12 +86,19 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requirePanelAuth(request);
     const supabase = createSupabaseAdminClient();
-    const customerDetailsPromise = auth.storeIds === null
+    const requestedStoreId = String(request.headers.get("x-panel-store-id") || "").trim();
+
+    if (requestedStoreId) {
+      assertStoreAccess(auth, requestedStoreId, "No tienes permiso para consultar esta sede.");
+    }
+
+    const scopedStoreIds = requestedStoreId ? [requestedStoreId] : auth.storeIds;
+    const customerDetailsPromise = scopedStoreIds === null
       ? Promise.resolve({ data: [], error: null })
       : supabase
           .from("store_achievement_unlocks")
           .select("store_id")
-          .in("store_id", auth.storeIds)
+          .in("store_id", scopedStoreIds)
           .eq("achievement_key", "promos_3_three_months_customer_details");
     const { searchParams } = new URL(request.url);
     const search = String(searchParams.get("search") || "").trim();
@@ -137,9 +144,9 @@ export async function GET(request: NextRequest) {
       .select("id, name, slug")
       .order("name", { ascending: true });
 
-    if (auth.storeIds !== null) {
-      customersQuery = customersQuery.in("store_id", auth.storeIds);
-      storesQuery = storesQuery.in("id", auth.storeIds);
+    if (scopedStoreIds !== null) {
+      customersQuery = customersQuery.in("store_id", scopedStoreIds);
+      storesQuery = storesQuery.in("id", scopedStoreIds);
     }
 
     if (safeSearch) {
@@ -178,7 +185,7 @@ export async function GET(request: NextRequest) {
       (customerDetailsResult.data || []).map((row: any) => String(row.store_id))
     );
     const customerDetailsUnlocked =
-      auth.storeIds === null || auth.storeIds.every((storeId) => unlockedStoreIds.has(storeId));
+      scopedStoreIds === null || scopedStoreIds.every((storeId) => unlockedStoreIds.has(storeId));
 
     if (customersResult.error) {
       return NextResponse.json({
@@ -203,7 +210,7 @@ export async function GET(request: NextRequest) {
     let customers = hasMore ? pageRows.slice(0, limit) : pageRows;
 
     if (!customers.length && offset === 0 && !safeSearch && segment === "all") {
-      const processed = await hydrateCustomersFromExistingOrders(supabase, auth.storeIds);
+      const processed = await hydrateCustomersFromExistingOrders(supabase, scopedStoreIds);
 
       if (processed > 0) {
         let hydratedCustomersQuery = supabase
@@ -235,8 +242,8 @@ export async function GET(request: NextRequest) {
           .order("last_order_at", { ascending: false, nullsFirst: false })
           .range(offset, to);
 
-        if (auth.storeIds !== null) {
-          hydratedCustomersQuery = hydratedCustomersQuery.in("store_id", auth.storeIds);
+        if (scopedStoreIds !== null) {
+          hydratedCustomersQuery = hydratedCustomersQuery.in("store_id", scopedStoreIds);
         }
 
         const hydratedResult = await hydratedCustomersQuery;

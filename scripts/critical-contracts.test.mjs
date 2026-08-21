@@ -568,3 +568,190 @@ test("Home y Marketplace hidratan delivery en tres consultas por lote", () => {
   assert.match(batchHydrator, /ratesByStore/);
   assert.doesNotMatch(batchHydrator, /rows\.map\(async/);
 });
+
+test("pedidos permite vista consolidada y filtro seguro por sede", () => {
+  const manager = readFileSync(
+    new URL("../src/components/panel/OrdersManager.tsx", import.meta.url),
+    "utf8",
+  );
+  const filters = readFileSync(
+    new URL("../src/components/panel/orders/use-order-filters.ts", import.meta.url),
+    "utf8",
+  );
+  const route = readFileSync(
+    new URL("../src/app/api/panel/orders/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(manager, /Todas las sedes/);
+  assert.match(manager, /order\.stores\?\.name/);
+  assert.match(filters, /params\.set\("storeId", filters\.storeId\)/);
+  assert.match(route, /requestedStoreId/);
+  assert.match(route, /assertStoreAccess\([\s\S]*requestedStoreId/);
+  assert.match(route, /query = query\.eq\("store_id", requestedStoreId\)/);
+});
+
+test("clonacion TDK crea sedes inactivas sin GPS ni pagos", () => {
+  const migration = readFileSync(
+    new URL(
+      "../supabase/migrations/20260820050000_clone_tdk_branches.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
+  assert.match(migration, /pasteleria-tdk-delicias/);
+  assert.match(migration, /pasteleria-tdk-los-cedros/);
+  assert.match(migration, /false,\s*true,\s*source\.accepts_pickup/);
+  assert.match(migration, /'\[\]'::jsonb/);
+  assert.match(migration, /insert into public\.store_users/);
+  assert.match(migration, /insert into public\.categories/);
+  assert.match(migration, /insert into public\.products/);
+  assert.match(migration, /insert into public\.product_images/);
+  assert.match(migration, /'entrega2',\s*'manual'/);
+});
+
+test("TDK ofrece enlace unico con seleccion privada por cercania", () => {
+  const page = readFileSync(
+    new URL("../src/app/tdk/page.tsx", import.meta.url),
+    "utf8",
+  );
+  const selector = readFileSync(
+    new URL("../src/components/public/TdkBranchSelector.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(page, /process\.env\.VERCEL_ENV === "preview"/);
+  assert.match(page, /if \(!isPreview\) query = query\.eq\("is_active", true\)/);
+  assert.match(page, /pasteleria-tdk-delicias/);
+  assert.match(page, /pasteleria-tdk-los-cedros/);
+  assert.match(selector, /navigator\.geolocation\.getCurrentPosition/);
+  assert.match(selector, /maximumAge: 300000/);
+  assert.match(selector, /localStorage\.setItem\(LAST_TDK_BRANCH_KEY/);
+  assert.match(selector, /Somos no la almacena/);
+  assert.match(selector, /En configuración/);
+  assert.match(selector, /Vista de prueba/);
+  assert.match(selector, /href={`\/\${store\.slug}`}/);
+});
+
+test("catalogo y productos respetan la sede activa del panel", () => {
+  const catalogRoute = readFileSync(
+    new URL("../src/app/api/panel/catalogo/route.ts", import.meta.url),
+    "utf8",
+  );
+  const productsRoute = readFileSync(
+    new URL("../src/app/api/panel/products/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  for (const route of [catalogRoute, productsRoute]) {
+    assert.match(route, /request\.headers\.get\("x-panel-store-id"\)/);
+    assert.match(route, /assertStoreAccess\(auth, requestedStoreId/);
+    assert.match(route, /storesQuery = storesQuery\.eq\("id", requestedStoreId\)/);
+    assert.match(route, /categoriesQuery = categoriesQuery\.eq\("store_id", requestedStoreId\)/);
+    assert.match(route, /productsQuery = productsQuery\.eq\("store_id", requestedStoreId\)/);
+  }
+});
+
+test("configuracion delivery y opciones respetan la sede activa", () => {
+  const routes = [
+    "../src/app/api/panel/settings/route.ts",
+    "../src/app/api/panel/delivery-settings/route.ts",
+    "../src/app/api/panel/options/route.ts",
+  ].map((path) => readFileSync(new URL(path, import.meta.url), "utf8"));
+
+  for (const route of routes) {
+    assert.match(route, /request\.headers\.get\("x-panel-store-id"\)/);
+    assert.match(route, /assertStoreAccess\(auth, requestedStoreId/);
+  }
+
+  assert.match(routes[0], /query = query\.eq\("id", requestedStoreId\)/);
+  assert.match(routes[1], /requestedStoreId \? \[requestedStoreId\] : auth\.storeIds/);
+  assert.match(routes[2], /groupsQuery = groupsQuery\.eq\("store_id", requestedStoreId\)/);
+});
+
+test("inicio usa la sede activa para catalogo y metricas", () => {
+  const statsRoute = readFileSync(
+    new URL("../src/app/api/panel/stats/route.ts", import.meta.url),
+    "utf8",
+  );
+  const dashboard = readFileSync(
+    new URL("../src/components/panel/DashboardManager.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(statsRoute, /request\.headers\.get\("x-panel-store-id"\)/);
+  assert.match(statsRoute, /storesQuery = storesQuery\.eq\("id", selectedStoreId\)/);
+  assert.match(statsRoute, /ordersQuery = ordersQuery\.eq\("store_id", selectedStoreId\)/);
+  assert.match(dashboard, /href={`\/\${primaryStore\.slug}`}/);
+});
+
+test("tarjeta de pedido muestra la sede sin truncado agresivo", () => {
+  const manager = readFileSync(
+    new URL("../src/components/panel/OrdersManager.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(manager, /lg:grid-cols-\[92px_1fr_86px/);
+  assert.match(manager, /function getCompactStoreName/);
+  assert.match(manager, /replace\(\/\^Pasteler\[ií\]a TDK/);
+  assert.match(manager, /className="line-clamp-2 text-\[11px\]/);
+  assert.match(manager, /title=\{order\.stores\?\.name \|\| "Sede"\}/);
+});
+
+test("clientes suscripcion y logros quedan aislados por sede", () => {
+  const customers = readFileSync(
+    new URL("../src/app/api/panel/customers/route.ts", import.meta.url),
+    "utf8",
+  );
+  const backfill = readFileSync(
+    new URL("../src/app/api/panel/customers/backfill/route.ts", import.meta.url),
+    "utf8",
+  );
+  const customerExport = readFileSync(
+    new URL("../src/app/api/panel/customers/export/route.ts", import.meta.url),
+    "utf8",
+  );
+  const subscription = readFileSync(
+    new URL("../src/app/api/panel/subscription-payments/route.ts", import.meta.url),
+    "utf8",
+  );
+  const achievements = readFileSync(
+    new URL("../src/app/api/panel/achievements/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(customers, /const scopedStoreIds = requestedStoreId \? \[requestedStoreId\] : auth\.storeIds/);
+  assert.match(customers, /hydrateCustomersFromExistingOrders\(supabase, scopedStoreIds\)/);
+  assert.match(backfill, /request\.headers\.get\("x-panel-store-id"\)/);
+  assert.match(customerExport, /request\.headers\.get\("x-panel-store-id"\)/);
+  assert.match(subscription, /paymentsQuery = paymentsQuery\.eq\("store_id", requestedStoreId\)/);
+  assert.match(achievements, /request\.headers\.get\("x-panel-store-id"\)/);
+});
+
+test("delivery conserva una sola sede despues de guardar reglas", () => {
+  const route = readFileSync(
+    new URL("../src/app/api/panel/delivery-settings/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.equal((route.match(/loadRows\(supabase, \[storeId\]\)/g) || []).length, 3);
+});
+
+test("TDK puede estar activa sin aparecer en Marketplace", () => {
+  const migration = readFileSync(
+    new URL("../supabase/migrations/20260821030000_add_marketplace_visibility.sql", import.meta.url),
+    "utf8",
+  );
+  const catalog = readFileSync(
+    new URL("../src/lib/supabase/catalog.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(migration, /marketplace_visible boolean not null default true/);
+  assert.match(migration, /payment_methods = '\["Efectivo"\]'::jsonb/);
+  assert.match(migration, /is_active = true/);
+  assert.match(migration, /marketplace_visible = false/);
+  assert.match(migration, /stores\.marketplace_visible is true/);
+  assert.match(catalog, /row\.marketplace_visible !== false/);
+});

@@ -291,6 +291,7 @@ const storeSelect = `
   show_prices_in_bs,
   whatsapp_message_note,
   is_active,
+  marketplace_visible,
   subscription_status,
   plan_type,
   monthly_price_usd,
@@ -956,7 +957,10 @@ export async function getPublicStores(): Promise<Store[]> {
   }
 
   const candidateRows = (data as AnyRecord[]).filter(
-    (row) => !isStoreSubscriptionPastDue(row) && Boolean(String(row.logo_url || "").trim())
+    (row) =>
+      row.marketplace_visible !== false &&
+      !isStoreSubscriptionPastDue(row) &&
+      Boolean(String(row.logo_url || "").trim())
   );
   const candidateIds = candidateRows.map((row) => String(row.id));
   if (!candidateIds.length) return [];

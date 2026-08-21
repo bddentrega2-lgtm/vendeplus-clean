@@ -220,7 +220,9 @@ export async function GET(request: NextRequest) {
     const supabase = createSupabaseAdminClient();
     const { searchParams } = new URL(request.url);
     const mode = searchParams.get("mode") === "summary" ? "summary" : "full";
-    const requestedStoreId = searchParams.get("storeId");
+    const requestedStoreId =
+      searchParams.get("storeId") ||
+      String(request.headers.get("x-panel-store-id") || "").trim();
     const selectedStoreId =
       requestedStoreId && requestedStoreId !== "all" ? requestedStoreId : null;
     const dateRange = getDateRange(request);
@@ -282,6 +284,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (selectedStoreId) {
+      storesQuery = storesQuery.eq("id", selectedStoreId);
       ordersQuery = ordersQuery.eq("store_id", selectedStoreId);
       productsQuery = productsQuery.eq("store_id", selectedStoreId);
       customersQuery = customersQuery.eq("store_id", selectedStoreId);

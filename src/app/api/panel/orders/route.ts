@@ -549,6 +549,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
 
     const status = searchParams.get("status");
+    const requestedStoreId = cleanText(searchParams.get("storeId"));
     const orderId = searchParams.get("orderId");
     const paymentMethod = searchParams.get("paymentMethod");
     const paymentStatus = searchParams.get("paymentStatus");
@@ -561,6 +562,14 @@ export async function GET(request: NextRequest) {
     const requestedOffset = Number(searchParams.get("offset") || 0);
     const offset = Math.max(0, Number.isFinite(requestedOffset) ? Math.floor(requestedOffset) : 0);
     const to = offset + limit;
+
+    if (requestedStoreId && requestedStoreId !== "all") {
+      assertStoreAccess(
+        auth,
+        requestedStoreId,
+        "No tienes permiso para consultar pedidos de esta sede."
+      );
+    }
 
     const buildQuery = (includePaymentFields: boolean) => {
       const client = supabase as any;
@@ -576,6 +585,10 @@ export async function GET(request: NextRequest) {
 
       if (auth.storeIds !== null) {
         query = query.in("store_id", auth.storeIds);
+      }
+
+      if (requestedStoreId && requestedStoreId !== "all") {
+        query = query.eq("store_id", requestedStoreId);
       }
 
       if (status && status !== "all") {

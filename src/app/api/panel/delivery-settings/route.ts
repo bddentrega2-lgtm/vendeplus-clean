@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  assertStoreAccess,
   assertStoreManager,
   badRequest,
   panelErrorResponse,
@@ -161,9 +162,12 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requirePanelAuth(request);
     const supabase = createSupabaseAdminClient();
-    if (auth.storeIds !== null) {
+    const requestedStoreId = String(request.headers.get("x-panel-store-id") || "").trim();
+
+    if (requestedStoreId) {
+      assertStoreAccess(auth, requestedStoreId, "No tienes permiso para consultar esta sede.");
     }
-    const rows = await loadRows(supabase, auth.storeIds);
+    const rows = await loadRows(supabase, requestedStoreId ? [requestedStoreId] : auth.storeIds);
 
     return NextResponse.json({ stores: rows });
   } catch (error: any) {
@@ -313,7 +317,7 @@ export async function PATCH(request: NextRequest) {
       if (storeUpdate.error) throw storeUpdate.error;
     }
 
-    const rows = await loadRows(supabase, auth.storeIds);
+    const rows = await loadRows(supabase, [storeId]);
     return NextResponse.json({ stores: rows });
   } catch (error: any) {
     return panelErrorResponse(error, "Error guardando configuracion de delivery.");
@@ -376,7 +380,7 @@ export async function POST(request: NextRequest) {
       return badRequest("Accion invalida.");
     }
 
-    const rows = await loadRows(supabase, auth.storeIds);
+    const rows = await loadRows(supabase, [storeId]);
     return NextResponse.json({ stores: rows });
   } catch (error: any) {
     return panelErrorResponse(error, "Error creando regla de entrega.");
@@ -406,7 +410,7 @@ export async function DELETE(request: NextRequest) {
     const { error } = await supabase.from(table).delete().eq("id", id).eq("store_id", storeId);
     if (error) throw error;
 
-    const rows = await loadRows(supabase, auth.storeIds);
+    const rows = await loadRows(supabase, [storeId]);
     return NextResponse.json({ stores: rows });
   } catch (error: any) {
     return panelErrorResponse(error, "Error eliminando regla de entrega.");

@@ -42,7 +42,8 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json().catch(() => ({}));
-    const requestedStoreId = cleanText(body.storeId);
+    const requestedStoreId =
+      cleanText(body.storeId) || cleanText(request.headers.get("x-panel-store-id"));
     const supabase = createSupabaseAdminClient();
 
     const managerStoreIds =

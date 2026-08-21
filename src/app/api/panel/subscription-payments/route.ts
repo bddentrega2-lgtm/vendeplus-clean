@@ -60,6 +60,11 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requirePanelAuth(request);
     const supabase = createSupabaseAdminClient();
+    const requestedStoreId = String(request.headers.get("x-panel-store-id") || "").trim();
+
+    if (requestedStoreId) {
+      assertStoreManager(auth, requestedStoreId, "No tienes permiso para consultar esta sede.");
+    }
     const managerStoreIds =
       auth.storeIds === null
         ? null
@@ -83,6 +88,11 @@ export async function GET(request: NextRequest) {
       paymentsQuery = managerStoreIds.length
         ? paymentsQuery.in("store_id", managerStoreIds)
         : paymentsQuery.eq("store_id", "__no_authorized_store__");
+    }
+
+    if (requestedStoreId) {
+      storesQuery = storesQuery.eq("id", requestedStoreId);
+      paymentsQuery = paymentsQuery.eq("store_id", requestedStoreId);
     }
 
     const [storesResult, paymentsResult] = await Promise.all([storesQuery, paymentsQuery]);

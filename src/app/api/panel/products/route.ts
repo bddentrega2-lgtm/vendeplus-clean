@@ -1,6 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
+  assertStoreAccess,
   assertStoreManager,
   badRequest,
   panelErrorResponse,
@@ -241,6 +242,11 @@ export async function GET(request: NextRequest) {
     const supabase = createSupabaseAdminClient();
     const { searchParams } = new URL(request.url);
     const search = String(searchParams.get("search") || "").trim();
+    const requestedStoreId = String(request.headers.get("x-panel-store-id") || "").trim();
+
+    if (requestedStoreId) {
+      assertStoreAccess(auth, requestedStoreId, "No tienes permiso para consultar esta sede.");
+    }
     const limit = Math.min(
       250,
       Math.max(25, Number(searchParams.get("limit") || 120))
@@ -269,6 +275,12 @@ export async function GET(request: NextRequest) {
       productsQuery = productsQuery.in("store_id", auth.storeIds);
     }
 
+    if (requestedStoreId) {
+      storesQuery = storesQuery.eq("id", requestedStoreId);
+      categoriesQuery = categoriesQuery.eq("store_id", requestedStoreId);
+      productsQuery = productsQuery.eq("store_id", requestedStoreId);
+    }
+
     if (search) {
       productsQuery = productsQuery.ilike("name", `%${search}%`);
     }
@@ -293,6 +305,10 @@ export async function GET(request: NextRequest) {
 
       if (auth.storeIds !== null) {
         fallbackProductsQuery = fallbackProductsQuery.in("store_id", auth.storeIds);
+      }
+
+      if (requestedStoreId) {
+        fallbackProductsQuery = fallbackProductsQuery.eq("store_id", requestedStoreId);
       }
 
       if (search) {

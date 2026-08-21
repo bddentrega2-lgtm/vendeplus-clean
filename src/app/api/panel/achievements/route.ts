@@ -7,7 +7,11 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 export async function GET(request: NextRequest) {
   try {
     const auth = await requirePanelAuth(request);
-    const requestedStoreId = String(request.nextUrl.searchParams.get("storeId") || "").trim();
+    const requestedStoreId = String(
+      request.nextUrl.searchParams.get("storeId") ||
+      request.headers.get("x-panel-store-id") ||
+      ""
+    ).trim();
     const storeId = requestedStoreId || (auth.storeIds === null ? "" : auth.storeIds[0] || "");
     if (!storeId) return badRequest("Selecciona un comercio para ver sus logros.");
     assertStoreAccess(auth, storeId, "No tienes permiso para ver los logros de este comercio.");

@@ -41,6 +41,7 @@ import {
 } from "@/components/panel/NewOrderToast";
 import { PanelAccessGate, PanelModuleSkeleton } from "@/components/panel/PanelLoadingState";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
 import {
   apiRequest,
   buildPaymentDataText,
@@ -77,6 +78,12 @@ import {
   useOrderFilters,
   type OrderFilters,
 } from "@/components/panel/orders/use-order-filters";
+
+function getCompactStoreName(name?: string | null) {
+  const fullName = String(name || "Sede").trim();
+  const branchName = fullName.replace(/^Pasteler[ií]a TDK\s*/i, "").trim();
+  return branchName || fullName;
+}
 
 function OrderDetail({
   order,
@@ -507,10 +514,12 @@ function OrderDetail({
 }
 
 export function OrdersManager() {
+  const { isFounderMode, stores: panelStores } = usePanelAuth();
   const [pin, setPin] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [selectedStatus, setSelectedStatus] = useState("all");
+  const [selectedStoreId, setSelectedStoreId] = useState("all");
   const [selectedPaymentStatus, setSelectedPaymentStatus] = useState("all");
   const [selectedDate, setSelectedDate] = useState("today");
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("all");
@@ -537,8 +546,10 @@ export function OrdersManager() {
   const authScopeRef = useRef("");
   const latestRequestIdRef = useRef(0);
   const hasLoadedOrdersRef = useRef(false);
+  const canFilterStores = !isFounderMode && panelStores.length > 1;
 
   const { currentFilters, filterSignature } = useOrderFilters({
+    storeId: selectedStoreId,
     status: selectedStatus,
     paymentStatus: selectedPaymentStatus,
     date: selectedDate,
@@ -1003,7 +1014,7 @@ export function OrdersManager() {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 xl:grid-cols-[1fr_170px]">
+        <div className={`mt-4 grid gap-3 ${canFilterStores ? "xl:grid-cols-[1fr_220px_170px]" : "xl:grid-cols-[1fr_170px]"}`}>
           <div className="relative">
             <Search
               size={18}
@@ -1016,6 +1027,22 @@ export function OrdersManager() {
               className="w-full rounded-2xl border border-[#25262B]/10 bg-white py-3 pl-11 pr-4 text-sm font-bold outline-none focus:border-[#2E3A79]"
             />
           </div>
+
+          {canFilterStores ? (
+            <select
+              value={selectedStoreId}
+              onChange={(event) => setSelectedStoreId(event.target.value)}
+              className="rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
+              aria-label="Filtrar pedidos por sede"
+            >
+              <option value="all">Todas las sedes</option>
+              {panelStores.map((store) => (
+                <option key={store.id} value={store.id}>
+                  {store.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
 
           <select
             value={selectedDate}
@@ -1176,6 +1203,14 @@ export function OrdersManager() {
               <div className="grid gap-2 lg:grid-cols-[92px_1fr_86px_150px_180px_auto] lg:items-center">
                 <div className="min-w-0">
                   <h3 className="truncate text-sm font-black">{order.public_code}</h3>
+                  {canFilterStores ? (
+                    <p
+                      className="line-clamp-2 text-[11px] font-black leading-4 text-[#2E3A79]"
+                      title={order.stores?.name || "Sede"}
+                    >
+                      {getCompactStoreName(order.stores?.name)}
+                    </p>
+                  ) : null}
                   {isNewOrder ? (
                     <p className="text-[10px] font-black text-[#2E3A79]">
                       Nuevo
