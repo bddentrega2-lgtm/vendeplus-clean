@@ -627,7 +627,8 @@ test("TDK ofrece enlace unico con seleccion privada por cercania", () => {
   assert.match(page, /pasteleria-tdk-los-cedros/);
   assert.match(selector, /navigator\.geolocation\.getCurrentPosition/);
   assert.match(selector, /maximumAge: 300000/);
-  assert.match(selector, /localStorage\.setItem\(LAST_TDK_BRANCH_KEY/);
+  assert.match(selector, /localStorage\.setItem\(storageKey/);
+  assert.match(selector, /storageKey = "somos:tdk:last-branch"/);
   assert.match(selector, /Somos no la almacena/);
   assert.match(selector, /En configuración/);
   assert.match(selector, /Vista de prueba/);
@@ -909,4 +910,21 @@ test("catalogo compacta acciones instala Somos y oculta el horario predeterminad
   assert.match(mapper, /toLowerCase\(\) === "disponible hoy"/);
   const install = readFileSync(new URL("../src/components/pwa/PwaInstallButton.tsx", import.meta.url), "utf8");
   assert.match(install, /if \(tile\)[\s\S]*href="\/"[\s\S]*somos-isotipo-preview\.png/);
+});
+
+test("La Cremita comparte cuenta y ofrece selector seguro de sedes", () => {
+  const migration = readFileSync(
+    new URL("../supabase/migrations/20260821213759_clone_la_cremita_las_ballenas.sql", import.meta.url),
+    "utf8",
+  );
+  const page = readFileSync(new URL("../src/app/la-cremita/page.tsx", import.meta.url), "utf8");
+
+  assert.match(migration, /la-cremita-gourmet-las-ballenas/);
+  assert.match(migration, /10\.267079665610519/);
+  assert.match(migration, /-67\.59386449349098/);
+  assert.match(migration, /insert into public\.store_users/);
+  assert.match(migration, /product_option_groups/);
+  assert.doesNotMatch(migration, /insert into public\.orders/);
+  assert.match(page, /somos:la-cremita:last-branch/);
+  assert.match(page, /la-cremita-gourmet-las-ballenas/);
 });
