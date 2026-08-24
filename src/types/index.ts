@@ -135,6 +135,7 @@ export type Store = {
   serviceFeePayer?: "merchant" | "customer";
   serviceFeeBillingCycle?: "weekly" | "monthly";
   requestCustomerIdNumber?: boolean;
+  checkoutNotePlaceholder?: string;
   monthlyBadges?: string[];
 };
 

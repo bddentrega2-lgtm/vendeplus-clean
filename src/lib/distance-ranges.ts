@@ -64,7 +64,28 @@ export function distanceRangesOverlap(
   const firstEnd = first.maxKm ?? Number.POSITIVE_INFINITY;
   const secondEnd = second.maxKm ?? Number.POSITIVE_INFINITY;
 
-  return first.minKm <= secondEnd && second.minKm <= firstEnd;
+  return first.minKm < secondEnd && second.minKm < firstEnd;
+}
+
+export function findDistanceRangeGap(ranges: DistanceRangeLike[]) {
+  const active = ranges
+    .filter((row) => row.isActive ?? row.is_active ?? true)
+    .map(normalizeDistanceRangeRow)
+    .sort((a, b) => a.minKm - b.minKm);
+
+  if (!active.length) return null;
+  if (active[0].minKm > 0) return { fromKm: 0, toKm: active[0].minKm };
+
+  for (let index = 0; index < active.length - 1; index += 1) {
+    const current = active[index];
+    const next = active[index + 1];
+    if (current.maxKm === null) return null;
+    if (next.minKm > current.maxKm) {
+      return { fromKm: current.maxKm, toKm: next.minKm };
+    }
+  }
+
+  return null;
 }
 
 export function findOverlappingDistanceRange(params: {

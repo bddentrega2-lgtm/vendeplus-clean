@@ -212,7 +212,7 @@ export function mapStoreDeliverySettings(row: any): StoreDeliverySettings {
     deliveryPromoDiscountType: promoType as StoreDeliverySettings["deliveryPromoDiscountType"],
     deliveryPromoDiscountValue: Math.max(0, toNumber(settings.delivery_promo_discount_value, 0)),
     maxDistanceKm: optionalNumber(settings.max_distance_km),
-    distanceFactor: null,
+    distanceFactor: optionalNumber(settings.distance_factor),
     manualQuoteMessage:
       String(settings.manual_quote_message || "").trim() ||
       DEFAULT_MANUAL_DELIVERY_MESSAGE,

@@ -70,6 +70,7 @@ type StoreRow = {
   accepts_pickup: boolean;
   accepts_national_shipping?: boolean;
   request_customer_id_number?: boolean;
+  checkout_note_placeholder?: string | null;
   is_active: boolean;
   service_fee_payer?: "merchant" | "customer";
   service_fee_billing_cycle?: "weekly" | "monthly";
@@ -258,6 +259,7 @@ function StoreSettingsCard({
     accepts_pickup: store.accepts_pickup !== false,
     accepts_national_shipping: store.accepts_national_shipping === true,
     request_customer_id_number: store.request_customer_id_number === true,
+    checkout_note_placeholder: store.checkout_note_placeholder || "",
     is_active: store.is_active !== false,
     service_fee_payer: store.service_fee_payer === "customer" ? "customer" : "merchant",
     service_fee_billing_cycle: "monthly",
@@ -1322,6 +1324,24 @@ function StoreSettingsCard({
             {draft.request_customer_id_number ? "Solicitar cédula" : "No solicitar cédula"}
           </button>
         </div>
+      </section>
+
+      <section className="mt-5 rounded-2xl bg-[#FFF8F0] p-4 ring-1 ring-[#FFB547]/30">
+        <h3 className="text-base font-black text-[#25262B]">Ejemplo para la nota del pedido</h3>
+        <p className="mt-1 text-xs font-bold leading-relaxed text-[#746f69]">
+          Aparece suavemente dentro del campo y desaparece cuando el cliente escribe. Si lo dejas vacío, Somos muestra un ejemplo según el rubro.
+        </p>
+        <textarea
+          value={draft.checkout_note_placeholder}
+          onChange={(event) => updateField("checkout_note_placeholder", event.target.value.slice(0, 180))}
+          rows={2}
+          maxLength={180}
+          placeholder="Ej: escribir ‘Feliz cumpleaños Ana’ en la torta."
+          className="mt-3 w-full resize-none rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#F27533]"
+        />
+        <p className="mt-1 text-right text-[11px] font-bold text-[#746f69]">
+          {draft.checkout_note_placeholder.length}/180
+        </p>
       </section>
 
       {store.plan_type === "per_service" ? (

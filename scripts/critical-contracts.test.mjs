@@ -928,3 +928,35 @@ test("La Cremita comparte cuenta y ofrece selector seguro de sedes", () => {
   assert.match(page, /somos:la-cremita:last-branch/);
   assert.match(page, /la-cremita-gourmet-las-ballenas/);
 });
+
+test("delivery propio conserva km adicional simula tarifas y rechaza precios vacios", () => {
+  const manager = readFileSync(new URL("../src/components/panel/DeliveryManager.tsx", import.meta.url), "utf8");
+  const route = readFileSync(new URL("../src/app/api/panel/delivery-settings/route.ts", import.meta.url), "utf8");
+  const delivery = readFileSync(new URL("../src/lib/delivery.ts", import.meta.url), "utf8");
+  const ranges = readFileSync(new URL("../src/lib/distance-ranges.ts", import.meta.url), "utf8");
+
+  assert.match(manager, /USD por km adicional/);
+  assert.match(manager, /Simulador de tarifa/);
+  assert.match(manager, /describeDistanceRangeFee/);
+  assert.match(route, /distance_factor: optionalNumber\(body\.distanceFactor\)/);
+  assert.match(route, /Indica el precio de este rango/);
+  assert.match(route, /Indica el precio de esta zona/);
+  assert.match(route, /findDistanceRangeGap\(activeRates\)/);
+  assert.match(manager, /Falta precio desde \{distanceRangeGap\.fromKm\} km hasta \{distanceRangeGap\.toKm\} km/);
+  assert.match(ranges, /next\.minKm > current\.maxKm/);
+  assert.match(ranges, /first\.minKm < secondEnd && second\.minKm < firstEnd/);
+  assert.match(delivery, /distanceFactor: optionalNumber\(settings\.distance_factor\)/);
+});
+
+test("checkout destaca nota opcional con ejemplo por rubro o por comercio", () => {
+  const checkout = readFileSync(new URL("../src/components/public/CheckoutForm.tsx", import.meta.url), "utf8");
+  const examples = readFileSync(new URL("../src/lib/checkout-notes.ts", import.meta.url), "utf8");
+  const settings = readFileSync(new URL("../src/components/panel/ConfigManager.tsx", import.meta.url), "utf8");
+  const migration = readFileSync(new URL("../supabase/migrations/20260824170036_add_checkout_note_placeholder.sql", import.meta.url), "utf8");
+
+  assert.match(checkout, /¿Alguna indicación para tu pedido\?/);
+  assert.match(checkout, /checkoutNoteExample\(store\.category, store\.checkoutNotePlaceholder\)/);
+  assert.match(examples, /Feliz cumpleaños Ana/);
+  assert.match(settings, /Ejemplo para la nota del pedido/);
+  assert.match(migration, /add column if not exists checkout_note_placeholder text/);
+});

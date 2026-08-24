@@ -20,6 +20,7 @@ import {
   createDefaultDeliverySettings,
 } from "@/lib/delivery";
 import { isCashPaymentMethod } from "@/lib/payments";
+import { checkoutNoteExample } from "@/lib/checkout-notes";
 import { buildPaymentInfo } from "@/lib/payment-display";
 import { buildOrderMessage, buildWhatsAppUrl } from "@/lib/whatsapp";
 import { saveOrderToSupabase } from "@/lib/supabase/orders";
@@ -828,17 +829,22 @@ export function CheckoutForm({ store }: { store: Store }) {
                 </label>
               </div>
               <label className="mt-4 block">
-                <span className="vp-label">
-                  {isCashPayment ? "¿Cómo vas a cancelar?" : "Nota adicional"}
+                <span className="vp-label text-[#25262B]">
+                  {isCashPayment ? "¿Cómo vas a cancelar?" : "¿Alguna indicación para tu pedido?"}
                 </span>
+                {!isCashPayment ? (
+                  <span className="mt-1 block text-xs font-bold text-[#746f69]">
+                    Opcional. Úsala para detalles que el comercio deba conocer.
+                  </span>
+                ) : null}
                 <textarea
-                  className="vp-input min-h-24 resize-none"
+                  className="vp-input mt-2 min-h-24 resize-none border-[#FFB547]/60 bg-[#FFF8F0] focus:border-[#F27533]"
                   value={form.notes}
                   onChange={(event) => updateField("notes", event.target.value)}
                   placeholder={
                     isCashPayment
                       ? "Ej: pago en dólares al recibir, pago en Bs al retirar, necesito cambio de $20..."
-                      : "Cualquier instrucción extra para el comercio u operadora."
+                      : checkoutNoteExample(store.category, store.checkoutNotePlaceholder)
                   }
                 />
               </label>
