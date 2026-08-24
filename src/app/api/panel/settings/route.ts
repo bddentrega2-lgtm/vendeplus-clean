@@ -208,6 +208,7 @@ function normalizeStorePayload(body: any) {
     accepts_pickup: Boolean(body.accepts_pickup),
     accepts_national_shipping: Boolean(body.accepts_national_shipping),
     request_customer_id_number: Boolean(body.request_customer_id_number),
+    checkout_note_placeholder: cleanText(body.checkout_note_placeholder).slice(0, 180) || null,
     is_active: Boolean(body.is_active),
     service_fee_payer: body.service_fee_payer === "customer" ? "customer" : "merchant",
     service_fee_billing_cycle: "monthly",
@@ -250,6 +251,7 @@ const storeSelect = `
   accepts_pickup,
   accepts_national_shipping,
   request_customer_id_number,
+  checkout_note_placeholder,
   is_active
   ,service_fee_payer
   ,service_fee_billing_cycle
@@ -338,6 +340,7 @@ export async function GET(request: NextRequest) {
       "exchange_rate_source",
         "exchange_rate_updated_at",
         "request_customer_id_number",
+        "checkout_note_placeholder",
         "accepts_national_shipping",
       ])
     ) {
@@ -428,6 +431,7 @@ export async function PATCH(request: NextRequest) {
         "auto_update_exchange_rate",
         "exchange_rate_source",
         "exchange_rate_updated_at",
+        "checkout_note_placeholder",
       ])
     ) {
       paymentDetailsSaved = false;
@@ -441,6 +445,7 @@ export async function PATCH(request: NextRequest) {
         exchange_rate_updated_at: _exchangeRateUpdatedAt,
         accepts_national_shipping: _acceptsNationalShipping,
         request_customer_id_number: _requestCustomerIdNumber,
+        checkout_note_placeholder: _checkoutNotePlaceholder,
         ...basePayload
       } = payload;
       const fallbackResult = await supabase

@@ -13,6 +13,7 @@ import {
 } from "@/lib/delivery";
 import {
   findOverlappingDistanceRange,
+  findDistanceRangeGap,
   formatDistanceRange,
   normalizeDistanceRangeInput,
 } from "@/lib/distance-ranges";
@@ -32,6 +33,10 @@ function optionalNumber(value: unknown) {
 
 function money(value: unknown) {
   return Math.max(0, optionalNumber(value) || 0);
+}
+
+function hasNumber(value: unknown) {
+  return value !== "" && value !== null && value !== undefined && Number.isFinite(Number(value));
 }
 
 function normalizeSettingsPayload(body: any, storeId: string) {
@@ -77,7 +82,7 @@ function normalizeSettingsPayload(body: any, storeId: string) {
     delivery_promo_discount_type: promoDiscountType,
     delivery_promo_discount_value: money(body.deliveryPromoDiscountValue),
     max_distance_km: optionalNumber(body.maxDistanceKm),
-    distance_factor: null,
+    distance_factor: optionalNumber(body.distanceFactor),
     manual_quote_message:
       cleanText(body.manualQuoteMessage) ||
       "Confirma el precio de tu delivery por WhatsApp con el comercio.",
@@ -191,6 +196,7 @@ export async function PATCH(request: NextRequest) {
     if (body.action === "zone") {
       const id = cleanText(body.id);
       if (!id) return badRequest("Falta la zona.");
+      if (!hasNumber(body.feeUsd)) return badRequest("Indica el precio de esta zona.");
 
       const payload = {
         name: cleanText(body.name) || "Zona",
@@ -209,6 +215,7 @@ export async function PATCH(request: NextRequest) {
     } else if (body.action === "rate") {
       const id = cleanText(body.id);
       if (!id) return badRequest("Falta el rango.");
+      if (!hasNumber(body.feeUsd)) return badRequest("Indica el precio de este rango.");
       const normalized = normalizeDistanceRangeInput({
         id,
         minKm: body.minKm,
@@ -264,6 +271,39 @@ export async function PATCH(request: NextRequest) {
         cleanText(body.deliveryProvider) !== "transport_agency"
       ) {
         return badRequest("Este comercio tiene una empresa delivery activa. Primero gestiona la desafiliacion para cambiar las tarifas.");
+      }
+
+      const provider = cleanText(body.deliveryProvider);
+      const pricingType = cleanText(body.pricingType) === "fixed" ? "fixed_distance" : cleanText(body.pricingType);
+      if (provider === "own_delivery" && body.deliveryEnabled && pricingType === "fixed_distance") {
+        if (!hasNumber(body.fixedFeeUsd)) return badRequest("Indica el precio del delivery.");
+        if (!hasNumber(body.maxDistanceKm) || Number(body.maxDistanceKm) <= 0) {
+          return badRequest("Indica una distancia máxima mayor que cero.");
+        }
+      }
+      if (provider === "own_delivery" && body.deliveryEnabled && pricingType === "distance_ranges") {
+        if (hasNumber(body.distanceFactor) && Number(body.distanceFactor) < 0) {
+          return badRequest("El precio por km adicional no puede ser negativo.");
+        }
+        const { data: activeRates, error: activeRatesError } = await supabase
+          .from("store_delivery_distance_rates")
+          .select("min_km, max_km, fee_usd")
+          .eq("store_id", storeId)
+          .eq("is_active", true)
+          .order("min_km", { ascending: true });
+        if (activeRatesError) throw activeRatesError;
+        if (!activeRates?.length) return badRequest("Agrega al menos un rango activo con precio.");
+        const gap = findDistanceRangeGap(activeRates);
+        if (gap) return badRequest(`Falta precio desde ${gap.fromKm} km hasta ${gap.toKm} km.`);
+        const lastFiniteMax = [...activeRates].reverse().find((rate: any) => rate.max_km !== null)?.max_km;
+        if (
+          hasNumber(body.maxDistanceKm) &&
+          lastFiniteMax !== undefined &&
+          Number(body.maxDistanceKm) > Number(lastFiniteMax) &&
+          !hasNumber(body.distanceFactor)
+        ) {
+          return badRequest("La cobertura supera el último rango. Indica el precio por km adicional.");
+        }
       }
 
       const payload = normalizeSettingsPayload(body, storeId);
@@ -335,6 +375,7 @@ export async function POST(request: NextRequest) {
     assertStoreManager(auth, storeId, "No tienes permiso para editar este comercio.");
 
     if (body.action === "zone") {
+      if (!hasNumber(body.feeUsd)) return badRequest("Indica el precio de esta zona.");
       const { error } = await supabase.from("store_delivery_zones").insert({
         store_id: storeId,
         name: cleanText(body.name) || "Nueva zona",
@@ -345,6 +386,7 @@ export async function POST(request: NextRequest) {
       });
       if (error) throw error;
     } else if (body.action === "rate") {
+      if (!hasNumber(body.feeUsd)) return badRequest("Indica el precio de este rango.");
       const normalized = normalizeDistanceRangeInput({
         minKm: body.minKm,
         maxKm: body.maxKm,

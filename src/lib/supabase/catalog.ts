@@ -262,6 +262,7 @@ function mapStore(
     serviceFeePayer: row.service_fee_payer === "customer" ? "customer" : "merchant",
     serviceFeeBillingCycle: "monthly",
     requestCustomerIdNumber: row.request_customer_id_number === true,
+    checkoutNotePlaceholder: normalizePublicBrandText(row.checkout_note_placeholder) || undefined,
   };
 }
 
@@ -305,6 +306,7 @@ const storeSelect = `
   accepts_delivery,
   accepts_pickup,
   request_customer_id_number,
+  checkout_note_placeholder,
   accepts_national_shipping,
   store_delivery_settings (
     delivery_enabled,
@@ -404,6 +406,7 @@ const baseStoreSelect = `
   accepts_delivery,
   accepts_pickup,
   request_customer_id_number,
+  checkout_note_placeholder,
   categories (
     id,
     name,
@@ -475,6 +478,7 @@ const storeShellSelect = `
   accepts_delivery,
   accepts_pickup,
   request_customer_id_number,
+  checkout_note_placeholder,
   accepts_national_shipping,
   store_delivery_settings (
     delivery_enabled,
@@ -547,6 +551,7 @@ const storeShellCompatibleSelect = `
   accepts_delivery,
   accepts_pickup,
   request_customer_id_number,
+  checkout_note_placeholder,
   store_delivery_settings (
     delivery_enabled,
     pickup_enabled,
@@ -617,6 +622,7 @@ const deliveryCompatibleStoreSelect = `
   accepts_delivery,
   accepts_pickup,
   request_customer_id_number,
+  checkout_note_placeholder,
   store_delivery_settings (
     delivery_enabled,
     pickup_enabled,
@@ -708,6 +714,7 @@ const legacyStoreSelect = `
   accepts_delivery,
   accepts_pickup,
   request_customer_id_number,
+  checkout_note_placeholder,
   categories (
     id,
     name,

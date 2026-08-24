@@ -821,3 +821,16 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 - Smoke productivo aprobado: `/la-cremita` HTTP 200 y contiene Guasimal + Las Ballenas; ambos catálogos directos HTTP 200 y Las Ballenas presenta su nombre correcto. Sin logs de error. Selector oficial: `https://www.somos-ve.com/la-cremita`. Rollback web: `dpl_8sqATEFQvRHTen42WJ6LwT5D7Q4G`; la migración de datos ya aplicada es independiente del rollback web.
 - El comercio confirmó operación real y uso correcto de ambas sedes. Usuario solicitó asegurar el trabajo en Git; rama nueva `checkpoint/la-cremita-sedes-20260824` creada desde `origin/main` para evitar reutilizar el PR #7 ya fusionado.
 - Revalidación previa al checkpoint: lint global, TypeScript, 43/43 contratos, `git diff --check` y build Next.js 16.3.0 de 173 páginas aprobados; Supabase dry-run confirma base remota al día. No se alteraron datos durante este aseguramiento.
+# Delivery propio avanzado y nota contextual del checkout (2026-08-24)
+
+- Trabajo preparado en `feature/delivery-propio-notas-checkout`; producción web permanece intacta.
+- Delivery propio ahora conserva `distance_factor`, permite configurar USD por km adicional después del último rango y ofrece un simulador sin efectos sobre pedidos ni tarifas guardadas.
+- Panel y API rechazan precios vacíos en tarifa fija, zonas y rangos; también detectan cobertura mayor al último rango sin precio adicional y valores adicionales negativos.
+- Checkout reemplaza la nota poco visible por `¿Alguna indicación para tu pedido?`, con tarjeta más llamativa y placeholder automático por rubro. Efectivo conserva su ejemplo específico.
+- Configuración del comercio permite un ejemplo personalizado opcional de hasta 180 caracteres. Vacío usa el fallback por rubro; nunca se guarda el ejemplo como nota real.
+- Migración aditiva `20260824170036_add_checkout_note_placeholder.sql` aplicada y verificada remotamente. Agrega solo `stores.checkout_note_placeholder`; no modifica valores existentes. Advisors de seguridad sin hallazgos.
+- Validaciones: TypeScript, ESLint global, 45/45 contratos, `git diff --check` y build Next.js 16.3.0 de 173 páginas aprobados.
+- Preview `https://vendeplus-clean-o0mm1av1u-entrega2-s-projects.vercel.app`, deployment `dpl_CoBDfXhpnMMcAMzfeu9VfGC9PPbZ`, target Preview, Ready. Panel Delivery, Configuración y catálogo de Las Ballenas responden HTTP 200.
+- Próximo paso exacto: probar con sesión real en Preview `/panel/delivery` (rango, km adicional y simulador) y `/panel/configuracion` (ejemplo personalizado), luego completar un checkout. No promover producción sin aprobación explícita.
+- QA del usuario detectó que un hueco `9–10 km` seguido de `10,2–11 km` no se señalaba. Se agregó detección explícita de continuidad desde 0 km, aviso visible y bloqueo al guardar tanto en cliente como servidor. Rangos contiguos como `9–10` y `10–11` quedan permitidos; los cruces reales continúan bloqueados.
+- Usuario aprobó la Preview corregida y autorizó producción y aseguramiento en Git. Preview aprobada exacta: `dpl_4Mr5wEXQ2Bz314vaUVbn17wzcthb` (`https://vendeplus-clean-jguobq5w4-entrega2-s-projects.vercel.app`).

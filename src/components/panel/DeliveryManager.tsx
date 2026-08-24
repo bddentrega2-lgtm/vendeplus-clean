@@ -16,9 +16,11 @@ import { PanelAccessGate, PanelModuleSkeleton } from "@/components/panel/PanelLo
 import { TransportMarketplaceSection } from "@/components/panel/TransportMarketplaceSection";
 import {
   findOverlappingDistanceRange,
+  findDistanceRangeGap,
   formatDistanceRange,
   normalizeDistanceRangeInput,
 } from "@/lib/distance-ranges";
+import { describeDistanceRangeFee } from "@/lib/delivery";
 import {
   getPanelAccessToken,
   getPanelAuthHeaders,
@@ -378,6 +380,8 @@ function DeliveryStoreCard({
     deliveryPromoDiscountValue: String(row.settings.deliveryPromoDiscountValue ?? 0),
     maxDistanceKm:
       row.settings.maxDistanceKm === null ? "" : String(row.settings.maxDistanceKm),
+    distanceFactor:
+      row.settings.distanceFactor === null ? "" : String(row.settings.distanceFactor),
   });
   const [zoneDraft, setZoneDraft] = useState({
     name: "",
@@ -391,6 +395,7 @@ function DeliveryStoreCard({
   });
   const [message, setMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [simulatorDistance, setSimulatorDistance] = useState("");
 
   const isEntrega2 = draft.deliveryProvider === "entrega2";
   const isTransportAgency = draft.deliveryProvider === "transport_agency";
@@ -404,6 +409,21 @@ function DeliveryStoreCard({
       ? "fixed_distance"
       : draft.pricingType;
   const effectivePricingType: PricingType = isEntrega2 ? "manual" : normalizedPricingType;
+  const distanceRangeGap = findDistanceRangeGap(row.settings.distanceRates);
+  const simulatedKm = Number(simulatorDistance);
+  const simulatedQuote = Number.isFinite(simulatedKm) && simulatedKm >= 0
+    ? effectivePricingType === "fixed_distance"
+      ? draft.maxDistanceKm !== "" && simulatedKm <= Number(draft.maxDistanceKm) && draft.fixedFeeUsd !== ""
+        ? { feeUsd: Number(draft.fixedFeeUsd), summary: `Tarifa plana hasta ${draft.maxDistanceKm} km` }
+        : null
+      : effectivePricingType === "distance_ranges"
+        ? describeDistanceRangeFee({
+            distanceKm: simulatedKm,
+            rates: row.settings.distanceRates,
+            distanceFactor: draft.distanceFactor === "" ? null : Number(draft.distanceFactor),
+          })
+        : null
+    : null;
 
   function updateDraft(field: string, value: unknown) {
     setDraft((current) => {
@@ -465,10 +485,43 @@ function DeliveryStoreCard({
 
     if (
       draft.deliveryProvider === "own_delivery" &&
+      effectivePricingType === "fixed_distance" &&
+      draft.fixedFeeUsd === ""
+    ) {
+      setMessage("Indica el precio del delivery.");
+      return;
+    }
+
+    if (
+      draft.deliveryProvider === "own_delivery" &&
       effectivePricingType === "distance_ranges" &&
       !hasActiveDistanceRates
     ) {
       setMessage("Agrega al menos un rango activo para calcular el delivery.");
+      return;
+    }
+
+    if (
+      draft.deliveryProvider === "own_delivery" &&
+      effectivePricingType === "distance_ranges" &&
+      distanceRangeGap
+    ) {
+      setMessage(`Falta precio desde ${distanceRangeGap.fromKm} km hasta ${distanceRangeGap.toKm} km.`);
+      return;
+    }
+
+    const lastFiniteRate = [...row.settings.distanceRates]
+      .filter((rate) => rate.isActive && rate.maxKm !== null)
+      .sort((a, b) => Number(b.maxKm) - Number(a.maxKm))[0];
+    if (
+      draft.deliveryProvider === "own_delivery" &&
+      effectivePricingType === "distance_ranges" &&
+      draft.maxDistanceKm !== "" &&
+      lastFiniteRate?.maxKm !== null &&
+      Number(draft.maxDistanceKm) > Number(lastFiniteRate.maxKm) &&
+      draft.distanceFactor === ""
+    ) {
+      setMessage("Tu cobertura supera el último rango. Indica el precio por km adicional.");
       return;
     }
 
@@ -501,7 +554,8 @@ function DeliveryStoreCard({
           deliveryPromoDiscountValue: Number(draft.deliveryPromoDiscountValue || 0),
           maxDistanceKm:
             draft.maxDistanceKm === "" ? null : Number(draft.maxDistanceKm),
-          distanceFactor: null,
+          distanceFactor:
+            draft.distanceFactor === "" ? null : Number(draft.distanceFactor),
         }),
       });
       setMessage("Delivery guardado.");
@@ -515,6 +569,10 @@ function DeliveryStoreCard({
 
   async function createZone() {
     if (!zoneDraft.name.trim()) return;
+    if (zoneDraft.feeUsd === "") {
+      setMessage("Indica el precio de la zona.");
+      return;
+    }
     await deliveryRequest(pin, {
       method: "POST",
       body: JSON.stringify({
@@ -552,6 +610,10 @@ function DeliveryStoreCard({
   }
 
   async function createRate() {
+    if (rateDraft.feeUsd === "") {
+      setMessage("Indica el precio del rango.");
+      return;
+    }
     const validationMessage = validateRateDraft(rateDraft, row.settings.distanceRates);
     if (validationMessage) {
       setMessage(validationMessage);
@@ -792,13 +854,57 @@ function DeliveryStoreCard({
                   className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
                 />
               </label>
-              <div className="rounded-2xl bg-[#F8F3E8] p-3 text-xs font-bold leading-relaxed text-[#746f69]">
-                La tarifa saldra solo de los rangos activos. Si falta un tramo, el checkout pedira ajustar la cobertura.
-              </div>
+              <label className="space-y-1">
+                <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69]">USD por km adicional</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={draft.distanceFactor}
+                  onChange={(event) => updateDraft("distanceFactor", event.target.value)}
+                  placeholder="Ej: 0.50"
+                  className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+                />
+                <span className="block text-[11px] font-bold text-[#746f69]">Se suma después del último rango cuando la cobertura continúa.</span>
+              </label>
             </div>
+            {distanceRangeGap ? (
+              <p className="mt-3 rounded-2xl bg-red-50 p-3 text-sm font-black text-red-700 ring-1 ring-red-100">
+                Falta precio desde {distanceRangeGap.fromKm} km hasta {distanceRangeGap.toKm} km. Une los rangos antes de guardar.
+              </p>
+            ) : row.settings.distanceRates.some((rate) => rate.isActive) ? (
+              <p className="mt-3 rounded-2xl bg-green-50 p-3 text-xs font-black text-green-700">
+                Los rangos activos no tienen espacios sin precio.
+              </p>
+            ) : null}
           </div>
         ) : null}
       </div>
+
+      {isOwnDelivery && (effectivePricingType === "fixed_distance" || effectivePricingType === "distance_ranges") ? (
+        <section className="mt-3 rounded-[24px] bg-[#2E3A79] p-4 text-white">
+          <h3 className="text-sm font-black">Simulador de tarifa</h3>
+          <p className="mt-1 text-xs font-bold text-white/70">Prueba una distancia antes de guardar. No crea pedidos ni cambia precios.</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-[180px_1fr] sm:items-center">
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={simulatorDistance}
+              onChange={(event) => setSimulatorDistance(event.target.value)}
+              placeholder="Ej: 12 km"
+              className="rounded-2xl border border-white/20 bg-white px-4 py-3 text-sm font-black text-[#25262B] outline-none"
+            />
+            <div className="rounded-2xl bg-white/10 p-3 text-sm font-bold">
+              {simulatorDistance === ""
+                ? "Escribe una distancia para ver el resultado."
+                : simulatedQuote
+                  ? `$${simulatedQuote.feeUsd.toFixed(2)} · ${simulatedQuote.summary}`
+                  : "Sin precio para esa distancia. Revisa rangos, cobertura o km adicional."}
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <div className="sr-only">
         La promo se aplica sobre la tarifa calculada, zonas o rangos. Dejalo vacio
