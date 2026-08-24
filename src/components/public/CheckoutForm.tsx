@@ -731,7 +731,10 @@ export function CheckoutForm({ store }: { store: Store }) {
                   </p>
                 ) : null}
                 {deliveryPartnerName ? (
-                  <div className="mt-4 flex items-center gap-3 rounded-3xl border border-[#EFE6D6] bg-[#FFF8F0] p-3">
+                  <aside
+                    aria-label="Información sobre la empresa delivery"
+                    className="mt-4 flex items-center gap-3 border-l-2 border-[#FFB547] py-1 pl-3"
+                  >
                     {deliverySettings.transportAgencyLogoUrl ? (
                       <OptimizedImage
                         src={deliverySettings.transportAgencyLogoUrl}
@@ -739,24 +742,25 @@ export function CheckoutForm({ store }: { store: Store }) {
                         width={44}
                         height={44}
                         sizes="44px"
-                        className="h-11 w-11 rounded-2xl bg-white object-contain p-1"
+                        className="h-11 w-11 shrink-0 object-contain"
                         fallback={
-                          <div className="grid h-11 w-11 place-items-center rounded-2xl bg-white text-sm font-black text-[#2E3A79]">
+                          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#F8F3E8] text-sm font-black text-[#2E3A79]">
                             {deliveryPartnerName.slice(0, 1).toUpperCase()}
                           </div>
                         }
                       />
                     ) : (
-                      <div className="grid h-11 w-11 place-items-center rounded-2xl bg-white text-sm font-black text-[#2E3A79]">
+                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#F8F3E8] text-sm font-black text-[#2E3A79]">
                         {deliveryPartnerName.slice(0, 1).toUpperCase()}
                       </div>
                     )}
-                    <div>
-                      <p className="text-sm font-black text-[#25262B]">
-                        Delivery gestionado por {deliveryPartnerName}
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69]">
+                        Tu entrega será coordinada por
                       </p>
+                      <p className="mt-0.5 text-sm font-black text-[#25262B]">{deliveryPartnerName}</p>
                     </div>
-                  </div>
+                  </aside>
                 ) : null}
                 {canShareLocation ? (
                   <div className="mt-4">

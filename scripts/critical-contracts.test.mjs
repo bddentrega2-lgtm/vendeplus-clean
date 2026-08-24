@@ -960,3 +960,13 @@ test("checkout destaca nota opcional con ejemplo por rubro o por comercio", () =
   assert.match(settings, /Ejemplo para la nota del pedido/);
   assert.match(migration, /add column if not exists checkout_note_placeholder text/);
 });
+
+test("checkout presenta empresa delivery como informacion y no como boton", () => {
+  const checkout = readFileSync(new URL("../src/components/public/CheckoutForm.tsx", import.meta.url), "utf8");
+
+  assert.match(checkout, /aria-label="Información sobre la empresa delivery"/);
+  assert.match(checkout, /Tu entrega será coordinada por/);
+  assert.doesNotMatch(checkout, /Recibirá los datos de entrega cuando confirmes tu pedido/);
+  assert.match(checkout, /border-l-2 border-\[#FFB547\]/);
+  assert.doesNotMatch(checkout, /Delivery gestionado por \{deliveryPartnerName\}/);
+});

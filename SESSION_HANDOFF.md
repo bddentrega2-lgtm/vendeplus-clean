@@ -834,3 +834,9 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 - Próximo paso exacto: probar con sesión real en Preview `/panel/delivery` (rango, km adicional y simulador) y `/panel/configuracion` (ejemplo personalizado), luego completar un checkout. No promover producción sin aprobación explícita.
 - QA del usuario detectó que un hueco `9–10 km` seguido de `10,2–11 km` no se señalaba. Se agregó detección explícita de continuidad desde 0 km, aviso visible y bloqueo al guardar tanto en cliente como servidor. Rangos contiguos como `9–10` y `10–11` quedan permitidos; los cruces reales continúan bloqueados.
 - Usuario aprobó la Preview corregida y autorizó producción y aseguramiento en Git. Preview aprobada exacta: `dpl_4Mr5wEXQ2Bz314vaUVbn17wzcthb` (`https://vendeplus-clean-jguobq5w4-entrega2-s-projects.vercel.app`).
+
+# Presentación informativa de empresa delivery en checkout (2026-08-24)
+
+- Cambio local en `ui/checkout-delivery-partner-note`; producción intacta.
+- El bloque con logo dejó de imitar un botón: sin borde perimetral, fondo de tarjeta, sombra, hover ni cursor. Ahora es una nota abierta con línea lateral, logo y el texto `Tu entrega será coordinada por`.
+- Refinamiento aprobado: se retiró la explicación secundaria por redundante. El bloque conserva únicamente `Tu entrega será coordinada por`, nombre y logo. No cambia selección, cotización ni envío del pedido. Usuario autorizó llevarlo a producción.
