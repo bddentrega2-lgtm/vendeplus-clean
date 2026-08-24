@@ -6,8 +6,6 @@ import { ArrowRight, Check, LocateFixed, MapPin } from "lucide-react";
 import { BrandLogo } from "@/components/public/BrandLogo";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
 
-const LAST_TDK_BRANCH_KEY = "somos:tdk:last-branch";
-
 type Coordinates = { latitude: number; longitude: number };
 
 export type TdkBranch = {
@@ -41,18 +39,30 @@ function distanceKm(origin: Coordinates, store: TdkBranch) {
   return earthRadiusKm * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
 }
 
-export function TdkBranchSelector({ stores, isPreview = false }: { stores: TdkBranch[]; isPreview?: boolean }) {
+export function TdkBranchSelector({
+  stores,
+  isPreview = false,
+  brandName = "Pastelería TDK",
+  officialLabel = "Enlace oficial TDK",
+  storageKey = "somos:tdk:last-branch",
+}: {
+  stores: TdkBranch[];
+  isPreview?: boolean;
+  brandName?: string;
+  officialLabel?: string;
+  storageKey?: string;
+}) {
   const [customerLocation, setCustomerLocation] = useState<Coordinates | null>(null);
   const [locationStatus, setLocationStatus] = useState<"idle" | "loading" | "error">("idle");
   const [lastBranchSlug, setLastBranchSlug] = useState("");
 
   useEffect(() => {
     try {
-      setLastBranchSlug(window.localStorage.getItem(LAST_TDK_BRANCH_KEY) || "");
+      setLastBranchSlug(window.localStorage.getItem(storageKey) || "");
     } catch {
       // La selección sigue funcionando cuando el navegador bloquea almacenamiento local.
     }
-  }, []);
+  }, [storageKey]);
 
   const orderedStores = useMemo(() => {
     return stores
@@ -91,7 +101,7 @@ export function TdkBranchSelector({ stores, isPreview = false }: { stores: TdkBr
 
   function rememberBranch(slug: string) {
     try {
-      window.localStorage.setItem(LAST_TDK_BRANCH_KEY, slug);
+      window.localStorage.setItem(storageKey, slug);
     } catch {
       // Navegar al catálogo no depende del almacenamiento local.
     }
@@ -102,11 +112,11 @@ export function TdkBranchSelector({ stores, isPreview = false }: { stores: TdkBr
       <section className="mx-auto max-w-3xl">
         <header className="flex items-center justify-between gap-4">
           <Link href="/" aria-label="Ir al inicio de Somos"><BrandLogo size="sm" priority /></Link>
-          <span className="somos-badge">Enlace oficial TDK</span>
+          <span className="somos-badge">{officialLabel}</span>
         </header>
 
         <div className="mt-8 overflow-hidden rounded-[32px] bg-[var(--somos-teal)] p-6 text-white shadow-xl shadow-[var(--somos-teal)]/15 sm:p-9">
-          <p className="text-sm font-semibold text-[var(--somos-amber)]">Pastelería TDK</p>
+          <p className="text-sm font-semibold text-[var(--somos-amber)]">{brandName}</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-5xl">¿Cuál sede tienes más cerca?</h1>
           <p className="mt-4 max-w-2xl text-sm font-medium leading-6 text-white/75 sm:text-base">
             Elige tu sede para ver el catálogo correcto y enviar tu pedido al equipo indicado.
