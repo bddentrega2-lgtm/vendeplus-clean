@@ -813,6 +813,8 @@ test("Marketplace usa ofertas ventas y ubicacion reales sin pedir permiso al abr
   assert.match(marketplace, /distanceKm\(coordinates, store\)/);
   assert.match(marketplace, /Ofertas que valen la pena/);
   assert.match(marketplace, /Los favoritos de la semana/);
+  assert.match(marketplace, /Las mejores opciones en un solo lugar/);
+  assert.doesNotMatch(marketplace, /Un ganador por tienda|Comercios locales, productos reales|pedidos directos por WhatsApp/);
   assert.doesNotMatch(marketplace, /Tiendas recomendadas/);
   assert.match(marketplace, /grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4/);
   assert.match(marketplace, /placeholder="¿Que quieres pedir hoy\?"/);
@@ -823,6 +825,37 @@ test("Marketplace usa ofertas ventas y ubicacion reales sin pedir permiso al abr
   assert.match(marketplace, /products=\{filteredOffers\}/);
   assert.match(marketplace, /products=\{filteredBestSellers\}/);
   assert.doesNotMatch(marketplace, /Escribe tu zona, ciudad o sector/);
+});
+
+test("Marketplace nuevo exige foto propia y usa una experiencia movil tipo app", () => {
+  const marketplace = readFileSync(new URL("../src/components/public/MarketplaceClient.tsx", import.meta.url), "utf8");
+  const discovery = readFileSync(new URL("../src/lib/marketplace.ts", import.meta.url), "utf8");
+
+  assert.match(discovery, /select\("id, image_url"\)/);
+  assert.match(discovery, /filter\(\(product\) => productImages\.has\(product\.productId\)\)/);
+  assert.match(marketplace, /sticky top-14 z-30/);
+  assert.match(marketplace, /Navegación del Marketplace/);
+  assert.match(marketplace, /grid max-w-md grid-cols-4/);
+  assert.match(marketplace, /<button type="button" onClick=\{requestLocation\}[\s\S]*<Compass[\s\S]*Cerca<\/button>/);
+  assert.doesNotMatch(marketplace, /aria-label="Usar mi ubicación"/);
+  assert.match(marketplace, /badge === "Oferta"[\s\S]*bg-\[#FFF0E8\][\s\S]*bg-\[#FFF7D9\][\s\S]*bg-\[#E8F6F1\]/);
+  assert.match(marketplace, /bg-\[#FFF0E8\][\s\S]*<Home[\s\S]*bg-\[#E8F6F1\][\s\S]*<Compass/);
+  assert.match(marketplace, /<BrandLogo size="sm" priority \/>/);
+  assert.match(marketplace, /<PwaInstallButton subtle label="Instalar" \/>/);
+});
+
+test("instalacion PWA funciona aunque la pagina ya haya cargado y falla con ayuda", () => {
+  const register = readFileSync(new URL("../src/components/pwa/RegisterServiceWorker.tsx", import.meta.url), "utf8");
+  const install = readFileSync(new URL("../src/components/pwa/PwaInstallButton.tsx", import.meta.url), "utf8");
+  const layout = readFileSync(new URL("../src/app/layout.tsx", import.meta.url), "utf8");
+
+  assert.match(register, /document\.readyState === "complete"[\s\S]*register\(\)/);
+  assert.match(register, /addEventListener\("load", register, \{ once: true \}\)/);
+  assert.match(layout, /strategy="beforeInteractive"[\s\S]*__somosInstallPrompt/);
+  assert.match(install, /__somosInstallPrompt[\s\S]*somosinstallpromptready/);
+  assert.match(install, /try \{[\s\S]*installPrompt\.prompt\(\)[\s\S]*catch \{[\s\S]*setShowHelp\(true\)/);
+  assert.match(install, /disabled=\{installing\}/);
+  assert.match(install, /fixed inset-x-4 top-20 z-\[80\][\s\S]*max-w-sm/);
 });
 
 test("registro configuracion y Marketplace comparten los mismos rubros", () => {
