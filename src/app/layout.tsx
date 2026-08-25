@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Nunito_Sans } from "next/font/google";
+import Script from "next/script";
 import { RegisterServiceWorker } from "@/components/pwa/RegisterServiceWorker";
 import { PUBLIC_SITE_URL } from "@/lib/public-url";
 import "./globals.css";
@@ -45,6 +46,11 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="es" data-scroll-behavior="smooth" suppressHydrationWarning>
+      <head>
+        <Script id="somos-install-prompt" strategy="beforeInteractive">
+          {`window.addEventListener("beforeinstallprompt",function(event){event.preventDefault();window.__somosInstallPrompt=event;window.dispatchEvent(new Event("somosinstallpromptready"));});`}
+        </Script>
+      </head>
       <body className={nunito.variable} suppressHydrationWarning>
         <RegisterServiceWorker />
         {children}

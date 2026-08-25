@@ -52,10 +52,30 @@ export async function getMarketplaceDiscovery(): Promise<MarketplaceDiscovery> {
     const { data, error } = await supabase.rpc("marketplace_discovery", { p_limit: 12 });
     if (error) return emptyDiscovery;
     const payload = data && typeof data === "object" ? data as Record<string, unknown> : {};
+    const newProducts = normalizeProducts(payload.newProducts);
+    const newProductIds = newProducts.map((product) => product.productId);
+    const productImages = new Map<string, string>();
+
+    if (newProductIds.length) {
+      const { data: rows, error: imagesError } = await supabase
+        .from("products")
+        .select("id, image_url")
+        .in("id", newProductIds);
+
+      if (!imagesError) {
+        for (const row of rows || []) {
+          const imageUrl = String(row.image_url || "").trim();
+          if (imageUrl) productImages.set(String(row.id), imageUrl);
+        }
+      }
+    }
+
     return {
       offers: normalizeProducts(payload.offers),
       bestSellers: normalizeProducts(payload.bestSellers),
-      newProducts: normalizeProducts(payload.newProducts),
+      newProducts: newProducts
+        .filter((product) => productImages.has(product.productId))
+        .map((product) => ({ ...product, imageUrl: productImages.get(product.productId) || "" })),
     };
   } catch {
     return emptyDiscovery;
