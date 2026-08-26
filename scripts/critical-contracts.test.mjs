@@ -1074,3 +1074,76 @@ test("estadisticas agregan en Postgres sin limite y conservan aislamiento", () =
     /grant execute on function public\.panel_store_stats\([\s\S]*to service_role/,
   );
 });
+
+test("Pizza Mia carga promociones idempotentes con ingrediente incluido", () => {
+  const migration = readFileSync(
+    new URL("../supabase/migrations/20260826014000_load_pizza_mia_promotions.sql", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(migration, /where slug = 'pizza-mia'/);
+  assert.match(migration, /lower\(btrim\(name\)\) = 'promociones'/);
+  assert.match(migration, /'Pizza Personal Margarita'.*3\.99::numeric/);
+  assert.match(migration, /'Pizza Personal Tocineta \+ Maíz'.*5\.99::numeric/);
+  assert.match(migration, /'Sici Box'.*6\.99::numeric/);
+  assert.match(migration, /'Pasticho Personal'.*6\.99::numeric/);
+  assert.match(migration, /'Pizza Grande Margarita'.*9\.99::numeric/);
+  assert.match(migration, /'Pizza Grande Charchu Mix'.*14\.99::numeric/);
+  assert.match(migration, /'Pizza Gigante 4x4'.*16\.99::numeric/);
+  assert.match(migration, /'2 Pizzas Grandes'.*19\.99::numeric/);
+  assert.match(migration, /'Siciliana'.*19\.99::numeric/);
+  assert.match(migration, /'Elige tu ingrediente incluido'/);
+  assert.match(migration, /on conflict \(product_id, option_group_id\)/);
+  assert.doesNotMatch(migration, /set image_url\s*=/);
+  assert.doesNotMatch(migration, /update public\.stores/);
+});
+
+test("Pizza Mia carga menu regular oculto sin tocar promociones", () => {
+  const migration = readFileSync(
+    new URL("../supabase/migrations/20260826023000_load_pizza_mia_regular_menu.sql", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(migration, /No toca la categoria Promociones/);
+  assert.match(migration, /'Mía Especial'/);
+  assert.match(migration, /'Buffalo Chicken Pizza'/);
+  assert.match(migration, /'Arma tu pizza como quieras'/);
+  assert.match(migration, /'Pizza Siciliana'.*Precio base pendiente por confirmar/);
+  assert.match(migration, /'Philly Cheesesteak'/);
+  assert.match(migration, /'Crispy Chicken'/);
+  assert.match(migration, /Grande con borde de queso/);
+  assert.match(migration, /product_option_value_variant_prices/);
+  assert.match(migration, /when 'Personal \(8" \/ 20\.5 cm\)' then 1/);
+  assert.match(migration, /when 'Pequeña \(10" \/ 25 cm\)' then 1\.5/);
+  assert.match(migration, /when 'Grande \(13" \/ 33 cm\)' then 2/);
+  assert.match(migration, /when 'Gigante \(17" \/ 42 cm\)' then 2\.5/);
+  assert.match(migration, /'Ingredientes adicionales - Pan Pizza'.*\$2\.50/);
+  assert.match(migration, /'Ingredientes adicionales - Pizza Siciliana'.*\$3\.00/);
+  assert.match(migration, /'Extras para tu Sub'.*\$1\.50/);
+  assert.match(migration, /is_available = false/);
+  assert.doesNotMatch(migration, /update public\.stores/);
+  assert.doesNotMatch(migration, /category_name[^\n]*Promociones/);
+});
+
+test("La Maravilla del Sushi queda con veinte productos exactos", () => {
+  const migration = readFileSync(
+    new URL("../supabase/migrations/20260826031500_correct_la_maravilla_sushi_menu.sql", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(migration, /where slug = 'la-maravilla-del-sushi'/);
+  assert.match(migration, /'Entradas'.*1/);
+  assert.match(migration, /'Tempurizados'.*'Tempurizados \(12 piezas\)'/);
+  assert.match(migration, /'Fríos'.*'Fríos \(10 piezas\)'/);
+  assert.match(migration, /'Promociones'.*4/);
+  assert.match(migration, /'Croquetas de Cangrejo'.*'Croquetas de cangrejo'/);
+  assert.match(migration, /'Dinamita Roll'.*'Dinamit Roll'/);
+  assert.match(migration, /'Camarón Roll'.*10/);
+  assert.match(migration, /'Salmón Roll'.*11/);
+  assert.match(migration, /'Me Prefieres a Mí'.*11/);
+  assert.match(migration, /'Pa'' Que La Pases Bien'.*21/);
+  assert.match(migration, /5 Cangrejo Rolls/);
+  assert.match(migration, /delete from public\.product_variants/);
+  assert.match(migration, /not exists \([\s\S]*desired\.product_id = products\.id/);
+  assert.doesNotMatch(migration, /update public\.stores/);
+});
