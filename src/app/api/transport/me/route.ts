@@ -78,6 +78,34 @@ const agencySelectWithoutBannerAndPremium = agencySelectWithoutBanner.replace(
   ""
 ).replace("driver_whatsapp_dispatch_enabled,", "");
 
+const compactAgencySelect = `
+  id,
+  name,
+  slug,
+  status,
+  is_active,
+  modality,
+  logo_url,
+  billing_currency,
+  premium_dispatch_enabled,
+  driver_whatsapp_dispatch_enabled,
+  created_at
+`;
+
+const compactAgencySelectWithoutPremium = compactAgencySelect
+  .replace("premium_dispatch_enabled,", "")
+  .replace("driver_whatsapp_dispatch_enabled,", "");
+
+const billingSummarySelect = `
+  id,
+  status,
+  delivery_fee_usd,
+  orders(
+    delivery_usd,
+    status
+  )
+`;
+
 const billingOrdersSelect = `
   id,
   order_id,
@@ -187,6 +215,8 @@ export async function GET(request: NextRequest) {
     const supabase = createSupabaseAdminClient();
     const includeBilling = request.nextUrl.searchParams.get("includeBilling") !== "false";
     const includeRelations = request.nextUrl.searchParams.get("includeRelations") !== "false";
+    const includeConfiguration = request.nextUrl.searchParams.get("includeConfiguration") !== "false";
+    const includeBillingDetail = request.nextUrl.searchParams.get("billingDetail") !== "false";
 
     const buildAgencyQuery = (selectClause: string) => {
       let query = supabase
@@ -198,18 +228,21 @@ export async function GET(request: NextRequest) {
       return query;
     };
 
-    let { data: agencies, error: agenciesError } = await buildAgencyQuery(agencySelect);
+    const requestedAgencySelect = includeConfiguration ? agencySelect : compactAgencySelect;
+    let { data: agencies, error: agenciesError } = await buildAgencyQuery(requestedAgencySelect);
 
     if (
       agenciesError &&
       (/banner_image_url/i.test(agenciesError.message || "") ||
         isPremiumDispatchSchemaMissing(agenciesError))
     ) {
-      const fallbackSelect = /banner_image_url/i.test(agenciesError.message || "")
-        ? isPremiumDispatchSchemaMissing(agenciesError)
-          ? agencySelectWithoutBannerAndPremium
-          : agencySelectWithoutBanner
-        : agencySelectWithoutPremium;
+      const fallbackSelect = includeConfiguration
+        ? /banner_image_url/i.test(agenciesError.message || "")
+          ? isPremiumDispatchSchemaMissing(agenciesError)
+            ? agencySelectWithoutBannerAndPremium
+            : agencySelectWithoutBanner
+          : agencySelectWithoutPremium
+        : compactAgencySelectWithoutPremium;
       const fallback = await buildAgencyQuery(fallbackSelect);
       agencies = (fallback.data || []).map((agency: any) => ({
         ...agency,
@@ -283,7 +316,7 @@ export async function GET(request: NextRequest) {
             includeBilling
               ? supabase
                   .from("transport_orders")
-                  .select(billingOrdersSelect)
+                  .select(includeBillingDetail ? billingOrdersSelect : billingSummarySelect)
                   .in("agency_id", agencyIds)
                   .gte("created_at", billingRange.start)
                   .lt("created_at", billingRange.end)
@@ -299,7 +332,7 @@ export async function GET(request: NextRequest) {
 
     if (requestsResult.error) throw requestsResult.error;
     if (connectionsResult.error) throw connectionsResult.error;
-    if (ordersResult.error && isPremiumDispatchSchemaMissing(ordersResult.error)) {
+    if (includeBillingDetail && ordersResult.error && isPremiumDispatchSchemaMissing(ordersResult.error)) {
       ordersResult = includeBilling
         ? await supabase
             .from("transport_orders")
@@ -322,6 +355,7 @@ export async function GET(request: NextRequest) {
       agencies: agencies || [],
       requests: requestsResult.data || [],
       connections: connectionsResult.data || [],
+      configurationLoaded: includeConfiguration,
       relationsLoaded: includeRelations,
       billing: includeBilling ? {
         range: billingRange,
@@ -331,8 +365,9 @@ export async function GET(request: NextRequest) {
           (sum: number, order: any) => sum + getBillingAmount(order),
           0
         ),
-        driverPayouts: aggregateDriverPayouts(billableOrders),
+        driverPayouts: includeBillingDetail ? aggregateDriverPayouts(billableOrders) : [],
       } : null,
+      billingDetailLoaded: includeBilling && includeBillingDetail,
     });
     const durationMs = (performance.now() - startedAt).toFixed(1);
     response.headers.set("Server-Timing", `transport-me;dur=${durationMs}`);

@@ -1,3 +1,17 @@
+# Optimización por sección del panel delivery (2026-08-26)
+
+- Rama local `perf/transport-panel-section-loading`; producción intacta y sin migración/SQL.
+- Diagnóstico: la entrada directa a Pedidos todavía descargaba perfil, condiciones, tarifas, zonas y rangos completos de la empresa. Resumen descargaba hasta 200 servicios con todos sus campos, relaciones, repartidores y datos del pedido solo para mostrar cantidad y total.
+- `/api/transport/me` conserva compatibilidad y agrega dos controles opt-in: `includeConfiguration=false` devuelve identidad operativa compacta; `billingDetail=false` usa una selección mínima para el resumen. Facturación sigue solicitando el detalle completo.
+- El cliente distingue ahora configuración completa, resumen de facturación y detalle de facturación. Al navegar desde Pedidos carga configuración solo cuando otra sección la necesita, y al entrar en Facturación exige detalle aunque Resumen ya se haya cargado.
+- La fusión de respuestas compactas conserva campos completos previamente cacheados. La alerta de configuración se oculta durante la entrada compacta a Pedidos para no mostrar faltantes falsos.
+- QA autenticada temporal contra Supabase remoto, sin crear pedidos: en una empresa con servicios, Pedidos bajó de 2.639 a 621 bytes (76% menos) y Resumen de 34.375 a 18.350 bytes (47% menos). En esa corrida caliente el endpoint pasó de 716 a 625 ms en Pedidos y de 1.107 a 949 ms en Resumen. El usuario y membresía QA se eliminaron y el script verificó cero membresías residuales.
+- Validaciones aprobadas: 55/55 contratos críticos, ESLint global, TypeScript, `git diff --check` y build Next.js 16.3.0 de 173 páginas.
+- Preview `https://vendeplus-clean-r4zurt510-entrega2-s-projects.vercel.app`, deployment `dpl_AaR258x7e5nVhf8dzVjtHwyQyL3T`, target Preview y estado Ready; build remoto de 173 páginas aprobado. Está protegida por SSO de Vercel. Acceso CLI con bypass confirmó que `/api/transport/me` sin sesión mantiene `401 No autorizado`.
+- El script QA ahora exige `application/json` y estructura válida para no confundir una página SSO HTTP 200 con la API.
+- Usuario aprobó visualmente y autorizó producción. Se promovió exactamente la Preview validada; deployment productivo `dpl_2rWk28vJy6BgBh4NEUa9NfgbgsV7` (`https://vendeplus-clean-2ti1k7xy9-entrega2-s-projects.vercel.app`), Ready y con alias oficiales.
+- Smoke productivo aprobado: Home, panel delivery, Pedidos y Facturación HTTP 200; `/api/transport/me` sin sesión HTTP 401 esperado; sin logs de error iniciales. Rollback web inmediato: `https://vendeplus-clean-9krzoivg8-entrega2-s-projects.vercel.app`.
+
 # Corrección completa La Maravilla del Sushi (2026-08-25)
 
 - Estado inicial auditado: 4 categorías, 8 productos activos, 0 pedidos, 0 imágenes y 0 grupos de opciones. Los 8 productos correspondían al menú real pero tenían nombres/descripciones incompletos; faltaban 12 productos. Ensalada Dinamita conservaba 2 variantes erróneas e inactivas `Topinng...`.
