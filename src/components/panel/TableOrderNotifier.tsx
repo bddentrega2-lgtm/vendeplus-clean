@@ -18,9 +18,13 @@ type TableOrderSummary = {
   table_name_snapshot?: string | null;
 };
 
+const TABLE_ORDERS_FALLBACK_POLL_MS = 120_000;
+const TABLE_ORDERS_DISCONNECTED_POLL_MS = 15_000;
+
 export function TableOrderNotifier() {
   const { selectedStoreId, selectedStore } = usePanelAuth();
   const [notification, setNotification] = useState<NewOrderToastData | null>(null);
+  const [isRealtimeReady, setIsRealtimeReady] = useState(false);
   const knownOrderIdsRef = useRef(new Set<string>());
   const hasBaselineRef = useRef(false);
   const requestInFlightRef = useRef(false);
@@ -94,14 +98,17 @@ export function TableOrderNotifier() {
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") void refresh(true);
     };
-    const interval = window.setInterval(refreshWhenVisible, 20_000);
+    const interval = window.setInterval(
+      refreshWhenVisible,
+      isRealtimeReady ? TABLE_ORDERS_FALLBACK_POLL_MS : TABLE_ORDERS_DISCONNECTED_POLL_MS
+    );
     document.addEventListener("visibilitychange", refreshWhenVisible);
 
     return () => {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [hasAccess, refresh, selectedStoreId]);
+  }, [hasAccess, isRealtimeReady, refresh, selectedStoreId]);
 
   useEffect(() => {
     if (!selectedStoreId || !hasAccess) return;
@@ -111,6 +118,7 @@ export function TableOrderNotifier() {
     let active = true;
     let refreshTimer: number | null = null;
     let channel: ReturnType<typeof supabase.channel> | null = null;
+    setIsRealtimeReady(false);
     const scheduleRefresh = () => {
       if (!active) return;
       if (refreshTimer) window.clearTimeout(refreshTimer);
@@ -122,13 +130,17 @@ export function TableOrderNotifier() {
       if (!active || !accessToken) return;
       await supabase.realtime.setAuth(accessToken);
       channel = supabase
-        .channel(`store:${selectedStoreId}:table-order-alerts`, { config: { private: true } })
+        .channel(`store:${selectedStoreId}:orders`, { config: { private: true } })
         .on("broadcast", { event: "order_changed" }, scheduleRefresh)
-        .subscribe();
+        .subscribe((status) => {
+          if (!active) return;
+          setIsRealtimeReady(status === "SUBSCRIBED");
+        });
     })();
 
     return () => {
       active = false;
+      setIsRealtimeReady(false);
       if (refreshTimer) window.clearTimeout(refreshTimer);
       if (channel) void supabase.removeChannel(channel);
     };

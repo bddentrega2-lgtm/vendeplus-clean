@@ -460,6 +460,32 @@ test("panel delivery evita recargas duplicadas en operaciones frecuentes", () =>
   assert.match(access, /Promise\.all/);
 });
 
+test("pedidos usa Realtime con sondeo espaciado solo como respaldo", () => {
+  const orders = readFileSync(
+    new URL("../src/components/panel/OrdersManager.tsx", import.meta.url),
+    "utf8",
+  );
+  const tableNotifier = readFileSync(
+    new URL("../src/components/panel/TableOrderNotifier.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(orders, /ORDERS_FALLBACK_POLL_MS = 180_000/);
+  assert.match(orders, /ORDERS_DISCONNECTED_POLL_MS = 15_000/);
+  assert.match(orders, /status === "SUBSCRIBED"/);
+  assert.match(orders, /isRealtimeReady \? ORDERS_FALLBACK_POLL_MS : ORDERS_DISCONNECTED_POLL_MS/);
+  assert.match(orders, /visibilityState !== "visible"/);
+  assert.match(orders, /broadcast", \{ event: "order_changed" \}/);
+  assert.doesNotMatch(orders, /}, 30_000\)/);
+  assert.match(tableNotifier, /TABLE_ORDERS_FALLBACK_POLL_MS = 120_000/);
+  assert.match(tableNotifier, /TABLE_ORDERS_DISCONNECTED_POLL_MS = 15_000/);
+  assert.match(tableNotifier, /channel\(`store:\$\{selectedStoreId\}:orders`/);
+  assert.match(tableNotifier, /setIsRealtimeReady\(status === "SUBSCRIBED"\)/);
+  assert.match(tableNotifier, /visibilityState === "visible"/);
+  assert.match(tableNotifier, /broadcast", \{ event: "order_changed" \}/);
+  assert.doesNotMatch(tableNotifier, /setInterval\([^\n]+, 20_000\)/);
+});
+
 test("panel delivery navega sin pantalla blanca y muta servicios atomicamente", () => {
   const panel = readFileSync(
     new URL("../src/components/transport/TransportAgencyPanel.tsx", import.meta.url),
@@ -987,7 +1013,7 @@ test("checkout destaca nota opcional con ejemplo por rubro o por comercio", () =
   const settings = readFileSync(new URL("../src/components/panel/ConfigManager.tsx", import.meta.url), "utf8");
   const migration = readFileSync(new URL("../supabase/migrations/20260824170036_add_checkout_note_placeholder.sql", import.meta.url), "utf8");
 
-  assert.match(checkout, /¿Alguna indicación para tu pedido\?/);
+  assert.match(checkout, /5\. Indicaciones del pedido \(opcional\)/);
   assert.match(checkout, /checkoutNoteExample\(store\.category, store\.checkoutNotePlaceholder\)/);
   assert.match(examples, /Feliz cumpleaños Ana/);
   assert.match(settings, /Ejemplo para la nota del pedido/);
@@ -1002,4 +1028,49 @@ test("checkout presenta empresa delivery como informacion y no como boton", () =
   assert.doesNotMatch(checkout, /Recibirá los datos de entrega cuando confirmes tu pedido/);
   assert.match(checkout, /border-l-2 border-\[#FFB547\]/);
   assert.doesNotMatch(checkout, /Delivery gestionado por \{deliveryPartnerName\}/);
+  assert.match(checkout, /overflow-hidden rounded-full/);
+  assert.match(checkout, /className="object-cover"/);
+});
+
+test("checkout separa nota del pedido de la informacion del efectivo", () => {
+  const checkout = readFileSync(new URL("../src/components/public/CheckoutForm.tsx", import.meta.url), "utf8");
+  const orderRoute = readFileSync(new URL("../src/app/api/orders/route.ts", import.meta.url), "utf8");
+  const ordersPanel = readFileSync(new URL("../src/components/panel/OrdersManager.tsx", import.meta.url), "utf8");
+  const whatsapp = readFileSync(new URL("../src/lib/whatsapp.ts", import.meta.url), "utf8");
+
+  assert.match(checkout, /value=\{form\.cashPaymentNote\}/);
+  assert.match(checkout, /value=\{form\.notes\}/);
+  assert.match(checkout, /5\. Indicaciones del pedido \(opcional\)/);
+  assert.match(checkout, /rounded-\[30px\] border border-\[#FFB547\]\/45 bg-\[#FFF8F0\]/);
+  assert.doesNotMatch(checkout, /value=\{form\.cashPaymentNote\}[\s\S]{0,250}bg-\[#FFF8F0\]/);
+  assert.match(orderRoute, /payment_notes: isCashPaymentMethod\(order\.form\.paymentMethod\)/);
+  assert.match(orderRoute, /\.eq\("store_id", storeId\)/);
+  assert.match(ordersPanel, /order\.payment_notes/);
+  assert.match(whatsapp, /cashPaymentNote/);
+});
+
+test("estadisticas agregan en Postgres sin limite y conservan aislamiento", () => {
+  const route = readFileSync(new URL("../src/app/api/panel/stats/route.ts", import.meta.url), "utf8");
+  const migration = readFileSync(
+    new URL("../supabase/migrations/20260825024934_optimize_panel_store_stats_rpc.sql", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(route, /rpc\(\s*"panel_store_stats"/);
+  assert.match(route, /p_store_ids: auth\.storeIds/);
+  assert.match(route, /p_store_id: selectedStoreId/);
+  assert.match(route, /aggregate\?\.summary\?\.aggregationVersion === 2/);
+  assert.match(route, /capped: false/);
+  assert.match(migration, /'aggregationVersion', 2/);
+  assert.match(migration, /sum\(merchant_revenue_usd\)/);
+  assert.match(migration, /'deliveryFeesUsd'/);
+  assert.match(migration, /from billable_orders as scoped_orders/);
+  assert.match(
+    migration,
+    /revoke all on function public\.panel_store_stats\([\s\S]*from public, anon, authenticated/,
+  );
+  assert.match(
+    migration,
+    /grant execute on function public\.panel_store_stats\([\s\S]*to service_role/,
+  );
 });

@@ -255,6 +255,98 @@ export async function GET(request: NextRequest) {
       ? loadStoreAchievements(supabase, knownAchievementStoreId)
       : Promise.resolve(null);
 
+    const { data: aggregateRows, error: aggregateError } = await supabase.rpc(
+      "panel_store_stats",
+      {
+        p_store_ids: auth.storeIds,
+        p_store_id: selectedStoreId,
+        p_start: dateRange.start.toISOString(),
+        p_end: dateRange.end.toISOString(),
+        p_recent_limit: 8,
+      }
+    );
+    const aggregate = Array.isArray(aggregateRows) ? aggregateRows[0] : aggregateRows;
+
+    // The version marker prevents mixed deployments from using the legacy RPC,
+    // whose revenue calculations still included delivery fees.
+    if (!aggregateError && aggregate?.summary?.aggregationVersion === 2) {
+      let aggregateStoresQuery = supabase
+        .from("stores")
+        .select("id, slug, name, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
+        .order("name", { ascending: true });
+
+      if (auth.storeIds !== null) {
+        aggregateStoresQuery = aggregateStoresQuery.in("id", auth.storeIds);
+      }
+
+      if (selectedStoreId) {
+        aggregateStoresQuery = aggregateStoresQuery.eq("id", selectedStoreId);
+      }
+
+      const { data: aggregateStores, error: aggregateStoresError } = await aggregateStoresQuery;
+      if (aggregateStoresError) throw aggregateStoresError;
+
+      const safeStores = aggregateStores || [];
+      const summary = aggregate.summary || {};
+      const topProducts = aggregate.top_products || [];
+      const ordersByHour = aggregate.orders_by_hour || [];
+      const ordersByWeekday = aggregate.orders_by_weekday || [];
+      const strongestHour = [...ordersByHour].sort(
+        (a: any, b: any) => toNumber(b.value) - toNumber(a.value)
+      )[0] || null;
+      const strongestWeekday = ordersByWeekday[0] || null;
+      let achievementState = await achievementStatePromise;
+      if (!achievementState && mode === "summary" && auth.storeIds === null && safeStores[0]?.id) {
+        achievementState = await loadStoreAchievements(
+          supabase,
+          selectedStoreId || safeStores[0].id
+        );
+      }
+      const responseBase = {
+        stores: safeStores,
+        selectedStoreId,
+        range: {
+          key: dateRange.range,
+          start: dateRange.start.toISOString(),
+          end: dateRange.end.toISOString(),
+          days: countDays(dateRange.start, dateRange.end),
+          capped: false,
+        },
+        summary,
+        topProducts: mode === "summary" ? topProducts.slice(0, 5) : topProducts,
+        customers: aggregate.customers || { total: 0, frequent: 0, contact: 0 },
+        auth: {
+          mode: auth.mode,
+          email: auth.email || null,
+          role: auth.role || null,
+        },
+      };
+
+      if (mode === "summary") {
+        return NextResponse.json({
+          ...responseBase,
+          achievementFeatures: achievementState?.features || null,
+        });
+      }
+
+      return NextResponse.json({
+        ...responseBase,
+        topCustomers: aggregate.top_customers || [],
+        salesByDay: aggregate.sales_by_day || [],
+        ordersByDay: aggregate.orders_by_day || [],
+        salesByWeek: aggregate.sales_by_week || [],
+        salesByMonth: aggregate.sales_by_month || [],
+        ordersByHour,
+        ordersByWeekday,
+        ordersByStatus: aggregate.orders_by_status || [],
+        ordersByPaymentMethod: aggregate.orders_by_payment_method || [],
+        ordersByDeliveryType: aggregate.orders_by_delivery_type || [],
+        revenueByStore: aggregate.revenue_by_store || [],
+        peak: { strongestHour, strongestWeekday },
+        recentOrders: aggregate.recent_orders || [],
+      });
+    }
+
     let storesQuery = supabase
       .from("stores")
       .select("id, slug, name, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")

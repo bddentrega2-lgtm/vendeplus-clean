@@ -79,6 +79,9 @@ import {
   type OrderFilters,
 } from "@/components/panel/orders/use-order-filters";
 
+const ORDERS_FALLBACK_POLL_MS = 180_000;
+const ORDERS_DISCONNECTED_POLL_MS = 15_000;
+
 function getCompactStoreName(name?: string | null) {
   const fullName = String(name || "Sede").trim();
   const branchName = fullName.replace(/^Pasteler[ií]a TDK\s*/i, "").trim();
@@ -268,9 +271,18 @@ function OrderDetail({
             {order.notes && (
               <div className="mt-4 rounded-3xl bg-[#F8F3E8] p-4">
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-[#746f69]">
-                  Notas
+                  Nota del pedido
                 </p>
                 <p className="mt-1 text-sm font-bold">{order.notes}</p>
+              </div>
+            )}
+
+            {order.payment_notes && (
+              <div className="mt-4 rounded-3xl bg-[#FFF8F0] p-4 ring-1 ring-[#FFB547]/30">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#746f69]">
+                  Información del efectivo
+                </p>
+                <p className="mt-1 text-sm font-bold">{order.payment_notes}</p>
               </div>
             )}
           </section>
@@ -541,6 +553,7 @@ export function OrdersManager() {
   const [newOrderToast, setNewOrderToast] = useState<NewOrderToastData | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [realtimeStoreIds, setRealtimeStoreIds] = useState<string[]>([]);
+  const [isRealtimeReady, setIsRealtimeReady] = useState(false);
   const requestCacheRef = useRef(new Map<string, { expiresAt: number; data: any }>());
   const inflightRequestsRef = useRef(new Map<string, Promise<any>>());
   const authScopeRef = useRef("");
@@ -885,10 +898,10 @@ export function OrdersManager() {
       if (document.visibilityState !== "visible") return;
       invalidateOrderCache();
       void loadOrders(pin, currentFilters, { force: true, notifyNew: true });
-    }, 30_000);
+    }, isRealtimeReady ? ORDERS_FALLBACK_POLL_MS : ORDERS_DISCONNECTED_POLL_MS);
 
     return () => window.clearInterval(interval);
-  }, [isUnlocked, pin, currentFilters, loadOrders, invalidateOrderCache]);
+  }, [isRealtimeReady, isUnlocked, pin, currentFilters, loadOrders, invalidateOrderCache]);
 
   useEffect(() => {
     if (!newOrderToast) return;
@@ -905,6 +918,8 @@ export function OrdersManager() {
     let active = true;
     let refreshTimer: number | null = null;
     const channels: ReturnType<typeof supabase.channel>[] = [];
+    const subscribedStores = new Set<string>();
+    setIsRealtimeReady(false);
 
     const refreshOrders = () => {
       if (!active || document.visibilityState !== "visible") return;
@@ -926,13 +941,21 @@ export function OrdersManager() {
           .channel(`store:${storeId}:orders`, { config: { private: true } })
           .on("broadcast", { event: "order_changed" }, refreshOrders)
           .on("broadcast", { event: "transport_order_changed" }, refreshOrders)
-          .subscribe();
+          .subscribe((status) => {
+            if (!active) return;
+            if (status === "SUBSCRIBED") subscribedStores.add(storeId);
+            if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) {
+              subscribedStores.delete(storeId);
+            }
+            setIsRealtimeReady(subscribedStores.size > 0);
+          });
         channels.push(channel);
       }
     })();
 
     return () => {
       active = false;
+      setIsRealtimeReady(false);
       if (refreshTimer) window.clearTimeout(refreshTimer);
       for (const channel of channels) void supabase.removeChannel(channel);
     };

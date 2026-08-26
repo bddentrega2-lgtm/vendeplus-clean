@@ -259,6 +259,7 @@ export type CheckoutFormData = {
   nationalShippingCity: string;
   orderDetails: string;
   notes: string;
+  cashPaymentNote: string;
 };
 
 export type OrderTotals = {
