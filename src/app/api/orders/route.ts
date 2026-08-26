@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { getStoreServiceFeeUsd } from "@/lib/plans";
 import { NextRequest, NextResponse } from "next/server";
 import type { CartItem, CheckoutFormData, SavedOrder, Store } from "@/types";
-import { getInitialPaymentStatus, getSuggestedPaymentCurrency } from "@/lib/payments";
+import { getInitialPaymentStatus, getSuggestedPaymentCurrency, isCashPaymentMethod } from "@/lib/payments";
 import { buildOrderMessage, buildWhatsAppUrl } from "@/lib/whatsapp";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isStoreSubscriptionPastDue } from "@/lib/supabase/catalog";
@@ -702,6 +702,9 @@ export async function POST(request: NextRequest) {
           : initialPaymentStatus,
       payment_reference: paymentReference || null,
       payment_currency: getSuggestedPaymentCurrency(order.form.paymentMethod) || null,
+      payment_notes: isCashPaymentMethod(order.form.paymentMethod)
+        ? cleanText(order.form.cashPaymentNote, 500) || null
+        : null,
       subtotal_usd: subtotalUsd,
       delivery_usd: deliveryUsd,
       total_usd: totalUsd,
@@ -808,6 +811,20 @@ export async function POST(request: NextRequest) {
       items: itemsPayload,
     });
     const persistedOrder = atomicResult.order;
+    const cashPaymentNote = isCashPaymentMethod(order.form.paymentMethod)
+      ? cleanText(order.form.cashPaymentNote, 500) || null
+      : null;
+
+    if (cashPaymentNote && persistedOrder.payment_notes !== cashPaymentNote) {
+      const { error: paymentNoteError } = await supabase
+        .from("orders")
+        .update({ payment_notes: cashPaymentNote })
+        .eq("id", persistedOrder.id)
+        .eq("store_id", storeId);
+
+      if (paymentNoteError) throw paymentNoteError;
+      persistedOrder.payment_notes = cashPaymentNote;
+    }
 
     if (!atomicResult.idempotentReplay) {
       await safeUpsertCustomerFromOrder(supabase, {

@@ -1,3 +1,52 @@
+# Preview checkout: nota del pedido vuelve a ser protagonista (2026-08-25)
+
+- QA del usuario aprobó logos circulares de empresas delivery y llegada rápida de notificaciones. Detectó que el estilo resaltado quedó en la información del efectivo y la nota general perdió jerarquía.
+- Ajuste mínimo: `Información del efectivo` permanece dentro de `4. ¿Cómo vas a pagar?` con textarea neutro; la tarjeta ámbar independiente conserva solamente el título `5. Indicaciones del pedido (opcional)` y el textarea con su ejemplo de fondo, sin textos redundantes.
+- No cambió persistencia, validación server-side, WhatsApp, precios, delivery ni Realtime. No hubo migración ni SQL.
+- Validaciones aprobadas: 51/51 contratos críticos, TypeScript, ESLint dirigido, `git diff --check` y build local/remoto Next.js 16.3.0 de 173 páginas.
+- Preview final: `https://vendeplus-clean-5ymsfgwso-entrega2-s-projects.vercel.app`, deployment `dpl_4UGtcyTiJ57eV3s6R7A5MkVKvPBX`, target Preview, estado Ready.
+- Usuario aprobó y autorizó producción. Se promovió exactamente esa Preview; deployment productivo `dpl_9swgyuZCdZ97UnEkhN6wam2u5Mbb` (`https://vendeplus-clean-di11mq79u-entrega2-s-projects.vercel.app`), estado Ready y alias oficiales asignados.
+- Smoke productivo aprobado: Home, Marketplace, `/smash/checkout`, `/panel/pedidos` y `/panel/estadisticas` responden HTTP 200. Sin logs de error iniciales. No hubo migración ni SQL.
+- Rollback web inmediato: `https://vendeplus-clean-fp4am6fvt-entrega2-s-projects.vercel.app`.
+
+# Preview nocturna: Pedidos + logo delivery + notas separadas (2026-08-25)
+
+- Usuario solicito terminar pruebas y dejar Preview para revisar al dia siguiente; produccion no debe tocarse hasta su aprobacion.
+- Checkout: el logo de la empresa delivery ahora vive en un contenedor circular de 48 px, con recorte `object-cover`, fondo neutro, aro blanco y sombra leve. Esto evita que un archivo rectangular muestre relleno blanco lateral y conserva fallback con inicial.
+- Checkout: elegir efectivo ya no cambia ni sustituye la nota general. Se muestran dos campos independientes: `cashPaymentNote` para moneda/cambio y `notes` para indicaciones del pedido.
+- Persistencia: la informacion del efectivo se acepta solo cuando el metodo es efectivo, se limpia a 500 caracteres y se guarda en `orders.payment_notes` con filtros simultaneos por `id` y `store_id`. La columna ya existia; no hubo migracion ni SQL nuevo. La nota general permanece en `orders.notes`.
+- Salidas: WhatsApp incluye la informacion del efectivo en una linea propia; Confirmacion usa el nuevo campo; el detalle del panel presenta `Nota del pedido` e `Informacion del efectivo` como bloques separados.
+- Compatibilidad: pedidos/localStorage anteriores sin `cashPaymentNote` siguen funcionando porque las lecturas normalizan valores ausentes. No se alteraron precios ni reglas de delivery.
+- Validaciones aprobadas: revision Next.js 16 y React, 51/51 contratos criticos, TypeScript, ESLint dirigido, `git diff --check` y build local Next.js 16.3.0 de 177 paginas.
+- Preview conjunta: `https://vendeplus-clean-7xa70w6q1-entrega2-s-projects.vercel.app`, deployment `dpl_ByJMVxDvyTg12vxKzxHitbW1Pfex`, target Preview, Ready. Build remoto 177 paginas aprobado; `/smash/checkout`, `/panel/pedidos` y `/panel/estadisticas` HTTP 200 con cabeceras de seguridad; sin logs de error iniciales.
+- La Preview incluye tambien la correccion de Realtime de Pedidos y Mesa/Barra del bloque siguiente. Prueba manual pendiente: usar un comercio afiliado a empresa delivery, agregar producto, elegir Delivery + Efectivo, escribir textos distintos en ambos campos, confirmar y comprobar logo circular, WhatsApp, aparicion del pedido sin refrescar y ambos bloques separados en el detalle.
+
+# Correccion de llegada inmediata de pedidos en Preview (2026-08-24)
+
+- El usuario confirmo que Estadisticas funciona, pero un pedido nuevo no aparecia en Pedidos hasta refrescar o cambiar de pestana.
+- Diagnostico: el broadcast privado de Supabase, el trigger y la politica RLS funcionan (prueba autenticada real recibida en ~1,4 s), pero el cliente no supervisaba el estado de la suscripcion. Si Realtime fallaba o tardaba, el respaldo de 180 s hacia que la vista pareciera congelada. Mesa/Barra ademas usaba el topic no autorizado `store:<id>:table-order-alerts`.
+- Correccion local: Pedidos y Mesa/Barra registran `SUBSCRIBED`; mientras Realtime no este confirmado o se desconecte sondean cada 15 s, y cuando esta sano vuelven a 180 s/120 s. Mesa/Barra ahora escucha el topic permitido `store:<id>:orders`.
+- Validaciones aprobadas: QA autenticada de broadcast privado, TypeScript, ESLint dirigido, 50/50 contratos criticos, `git diff --check` y build local Next.js 16.3.0 de 177 paginas.
+- Preview corregida: `https://vendeplus-clean-kq9l5cki1-entrega2-s-projects.vercel.app`, deployment `dpl_GCbi6TsT8SjdawDR4ijPmN7PXKKL`, target Preview, estado Ready. Build remoto aprobado, `/panel/pedidos` HTTP 200 con cabeceras de seguridad y sin logs de error iniciales.
+- No hubo migracion ni SQL nuevo para esta correccion y produccion web permanece intacta.
+- Proximo paso exacto: mantener `/panel/pedidos` abierto en esta Preview y crear un pedido desde otro dispositivo/incognito. Debe aparecer normalmente en ~1-3 s; si Realtime no conecta, en un maximo aproximado de 15 s, sin refrescar. Repetir en Mesa/Barra. No promover produccion sin aprobacion explicita.
+
+# P1 estadisticas escalables para 5.000 pedidos/dia (2026-08-24)
+
+- Implementacion local y Preview listas; produccion web permanece intacta.
+- `/api/panel/stats` intenta ahora `panel_store_stats` con los `store_id` derivados exclusivamente de la sesion y la sede validada. La respuesta agregada no descarga pedidos ni items y deja `range.capped=false`.
+- El despliegue es escalonado y seguro: la API exige `summary.aggregationVersion=2`; mientras la migracion no exista o la RPC falle, conserva el flujo anterior como fallback temporal.
+- Nueva migracion aditiva `20260825024934_optimize_panel_store_stats_rpc.sql`: reemplaza solo la funcion, agrega en PostgreSQL sin limite de filas, excluye delivery de los ingresos del comercio, conserva aparte `deliveryFeesUsd`, excluye cancelados de graficas/listas operativas y devuelve solo 8 pedidos recientes.
+- Seguridad: funcion `security invoker`, `store_id` siempre server-side, ejecucion revocada a `public`, `anon` y `authenticated`, concedida solo a `service_role`. No se agregaron tablas, RLS ni indices; los indices requeridos ya existen.
+- Validaciones aprobadas: TypeScript, ESLint dirigido, 49/49 contratos criticos, `git diff --check`, dry-run remoto (solo esta migracion pendiente) y build Next.js 16.3.0 de 177 paginas.
+- Validacion SQL remota en `BEGIN/ROLLBACK` aprobada: la funcion compilo, conteo e ingresos coincidieron con calculos independientes, recientes no supero 8 y permisos quedaron correctos. El rollback dejo `aggregationVersion=0`, confirmando cero persistencia de la prueba.
+- Usuario autorizo avanzar y la migracion fue aplicada y registrada en Supabase remoto. Verificacion posterior independiente volvio a aprobar metricas y permisos. El lint remoto conserva solo el error interno preexistente de `extensions.index_advisor` por `hypopg_reset()` ausente.
+- Preview `https://vendeplus-clean-ncah225sa-entrega2-s-projects.vercel.app`, deployment `dpl_GMHkXkABsjqi9dtPh2B1D685KFNb`, target Preview, estado Ready y build remoto de 177 paginas aprobado. `/panel/estadisticas` responde HTTP 200, API sin sesion rechaza correctamente y no hay logs de error ni HTTP 500.
+- Prueba autenticada controlada aprobada contra el build local y Supabase remoto: usuario QA temporal limitado a un comercio recibio HTTP 200, `aggregationVersion=2`, `capped=false`, 8 recientes y cifras identicas a la RPC. Latencia observada desde este equipo: 2.715 ms. Limpieza independiente confirmo 0 usuarios y 0 membresias QA residuales.
+- P2 polling preparado: Pedidos conserva Realtime privado y refresco al volver a una pestaña visible, pero su respaldo pasa de 30 a 180 segundos. Mesa/Barra conserva alerta Realtime y respaldo visible de 20 a 120 segundos. Por sesion abierta, ambos respaldos bajan de unas 300 a 50 solicitudes por hora (aprox. 83% menos).
+- Nueva Preview conjunta `https://vendeplus-clean-qpo8ov7l9-entrega2-s-projects.vercel.app`, deployment `dpl_8PjyJD3Xngrxgpx66nDLZ2nug7JR`, target Preview, Ready. Build remoto de 177 paginas, Pedidos y Estadisticas HTTP 200, sin logs de error ni HTTP 500.
+- Validacion visual automatizada local no estuvo disponible: ni `agent-browser` ni el navegador integrado estaban habilitados en esta sesion. Proximo paso exacto: validar con sesion real en la Preview conjunta Estadisticas, llegada inmediata de un pedido normal y alerta Mesa/Barra. Promover produccion solo con aprobacion explicita posterior.
+
 # P0 rendimiento panel de empresas delivery (2026-08-19)
 
 - Implementación local y Preview listas; producción intacta, sin migración ni SQL.

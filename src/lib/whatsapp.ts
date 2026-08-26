@@ -60,6 +60,9 @@ export function buildOrderMessage(params: {
   const paymentReference = cleanText(form.paymentReference)
     ? `\n🔎 Referencia: ${cleanText(form.paymentReference)}`
     : "";
+  const cashPaymentNote = cleanText(form.cashPaymentNote)
+    ? `\n💵 Efectivo: ${cleanText(form.cashPaymentNote)}`
+    : "";
   const deliveryPriceText =
     quote.source === "manual" && totals.deliveryUsd === 0
       ? "por confirmar"
@@ -100,6 +103,6 @@ ${itemsText}${orderDetails}
 
 ${deliverySummary}${feeLine}${locationBlock}
 
-💳 ${form.paymentMethod}${paymentReference}
+💳 ${form.paymentMethod}${paymentReference}${cashPaymentNote}
 💰 Total: ${formatBaseCurrency(totals.totalUsd, baseCurrency)} / ${formatBs(totals.totalBs)}${notes}`;
 }

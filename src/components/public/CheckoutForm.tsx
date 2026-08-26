@@ -56,6 +56,7 @@ const initialForm: CheckoutFormData = {
   nationalShippingCity: "",
   orderDetails: "",
   notes: "",
+  cashPaymentNote: "",
 };
 
 export function getOrderKey(storeSlug: string) {
@@ -429,7 +430,7 @@ export function CheckoutForm({ store }: { store: Store }) {
         store,
         paymentMethod: form.paymentMethod,
         totals: { subtotalUsd, deliveryUsd, serviceFeeUsd, totalUsd, totalBs },
-        customerPaymentNote: form.notes,
+        customerPaymentNote: form.cashPaymentNote,
         paymentReference: form.paymentReference,
       })
     : null;
@@ -736,19 +737,20 @@ export function CheckoutForm({ store }: { store: Store }) {
                     className="mt-4 flex items-center gap-3 border-l-2 border-[#FFB547] py-1 pl-3"
                   >
                     {deliverySettings.transportAgencyLogoUrl ? (
-                      <OptimizedImage
-                        src={deliverySettings.transportAgencyLogoUrl}
-                        alt={deliveryPartnerName}
-                        width={44}
-                        height={44}
-                        sizes="44px"
-                        className="h-11 w-11 shrink-0 object-contain"
-                        fallback={
-                          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#F8F3E8] text-sm font-black text-[#2E3A79]">
-                            {deliveryPartnerName.slice(0, 1).toUpperCase()}
-                          </div>
-                        }
-                      />
+                      <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full bg-[#F8F3E8] ring-2 ring-white shadow-sm">
+                        <OptimizedImage
+                          src={deliverySettings.transportAgencyLogoUrl}
+                          alt={deliveryPartnerName}
+                          fill
+                          sizes="48px"
+                          className="object-cover"
+                          fallback={
+                            <div className="grid h-full w-full place-items-center text-sm font-black text-[#2E3A79]">
+                              {deliveryPartnerName.slice(0, 1).toUpperCase()}
+                            </div>
+                          }
+                        />
+                      </div>
                     ) : (
                       <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#F8F3E8] text-sm font-black text-[#2E3A79]">
                         {deliveryPartnerName.slice(0, 1).toUpperCase()}
@@ -832,26 +834,20 @@ export function CheckoutForm({ store }: { store: Store }) {
                   </select>
                 </label>
               </div>
-              <label className="mt-4 block">
-                <span className="vp-label text-[#25262B]">
-                  {isCashPayment ? "¿Cómo vas a cancelar?" : "¿Alguna indicación para tu pedido?"}
-                </span>
-                {!isCashPayment ? (
+              {isCashPayment ? (
+                <label className="mt-4 block">
+                  <span className="vp-label text-[#25262B]">¿Cómo vas a pagar en efectivo?</span>
                   <span className="mt-1 block text-xs font-bold text-[#746f69]">
-                    Opcional. Úsala para detalles que el comercio deba conocer.
+                    Indica la moneda o si necesitas cambio.
                   </span>
-                ) : null}
-                <textarea
-                  className="vp-input mt-2 min-h-24 resize-none border-[#FFB547]/60 bg-[#FFF8F0] focus:border-[#F27533]"
-                  value={form.notes}
-                  onChange={(event) => updateField("notes", event.target.value)}
-                  placeholder={
-                    isCashPayment
-                      ? "Ej: pago en dólares al recibir, pago en Bs al retirar, necesito cambio de $20..."
-                      : checkoutNoteExample(store.category, store.checkoutNotePlaceholder)
-                  }
-                />
-              </label>
+                  <textarea
+                    className="vp-input mt-2 min-h-20 resize-none"
+                    value={form.cashPaymentNote}
+                    onChange={(event) => updateField("cashPaymentNote", event.target.value)}
+                    placeholder="Ej: pago en dólares al recibir o necesito cambio de $20..."
+                  />
+                </label>
+              ) : null}
               {paymentInfo ? (
                 <div className="mt-4 rounded-[26px] bg-[#2E3A79] p-4 text-white">
                   <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -919,6 +915,19 @@ export function CheckoutForm({ store }: { store: Store }) {
                   ) : null}
                 </div>
               ) : null}
+            </section>
+
+            <section className="rounded-[30px] border border-[#FFB547]/45 bg-[#FFF8F0] p-4 shadow-sm shadow-[#FFB547]/10 sm:p-5">
+              <h2 className="text-xl font-black text-[#25262B]">5. Indicaciones del pedido (opcional)</h2>
+              <label className="mt-4 block">
+                <textarea
+                  aria-label="Indicaciones del pedido"
+                  className="vp-input mt-2 min-h-24 resize-none border-[#FFB547]/60 bg-white focus:border-[#F27533]"
+                  value={form.notes}
+                  onChange={(event) => updateField("notes", event.target.value)}
+                  placeholder={checkoutNoteExample(store.category, store.checkoutNotePlaceholder)}
+                />
+              </label>
             </section>
           </div>
 

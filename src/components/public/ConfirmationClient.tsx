@@ -64,7 +64,7 @@ export function ConfirmationClient({ store }: { store: Store }) {
         paymentMethod: order.form.paymentMethod,
         totals: order.totals,
         orderId: order.id,
-        customerPaymentNote: order.form.notes,
+        customerPaymentNote: order.form.cashPaymentNote,
         paymentReference: order.form.paymentReference,
       })
     : null;
