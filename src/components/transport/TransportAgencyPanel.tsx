@@ -75,6 +75,7 @@ function optionalPanelNumber(value: unknown) {
 function mergeAgenciesPreservingPremium(previous: Agency[], next: Agency[]) {
   const previousById = new Map(previous.map((entry) => [entry.id, entry]));
   return next.map((entry) => ({
+    ...previousById.get(entry.id),
     ...entry,
     premium_dispatch_enabled: Object.prototype.hasOwnProperty.call(
       entry,
@@ -143,8 +144,11 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
   const [marketplaceCopied, setMarketplaceCopied] = useState(false);
   const [nowMs, setNowMs] = useState(0);
   const [hasLoadedRelations, setHasLoadedRelations] = useState(Boolean(hasUsableInitialCache));
-  const [hasLoadedBilling, setHasLoadedBilling] = useState(
-    Boolean(hasUsableInitialCache && transportPanelCache?.billing)
+  const [hasLoadedBillingDetail, setHasLoadedBillingDetail] = useState(
+    Boolean(hasUsableInitialCache && transportPanelCache?.billingDetailLoaded)
+  );
+  const [hasLoadedConfiguration, setHasLoadedConfiguration] = useState(
+    Boolean(hasUsableInitialCache && transportPanelCache?.configurationLoaded)
   );
   const transportOrdersLoadedRef = useRef(false);
   const localTransportMutationsRef = useRef(new Set<string>());
@@ -248,7 +252,13 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     }
   }
 
-  async function load(options: { silent?: boolean; includeBilling?: boolean; includeRelations?: boolean } = {}) {
+  async function load(options: {
+    silent?: boolean;
+    includeBilling?: boolean;
+    includeBillingDetail?: boolean;
+    includeConfiguration?: boolean;
+    includeRelations?: boolean;
+  } = {}) {
     if (!options.silent && !transportPanelCache) setIsLoading(true);
     if (!options.silent) setMessage("");
     try {
@@ -265,7 +275,15 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
 
       const includeBilling = options.includeBilling ?? ["resumen", "facturacion"].includes(tab);
       const includeRelations = options.includeRelations ?? tab !== "pedidos";
-      const response = await fetch(`/api/transport/me?includeBilling=${includeBilling ? "true" : "false"}&includeRelations=${includeRelations ? "true" : "false"}`, {
+      const includeConfiguration = options.includeConfiguration ?? tab !== "pedidos";
+      const includeBillingDetail = options.includeBillingDetail ?? tab === "facturacion";
+      const params = new URLSearchParams({
+        billingDetail: String(includeBillingDetail),
+        includeBilling: String(includeBilling),
+        includeConfiguration: String(includeConfiguration),
+        includeRelations: String(includeRelations),
+      });
+      const response = await fetch(`/api/transport/me?${params.toString()}`, {
         headers: await getPanelAuthHeaders(savedPin),
       });
       const data = await response.json();
@@ -279,7 +297,8 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
           setRequests([]);
           setConnections([]);
           setBilling(null);
-          setHasLoadedBilling(false);
+          setHasLoadedBillingDetail(false);
+          setHasLoadedConfiguration(false);
           setHasLoadedRelations(false);
           transportPanelCache = null;
           setHasCheckedSession(true);
@@ -293,7 +312,8 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
           setRequests([]);
           setConnections([]);
           setBilling(null);
-          setHasLoadedBilling(false);
+          setHasLoadedBillingDetail(false);
+          setHasLoadedConfiguration(false);
           setHasLoadedRelations(false);
           transportPanelCache = null;
           setHasCheckedSession(true);
@@ -315,8 +335,9 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       }
       if (data.billing) {
         setBilling(data.billing);
-        setHasLoadedBilling(true);
+        if (data.billingDetailLoaded) setHasLoadedBillingDetail(true);
       }
+      if (data.configurationLoaded) setHasLoadedConfiguration(true);
       setHasSession(true);
       setHasCheckedSession(true);
       transportPanelCache = {
@@ -324,6 +345,12 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
         requests: data.relationsLoaded ? data.requests || [] : transportPanelCache?.requests || [],
         connections: data.relationsLoaded ? data.connections || [] : transportPanelCache?.connections || [],
         billing: data.billing || transportPanelCache?.billing || null,
+        billingDetailLoaded: Boolean(
+          data.billingDetailLoaded || transportPanelCache?.billingDetailLoaded
+        ),
+        configurationLoaded: Boolean(
+          data.configurationLoaded || transportPanelCache?.configurationLoaded
+        ),
         hasSession: true,
       };
     } catch (error: any) {
@@ -378,6 +405,8 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     load({
       silent: Boolean(transportPanelCache),
       includeBilling: ["resumen", "facturacion"].includes(initialTab),
+      includeBillingDetail: initialTab === "facturacion",
+      includeConfiguration: initialTab !== "pedidos",
       includeRelations: initialTab !== "pedidos",
     });
     // Initial boot only; later section loads are handled by the dependency-aware effect below.
@@ -386,18 +415,27 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
 
   useEffect(() => {
     if (!hasSession) return;
-    const needsBilling = tab === "facturacion" && !hasLoadedBilling;
+    const needsBilling = tab === "facturacion" && !hasLoadedBillingDetail;
+    const needsConfiguration = tab !== "pedidos" && !hasLoadedConfiguration;
     const needsRelations = tab !== "pedidos" && !hasLoadedRelations;
-    if (needsBilling || needsRelations) {
+    if (needsBilling || needsConfiguration || needsRelations) {
       void load({
         silent: true,
         includeBilling: needsBilling,
+        includeBillingDetail: needsBilling,
+        includeConfiguration: needsConfiguration,
         includeRelations: needsRelations,
       });
     }
     // load intentionally follows the active authenticated panel state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, hasSession, hasLoadedRelations, hasLoadedBilling]);
+  }, [
+    tab,
+    hasSession,
+    hasLoadedBillingDetail,
+    hasLoadedConfiguration,
+    hasLoadedRelations,
+  ]);
 
   useEffect(() => {
     setTransportDrivers([]);
@@ -406,7 +444,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     setTransportOrderPage(1);
     setTransportOrdersHasMore(false);
     setHasLoadedTransportDrivers(false);
-    setHasLoadedBilling(false);
+    setHasLoadedBillingDetail(false);
     setHasUnsavedChanges(false);
   }, [selectedAgencyId]);
 
@@ -683,7 +721,8 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     setRequests([]);
     setConnections([]);
     setBilling(null);
-    setHasLoadedBilling(false);
+    setHasLoadedBillingDetail(false);
+    setHasLoadedConfiguration(false);
     setHasLoadedRelations(false);
     transportPanelCache = null;
     setHasSession(false);
@@ -1338,7 +1377,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
         </section>
       ) : null}
 
-      {configIssues.length ? (
+      {hasLoadedConfiguration && configIssues.length ? (
         <section className="rounded-[28px] bg-amber-50 p-4 text-amber-900 ring-1 ring-amber-200">
           <h2 className="text-sm font-black">Completa tu empresa para aparecer ante comercios</h2>
           <p className="mt-1 text-sm font-bold leading-relaxed">
@@ -1346,14 +1385,14 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
             los comercios podran ver y solicitar afiliacion sin errores.
           </p>
         </section>
-      ) : (
+      ) : hasLoadedConfiguration ? (
         <section className="rounded-[28px] bg-green-50 p-4 text-green-800 ring-1 ring-green-200">
           <h2 className="text-sm font-black">Configuracion operativa completa</h2>
           <p className="mt-1 text-sm font-bold">
             Tus datos, cobertura y tarifas tienen lo necesario para operar.
           </p>
         </section>
-      )}
+      ) : null}
 
       {tab === "resumen" ? (
         <section className="grid gap-3 md:grid-cols-3">

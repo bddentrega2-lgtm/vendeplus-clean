@@ -460,6 +460,28 @@ test("panel delivery evita recargas duplicadas en operaciones frecuentes", () =>
   assert.match(access, /Promise\.all/);
 });
 
+test("panel delivery carga solo los datos necesarios por seccion", () => {
+  const panel = readFileSync(
+    new URL("../src/components/transport/TransportAgencyPanel.tsx", import.meta.url),
+    "utf8",
+  );
+  const route = readFileSync(
+    new URL("../src/app/api/transport/me/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(panel, /includeConfiguration:\s*initialTab !== "pedidos"/);
+  assert.match(panel, /includeBillingDetail:\s*initialTab === "facturacion"/);
+  assert.match(panel, /const needsBilling = tab === "facturacion" && !hasLoadedBillingDetail/);
+  assert.match(panel, /const needsConfiguration = tab !== "pedidos" && !hasLoadedConfiguration/);
+  assert.match(panel, /hasLoadedConfiguration && configIssues\.length/);
+  assert.match(route, /const compactAgencySelect =/);
+  assert.match(route, /const billingSummarySelect =/);
+  assert.match(route, /includeBillingDetail \? billingOrdersSelect : billingSummarySelect/);
+  assert.match(route, /configurationLoaded:\s*includeConfiguration/);
+  assert.match(route, /billingDetailLoaded:\s*includeBilling && includeBillingDetail/);
+});
+
 test("pedidos usa Realtime con sondeo espaciado solo como respaldo", () => {
   const orders = readFileSync(
     new URL("../src/components/panel/OrdersManager.tsx", import.meta.url),

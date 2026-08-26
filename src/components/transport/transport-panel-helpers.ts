@@ -40,6 +40,8 @@ export type PanelCache = {
   requests: any[];
   connections: any[];
   billing: any;
+  billingDetailLoaded: boolean;
+  configurationLoaded: boolean;
   hasSession: boolean;
 };
 
