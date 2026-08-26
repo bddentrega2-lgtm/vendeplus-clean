@@ -1,3 +1,41 @@
+# Corrección completa La Maravilla del Sushi (2026-08-25)
+
+- Estado inicial auditado: 4 categorías, 8 productos activos, 0 pedidos, 0 imágenes y 0 grupos de opciones. Los 8 productos correspondían al menú real pero tenían nombres/descripciones incompletos; faltaban 12 productos. Ensalada Dinamita conservaba 2 variantes erróneas e inactivas `Topinng...`.
+- Migración idempotente aplicada y registrada: `20260826031500_correct_la_maravilla_sushi_menu.sql`, limitada al slug `la-maravilla-del-sushi`. No hubo cambio de esquema ni código global.
+- Se conservaron los IDs de los 8 productos existentes y se actualizaron: Ensalada Dinamita, Croquetas de Cangrejo, Cangrejo Especial, Camarones Rebosados, Tera Roll, Dinamita Roll, Sakana Roll y Chicken Roll. `Croquetas de cangrejo` y `Dinamit Roll` corrigieron sus nombres.
+- Se crearon 12 faltantes: Umi Roll, Camarón Roll, Skin Roll, Kani Roll, Tuna Roll, California Roll, Aguacate Roll, Salmón Roll, Me Prefieres a Mí, Flow La Marash, La Sensación y Pa' Que La Pases Bien.
+- Categorías finales activas: Entradas, Tempurizados, Fríos y Promociones. Las dos categorías con cantidades entre paréntesis se renombraron conservando IDs. No había categorías o productos extra que desactivar.
+- Se eliminaron únicamente las 2 variantes erróneas `Topinng Cangrejo/Wakame` de Ensalada Dinamita; no tenían pedidos ni estaban activas. Los toppings quedaron como parte de las descripciones, sin modificadores artificiales.
+- Resultado remoto verificado: exactamente 20 productos activos y únicos: 4 Entradas, 6 Tempurizados, 6 Fríos y 4 Promociones; precios, orden y descripciones coinciden con el menú fuente. `La Sensación` conserva literalmente `5 Cangrejo Rolls`.
+- Imágenes: no existía ninguna imagen principal ni galería, por lo que no hubo imágenes que conservar o reasignar. La migración no modifica imágenes al actualizar productos equivalentes.
+- QA pública: `/la-maravilla-del-sushi` HTTP 200, contiene los productos nuevos/corregidos, muestra 20 productos y no contiene `Dinamit Roll` ni `Topinng`. Validaciones: ESLint dirigido, TypeScript, 54/54 contratos, `git diff --check`, dry-run remoto y build Next.js 16.3.0 de 177 páginas.
+- Pendiente: respaldo Git conjunto de las tres migraciones recientes, contratos y handoff. No se requiere despliegue web porque fue una corrección de datos sobre arquitectura existente.
+
+# Menú regular Pizza Mia oculto (2026-08-25)
+
+- Usuario solicitó cargar solo el menú regular y mantener intactas las 9 promociones. Añadió como regla que todos los productos nuevos deben quedar ocultos hasta que cargue sus fotos y los active manualmente.
+- Migración idempotente aplicada y registrada: `20260826023000_load_pizza_mia_regular_menu.sql`. No referencia la categoría Promociones ni modifica `stores`; usa únicamente tablas existentes.
+- Categorías creadas/reutilizadas: `Pizzas / Especialidades`, `Nuevas`, `Arma tu pizza`, `Otros` y `Subs`. Se cargaron 22 productos regulares, todos con `is_available=false`, `is_featured=false` e `image_url=null`.
+- Especialidades y Buffalo usan variantes con medidas y precios absolutos. `Grande con borde de queso` es una variante separada exactamente $3 por encima de Grande, por lo que el borde no puede elegirse en otros tamaños. Pan Pizza y Gigante son variantes separadas con el mismo precio indicado.
+- `Arma tu pizza como quieras` usa 5 variantes y 28 ingredientes. `product_option_value_variant_prices` aplica por ingrediente: Personal $1, Pequeña $1.50, Grande $2, Grande con borde $2 y Gigante $2.50. Pan Pizza comparte los 28 nombres mediante su grupo propio a $2.50; Pizza Siciliana usa grupo propio a $3.
+- Hawaiana tiene canela opcional a $0. Philly Cheesesteak y Crispy Chicken comparten Tocineta, Queso cheddar y Champiñones a $1.50. Mexicana y Buffalo incluyen `🌶 Picante` en la descripción porque no existe un sistema visual de picante en productos remotos.
+- Para no colisionar con la promoción activa `Siciliana`, el producto regular se llama `Pizza Siciliana`; queda oculto con precio técnico $0 y texto `Precio base pendiente por confirmar`. No debe activarse hasta cargar el precio real.
+- Primer intento remoto falló por `product_variants.updated_at` inexistente; PostgreSQL revirtió toda la transacción. Se corrigió y el segundo intento aplicó completo. Verificación independiente: 6 categorías totales, 9 promociones activas e intactas, 22 regulares ocultos, 0 imágenes regulares, matrices de variantes correctas, 28/28/28 ingredientes y 3 extras de Subs.
+- QA pública: `/pizza-mia` HTTP 200, promociones visibles, productos regulares ausentes y API de opciones de producto oculto HTTP 404. Validaciones: ESLint dirigido, TypeScript, 53/53 contratos críticos, `git diff --check`, dry-run remoto y build Next.js 16.3.0 de 177 páginas.
+- Pendiente: usuario carga fotos y activa manualmente cada producto. Antes de activar `Pizza Siciliana`, debe guardar su precio base real. También queda pendiente respaldo Git de las dos migraciones de Pizza Mia, contratos y handoff.
+
+# Promociones Pizza Mia (2026-08-25)
+
+- Usuario solicitó cargar 9 promociones en `pizza-mia`, respetando categoría, productos, opciones, precios e imágenes existentes.
+- Se creó y aplicó la migración idempotente `20260826014000_load_pizza_mia_promotions.sql`. Crea/reutiliza `Promociones`, busca productos por comercio + nombre normalizado y conserva cualquier `image_url` preexistente.
+- Se cargaron exactamente 9 promociones con precios: 3.99, 5.99, 6.99, 6.99, 9.99, 14.99, 16.99, 19.99 y 19.99 USD. Verificación independiente confirmó 9 nombres únicos y cero duplicados.
+- Sici Box y Siciliana usan el grupo obligatorio `Elige tu ingrediente incluido`, selección única, sin costo, con 10 ingredientes: Pepperoni, Jamón, Tocineta, Maíz, Cebolla, Pimentón, Aceitunas negras, Champiñones, Piña y Anchoas.
+- No se creó selector de refrescos porque no existe una lista verificable de sabores. Las cantidades y presentaciones sí están explícitas en las descripciones.
+- No había imágenes de producto almacenadas; los 9 productos conservan `image_url=null` y el catálogo usa correctamente el logo de Pizza Mia como fallback. No se enlazaron imágenes externas.
+- Supabase remoto registró la migración. `/pizza-mia` responde HTTP 200, muestra la categoría y 9 productos; la API pública de opciones devuelve HTTP 200, 1 grupo obligatorio y 10 ingredientes para Sici Box y Siciliana. El comercio figuraba activo al finalizar; la migración no alteró `stores`.
+- Validaciones aprobadas: ESLint dirigido, TypeScript, 52/52 contratos críticos, `git diff --check`, dry-run remoto y build Next.js 16.3.0 de 177 páginas.
+- Archivos modificados: migración nueva, `scripts/critical-contracts.test.mjs` y este handoff. Sin cambios de aplicación ni despliegue web necesarios. Pendiente solo revisión visual del usuario y, si lo solicita, imágenes específicas/sabores reales de refresco y respaldo Git.
+
 # Preview checkout: nota del pedido vuelve a ser protagonista (2026-08-25)
 
 - QA del usuario aprobó logos circulares de empresas delivery y llegada rápida de notificaciones. Detectó que el estilo resaltado quedó en la información del efectivo y la nota general perdió jerarquía.
