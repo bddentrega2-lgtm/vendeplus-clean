@@ -26,6 +26,7 @@ export const adminStoreSelect = `
   accepts_pickup,
   is_active,
   is_test,
+  marketplace_visible,
   table_orders_access_enabled,
   plan_type,
   product_limit,

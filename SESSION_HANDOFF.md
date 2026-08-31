@@ -961,3 +961,12 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 - Segunda corrección PWA validada: TypeScript, ESLint dirigido, 48/48 contratos, `git diff --check` y build Next.js 16.3.0 de 177 páginas aprobados. Preview `dpl_4NzoRuSQxqJ8AoCVaout6964k59v` (`https://vendeplus-clean-l2u52cqky-entrega2-s-projects.vercel.app`) está `Ready`. La prueba real del prompt continúa sujeta a la política/cooldown del navegador y la protección SSO del Preview; el diálogo fallback sí queda acotado a pantalla. No promover sin aprobación.
 - Usuario confirmó que el prompt nativo funcionó y autorizó promover. Se promovió exactamente `dpl_4NzoRuSQxqJ8AoCVaout6964k59v`; deployment productivo `dpl_GUH6suuagmvqQPqPhzSjbiQPQJSG` (`vendeplus-clean-ks1qbtun1-entrega2-s-projects.vercel.app`) está `Ready` con todos los alias oficiales. Smoke: Marketplace HTTP 200, `sw.js` HTTP 200 `application/javascript`, manifest HTTP 200 `application/manifest+json`, sin logs de error recientes. Rollback: `dpl_BFKDTvXMoGGYDdB1DGhuSZmNafP5`. Sin migración/SQL; cambios todavía sin commit/push/PR.
 - Usuario autorizó asegurar la entrega completa en Git: commit de los 8 archivos de Marketplace/PWA/pruebas/handoff, push, PR a `main`, checks y merge si todo queda verde. El PR borrador antiguo #3 queda fuera de alcance.
+# Hotfix productivo Marketplace + zonas de empresa delivery (2026-08-30)
+
+- Producción vigente `dpl_735qQPwarBPWvvH9a9PtyNgdPGcc`, Ready y con alias oficiales.
+- Superadmin `/admin/comercios` conserva la tabla existente y agrega únicamente el ojo para cambiar `marketplace_visible`. El endpoint PATCH exige founder y actualiza exclusivamente ese campo.
+- `POST /api/orders` evita enviar UUID de `transport_agency_zones` a `orders.delivery_zone_id`, cuya FK pertenece a `store_delivery_zones`; para empresa delivery guarda `delivery_zone_id=null` y conserva todos los metadatos de agencia, zona y tarifa.
+- Prueba real Preview aprobada con Burger Más + Un Delivery Más: pedido `VP-0830-TNC`, zona San Felipe Centro, $2, estado de agencia pendiente y respuesta HTTP 200.
+- Producción verificada: Burger Más, carrito, checkout y Marketplace HTTP 200; rutas de impresión HTTP 404; cero logs de error del deployment nuevo.
+- Sin migración ni SQL. Validaciones: 57/57 contratos, ESLint dirigido, TypeScript, `git diff --check` y build Next.js 16.3.0 de 161 páginas.
+- El piloto de impresión permanece fuera de esta rama y fuera del bundle productivo.
