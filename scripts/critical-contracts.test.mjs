@@ -340,6 +340,26 @@ test("pedidos publicos y manuales se crean en una transaccion idempotente", () =
   assert.match(migration, /grant execute on function public\.create_order_atomic\(jsonb, jsonb\) to service_role/);
 });
 
+test("pedidos por zona de empresa delivery no usan la FK de zonas propias", () => {
+  const publicRoute = readFileSync(
+    new URL("../src/app/api/orders/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    publicRoute,
+    /delivery_zone_id:\s*serverQuote\.provider === "transport_agency" \? null : serverQuote\.zoneId \|\| null/,
+  );
+  assert.match(
+    publicRoute,
+    /transport_agency_zone_name:[\s\S]{0,180}serverQuote\.zoneName \|\| null/,
+  );
+  assert.match(
+    publicRoute,
+    /transport_agency_id:[\s\S]{0,180}serverQuote\.transportAgencyId \|\| null/,
+  );
+});
+
 test("Mesa y Barra actualiza pedidos sin reiniciar la vista y oculta su configuracion", () => {
   const manager = readFileSync(
     new URL("../src/components/panel/TablesManager.tsx", import.meta.url),
@@ -1168,4 +1188,27 @@ test("La Maravilla del Sushi queda con veinte productos exactos", () => {
   assert.match(migration, /delete from public\.product_variants/);
   assert.match(migration, /not exists \([\s\S]*desired\.product_id = products\.id/);
   assert.doesNotMatch(migration, /update public\.stores/);
+});
+
+test("Superadmin controla exclusivamente la visibilidad de Marketplace", () => {
+  const manager = readFileSync(
+    new URL("../src/components/admin/AdminStoresManager.tsx", import.meta.url),
+    "utf8",
+  );
+  const adminStores = readFileSync(
+    new URL("../src/lib/admin/stores.ts", import.meta.url),
+    "utf8",
+  );
+  const route = readFileSync(
+    new URL("../src/app/api/admin/stores/[storeId]/marketplace/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(adminStores, /marketplace_visible/);
+  assert.match(manager, /toggleMarketplace/);
+  assert.match(manager, /\/api\/admin\/stores\/\$\{store\.id\}\/marketplace/);
+  assert.match(route, /requireAdminAuth\(request\)/);
+  assert.match(route, /\.update\(\{ marketplace_visible: body\.visible \}\)/);
+  assert.match(route, /\.eq\("id", storeId\)/);
+  assert.doesNotMatch(route, /is_active|subscription_status|plan_type/);
 });

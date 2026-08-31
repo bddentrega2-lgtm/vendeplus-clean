@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
   Copy,
+  Eye,
+  EyeOff,
   ExternalLink,
   Loader2,
   Lock,
@@ -29,6 +31,7 @@ type StoreRow = {
   business_type: string | null;
   whatsapp: string | null;
   is_active: boolean;
+  marketplace_visible: boolean;
   accepts_delivery: boolean;
   accepts_pickup: boolean;
   plan_type?: string | null;
@@ -178,6 +181,7 @@ export function AdminStoresManager() {
   const [recentThresholdMs, setRecentThresholdMs] = useState(0);
   const [cutoffDrafts, setCutoffDrafts] = useState<Record<string, string>>({});
   const [savingCutoffId, setSavingCutoffId] = useState("");
+  const [savingMarketplaceId, setSavingMarketplaceId] = useState("");
 
   const filteredStores = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -247,6 +251,31 @@ export function AdminStoresManager() {
   async function copyStoreLink(store: StoreRow) {
     await navigator.clipboard.writeText(buildClientPublicUrl(`/${store.slug}`));
     setMessage(`Link copiado: /${store.slug}`);
+  }
+
+  async function toggleMarketplace(store: StoreRow) {
+    setMessage("");
+    setError("");
+    setSavingMarketplaceId(store.id);
+
+    try {
+      const data = await apiRequest("", `/api/admin/stores/${store.id}/marketplace`, {
+        method: "PATCH",
+        body: JSON.stringify({ visible: store.marketplace_visible === false }),
+      });
+      setStores((current) =>
+        current.map((entry) =>
+          entry.id === store.id
+            ? { ...entry, marketplace_visible: data.store.marketplace_visible }
+            : entry
+        )
+      );
+      setMessage(data.message || "Visibilidad actualizada.");
+    } catch (error: any) {
+      setError(error.message || "No se pudo actualizar Marketplace.");
+    } finally {
+      setSavingMarketplaceId("");
+    }
   }
 
   async function saveCutoffDate(store: StoreRow) {
@@ -527,6 +556,27 @@ export function AdminStoresManager() {
                   <Pencil size={14} />
                   Ver
                 </Link>
+                <button
+                  type="button"
+                  onClick={() => toggleMarketplace(store)}
+                  disabled={savingMarketplaceId === store.id}
+                  title={store.marketplace_visible === false ? "Mostrar en Marketplace" : "Ocultar del Marketplace"}
+                  aria-label={store.marketplace_visible === false ? "Mostrar en Marketplace" : "Ocultar del Marketplace"}
+                  className={[
+                    "inline-flex h-9 w-9 items-center justify-center rounded-full disabled:opacity-60",
+                    store.marketplace_visible === false
+                      ? "bg-amber-100 text-amber-800"
+                      : "bg-emerald-100 text-emerald-800",
+                  ].join(" ")}
+                >
+                  {savingMarketplaceId === store.id ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : store.marketplace_visible === false ? (
+                    <EyeOff size={14} />
+                  ) : (
+                    <Eye size={14} />
+                  )}
+                </button>
                 <button
                   type="button"
                   onClick={() => toggleStore(store)}

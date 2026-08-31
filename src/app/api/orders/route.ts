@@ -735,7 +735,8 @@ export async function POST(request: NextRequest) {
       table_fulfillment_snapshot: tableFulfillmentMode,
       delivery_provider: order.form.deliveryType === "delivery" ? serverQuote.provider || null : null,
       delivery_fee_usd: deliveryUsd,
-      delivery_zone_id: serverQuote.zoneId || null,
+      delivery_zone_id:
+        serverQuote.provider === "transport_agency" ? null : serverQuote.zoneId || null,
       delivery_zone_name: serverQuote.zoneName || null,
       delivery_distance_km: serverQuote.distanceKm,
       delivery_pricing_type: serverQuote.pricingType || null,
