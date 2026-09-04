@@ -999,6 +999,8 @@ test("catalogo compacta acciones instala Somos y oculta el horario predeterminad
   const catalog = readFileSync(new URL("../src/components/public/CatalogClient.tsx", import.meta.url), "utf8");
   const header = readFileSync(new URL("../src/components/public/StoreBrandHeader.tsx", import.meta.url), "utf8");
   const mapper = readFileSync(new URL("../src/lib/supabase/catalog.ts", import.meta.url), "utf8");
+  const brandCopy = readFileSync(new URL("../src/lib/brand-copy.ts", import.meta.url), "utf8");
+  const marketplace = readFileSync(new URL("../src/components/public/MarketplaceClient.tsx", import.meta.url), "utf8");
 
   assert.match(catalog, /grid grid-cols-4/);
   assert.match(catalog, /<PwaInstallButton tile label="Instalar Somos" \/>/);
@@ -1009,6 +1011,11 @@ test("catalogo compacta acciones instala Somos y oculta el horario predeterminad
   assert.match(header, /toLowerCase\(\) !== "disponible hoy"/);
   assert.doesNotMatch(header, /store\.openingHours \|\| "Disponible hoy"/);
   assert.match(mapper, /toLowerCase\(\) === "disponible hoy"/);
+  assert.match(brandCopy, /DEFAULT_STORE_COVER_IMAGE = "\/brand\/new-somos-preview\/somos-logo-preview\.png"/);
+  assert.match(mapper, /fallbackHeroImages\[row\.slug\] \|\| DEFAULT_STORE_COVER_IMAGE/);
+  assert.doesNotMatch(mapper, /heroImageUrl:.*fallbackHeroImages\["don-aniello"\]/);
+  assert.match(header, /usesSomosCover \? "object-contain p-10 md:p-12" : "object-cover"/);
+  assert.match(marketplace, /usesSomosCover \? "object-contain p-5" : "object-cover group-hover:scale-105"/);
   const install = readFileSync(new URL("../src/components/pwa/PwaInstallButton.tsx", import.meta.url), "utf8");
   assert.match(install, /if \(tile\)[\s\S]*href="\/"[\s\S]*somos-isotipo-preview\.png/);
 });

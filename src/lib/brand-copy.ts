@@ -1,3 +1,5 @@
+export const DEFAULT_STORE_COVER_IMAGE = "/brand/new-somos-preview/somos-logo-preview.png";
+
 export function normalizePublicBrandText(value: string | null | undefined) {
   if (!value) return value;
 
