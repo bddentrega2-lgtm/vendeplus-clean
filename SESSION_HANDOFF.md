@@ -1020,3 +1020,13 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 - La protección SSO de Vercel responde 302 en el smoke anónimo de todas las rutas; no hubo logs de error. Las pruebas funcionales requieren una sesión autorizada de Vercel y cuentas reales de comercio/empresa delivery.
 - Supabase quedó alineado local/remoto y la migración de colores `20260904044204` está aplicada. Producción web no fue promovida.
 - Próximo paso exacto: probar en Preview cambio de contraseña de una cuenta controlada, colores del Marketplace y descarga CSV. No promover sin esa aprobación.
+
+# Menú 2026 Sierra Yara (2026-09-04)
+
+- Rama aislada `data/sierra-yara-menu-2026`, basada en `origin/main`; solo incorpora la migración de datos `20260904123000_load_sierra_yara_menu_2026.sql`.
+- Migración aplicada correctamente al proyecto Supabase vinculado para el comercio existente `Sierra Yara` (`sierra-yara`). Es idempotente, restringida por `store_id` y elevó `product_limit` a 129 sin cambiar el plan trial.
+- Resultado remoto verificado: 21 categorías, 129 productos activos, 55 descripciones, cero precios nulos, 4 grupos, 14 valores y 20 asociaciones de opciones.
+- Opciones cargadas: leche solo en los 9 cafés autorizados; salsa en Alitas y Capitan Pops; presentación en las 5 hamburguesas; término de cocción en las 4 hamburguesas de carne.
+- Exclusiones confirmadas: ninguna categoría/licor, `Galleta con Helado` y los demás productos sin precio del documento. Pepitos quedaron estándar, sin variantes; no se cargaron acompañantes porque los platos fuertes aplicables no tenían precio.
+- Catálogo productivo responde HTTP 200 en `https://www.somos-ve.com/sierra-yara`; tras revalidación contiene `Sierra Yara`, `Espresso` y `Bacon Star`, y no muestra estado inactivo.
+- Validación final: `git diff --check` aprobado y build Next.js 16.3.0 aprobado con 192 páginas, cargando secretos solo en memoria del proceso. Pendiente inmediato: hacer commit/push de la migración y abrir PR sin modificar nuevamente la base de datos.
