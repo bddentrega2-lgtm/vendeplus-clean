@@ -10,7 +10,7 @@ import {
 } from "@/lib/delivery";
 import { getStoreOpenState } from "@/lib/business-hours";
 import { getEntrega2AppBrand, loadTransportAgencyDeliverySettings } from "@/lib/transport";
-import { normalizePublicBrandText } from "@/lib/brand-copy";
+import { DEFAULT_STORE_COVER_IMAGE, normalizePublicBrandText } from "@/lib/brand-copy";
 import { isSubscriptionPastDue } from "@/lib/subscription-status";
 
 type AnyRecord = Record<string, any>;
@@ -238,7 +238,7 @@ function mapStore(
     deliveryEstimate: row.delivery_estimate || fallback?.deliveryEstimate || "25-40 min",
     pickupEstimate: row.pickup_estimate || fallback?.pickupEstimate || "15-25 min",
     badge: fallback?.badge || "Aliado Somos",
-    heroImageUrl: row.cover_image_url || fallback?.heroImageUrl || fallbackHeroImages[row.slug] || fallbackHeroImages["don-aniello"],
+    heroImageUrl: row.cover_image_url || fallback?.heroImageUrl || fallbackHeroImages[row.slug] || DEFAULT_STORE_COVER_IMAGE,
     categories: categories.length ? categories : includeFallbackCatalog ? fallback?.categories || [] : [],
     products: products.length ? products : includeFallbackCatalog ? fallback?.products || [] : [],
     paymentMethods: toStringArray(row.payment_methods, fallback?.paymentMethods || defaultPaymentMethods),

@@ -1020,6 +1020,15 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 - La protección SSO de Vercel responde 302 en el smoke anónimo de todas las rutas; no hubo logs de error. Las pruebas funcionales requieren una sesión autorizada de Vercel y cuentas reales de comercio/empresa delivery.
 - Supabase quedó alineado local/remoto y la migración de colores `20260904044204` está aplicada. Producción web no fue promovida.
 - Próximo paso exacto: probar en Preview cambio de contraseña de una cuenta controlada, colores del Marketplace y descarga CSV. No promover sin esa aprobación.
+# Preview: portada Somos para comercios sin banner (2026-09-04)
+
+- Trabajo aislado en `.default-banner-clean`, rama `fix/default-store-banner-somos`, basada en `origin/main`; no mezcla impresión, catálogos ni otros cambios locales.
+- Causa: `mapStore` usaba como fallback global el hero de Don Aniello, una foto de pasta, cuando un comercio nuevo no tenía `cover_image_url`.
+- Corrección: comercios sin portada usan el logotipo vigente `/brand/new-somos-preview/somos-logo-preview.png`; el catálogo y las tarjetas del Marketplace lo muestran con `object-contain` y fondo neutral para evitar recortes. Los banners personalizados y los fallbacks explícitos de demos existentes permanecen intactos.
+- Validaciones aprobadas: ESLint dirigido, 62/62 contratos, `git diff --check` y build Next.js 16.3.0 de 192 páginas.
+- La primera Preview `dpl_FhwxgF6W5vZqBStkZ4GUVTXHkYcA` usó por error el logo anterior y queda descartada. Se retiraron los 3 assets de marca y 7 iconos antiguos que no tenían referencias activas; toda la identidad interna/PWA conserva los recursos vigentes de `new-somos-preview`.
+- Preview corregida Ready: `dpl_BguVQ6KP92hkVxywJ9G98tMfCYdG`, `https://vendeplus-clean-fnn0nk2e2-entrega2-s-projects.vercel.app`. Verificación autenticada en `/start-13`: contiene el logotipo nuevo, no contiene el logo anterior ni el fallback de pasta.
+- Sin migración ni SQL. Commit `6da3979`, push y PR #20 creados; usuario autorizó proceder. Pendiente: checks verdes, merge y promover la Preview exacta.
 
 # Menú 2026 Sierra Yara (2026-09-04)
 
@@ -1029,4 +1038,4 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 - Opciones cargadas: leche solo en los 9 cafés autorizados; salsa en Alitas y Capitan Pops; presentación en las 5 hamburguesas; término de cocción en las 4 hamburguesas de carne.
 - Exclusiones confirmadas: ninguna categoría/licor, `Galleta con Helado` y los demás productos sin precio del documento. Pepitos quedaron estándar, sin variantes; no se cargaron acompañantes porque los platos fuertes aplicables no tenían precio.
 - Catálogo productivo responde HTTP 200 en `https://www.somos-ve.com/sierra-yara`; tras revalidación contiene `Sierra Yara`, `Espresso` y `Bacon Star`, y no muestra estado inactivo.
-- Validación final: `git diff --check` aprobado y build Next.js 16.3.0 aprobado con 192 páginas, cargando secretos solo en memoria del proceso. Pendiente inmediato: hacer commit/push de la migración y abrir PR sin modificar nuevamente la base de datos.
+- Validación final: `git diff --check` aprobado y build Next.js 16.3.0 aprobado con 192 páginas, cargando secretos solo en memoria del proceso. PR #19 fusionado a `main` en `a704b20`; no hubo cambios adicionales en la base de datos.

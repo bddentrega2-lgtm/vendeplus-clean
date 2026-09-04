@@ -1,5 +1,6 @@
 import type { Store } from "@/types";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
+import { DEFAULT_STORE_COVER_IMAGE } from "@/lib/brand-copy";
 
 type BrandedStore = Store & {
   logoUrl?: string;
@@ -18,7 +19,8 @@ export function StoreBrandHeader({ store }: { store: BrandedStore }) {
   const coverImage =
     store.coverImageUrl ||
     store.heroImageUrl ||
-    "https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?q=80&w=1600&auto=format&fit=crop";
+    DEFAULT_STORE_COVER_IMAGE;
+  const usesSomosCover = coverImage === DEFAULT_STORE_COVER_IMAGE;
 
   const primaryColor = store.primaryColor || "#1F464C";
   const accentColor = store.accentColor || "#F27533";
@@ -36,18 +38,18 @@ export function StoreBrandHeader({ store }: { store: BrandedStore }) {
 
   return (
     <section className="mx-auto mb-5 max-w-6xl px-4 pt-4">
-      <div className="relative h-64 overflow-hidden rounded-[36px] bg-[#25262B] shadow-2xl shadow-[#2E3A79]/20 md:h-72">
+      <div className={`relative h-64 overflow-hidden rounded-[36px] shadow-2xl shadow-[#2E3A79]/20 md:h-72 ${usesSomosCover ? "bg-[#F8F3E8]" : "bg-[#25262B]"}`}>
         <OptimizedImage
           src={coverImage}
           alt={store.name}
           fill
           priority
           sizes="(max-width: 768px) 100vw, 1152px"
-          className="object-cover"
+          className={usesSomosCover ? "object-contain p-10 md:p-12" : "object-cover"}
           fallback={<div className="h-full w-full bg-[#25262B]" />}
         />
 
-        <div className="absolute inset-0 bg-gradient-to-t from-black/82 via-black/40 to-black/10" />
+        <div className={usesSomosCover ? "absolute inset-0 bg-gradient-to-t from-[#143D42]/90 via-[#143D42]/15 to-transparent" : "absolute inset-0 bg-gradient-to-t from-black/82 via-black/40 to-black/10"} />
 
         <div className="absolute bottom-0 left-0 right-0 p-5 text-white md:p-7">
           <div className="flex items-end gap-4">

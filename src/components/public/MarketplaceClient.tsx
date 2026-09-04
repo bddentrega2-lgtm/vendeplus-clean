@@ -13,6 +13,7 @@ import { PwaInstallButton } from "@/components/pwa/PwaInstallButton";
 import type { MarketplaceFeaturedProduct } from "@/lib/monthly-challenges";
 import type { MarketplaceDiscovery, MarketplaceProduct } from "@/lib/marketplace";
 import { BUSINESS_TYPES, businessTypeLabel } from "@/lib/business-types";
+import { DEFAULT_STORE_COVER_IMAGE } from "@/lib/brand-copy";
 
 const LOCATION_CACHE_KEY = "somos-marketplace-location-v1";
 const LOCATION_CACHE_TTL_MS = 2 * 60 * 60 * 1000;
@@ -53,6 +54,8 @@ function ProductRail({ title, eyebrow, products, badge }: { title: string; eyebr
 }
 
 function StoreCard({ store, distance }: { store: Store; distance?: number | null }) {
+  const coverImage = store.coverImageUrl || store.heroImageUrl || store.logoUrl || DEFAULT_STORE_COVER_IMAGE;
+  const usesSomosCover = coverImage === DEFAULT_STORE_COVER_IMAGE;
   const canDeliver = store.deliverySettings?.deliveryEnabled !== false;
   const canPickup = store.deliverySettings?.pickupEnabled !== false;
   const isOpen = store.openState?.isOpen !== false;
@@ -64,7 +67,7 @@ function StoreCard({ store, distance }: { store: Store; distance?: number | null
 
   return <Link href={`/${store.slug}`} className="group min-w-0 overflow-hidden rounded-[18px] bg-white shadow-sm ring-1 ring-[#143D42]/[0.08] transition hover:-translate-y-0.5 sm:rounded-[22px]">
     <div className="relative aspect-[16/10] overflow-hidden bg-[#F4F1EA]">
-      <OptimizedImage src={store.coverImageUrl || store.heroImageUrl || store.logoUrl} alt={store.name} fill sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw" className="object-cover transition duration-500 group-hover:scale-105" fallback={<div className="grid h-full place-items-center text-3xl font-black text-[#0F6B63]">{store.name.slice(0, 1)}</div>} />
+      <OptimizedImage src={coverImage} alt={store.name} fill sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw" className={`${usesSomosCover ? "object-contain p-5" : "object-cover group-hover:scale-105"} transition duration-500`} fallback={<div className="grid h-full place-items-center text-3xl font-black text-[#0F6B63]">{store.name.slice(0, 1)}</div>} />
       <span className={`absolute right-2 top-2 rounded-full px-2 py-1 text-[10px] font-black ${isOpen ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>{isOpen ? "Abierto" : "Cerrado"}</span>
       {store.logoUrl ? <OptimizedImage src={store.logoUrl} alt={`Logo de ${store.name}`} width={48} height={48} sizes="48px" className="absolute bottom-2 left-2 h-11 w-11 rounded-xl bg-white object-cover p-0.5 shadow-md ring-1 ring-black/10 sm:h-12 sm:w-12" /> : null}
     </div>
