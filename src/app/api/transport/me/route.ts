@@ -255,6 +255,20 @@ export async function GET(request: NextRequest) {
     if (agenciesError) throw agenciesError;
 
     const agencyIds = (agencies || []).map((agency: any) => agency.id);
+    const [citiesResult, coverageResult] = await Promise.all([
+      includeConfiguration
+        ? supabase.from("service_cities").select("id, name, state_name, slug").eq("is_active", true).order("sort_order")
+        : Promise.resolve({ data: [], error: null }),
+      includeConfiguration && agencyIds.length
+        ? supabase.from("transport_agency_city_coverage").select("agency_id, city_id, is_base_city, is_active").in("agency_id", agencyIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (citiesResult.error) throw citiesResult.error;
+    if (coverageResult.error) throw coverageResult.error;
+    agencies = (agencies || []).map((agency: any) => ({
+      ...agency,
+      city_coverage: (coverageResult.data || []).filter((coverage: any) => coverage.agency_id === agency.id),
+    }));
     const billingRange = getTransportBillingRange(request.nextUrl.searchParams);
 
     let requestsResult: any;
@@ -353,6 +367,7 @@ export async function GET(request: NextRequest) {
 
     const response = NextResponse.json({
       agencies: agencies || [],
+      cities: citiesResult.data || [],
       requests: requestsResult.data || [],
       connections: connectionsResult.data || [],
       configurationLoaded: includeConfiguration,

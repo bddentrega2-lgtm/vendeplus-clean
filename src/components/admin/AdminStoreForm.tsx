@@ -28,6 +28,7 @@ type StoreDraft = {
   whatsapp: string;
   description: string;
   address: string;
+  city_id: string;
   latitude: string;
   longitude: string;
   opening_hours: string;
@@ -75,6 +76,7 @@ const initialDraft: StoreDraft = {
   whatsapp: "",
   description: "",
   address: "",
+  city_id: "",
   latitude: "",
   longitude: "",
   opening_hours: "Disponible hoy",
@@ -244,6 +246,7 @@ function mapStoreToDraft(store: any, deliverySettings?: any): StoreDraft {
     whatsapp: store.whatsapp || "",
     description: store.description || "",
     address: store.address || "",
+    city_id: store.city_id || "",
     latitude: store.latitude === null || store.latitude === undefined ? "" : String(store.latitude),
     longitude: store.longitude === null || store.longitude === undefined ? "" : String(store.longitude),
     opening_hours: store.opening_hours || "Disponible hoy",
@@ -362,6 +365,12 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
   const [achievements, setAchievements] = useState<AdminAchievement[]>([]);
   const [monthlyChallenges, setMonthlyChallenges] = useState<AdminMonthlyChallenge[]>([]);
   const [updatingAchievement, setUpdatingAchievement] = useState("");
+  const [cities, setCities] = useState<Array<{ id: string; name: string; state_name: string }>>([]);
+
+  useEffect(() => {
+    fetch("/api/cities").then((response) => response.json())
+      .then((data) => setCities(data.cities || [])).catch(() => setCities([]));
+  }, []);
 
   function updateField(field: keyof StoreDraft, value: string | boolean) {
     setDraft((current) => {
@@ -1106,6 +1115,12 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-3">
+        <Field label="Ciudad">
+          <select value={draft.city_id} onChange={(event) => updateField("city_id", event.target.value)} className={inputClass}>
+            <option value="">Sin clasificar</option>
+            {cities.map((city) => <option key={city.id} value={city.id}>{city.name}, {city.state_name}</option>)}
+          </select>
+        </Field>
         <div className="xl:col-span-3">
           <Field label="Direccion">
             <input value={draft.address} onChange={(event) => updateField("address", event.target.value)} className={inputClass} />

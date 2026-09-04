@@ -888,7 +888,7 @@ test("Marketplace usa ofertas ventas y ubicacion reales sin pedir permiso al abr
   assert.match(marketplace, /placeholder="¿Que quieres pedir hoy\?"/);
   assert.match(marketplace, /"Abiertos", "Delivery", "Retiro", "Ofertas"/);
   assert.doesNotMatch(marketplace, />Ver catalogo/);
-  assert.match(marketplace, /Recien llegados/);
+  assert.match(marketplace, /Reci.n llegados/);
   assert.match(marketplace, /No autorizaste la ubicacion/);
   assert.match(marketplace, /products=\{filteredOffers\}/);
   assert.match(marketplace, /products=\{filteredBestSellers\}/);
@@ -1211,4 +1211,30 @@ test("Superadmin controla exclusivamente la visibilidad de Marketplace", () => {
   assert.match(route, /\.update\(\{ marketplace_visible: body\.visible \}\)/);
   assert.match(route, /\.eq\("id", storeId\)/);
   assert.doesNotMatch(route, /is_active|subscription_status|plan_type/);
+});
+test("Marketplace y registro conservan ciudad estructurada", () => {
+  const marketplace = readFileSync(
+    new URL("../src/components/public/MarketplaceClient.tsx", import.meta.url),
+    "utf8",
+  );
+  const signup = readFileSync(
+    new URL("../src/app/api/signup/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(marketplace, /Filtrar por ciudad/);
+  assert.match(marketplace, /store\.citySlug === activeCity/);
+  assert.match(signup, /from\("service_cities"\)/);
+  assert.match(signup, /city_id: city\.id/);
+});
+
+test("registro preserva la clave y no confunde rechazo de seguridad con longitud", () => {
+  const signup = readFileSync(
+    new URL("../src/app/api/signup/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(signup, /const password = String\(body\.get\("password"\) \|\| ""\)/);
+  assert.match(signup, /Elige una contrasena menos comun/);
+  assert.doesNotMatch(signup, /const password = cleanText/);
 });

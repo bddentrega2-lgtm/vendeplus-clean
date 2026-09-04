@@ -64,8 +64,22 @@ function authSignupError(message: string) {
     return conflict("Ya existe una cuenta con ese email. Inicia sesion o usa otro correo.");
   }
 
-  if (normalizedMessage.includes("password")) {
+  if (
+    normalizedMessage.includes("password") &&
+    (normalizedMessage.includes("at least") || normalizedMessage.includes("too short") || normalizedMessage.includes("characters"))
+  ) {
     return badRequest("La contrasena debe tener al menos 8 caracteres.");
+  }
+
+  if (
+    normalizedMessage.includes("password") &&
+    (normalizedMessage.includes("weak") || normalizedMessage.includes("common") || normalizedMessage.includes("pwned") || normalizedMessage.includes("leaked"))
+  ) {
+    return badRequest("Elige una contrasena menos comun y evita datos faciles de adivinar.");
+  }
+
+  if (normalizedMessage.includes("password")) {
+    return badRequest("Supabase rechazo esa contrasena. Prueba una combinacion diferente.");
   }
 
   return badRequest("No se pudo crear el acceso. Revisa los datos e intenta de nuevo.");
@@ -220,10 +234,11 @@ export async function POST(request: NextRequest) {
     const representativeIdNumber = normalizeRepresentativeId(body.get("representativeIdNumber"));
     const logo = body.get("logo");
     const email = normalizeAccessEmail(body.get("email"));
-    const password = cleanText(body.get("password"));
-    const confirmPassword = cleanText(body.get("confirmPassword"));
+    const password = String(body.get("password") || "");
+    const confirmPassword = String(body.get("confirmPassword") || "");
     const whatsapp = cleanText(body.get("whatsapp")).replace(/[^0-9]/g, "");
     const businessType = normalizeBusinessType(body.get("businessType"));
+    const cityId = cleanText(body.get("cityId"));
     const captchaToken = cleanText(body.get("captchaToken"));
     const referralCode = slugifyStore(cleanText(body.get("referralCode")));
 
@@ -253,6 +268,11 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createSupabaseAdminClient();
+    if (!cityId) return observed(badRequest("Selecciona la ciudad donde opera el comercio."));
+    const { data: city, error: cityError } = await supabase
+      .from("service_cities").select("id").eq("id", cityId).eq("is_active", true).maybeSingle();
+    if (cityError) throw cityError;
+    if (!city) return observed(badRequest("La ciudad seleccionada no est? disponible."));
     const { data: referrerStore, error: referrerError } = referralCode
       ? await supabase.from("stores").select("id, slug").eq("slug", referralCode).maybeSingle()
       : { data: null, error: null };
@@ -349,6 +369,7 @@ export async function POST(request: NextRequest) {
       business_type: businessType,
       whatsapp,
       address: null,
+      city_id: city.id,
       latitude: null,
       longitude: null,
       cover_image_url: null,

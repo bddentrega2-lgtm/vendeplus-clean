@@ -172,6 +172,7 @@ function normalizeStorePayload(body: any) {
     business_type: normalizeBusinessType(body.business_type),
     whatsapp: body.whatsapp ? String(body.whatsapp).replace(/[^0-9]/g, "") : null,
     address: body.address ? String(body.address).trim() : null,
+    city_id: body.city_id ? String(body.city_id).trim() : null,
     latitude: optionalNumber(body.latitude),
     longitude: optionalNumber(body.longitude),
     location_link: locationLink,
@@ -224,6 +225,7 @@ const storeSelect = `
   business_type,
   whatsapp,
   address,
+  city_id,
   latitude,
   longitude,
   location_link,
@@ -362,8 +364,16 @@ export async function GET(request: NextRequest) {
       return { ...store, service_fee_balance: balanceResult.data || null, achievement_features: achievementState.features };
     }));
 
+    const { data: cities, error: citiesError } = await supabase
+      .from("service_cities")
+      .select("id, name, state_name, slug")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true });
+    if (citiesError) throw citiesError;
+
     return NextResponse.json({
       stores: storesWithFees,
+      cities: cities || [],
       paymentDetailsAvailable,
       auth: {
         mode: auth.mode,
@@ -398,6 +408,17 @@ export async function PATCH(request: NextRequest) {
     }
 
     const supabase = createSupabaseAdminClient();
+
+    if (payload.city_id) {
+      const { data: city, error: cityError } = await supabase
+        .from("service_cities")
+        .select("id")
+        .eq("id", payload.city_id)
+        .eq("is_active", true)
+        .maybeSingle();
+      if (cityError) throw cityError;
+      if (!city) return badRequest("Selecciona una ciudad disponible.");
+    }
 
     const { data: currentBrand, error: currentBrandError } = await supabase
       .from("stores")

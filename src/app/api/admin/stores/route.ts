@@ -127,6 +127,10 @@ export async function POST(request: NextRequest) {
       return badRequest("El slug del comercio es obligatorio.");
     }
 
+    if (!payload.city_id) {
+      return badRequest("Selecciona la ciudad del comercio.");
+    }
+
     if (payload.plan_type === "founder" && payload.is_test !== true) {
       return badRequest("El plan Founder solo puede asignarse a cuentas de prueba.");
     }
@@ -140,6 +144,12 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createSupabaseAdminClient();
+    if (payload.city_id) {
+      const { data: city, error: cityError } = await supabase.from("service_cities")
+        .select("id").eq("id", payload.city_id).eq("is_active", true).maybeSingle();
+      if (cityError) throw cityError;
+      if (!city) return badRequest("Selecciona una ciudad disponible.");
+    }
     const { data: existingStore, error: existingError } = await supabase
       .from("stores")
       .select("id")
