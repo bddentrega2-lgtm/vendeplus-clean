@@ -1012,3 +1012,11 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 - UX de claves refinada: ayuda visible con una recomendación simple y errores separados para longitud, contraseña filtrada y otros rechazos, sin desactivar la protección de Supabase. Se aplicó a registro de comercios, registro de empresas delivery y cambio de contraseña.
 - Validación final: ESLint global, 62/62 contratos, TypeScript, `git diff --check` y build Next.js 16.3.0 de 184 páginas aprobados.
 - Estado: puntos 1, 2 y 4 listos para commit, push y Preview. Aún no promover a producción sin prueba real del usuario.
+
+## Preview de contraseña, colores y respaldo delivery (2026-09-04)
+
+- Commit funcional `6c9fd6f` creado y subido a `origin/feature/account-delivery-controls`.
+- Preview Ready: `dpl_2mDYiM5pS2G2qYgZ53f9C3iw971Y`, `https://vendeplus-clean-6e98kqbkx-entrega2-s-projects.vercel.app`. Build remoto Next.js 16.3.0 de 184 páginas aprobado.
+- La protección SSO de Vercel responde 302 en el smoke anónimo de todas las rutas; no hubo logs de error. Las pruebas funcionales requieren una sesión autorizada de Vercel y cuentas reales de comercio/empresa delivery.
+- Supabase quedó alineado local/remoto y la migración de colores `20260904044204` está aplicada. Producción web no fue promovida.
+- Próximo paso exacto: probar en Preview cambio de contraseña de una cuenta controlada, colores del Marketplace y descarga CSV. No promover sin esa aprobación.
