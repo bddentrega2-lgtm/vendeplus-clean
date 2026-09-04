@@ -57,7 +57,6 @@ export const panelNavItems = [
   { key: "solicitudes", label: "Solicitudes", href: "/transporte/panel/solicitudes" },
   { key: "comercios", label: "Comercios", href: "/transporte/panel/comercios" },
   { key: "facturacion", label: "Facturacion", href: "/transporte/panel/facturacion" },
-  { key: "seguridad", label: "Contraseña", href: "/transporte/panel/seguridad" },
 ];
 
 export const transportStatusLabels: Record<string, string> = {

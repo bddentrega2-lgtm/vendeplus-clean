@@ -1243,13 +1243,16 @@ test("cuentas pueden cambiar contraseña desde ambos paneles", () => {
   const form = readFileSync(new URL("../src/components/panel/UpdatePasswordForm.tsx", import.meta.url), "utf8");
   const panelShell = readFileSync(new URL("../src/components/panel/PanelShell.tsx", import.meta.url), "utf8");
   const transportNav = readFileSync(new URL("../src/components/transport/transport-panel-helpers.ts", import.meta.url), "utf8");
+  const transportPanel = readFileSync(new URL("../src/components/transport/TransportAgencyPanel.tsx", import.meta.url), "utf8");
   const transportPage = readFileSync(new URL("../src/app/transporte/panel/seguridad/page.tsx", import.meta.url), "utf8");
 
   assert.match(form, /supabase\.auth\.updateUser\(\{ password \}\)/);
   assert.match(form, /password\.length < 8/);
   assert.match(form, /password !== confirmPassword/);
   assert.match(panelShell, /\/panel\/update-password/);
-  assert.match(transportNav, /\/transporte\/panel\/seguridad/);
+  assert.doesNotMatch(transportNav, /\/transporte\/panel\/seguridad/);
+  assert.match(transportPanel, /href="\/transporte\/panel\/seguridad"/);
+  assert.match(transportPanel, /aria-label="Cambiar contraseña"/);
   assert.match(transportPage, /loginHref="\/transporte\/panel"/);
 });
 

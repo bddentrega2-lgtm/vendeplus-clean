@@ -9,6 +9,7 @@ import {
   Eye,
   EyeOff,
   ImagePlus,
+  KeyRound,
   Loader2,
   LogOut,
   PlusCircle,
@@ -1307,6 +1308,14 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
             ) : null}
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
+            <Link
+              href="/transporte/panel/seguridad"
+              aria-label="Cambiar contraseña"
+              title="Cambiar contraseña"
+              className="grid h-11 w-11 shrink-0 place-items-center self-end rounded-2xl bg-white/10 text-white transition hover:bg-white/20 sm:self-auto"
+            >
+              <KeyRound size={17} />
+            </Link>
             {agency?.slug ? (
               <>
                 <Link
