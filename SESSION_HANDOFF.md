@@ -1028,4 +1028,14 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 - Validaciones aprobadas: ESLint dirigido, 62/62 contratos, `git diff --check` y build Next.js 16.3.0 de 192 páginas.
 - La primera Preview `dpl_FhwxgF6W5vZqBStkZ4GUVTXHkYcA` usó por error el logo anterior y queda descartada. Se retiraron los 3 assets de marca y 7 iconos antiguos que no tenían referencias activas; toda la identidad interna/PWA conserva los recursos vigentes de `new-somos-preview`.
 - Preview corregida Ready: `dpl_BguVQ6KP92hkVxywJ9G98tMfCYdG`, `https://vendeplus-clean-fnn0nk2e2-entrega2-s-projects.vercel.app`. Verificación autenticada en `/start-13`: contiene el logotipo nuevo, no contiene el logo anterior ni el fallback de pasta.
-- Sin migración ni SQL. Sin commit, push ni producción. Próximo paso: usuario revisa `/start-13`; promover/asegurar solo con aprobación.
+- Sin migración ni SQL. Commit `6da3979`, push y PR #20 creados; usuario autorizó proceder. Pendiente: checks verdes, merge y promover la Preview exacta.
+
+# Menú 2026 Sierra Yara (2026-09-04)
+
+- Rama aislada `data/sierra-yara-menu-2026`, basada en `origin/main`; solo incorpora la migración de datos `20260904123000_load_sierra_yara_menu_2026.sql`.
+- Migración aplicada correctamente al proyecto Supabase vinculado para el comercio existente `Sierra Yara` (`sierra-yara`). Es idempotente, restringida por `store_id` y elevó `product_limit` a 129 sin cambiar el plan trial.
+- Resultado remoto verificado: 21 categorías, 129 productos activos, 55 descripciones, cero precios nulos, 4 grupos, 14 valores y 20 asociaciones de opciones.
+- Opciones cargadas: leche solo en los 9 cafés autorizados; salsa en Alitas y Capitan Pops; presentación en las 5 hamburguesas; término de cocción en las 4 hamburguesas de carne.
+- Exclusiones confirmadas: ninguna categoría/licor, `Galleta con Helado` y los demás productos sin precio del documento. Pepitos quedaron estándar, sin variantes; no se cargaron acompañantes porque los platos fuertes aplicables no tenían precio.
+- Catálogo productivo responde HTTP 200 en `https://www.somos-ve.com/sierra-yara`; tras revalidación contiene `Sierra Yara`, `Espresso` y `Bacon Star`, y no muestra estado inactivo.
+- Validación final: `git diff --check` aprobado y build Next.js 16.3.0 aprobado con 192 páginas, cargando secretos solo en memoria del proceso. PR #19 fusionado a `main` en `a704b20`; no hubo cambios adicionales en la base de datos.
