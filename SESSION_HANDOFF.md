@@ -975,5 +975,19 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 - En `/transporte/[agencySlug]/marketplace` el encabezado conserva solo `Comercios aliados a [empresa]`; se retiraron las dos líneas redundantes que repetían el nombre.
 - En el descubrimiento quedan solo `Destacados Somos`, `Los favoritos de la semana` y `Recién llegados`; se retiraron `Beneficios activos`, `Lo más pedido` y `Productos nuevos`.
 - `MarketplaceClient` omite eyebrow y descripción vacíos sin alterar los textos predeterminados del Marketplace general.
+
+# Recuperación de ciudad y mensaje de contraseña (2026-09-04)
+
+- Trabajo aislado en `.city-recovery-clean`, rama `fix/restore-city-and-signup`, desde `origin/main`; no se mezclaron impresión, controles delivery ni catálogos pendientes.
+- Causa ciudad: la fase ya había llegado a producción y Supabase conserva el esquema/datos, pero sus archivos nunca se integraron en `main`; un despliegue posterior desde `main` retiró el selector y el flujo estructurado.
+- Restaurado: selector/filtro por ciudad del Marketplace, ciudad obligatoria en registro, ciudad en configuración y Superadmin, ciudad base/cobertura de empresas delivery y validación server-side al solicitar afiliación.
+- Registro corregido: la API ya no recorta la clave y diferencia longitud insuficiente de claves débiles/comunes/filtradas; el cliente valida 8 caracteres antes de enviar. Nunca se registra la clave.
+- Migraciones recuperadas en Git: `20260831120000_service_cities_phase1.sql` y `20260901130000_add_venezuela_state_capitals.sql`. Ya estaban aplicadas en producción; no se ejecutó SQL en esta recuperación.
+- Validaciones: TypeScript, ESLint dirigido, 59/59 contratos y `git diff --check` aprobados. El build local encontró bloqueo EPERM/Turbopack por dependencias del worktree; el build remoto Vercel Next.js 16.3.0 aprobó 182 páginas.
+- Preview Ready: `dpl_FcNQVGYFSWWX64QqS4sJUnrXpawA`, `https://vendeplus-clean-kjhoyrdl3-entrega2-s-projects.vercel.app`. La protección de Preview devuelve login de Vercel al smoke anónimo; no hubo logs de error.
+- No hay commit, push ni producción. Próximo paso: validar con sesión Vercel el selector en `/marketplace` y ciudad/registro en `/registro`; con aprobación explícita promover exactamente esta Preview.
+- Usuario aprobó la Preview y autorizó proceder. Se promovió exactamente `dpl_FcNQVGYFSWWX64QqS4sJUnrXpawA`; deployment productivo resultante `https://vendeplus-clean-gb2ianpix-entrega2-s-projects.vercel.app`, Ready y con alias oficiales.
+- Smoke productivo aprobado: `/marketplace`, `/registro` y `/api/cities` HTTP 200 con sus marcadores de ciudad; cero logs de error recientes. Rollback web: `https://vendeplus-clean-7gbev6i76-entrega2-s-projects.vercel.app`.
+- Pendiente inmediato: commit, push, PR y merge a `main` de esta rama limpia para impedir una nueva regresión.
 - Validaciones aprobadas en worktree limpio: ESLint dirigido, `git diff --check` y build Next.js 16.3.0 de 181 páginas.
 - Sin migración ni SQL. Cambio aislado de la impresión térmica y demás trabajos pendientes.

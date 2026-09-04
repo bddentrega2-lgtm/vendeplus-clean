@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
 
     let storesQuery = supabase
       .from("stores")
-      .select("id, name, slug, whatsapp")
+      .select("id, name, slug, whatsapp, city_id, service_cities(name, state_name)")
       .order("name", { ascending: true });
     if (auth.storeIds !== null) storesQuery = storesQuery.in("id", auth.storeIds);
     if (selectedStoreId) storesQuery = storesQuery.eq("id", selectedStoreId);
@@ -74,6 +74,12 @@ export async function GET(request: NextRequest) {
           payment_terms,
           credit_terms,
           additional_conditions,
+          transport_agency_city_coverage (
+            city_id,
+            is_base_city,
+            is_active,
+            service_cities (name, state_name, slug)
+          ),
           transport_agency_rates (
             agency_id,
             flat_fee_usd,
@@ -203,6 +209,17 @@ export async function GET(request: NextRequest) {
       (connection: any) => connection.status === "active" && !isTransportConnectionEnded(connection)
     );
     const activeConnectionAgencyIds = new Set(activeConnections.map((connection: any) => connection.agency_id));
+    const scopedStore = (storesResult.data || []).find(
+      (store: any) => store.id === (selectedStoreId || (storeIds.length === 1 ? storeIds[0] : null))
+    );
+    const cityEligibleAgencies = scopedStore?.city_id
+      ? activeAgencies.filter((agency: any) =>
+          activeConnectionAgencyIds.has(agency.id) ||
+          (agency.transport_agency_city_coverage || []).some(
+            (coverage: any) => coverage.is_active !== false && coverage.city_id === scopedStore.city_id
+          )
+        )
+      : activeAgencies.filter((agency: any) => activeConnectionAgencyIds.has(agency.id));
     const scopedExclusiveConnection =
       (selectedStoreId || storeIds.length === 1)
         ? activeConnections.find(
@@ -212,8 +229,8 @@ export async function GET(request: NextRequest) {
           )
         : null;
     const visibleActiveAgencies = scopedExclusiveConnection?.agency_id
-      ? activeAgencies.filter((agency: any) => agency.id === scopedExclusiveConnection.agency_id)
-      : activeAgencies;
+      ? cityEligibleAgencies.filter((agency: any) => agency.id === scopedExclusiveConnection.agency_id)
+      : cityEligibleAgencies;
 
     const agencies = visibleActiveAgencies.map((agency: any) => {
       if (agency.rates_visibility !== "private" || activeConnectionAgencyIds.has(agency.id)) {
@@ -234,6 +251,7 @@ export async function GET(request: NextRequest) {
       agencies,
       requests: requestsResult.data || [],
       connections: connectionsResult.data || [],
+      cityRequired: Boolean(scopedStore && !scopedStore.city_id),
       billing: {
         week,
         ordersCount: ordersResult.data?.length || 0,

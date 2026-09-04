@@ -17,6 +17,7 @@ export type Agency = {
   contact_phone?: string;
   whatsapp_phone?: string;
   coverage_notes?: string;
+  city_coverage?: Array<{ city_id: string; is_base_city: boolean; is_active: boolean }>;
   capacity_dimensions_cm?: string;
   capacity_weight_kg?: number | string | null;
   max_wait_time_minutes?: number | string | null;

@@ -43,6 +43,7 @@ type StoreRow = {
   business_type: string | null;
   whatsapp: string | null;
   address: string | null;
+  city_id?: string | null;
   latitude: number | string | null;
   longitude: number | string | null;
   location_link?: string | null;
@@ -209,11 +210,13 @@ async function uploadStoreAsset(
 
 function StoreSettingsCard({
   store,
+  cities,
   pin,
   paymentDetailsAvailable,
   onSaved,
 }: {
   store: StoreRow;
+  cities: Array<{ id: string; name: string; state_name: string }>;
   pin: string;
   paymentDetailsAvailable: boolean;
   onSaved: () => void;
@@ -226,6 +229,7 @@ function StoreSettingsCard({
     business_type: store.business_type || "general",
     whatsapp: store.whatsapp || "",
     address: store.address || "",
+    city_id: store.city_id || "",
     latitude: String(store.latitude || ""),
     longitude: String(store.longitude || ""),
     cover_image_url: store.cover_image_url || "",
@@ -576,6 +580,13 @@ function StoreSettingsCard({
       </div>
 
       <div className="mt-4">
+        <label className="mb-4 block space-y-1">
+          <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Ciudad</span>
+          <select value={draft.city_id} onChange={(event) => updateField("city_id", event.target.value)} className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]">
+            <option value="">Selecciona la ciudad</option>
+            {cities.map((city) => <option key={city.id} value={city.id}>{city.name}, {city.state_name}</option>)}
+          </select>
+        </label>
         <label className="space-y-1">
           <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
             Descripción
@@ -1399,6 +1410,7 @@ export function ConfigManager() {
   const [pin, setPin] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [stores, setStores] = useState<StoreRow[]>([]);
+  const [cities, setCities] = useState<Array<{ id: string; name: string; state_name: string }>>([]);
   const [paymentDetailsAvailable, setPaymentDetailsAvailable] = useState(true);
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => shouldShowPanelInitialAccessGate());
   const [isLoading, setIsLoading] = useState(() => hasSavedPanelAuth());
@@ -1411,6 +1423,7 @@ export function ConfigManager() {
     try {
       const data = await apiRequest(currentPin);
       setStores(data.stores || []);
+      setCities(data.cities || []);
       setPaymentDetailsAvailable(data.paymentDetailsAvailable !== false);
       setIsUnlocked(true);
 
@@ -1503,6 +1516,7 @@ export function ConfigManager() {
         <StoreSettingsCard
           key={store.id}
           store={store}
+          cities={cities}
           pin={pin}
           paymentDetailsAvailable={paymentDetailsAvailable}
           onSaved={() => loadConfig(pin)}

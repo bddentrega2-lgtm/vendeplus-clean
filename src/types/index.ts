@@ -106,6 +106,10 @@ export type Store = {
   description: string;
   whatsappPhone: string;
   address: string;
+  cityId?: string;
+  cityName?: string;
+  citySlug?: string;
+  stateName?: string;
   latitude: number;
   longitude: number;
   openingHours: string;

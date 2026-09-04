@@ -20,6 +20,8 @@ export function SignupForm() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [whatsapp, setWhatsapp] = useState("");
   const [businessType, setBusinessType] = useState("food");
+  const [cityId, setCityId] = useState("");
+  const [cities, setCities] = useState<Array<{ id: string; name: string; state_name: string }>>([]);
   const [referralCode, setReferralCode] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
@@ -35,6 +37,13 @@ export function SignupForm() {
   useEffect(() => {
     const referral = new URLSearchParams(window.location.search).get("ref");
     if (referral) setReferralCode(referral);
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/cities")
+      .then((response) => response.json())
+      .then((data) => setCities(data.cities || []))
+      .catch(() => setCities([]));
   }, []);
 
   async function createAccount() {
@@ -63,8 +72,18 @@ export function SignupForm() {
       return;
     }
 
+    if (password.length < 8) {
+      setError("La contraseña debe tener al menos 8 caracteres.");
+      setIsSaving(false);
+      return;
+    }
     if (password !== confirmPassword) {
       setError("Las contraseñas no coinciden.");
+      setIsSaving(false);
+      return;
+    }
+    if (!cityId) {
+      setError("Selecciona la ciudad donde opera el comercio.");
       setIsSaving(false);
       return;
     }
@@ -79,6 +98,7 @@ export function SignupForm() {
       formData.set("confirmPassword", confirmPassword);
       formData.set("whatsapp", whatsapp);
       formData.set("businessType", businessType);
+      formData.set("cityId", cityId);
       formData.set("captchaToken", captchaToken);
       formData.set("referralCode", referralCode);
       if (logo) formData.set("logo", logo);
@@ -269,6 +289,14 @@ export function SignupForm() {
                   onChange={(event) => setLogo(event.target.files?.[0] || null)}
                 />
               </span>
+            </label>
+
+            <label className="relative space-y-1 md:col-span-2">
+              <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Ciudad donde opera</span>
+              <select value={cityId} onChange={(event) => setCityId(event.target.value)} required className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]">
+                <option value="">Selecciona tu ciudad</option>
+                {cities.map((city) => <option key={city.id} value={city.id}>{city.name}, {city.state_name}</option>)}
+              </select>
             </label>
 
             <label className="relative space-y-1">

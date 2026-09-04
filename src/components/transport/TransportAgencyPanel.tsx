@@ -101,6 +101,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
   const [agencies, setAgencies] = useState<Agency[]>(
     hasUsableInitialCache ? transportPanelCache?.agencies || [] : []
   );
+  const [serviceCities, setServiceCities] = useState<Array<{ id: string; name: string; state_name: string }>>([]);
   const [selectedAgencyId, setSelectedAgencyId] = useState("");
   const [requests, setRequests] = useState<any[]>(transportPanelCache?.requests || []);
   const [connections, setConnections] = useState<any[]>(transportPanelCache?.connections || []);
@@ -328,6 +329,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
         nextAgencies = mergeAgenciesPreservingPremium(current, data.agencies || []);
         return nextAgencies;
       });
+      if (data.configurationLoaded) setServiceCities(data.cities || []);
       if (data.relationsLoaded) {
         setRequests(data.requests || []);
         setConnections(data.connections || []);
@@ -894,8 +896,8 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
           contactEmail: form.get("contactEmail"),
           contactPhone: form.get("contactPhone"),
           whatsappPhone: form.get("whatsappPhone"),
-          city: form.get("city"),
-          state: form.get("state"),
+          baseCityId: form.get("baseCityId"),
+          coverageCityIds: form.getAll("coverageCityIds"),
           coverageNotes: form.get("coverageNotes"),
           logoUrl: agency.logo_url || "",
           modality: form.get("modality"),
@@ -1842,27 +1844,19 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
               </label>
 
               <label className="space-y-1">
-                <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
-                  Ciudad base
-                </span>
-                <input
-                  name="city"
-                  defaultValue={agency.city || ""}
-                  required
-                  className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-                />
+                <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">Ciudad base</span>
+                <select name="baseCityId" defaultValue={agency.city_coverage?.find((coverage) => coverage.is_active && coverage.is_base_city)?.city_id || ""} required className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]">
+                  <option value="">Selecciona la ciudad base</option>
+                  {serviceCities.map((city) => <option key={city.id} value={city.id}>{city.name}, {city.state_name}</option>)}
+                </select>
               </label>
 
-              <label className="space-y-1">
-                <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
-                  Estado
-                </span>
-                <input
-                  name="state"
-                  defaultValue={agency.state || ""}
-                  className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-                />
-              </label>
+              <fieldset className="space-y-2 md:col-span-2">
+                <legend className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">Ciudades con cobertura</legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {serviceCities.map((city) => <label key={city.id} className="flex items-center gap-2 rounded-xl border border-[#25262B]/10 px-3 py-2 text-sm font-bold"><input type="checkbox" name="coverageCityIds" value={city.id} defaultChecked={agency.city_coverage?.some((coverage) => coverage.city_id === city.id && coverage.is_active)} />{city.name}, {city.state_name}</label>)}
+                </div>
+              </fieldset>
             </div>
 
             <label className="mt-4 block space-y-1">

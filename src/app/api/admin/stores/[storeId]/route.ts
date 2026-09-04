@@ -109,6 +109,12 @@ export async function PATCH(
     }
 
     const supabase = createSupabaseAdminClient();
+    if (payload.city_id) {
+      const { data: city, error: cityError } = await supabase.from("service_cities")
+        .select("id").eq("id", payload.city_id).eq("is_active", true).maybeSingle();
+      if (cityError) throw cityError;
+      if (!city) return badRequest("Selecciona una ciudad disponible.");
+    }
     const { data: existingSlug, error: slugError } = await supabase
       .from("stores")
       .select("id")

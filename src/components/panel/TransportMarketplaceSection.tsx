@@ -238,6 +238,12 @@ export function TransportMarketplaceSection({ pin, onChanged }: Props) {
         </label>
       ) : null}
 
+      {data.cityRequired ? (
+        <div className="mt-4 rounded-2xl bg-[#FFB547]/15 p-4 text-sm font-bold leading-relaxed text-[#FFE0A3] ring-1 ring-[#FFB547]/30">
+          Configura primero la ciudad del comercio en Configuraci?n. Luego mostraremos ?nicamente las empresas delivery con cobertura all?.
+        </div>
+      ) : null}
+
       {activeExclusiveConnection ? (
         <div className="mt-4 rounded-2xl bg-white/10 p-4 text-sm font-bold leading-relaxed text-white/75">
           Este comercio tiene una afiliacion exclusiva activa. Por proteccion de esa alianza,

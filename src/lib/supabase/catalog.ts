@@ -226,6 +226,10 @@ function mapStore(
     description: normalizePublicBrandText(row.description || fallback?.description) || "Catalogo disponible en Somos.",
     whatsappPhone: row.whatsapp || fallback?.whatsappPhone || "584245666025",
     address: row.address || fallback?.address || "Maracay, Aragua",
+    cityId: row.city_id ? String(row.city_id) : undefined,
+    cityName: row.service_cities?.name || undefined,
+    citySlug: row.service_cities?.slug || undefined,
+    stateName: row.service_cities?.state_name || undefined,
     latitude: toNumber(row.latitude, fallback?.latitude || 0),
     longitude: toNumber(row.longitude, fallback?.longitude || 0),
     openingHours: String(row.opening_hours || "").trim().toLowerCase() === "disponible hoy"
@@ -272,6 +276,8 @@ const storeSelect = `
   name,
   description,
   address,
+  city_id,
+  service_cities (name, slug, state_name),
   latitude,
   longitude,
   whatsapp,
@@ -440,6 +446,8 @@ const baseStoreSelect = `
 
 const storeShellSelect = `
   id,
+  city_id,
+  service_cities (name, slug, state_name),
   is_test,
   plan_type,
   monthly_price_usd,

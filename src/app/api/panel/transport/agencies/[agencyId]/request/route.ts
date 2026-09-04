@@ -95,12 +95,24 @@ export async function POST(
 
     const { data: store, error: storeError } = await supabase
       .from("stores")
-      .select("id, name, whatsapp, address, latitude, longitude, opening_hours, description")
+      .select("id, name, whatsapp, address, latitude, longitude, opening_hours, description, city_id")
       .eq("id", storeId)
       .maybeSingle();
 
     if (storeError) throw storeError;
     if (!store) return badRequest("Comercio no encontrado.");
+    if (!store.city_id) {
+      return badRequest("Configura la ciudad del comercio antes de solicitar una empresa delivery.");
+    }
+    const { data: coverage, error: coverageError } = await supabase
+      .from("transport_agency_city_coverage")
+      .select("id")
+      .eq("agency_id", agencyId)
+      .eq("city_id", store.city_id)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (coverageError) throw coverageError;
+    if (!coverage) return badRequest("Esta empresa delivery todav?a no tiene cobertura en la ciudad del comercio.");
 
     const { data: existingRequest, error: existingRequestError } = await supabase
       .from("store_transport_agency_requests")

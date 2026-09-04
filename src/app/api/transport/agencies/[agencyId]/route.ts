@@ -33,6 +33,18 @@ export async function PATCH(
     let savedProfileAgency: any = null;
 
     if (body.action === "profile") {
+      const coverageCityIds = Array.from(new Set(
+        (Array.isArray(body.coverageCityIds) ? body.coverageCityIds : []).map((value: unknown) => cleanTransportText(value, 80)).filter(Boolean)
+      ));
+      const baseCityId = cleanTransportText(body.baseCityId, 80);
+      if (!coverageCityIds.length || !baseCityId || !coverageCityIds.includes(baseCityId)) {
+        return badRequest("Selecciona una ciudad base y al menos una ciudad de cobertura.");
+      }
+      const { data: validCities, error: citiesError } = await supabase
+        .from("service_cities").select("id, name, state_name").in("id", coverageCityIds).eq("is_active", true);
+      if (citiesError) throw citiesError;
+      if ((validCities || []).length !== coverageCityIds.length) return badRequest("La cobertura contiene una ciudad no disponible.");
+      const baseCity = (validCities || []).find((city: any) => city.id === baseCityId);
       const payload: Record<string, any> = {
         name: cleanTransportText(body.name, 140),
         legal_name: cleanTransportText(body.legalName, 160) || null,
@@ -41,8 +53,8 @@ export async function PATCH(
         contact_email: cleanTransportText(body.contactEmail, 180).toLowerCase(),
         contact_phone: cleanTransportText(body.contactPhone, 40),
         whatsapp_phone: cleanTransportText(body.whatsappPhone, 40) || null,
-        city: cleanTransportText(body.city, 80) || null,
-        state: cleanTransportText(body.state, 80) || null,
+        city: baseCity?.name || null,
+        state: baseCity?.state_name || null,
         coverage_notes: cleanTransportText(body.coverageNotes, 600) || null,
         logo_url: cleanTransportText(body.logoUrl, 1000) || null,
         capacity_dimensions_cm: cleanTransportText(body.capacityDimensionsCm, 80) || null,
@@ -83,6 +95,11 @@ export async function PATCH(
       if (error) throw error;
       if (!updatedAgency) return badRequest("No se pudo confirmar el guardado de la empresa delivery.");
       savedProfileAgency = updatedAgency;
+      const deactivateCoverage = await supabase.from("transport_agency_city_coverage").update({ is_active: false, is_base_city: false, updated_at: new Date().toISOString() }).eq("agency_id", agencyId);
+      if (deactivateCoverage.error) throw deactivateCoverage.error;
+      const coverageRows = coverageCityIds.map((cityId) => ({ agency_id: agencyId, city_id: cityId, is_base_city: cityId === baseCityId, is_active: true, updated_at: new Date().toISOString() }));
+      const coverageSave = await supabase.from("transport_agency_city_coverage").upsert(coverageRows, { onConflict: "agency_id,city_id" });
+      if (coverageSave.error) throw coverageSave.error;
     } else if (body.action === "rates") {
       const pricingType = ["flat", "zones", "distance_ranges", "manual"].includes(
         cleanTransportText(body.pricingType)
