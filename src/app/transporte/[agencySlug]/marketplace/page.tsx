@@ -20,13 +20,9 @@ export default async function TransportAgencyMarketplacePage({
   return (
     <MarketplaceClient
       stores={stores}
-      eyebrow={`Aliados de ${agency.name}`}
+      eyebrow=""
       title={`Comercios aliados a ${agency.name}`}
-      description={
-        location
-          ? `Compra en comercios conectados con ${agency.name} en ${location}.`
-          : `Compra en comercios conectados con ${agency.name}.`
-      }
+      description=""
       storesEyebrow="Red aliada"
       storesTitle="Elige un comercio aliado"
       emptyTitle="Esta empresa aun no tiene comercios visibles"

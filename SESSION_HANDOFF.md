@@ -970,3 +970,10 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 - Producción verificada: Burger Más, carrito, checkout y Marketplace HTTP 200; rutas de impresión HTTP 404; cero logs de error del deployment nuevo.
 - Sin migración ni SQL. Validaciones: 57/57 contratos, ESLint dirigido, TypeScript, `git diff --check` y build Next.js 16.3.0 de 161 páginas.
 - El piloto de impresión permanece fuera de esta rama y fuera del bundle productivo.
+# Marketplace público: textos simplificados (2026-09-04)
+
+- En `/transporte/[agencySlug]/marketplace` el encabezado conserva solo `Comercios aliados a [empresa]`; se retiraron las dos líneas redundantes que repetían el nombre.
+- En el descubrimiento quedan solo `Destacados Somos`, `Los favoritos de la semana` y `Recién llegados`; se retiraron `Beneficios activos`, `Lo más pedido` y `Productos nuevos`.
+- `MarketplaceClient` omite eyebrow y descripción vacíos sin alterar los textos predeterminados del Marketplace general.
+- Validaciones aprobadas en worktree limpio: ESLint dirigido, `git diff --check` y build Next.js 16.3.0 de 181 páginas.
+- Sin migración ni SQL. Cambio aislado de la impresión térmica y demás trabajos pendientes.
