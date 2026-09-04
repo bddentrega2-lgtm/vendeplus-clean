@@ -50,8 +50,22 @@ function authSignupError(message: string) {
     return conflict("Ese correo ya tiene una cuenta. Usa otro correo o pide recuperar la clave.");
   }
 
-  if (normalizedMessage.includes("password")) {
+  if (
+    normalizedMessage.includes("password") &&
+    (normalizedMessage.includes("at least") || normalizedMessage.includes("too short") || normalizedMessage.includes("characters"))
+  ) {
     return badRequest("La clave debe tener al menos 8 caracteres.");
+  }
+
+  if (
+    normalizedMessage.includes("password") &&
+    (normalizedMessage.includes("weak") || normalizedMessage.includes("common") || normalizedMessage.includes("pwned") || normalizedMessage.includes("leaked"))
+  ) {
+    return badRequest("Por seguridad, no podemos aceptar esa combinacion. Agrega otra palabra o algunos numeros e intenta de nuevo.");
+  }
+
+  if (normalizedMessage.includes("password")) {
+    return badRequest("No pudimos aceptar esa clave. Prueba una combinacion diferente.");
   }
 
   return badRequest("No se pudo crear el acceso. Revisa los datos e intenta de nuevo.");

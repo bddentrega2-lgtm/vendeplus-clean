@@ -69,6 +69,11 @@ const panelRouteMeta: Record<string, { active: string; title: string; subtitle: 
     title: "Configuración",
     subtitle: "Edita la información principal del negocio.",
   },
+  "/panel/update-password": {
+    active: "/panel/update-password",
+    title: "Contraseña",
+    subtitle: "Actualiza la contraseña de acceso a tu cuenta.",
+  },
   "/panel/suscripcion": {
     active: "/panel/suscripcion",
     title: "Suscripción",
@@ -76,7 +81,7 @@ const panelRouteMeta: Record<string, { active: string; title: string; subtitle: 
   },
 };
 
-const routesWithoutPanelShell = new Set(["/panel/login", "/panel/update-password"]);
+const routesWithoutPanelShell = new Set(["/panel/login"]);
 const routesAllowedWhenExpired = new Set(["/panel/suscripcion"]);
 const routeFeatureRequirements: Record<string, string> = {
   "/panel/estadisticas": "full_stats",

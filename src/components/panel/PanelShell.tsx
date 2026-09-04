@@ -15,6 +15,7 @@ import {
   ContactRound,
   CreditCard,
   LayoutDashboard,
+  KeyRound,
   ListPlus,
   Settings,
   Sparkles,
@@ -143,6 +144,19 @@ export function PanelShell({
               </div>
 
               <div className="flex flex-col gap-3 sm:flex-row md:items-center">
+                <Link
+                  href="/panel/update-password"
+                  aria-label="Cambiar contraseña"
+                  title="Cambiar contraseña"
+                  className={[
+                    "grid h-11 w-11 shrink-0 place-items-center self-end rounded-2xl transition sm:self-auto",
+                    active === "/panel/update-password"
+                      ? "bg-[#FFB547] text-[#25262B]"
+                      : "bg-white/10 text-white hover:bg-white/20",
+                  ].join(" ")}
+                >
+                  <KeyRound size={18} />
+                </Link>
                 <PanelStoreSelector />
                 <div className="md:hidden">
                   <PwaInstallButton compact label="Descargar app" />

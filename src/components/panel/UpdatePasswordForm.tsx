@@ -8,10 +8,32 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 function cleanRecoveryUrl() {
   if (typeof window === "undefined") return;
-  window.history.replaceState(null, "", "/panel/update-password");
+  window.history.replaceState(null, "", window.location.pathname);
 }
 
-export function UpdatePasswordForm() {
+function friendlyPasswordError(error: any) {
+  const message = String(error?.message || "").toLowerCase();
+  if (
+    error?.code === "weak_password" ||
+    message.includes("weak") ||
+    message.includes("common") ||
+    message.includes("pwned") ||
+    message.includes("leaked")
+  ) {
+    return "Por seguridad, no podemos aceptar esa combinación. Agrega otra palabra o algunos números e intenta de nuevo.";
+  }
+  return error?.message || "No se pudo actualizar la contraseña.";
+}
+
+export function UpdatePasswordForm({
+  eyebrow = "Panel Somos",
+  description = "Escribe una nueva contraseña para proteger el acceso a tu cuenta.",
+  loginHref = "/panel/login",
+}: {
+  eyebrow?: string;
+  description?: string;
+  loginHref?: string;
+}) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isCheckingSession, setIsCheckingSession] = useState(true);
@@ -86,8 +108,8 @@ export function UpdatePasswordForm() {
       return;
     }
 
-    if (password.length < 6) {
-      setError("La contraseña debe tener al menos 6 caracteres.");
+    if (password.length < 8) {
+      setError("La contraseña debe tener al menos 8 caracteres.");
       return;
     }
 
@@ -116,7 +138,7 @@ export function UpdatePasswordForm() {
       setPassword("");
       setConfirmPassword("");
     } catch (error: any) {
-      setError(error.message || "No se pudo actualizar la contraseña.");
+      setError(friendlyPasswordError(error));
     } finally {
       setIsSaving(false);
     }
@@ -130,11 +152,11 @@ export function UpdatePasswordForm() {
         </div>
 
         <p className="mt-5 text-sm font-black uppercase tracking-[0.18em] text-[#746f69]">
-          Panel Somos
+          {eyebrow}
         </p>
         <h1 className="mt-2 text-4xl font-black">Actualizar contraseña</h1>
         <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
-          Escribe una nueva contraseña para recuperar el acceso a tu panel.
+          {description}
         </p>
 
         {isCheckingSession ? (
@@ -148,7 +170,7 @@ export function UpdatePasswordForm() {
               Tu contraseña fue actualizada correctamente. Ya puedes iniciar sesión.
             </div>
             <Link
-              href="/panel/login"
+              href={loginHref}
               className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B]"
             >
               <CheckCircle2 size={18} />
@@ -166,7 +188,7 @@ export function UpdatePasswordForm() {
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   type="password"
-                  placeholder="Mínimo 6 caracteres"
+                  placeholder="Mínimo 8 caracteres"
                   className="mt-1 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
                 />
               </label>
@@ -185,6 +207,10 @@ export function UpdatePasswordForm() {
               </label>
             </div>
 
+            <p className="mt-3 text-xs font-bold text-[#746f69]">
+              Usa 8 caracteres o más. Combinar varias palabras suele ser fácil de recordar y más seguro.
+            </p>
+
             <button
               type="button"
               onClick={updatePassword}
@@ -197,7 +223,7 @@ export function UpdatePasswordForm() {
 
             {!hasRecoverySession && !error && (
               <p className="mt-3 text-sm font-black text-red-600">
-                Abre esta página desde el enlace de recuperación enviado a tu email.
+                Inicia sesión o abre esta página desde el enlace de recuperación enviado a tu email.
               </p>
             )}
           </>

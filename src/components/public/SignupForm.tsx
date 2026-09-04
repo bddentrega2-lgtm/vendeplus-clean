@@ -390,6 +390,10 @@ export function SignupForm() {
             </label>
           </div>
 
+          <p className="mt-2 text-xs font-bold text-[#746f69]">
+            Usa 8 caracteres o más. Combinar varias palabras suele ser fácil de recordar y más seguro.
+          </p>
+
           {error ? (
             <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm font-black text-red-700 ring-1 ring-red-100">
               {error}

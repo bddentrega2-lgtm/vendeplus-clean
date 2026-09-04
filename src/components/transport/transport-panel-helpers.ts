@@ -8,6 +8,8 @@ export type Agency = {
   rates_visibility?: "public" | "private" | string | null;
   logo_url?: string;
   banner_image_url?: string | null;
+  marketplace_primary_color?: string | null;
+  marketplace_accent_color?: string | null;
   legal_name?: string;
   rif?: string;
   contact_name?: string;

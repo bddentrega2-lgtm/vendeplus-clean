@@ -18,6 +18,11 @@ function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
 }
 
+function colorHex(value: unknown, fallback: string) {
+  const color = cleanTransportText(value, 7).toUpperCase();
+  return /^#[0-9A-F]{6}$/.test(color) ? color : fallback;
+}
+
 export async function PATCH(
   request: NextRequest,
   context: { params: Promise<{ agencyId: string }> }
@@ -74,6 +79,8 @@ export async function PATCH(
         driver_whatsapp_dispatch_enabled: Boolean(body.driverWhatsappDispatchEnabled),
         modality: normalizeAgencyModality(body.modality),
         rates_visibility: normalizeRatesVisibility(body.ratesVisibility),
+        marketplace_primary_color: colorHex(body.marketplacePrimaryColor, "#143D42"),
+        marketplace_accent_color: colorHex(body.marketplaceAccentColor, "#FF7133"),
         pricing_type: ["flat", "zones", "distance_ranges", "manual"].includes(
           cleanTransportText(body.pricingType)
         )

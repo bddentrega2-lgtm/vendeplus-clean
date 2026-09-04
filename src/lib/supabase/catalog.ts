@@ -1002,7 +1002,9 @@ export async function getPublicTransportAgencyMarketplaceBySlug(slug: string): P
     bannerImageUrl: string | null;
     city: string | null;
     state: string | null;
-    coverageNotes: string | null;
+      coverageNotes: string | null;
+      primaryColor: string;
+      accentColor: string;
   };
   stores: Store[];
 } | null> {
@@ -1012,13 +1014,13 @@ export async function getPublicTransportAgencyMarketplaceBySlug(slug: string): P
 
   let { data: agency, error: agencyError } = await supabase
     .from("transport_agencies")
-    .select("id, name, slug, logo_url, banner_image_url, city, state, coverage_notes, status, is_active")
+    .select("id, name, slug, logo_url, banner_image_url, city, state, coverage_notes, marketplace_primary_color, marketplace_accent_color, status, is_active")
     .eq("slug", normalizedSlug)
     .eq("status", "active")
     .eq("is_active", true)
     .maybeSingle();
 
-  if (agencyError && /banner_image_url/i.test(agencyError.message || "")) {
+  if (agencyError && /banner_image_url|marketplace_primary_color|marketplace_accent_color/i.test(agencyError.message || "")) {
     const fallback = await supabase
       .from("transport_agencies")
       .select("id, name, slug, logo_url, city, state, coverage_notes, status, is_active")
@@ -1027,7 +1029,14 @@ export async function getPublicTransportAgencyMarketplaceBySlug(slug: string): P
       .eq("is_active", true)
       .maybeSingle();
 
-    agency = fallback.data ? { ...fallback.data, banner_image_url: null } : null;
+    agency = fallback.data
+      ? {
+          ...fallback.data,
+          banner_image_url: null,
+          marketplace_primary_color: "#143D42",
+          marketplace_accent_color: "#FF7133",
+        }
+      : null;
     agencyError = fallback.error;
   }
 
@@ -1067,6 +1076,8 @@ export async function getPublicTransportAgencyMarketplaceBySlug(slug: string): P
         city: agency.city || null,
         state: agency.state || null,
         coverageNotes: normalizePublicBrandText(agency.coverage_notes) || null,
+        primaryColor: agency.marketplace_primary_color || "#143D42",
+        accentColor: agency.marketplace_accent_color || "#FF7133",
       },
       stores: [],
     };
@@ -1102,6 +1113,8 @@ export async function getPublicTransportAgencyMarketplaceBySlug(slug: string): P
       city: agency.city || null,
       state: agency.state || null,
       coverageNotes: normalizePublicBrandText(agency.coverage_notes) || null,
+      primaryColor: agency.marketplace_primary_color || "#143D42",
+      accentColor: agency.marketplace_accent_color || "#FF7133",
     },
     stores: (await hydrateStoresDeliveryRelations(eligibleMarketplaceStores))
       .map((row) => mapStore(row, { includeFallbackCatalog: false })),

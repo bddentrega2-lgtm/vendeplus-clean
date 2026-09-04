@@ -991,3 +991,32 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 - Pendiente inmediato: commit, push, PR y merge a `main` de esta rama limpia para impedir una nueva regresión.
 - Validaciones aprobadas en worktree limpio: ESLint dirigido, `git diff --check` y build Next.js 16.3.0 de 181 páginas.
 - Sin migración ni SQL. Cambio aislado de la impresión térmica y demás trabajos pendientes.
+# Adelanto backlog: contraseña, colores y respaldo delivery (2026-09-04)
+
+- Rama aislada `feature/account-delivery-controls`, basada en `origin/main` después del PR #16. No mezcla impresión térmica, catálogos ni cobertura por ciudades.
+- Punto 1: comercios ven `Contraseña` en su navegación y empresas delivery ven `Contraseña` en su panel. El formulario reutiliza la sesión Supabase activa, exige 8 caracteres, confirmación, cierra la sesión después del cambio y conserva el flujo de recuperación por email.
+- Punto 2: la configuración de empresa delivery incorpora color principal y de acento. La API exige rol owner/admin y normaliza valores hexadecimales. El Marketplace público aplica ambos colores al encabezado mediante variables CSS con los colores Somos como fallback.
+- Migración nueva no destructiva: `20260904044204_transport_agency_marketplace_colors.sql`; agrega `marketplace_primary_color` y `marketplace_accent_color` con defaults y checks hexadecimales.
+- Punto 4: Facturación delivery incorpora `Descargar respaldo CSV`. El endpoint limita el período, máximo 5.000 filas y 12 descargas cada 10 minutos; autoriza únicamente owner/admin/billing de la empresa, filtra por `agency_id`, evita fórmulas CSV y responde sin caché.
+- Validaciones aprobadas: ESLint dirigido, TypeScript, 60/60 contratos críticos, `git diff --check` y build Next.js 16.3.0 de 183 páginas.
+- Bloqueo para aplicar SQL: el dry-run remoto detectó 13 migraciones aplicadas en Supabase que aún no existen en `main` (`20260826152000` a `20260903203000`). No se aplicó la nueva migración para no romper el historial; primero deben integrarse las migraciones pendientes en Git.
+- Sin commit, push, PR ni despliegue de esta rama todavía. Próximo paso: reconciliar el historial de migraciones, repetir `supabase db push --linked --dry-run`, revisar en Preview con cuentas reales y recién entonces publicar.
+
+## Revisión posterior y sincronización con main (2026-09-04)
+
+- La rama se actualizó por fast-forward hasta `origin/main` (`28f6d67`) y conserva tanto la restauración de ciudades/registro como los tres adelantos. Los dos conflictos de integración se resolvieron manteniendo ambas funcionalidades.
+- Seguridad corregida: la pantalla de contraseña ahora limpia tokens conservando la ruta actual, también en `/transporte/panel/seguridad`; el CSV exige siempre un `agencyId` concreto y aplica `.eq("agency_id", requestedAgencyId)` incluso en modo founder, evitando exportaciones globales accidentales.
+- Validaciones actualizadas: ESLint global aprobado, 62/62 contratos críticos aprobados, TypeScript aprobado, `git diff --check` aprobado y build Next.js 16.3.0 de 184 páginas aprobado cargando secretos solo en memoria del proceso.
+- `supabase migration list --linked` confirmó 11 migraciones remotas sin archivo local en `origin/main`: cuatro de impresión y siete de catálogos. Se recuperaron los archivos originales sin cambiar su contenido; esto no reactivó la impresión ni volvió a ejecutar esas migraciones.
+- El dry-run propuso exclusivamente `20260904044204_transport_agency_marketplace_colors.sql`; se aplicó correctamente y la lista local/remota quedó completamente alineada.
+- UX de claves refinada: ayuda visible con una recomendación simple y errores separados para longitud, contraseña filtrada y otros rechazos, sin desactivar la protección de Supabase. Se aplicó a registro de comercios, registro de empresas delivery y cambio de contraseña.
+- Validación final: ESLint global, 62/62 contratos, TypeScript, `git diff --check` y build Next.js 16.3.0 de 184 páginas aprobados.
+- Estado: puntos 1, 2 y 4 listos para commit, push y Preview. Aún no promover a producción sin prueba real del usuario.
+
+## Preview de contraseña, colores y respaldo delivery (2026-09-04)
+
+- Commit funcional `6c9fd6f` creado y subido a `origin/feature/account-delivery-controls`.
+- Preview Ready: `dpl_2mDYiM5pS2G2qYgZ53f9C3iw971Y`, `https://vendeplus-clean-6e98kqbkx-entrega2-s-projects.vercel.app`. Build remoto Next.js 16.3.0 de 184 páginas aprobado.
+- La protección SSO de Vercel responde 302 en el smoke anónimo de todas las rutas; no hubo logs de error. Las pruebas funcionales requieren una sesión autorizada de Vercel y cuentas reales de comercio/empresa delivery.
+- Supabase quedó alineado local/remoto y la migración de colores `20260904044204` está aplicada. Producción web no fue promovida.
+- Próximo paso exacto: probar en Preview cambio de contraseña de una cuenta controlada, colores del Marketplace y descarga CSV. No promover sin esa aprobación.
