@@ -131,6 +131,10 @@ export function TransportRegistrationForm() {
         />
       </div>
 
+      <p className="mt-2 text-xs font-bold text-[#746f69]">
+        Usa 8 caracteres o más. Combinar varias palabras suele ser fácil de recordar y más seguro.
+      </p>
+
       <AuthCaptcha action="transport_agency_apply" onToken={setCaptchaToken} />
 
       <button

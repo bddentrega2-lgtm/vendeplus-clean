@@ -15,6 +15,7 @@ import {
   ContactRound,
   CreditCard,
   LayoutDashboard,
+  KeyRound,
   ListPlus,
   Settings,
   Sparkles,
@@ -36,6 +37,7 @@ const navItems = [
   { href: "/panel/clientes", label: "Clientes", icon: ContactRound },
   { href: "/panel/estadisticas", label: "Estadísticas", icon: BarChart3 },
   { href: "/panel/configuracion", label: "Configuración", icon: Settings },
+  { href: "/panel/update-password", label: "Contraseña", icon: KeyRound },
   { href: "/panel/suscripcion", label: "Suscripción", icon: CreditCard },
 ];
 

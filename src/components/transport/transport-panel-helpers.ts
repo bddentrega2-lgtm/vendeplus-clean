@@ -8,6 +8,8 @@ export type Agency = {
   rates_visibility?: "public" | "private" | string | null;
   logo_url?: string;
   banner_image_url?: string | null;
+  marketplace_primary_color?: string | null;
+  marketplace_accent_color?: string | null;
   legal_name?: string;
   rif?: string;
   contact_name?: string;
@@ -55,6 +57,7 @@ export const panelNavItems = [
   { key: "solicitudes", label: "Solicitudes", href: "/transporte/panel/solicitudes" },
   { key: "comercios", label: "Comercios", href: "/transporte/panel/comercios" },
   { key: "facturacion", label: "Facturacion", href: "/transporte/panel/facturacion" },
+  { key: "seguridad", label: "Contraseña", href: "/transporte/panel/seguridad" },
 ];
 
 export const transportStatusLabels: Record<string, string> = {

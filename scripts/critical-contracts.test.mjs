@@ -1235,6 +1235,48 @@ test("registro preserva la clave y no confunde rechazo de seguridad con longitud
   );
 
   assert.match(signup, /const password = String\(body\.get\("password"\) \|\| ""\)/);
-  assert.match(signup, /Elige una contrasena menos comun/);
+  assert.match(signup, /Esa contrasena ha sido usada muchas veces/);
   assert.doesNotMatch(signup, /const password = cleanText/);
+});
+
+test("cuentas pueden cambiar contraseña desde ambos paneles", () => {
+  const form = readFileSync(new URL("../src/components/panel/UpdatePasswordForm.tsx", import.meta.url), "utf8");
+  const panelShell = readFileSync(new URL("../src/components/panel/PanelShell.tsx", import.meta.url), "utf8");
+  const transportNav = readFileSync(new URL("../src/components/transport/transport-panel-helpers.ts", import.meta.url), "utf8");
+  const transportPage = readFileSync(new URL("../src/app/transporte/panel/seguridad/page.tsx", import.meta.url), "utf8");
+
+  assert.match(form, /supabase\.auth\.updateUser\(\{ password \}\)/);
+  assert.match(form, /password\.length < 8/);
+  assert.match(form, /password !== confirmPassword/);
+  assert.match(panelShell, /\/panel\/update-password/);
+  assert.match(transportNav, /\/transporte\/panel\/seguridad/);
+  assert.match(transportPage, /loginHref="\/transporte\/panel"/);
+});
+
+test("empresa delivery personaliza colores de su Marketplace con validacion server-side", () => {
+  const migration = readFileSync(new URL("../supabase/migrations/20260904044204_transport_agency_marketplace_colors.sql", import.meta.url), "utf8");
+  const route = readFileSync(new URL("../src/app/api/transport/agencies/[agencyId]/route.ts", import.meta.url), "utf8");
+  const marketplace = readFileSync(new URL("../src/components/public/MarketplaceClient.tsx", import.meta.url), "utf8");
+
+  assert.match(migration, /marketplace_primary_color text not null default '#143D42'/);
+  assert.match(migration, /check \(marketplace_primary_color ~ '\^#\[0-9A-Fa-f\]\{6\}\$'\)/);
+  assert.match(route, /assertAgencyManager\(auth, agencyId/);
+  assert.match(route, /\^#\[0-9A-F\]\{6\}\$/);
+  assert.match(marketplace, /--marketplace-primary/);
+  assert.match(marketplace, /bg-\[var\(--marketplace-primary\)\]/);
+});
+
+test("respaldo CSV de pedidos delivery queda limitado a la empresa autorizada", () => {
+  const route = readFileSync(new URL("../src/app/api/transport/panel/orders/export/route.ts", import.meta.url), "utf8");
+  const billing = readFileSync(new URL("../src/components/transport/TransportBillingTab.tsx", import.meta.url), "utf8");
+
+  assert.match(route, /requireTransportAgencyAuth\(request\)/);
+  assert.match(route, /canUseAgencyRole\(auth, requestedAgencyId, \["owner", "admin", "billing"\]\)/);
+  assert.match(route, /if \(!requestedAgencyId\)/);
+  assert.match(route, /\.eq\("agency_id", requestedAgencyId\)/);
+  assert.match(route, /MAX_EXPORT_ROWS = 5000/);
+  assert.match(route, /checkDistributedRateLimit/);
+  assert.match(route, /X-Content-Type-Options": "nosniff"/);
+  assert.match(route, /\^\[=\+\\-@\\t\\r\]/);
+  assert.match(billing, /Descargar respaldo CSV/);
 });

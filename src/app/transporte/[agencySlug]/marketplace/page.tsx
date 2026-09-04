@@ -32,6 +32,8 @@ export default async function TransportAgencyMarketplacePage({
       partnerLogoUrl={agency.logoUrl}
       partnerBannerImageUrl={agency.bannerImageUrl}
       partnerLocation={location}
+      partnerPrimaryColor={agency.primaryColor}
+      partnerAccentColor={agency.accentColor}
     />
   );
 }

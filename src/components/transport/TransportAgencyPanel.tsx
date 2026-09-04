@@ -913,6 +913,8 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
           creditTerms: form.get("creditTerms"),
           additionalConditions: form.get("additionalConditions"),
           driverWhatsappDispatchEnabled: form.get("driverWhatsappDispatchEnabled") === "on",
+          marketplacePrimaryColor: form.get("marketplacePrimaryColor"),
+          marketplaceAccentColor: form.get("marketplaceAccentColor"),
         }),
       });
       const data = await response.json();
@@ -1872,6 +1874,35 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
               />
             </label>
 
+            <h2 className="mt-6 text-xl font-black">Colores del Marketplace</h2>
+            <p className="mt-1 text-sm font-bold text-[#746f69]">
+              Personaliza el encabezado público de tu empresa delivery.
+            </p>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <label className="space-y-1">
+                <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
+                  Color principal
+                </span>
+                <input
+                  name="marketplacePrimaryColor"
+                  type="color"
+                  defaultValue={agency.marketplace_primary_color || "#143D42"}
+                  className="h-12 w-full rounded-2xl border border-[#25262B]/10 bg-white p-2"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
+                  Color de acento
+                </span>
+                <input
+                  name="marketplaceAccentColor"
+                  type="color"
+                  defaultValue={agency.marketplace_accent_color || "#FF7133"}
+                  className="h-12 w-full rounded-2xl border border-[#25262B]/10 bg-white p-2"
+                />
+              </label>
+            </div>
+
             <h2 className="mt-6 text-xl font-black">Capacidad y condiciones</h2>
             <p className="mt-1 text-sm font-bold text-[#746f69]">
               Estos datos ayudan al comercio a saber que puede enviar con tu empresa delivery.
@@ -2184,7 +2215,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       ) : null}
 
       {tab === "facturacion" ? (
-        <TransportBillingTab billing={billing} currency={billingCurrency} symbol={billingSymbol} />
+        <TransportBillingTab agencyId={agencyId} billing={billing} currency={billingCurrency} symbol={billingSymbol} />
       ) : null}
 
       {message ? <p className="rounded-2xl bg-white p-3 text-sm font-black text-[#2E3A79]">{message}</p> : null}

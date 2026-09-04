@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Download, Loader2 } from "lucide-react";
 import { getPanelAuthHeaders, getSavedPanelPin } from "@/lib/panel/client-auth";
 
 interface TransportBillingTabProps {
+  agencyId: string;
   billing: TransportBilling | null;
   currency: "USD" | "EUR";
   symbol: string;
@@ -104,7 +106,7 @@ function getDriverFilterValue(order: TransportBillingOrder) {
   return "unassigned";
 }
 
-export function TransportBillingTab({ billing, currency, symbol }: TransportBillingTabProps) {
+export function TransportBillingTab({ agencyId, billing, currency, symbol }: TransportBillingTabProps) {
   const [billingData, setBillingData] = useState<TransportBilling | null>(billing);
   const [storeFilter, setStoreFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -115,6 +117,7 @@ export function TransportBillingTab({ billing, currency, symbol }: TransportBill
   const [showDetail, setShowDetail] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     setBillingData(billing);
@@ -145,6 +148,40 @@ export function TransportBillingTab({ billing, currency, symbol }: TransportBill
       setMessage(error.message || "No se pudo cargar facturación.");
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function exportOrders() {
+    setIsExporting(true);
+    setMessage("");
+    try {
+      const params = new URLSearchParams({ range, agencyId });
+      if (range === "custom") {
+        if (startDate) params.set("start", startDate);
+        if (endDate) params.set("end", endDate);
+      }
+      const response = await fetch(`/api/transport/panel/orders/export?${params.toString()}`, {
+        headers: await getPanelAuthHeaders(getSavedPanelPin()),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "No se pudo descargar el respaldo.");
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get("content-disposition") || "";
+      const filename = disposition.match(/filename="([^"]+)"/)?.[1] || "pedidos-delivery.csv";
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      setMessage(error.message || "No se pudo descargar el respaldo.");
+    } finally {
+      setIsExporting(false);
     }
   }
 
@@ -235,14 +272,25 @@ export function TransportBillingTab({ billing, currency, symbol }: TransportBill
               Incluye todos los servicios no cancelados del período.
             </p>
           </div>
-          <div className="rounded-3xl bg-[#F8F3E8] px-5 py-4 text-right">
-            <p className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
-              Balance general
-            </p>
-            <p className="mt-1 text-3xl font-black">
-              {symbol}
-              {stats.totalUsd.toFixed(2)}
-            </p>
+          <div className="flex flex-col items-stretch gap-2 sm:items-end">
+            <div className="rounded-3xl bg-[#F8F3E8] px-5 py-4 text-right">
+              <p className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
+                Balance general
+              </p>
+              <p className="mt-1 text-3xl font-black">
+                {symbol}
+                {stats.totalUsd.toFixed(2)}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={exportOrders}
+              disabled={isExporting}
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-4 py-3 text-sm font-black text-white disabled:opacity-60"
+            >
+              {isExporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+              Descargar respaldo CSV
+            </button>
           </div>
         </div>
 

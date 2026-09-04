@@ -75,7 +75,7 @@ function authSignupError(message: string) {
     normalizedMessage.includes("password") &&
     (normalizedMessage.includes("weak") || normalizedMessage.includes("common") || normalizedMessage.includes("pwned") || normalizedMessage.includes("leaked"))
   ) {
-    return badRequest("Elige una contrasena menos comun y evita datos faciles de adivinar.");
+    return badRequest("Esa contrasena ha sido usada muchas veces y no es segura. Prueba combinando tres palabras que recuerdes.");
   }
 
   if (normalizedMessage.includes("password")) {
