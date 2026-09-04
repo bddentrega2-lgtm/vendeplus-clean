@@ -1235,7 +1235,7 @@ test("registro preserva la clave y no confunde rechazo de seguridad con longitud
   );
 
   assert.match(signup, /const password = String\(body\.get\("password"\) \|\| ""\)/);
-  assert.match(signup, /Esa contrasena ha sido usada muchas veces/);
+  assert.match(signup, /Por seguridad, no podemos aceptar esa combinacion/);
   assert.doesNotMatch(signup, /const password = cleanText/);
 });
 

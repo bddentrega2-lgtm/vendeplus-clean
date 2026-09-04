@@ -61,7 +61,7 @@ function authSignupError(message: string) {
     normalizedMessage.includes("password") &&
     (normalizedMessage.includes("weak") || normalizedMessage.includes("common") || normalizedMessage.includes("pwned") || normalizedMessage.includes("leaked"))
   ) {
-    return badRequest("Esa clave ha sido usada muchas veces y no es segura. Prueba combinando tres palabras que recuerdes.");
+    return badRequest("Por seguridad, no podemos aceptar esa combinacion. Agrega otra palabra o algunos numeros e intenta de nuevo.");
   }
 
   if (normalizedMessage.includes("password")) {

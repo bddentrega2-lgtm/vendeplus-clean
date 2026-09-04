@@ -20,7 +20,7 @@ function friendlyPasswordError(error: any) {
     message.includes("pwned") ||
     message.includes("leaked")
   ) {
-    return "Esa contraseña ha sido usada muchas veces y no es segura. Prueba combinando tres palabras que recuerdes.";
+    return "Por seguridad, no podemos aceptar esa combinación. Agrega otra palabra o algunos números e intenta de nuevo.";
   }
   return error?.message || "No se pudo actualizar la contraseña.";
 }
