@@ -64,9 +64,6 @@ type StoreDraft = {
   access_password: string;
   access_password_confirmation: string;
   access_role: string;
-  admin_delivery_provider: string;
-  admin_delivery_enabled: boolean;
-  admin_pickup_enabled: boolean;
 };
 
 const initialDraft: StoreDraft = {
@@ -112,9 +109,6 @@ const initialDraft: StoreDraft = {
   access_password: "",
   access_password_confirmation: "",
   access_role: "owner",
-  admin_delivery_provider: "disabled",
-  admin_delivery_enabled: false,
-  admin_pickup_enabled: true,
 };
 
 function slugify(value: string) {
@@ -237,7 +231,7 @@ function subscriptionSummary(draft: StoreDraft) {
   };
 }
 
-function mapStoreToDraft(store: any, deliverySettings?: any): StoreDraft {
+function mapStoreToDraft(store: any): StoreDraft {
   return {
     ...initialDraft,
     name: store.name || "",
@@ -264,13 +258,6 @@ function mapStoreToDraft(store: any, deliverySettings?: any): StoreDraft {
     cover_image_url: store.cover_image_url || "",
     accepts_delivery: store.accepts_delivery === true,
     accepts_pickup: store.accepts_pickup !== false,
-    admin_delivery_provider:
-      deliverySettings?.delivery_provider ||
-      (store.accepts_delivery ? "own_delivery" : "disabled"),
-    admin_delivery_enabled:
-      deliverySettings?.delivery_enabled ?? store.accepts_delivery === true,
-    admin_pickup_enabled:
-      deliverySettings?.pickup_enabled ?? store.accepts_pickup !== false,
     is_active: store.is_active !== false,
     is_test: store.is_test === true,
     table_orders_access_enabled: store.table_orders_access_enabled === true,
@@ -392,24 +379,6 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
         next.subscription_status = value === "trial" ? "trial" : "active";
         if (value === "per_service" && !current.service_fee_payer) next.service_fee_payer = "merchant";
       }
-      if (field === "admin_delivery_provider") {
-        next.admin_delivery_enabled = value !== "disabled";
-        next.accepts_delivery = value !== "disabled";
-        if (value === "entrega2") {
-          next.admin_pickup_enabled = current.admin_pickup_enabled;
-        }
-      }
-      if (field === "admin_delivery_enabled") {
-        next.accepts_delivery = value === true;
-        if (value === false) next.admin_delivery_provider = "disabled";
-        if (value === true && current.admin_delivery_provider === "disabled") {
-          next.admin_delivery_provider = "own_delivery";
-        }
-      }
-      if (field === "admin_pickup_enabled") {
-        next.accepts_pickup = value === true;
-      }
-
       return next;
     });
   }
@@ -424,7 +393,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
           adminRequest(`/api/admin/stores/${storeId}`, ""),
           adminRequest(`/api/admin/stores/${storeId}/achievements`, ""),
         ]);
-        setDraft(mapStoreToDraft(data.store, data.deliverySettings));
+        setDraft(mapStoreToDraft(data.store));
         setAchievements(achievementData.achievements || []);
         setMonthlyChallenges(achievementData.monthlyChallenges || []);
       } else {
@@ -507,9 +476,6 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
           monthly_price_usd: Number(draft.monthly_price_usd || 0),
           product_limit: Number(draft.product_limit || 30),
           service_fee_usd: Number(draft.service_fee_usd || 0),
-          admin_delivery_provider: draft.admin_delivery_provider,
-          admin_delivery_enabled: draft.admin_delivery_enabled,
-          admin_pickup_enabled: draft.admin_pickup_enabled,
         }),
       });
 
@@ -564,12 +530,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
         throw new Error("Supabase no devolvio el comercio como vencido. Recarga y vuelve a intentar.");
       }
 
-      setDraft((current) => ({
-        ...mapStoreToDraft(data.store),
-        admin_delivery_provider: current.admin_delivery_provider,
-        admin_delivery_enabled: current.admin_delivery_enabled,
-        admin_pickup_enabled: current.admin_pickup_enabled,
-      }));
+      setDraft(mapStoreToDraft(data.store));
       setMessage(successMessage || data.message || "Suscripcion actualizada.");
     } catch (error: any) {
       setError(error.message || "No se pudo guardar la suscripcion.");
@@ -663,12 +624,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
         { method: "POST" }
       );
 
-      setDraft((current) => ({
-        ...mapStoreToDraft(data.store),
-        admin_delivery_provider: current.admin_delivery_provider,
-        admin_delivery_enabled: current.admin_delivery_enabled,
-        admin_pickup_enabled: current.admin_pickup_enabled,
-      }));
+      setDraft(mapStoreToDraft(data.store));
       setMessage(data.message || "Comercio actualizado.");
     } catch (error: any) {
       setError(error.message || "No se pudo actualizar el comercio.");
@@ -1167,7 +1123,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
       </section>
 
       <div className="mt-5 flex flex-wrap gap-2">
-        {(["accepts_delivery", "accepts_pickup", "is_active", "is_test"] as const).map((field) => (
+        {(["is_active", "is_test"] as const).map((field) => (
           <button
             key={field}
             type="button"
@@ -1177,90 +1133,12 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
               draft[field] ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700",
             ].join(" ")}
           >
-              {field === "accepts_delivery"
-                ? draft[field] ? "Delivery activo" : "Delivery inactivo"
-                : field === "accepts_pickup"
-                  ? draft[field] ? "Retiro activo" : "Retiro inactivo"
-                  : field === "is_test"
-                    ? draft[field] ? "Cuenta de prueba" : "Cuenta real"
-                    : draft[field] ? "Comercio activo" : "Comercio pausado"}
+              {field === "is_test"
+                ? draft[field] ? "Cuenta de prueba" : "Cuenta real"
+                : draft[field] ? "Comercio activo" : "Comercio pausado"}
           </button>
         ))}
       </div>
-
-      {isEditing ? (
-        <section className="mt-5 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
-          <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
-            <div>
-              <h3 className="text-lg font-black">Proveedor de delivery</h3>
-              <p className="mt-1 text-sm font-bold leading-relaxed text-[#746f69]">
-                Control fundador para conectar o desconectar apps reales como Entrega2 App.
-                Si activas Entrega2, el checkout cotiza por API y el comercio envía el pedido
-                desde Pedidos.
-              </p>
-            </div>
-            <span
-              className={[
-                "rounded-full px-4 py-2 text-xs font-black",
-                draft.admin_delivery_provider === "entrega2"
-                  ? "bg-blue-100 text-blue-700"
-                  : draft.admin_delivery_provider === "disabled"
-                    ? "bg-red-100 text-red-700"
-                    : "bg-green-100 text-green-700",
-              ].join(" ")}
-            >
-              {draft.admin_delivery_provider === "entrega2"
-                ? "Entrega2 App activa"
-                : draft.admin_delivery_provider === "disabled"
-                  ? "Delivery desactivado"
-                  : "Delivery propio / manual"}
-            </span>
-          </div>
-
-          <div className="mt-4 grid gap-4 xl:grid-cols-3">
-            <Field label="Fuente de delivery">
-              <select
-                value={draft.admin_delivery_provider}
-                onChange={(event) => updateField("admin_delivery_provider", event.target.value)}
-                className={inputClass}
-              >
-                <option value="disabled">Sin delivery</option>
-                <option value="own_delivery">Delivery propio / zonas Somos</option>
-                <option value="manual_quote">Cotizar manualmente</option>
-                <option value="entrega2">Entrega2 App</option>
-              </select>
-            </Field>
-            <Field label="Delivery visible en checkout">
-              <select
-                value={draft.admin_delivery_enabled ? "yes" : "no"}
-                onChange={(event) => updateField("admin_delivery_enabled", event.target.value === "yes")}
-                className={inputClass}
-              >
-                <option value="yes">Sí</option>
-                <option value="no">No</option>
-              </select>
-            </Field>
-            <Field label="Retiro / pickup visible">
-              <select
-                value={draft.admin_pickup_enabled ? "yes" : "no"}
-                onChange={(event) => updateField("admin_pickup_enabled", event.target.value === "yes")}
-                className={inputClass}
-              >
-                <option value="yes">Sí</option>
-                <option value="no">No</option>
-              </select>
-            </Field>
-          </div>
-
-          {draft.admin_delivery_provider === "entrega2" ? (
-            <p className="mt-3 rounded-2xl bg-blue-50 p-3 text-sm font-black leading-relaxed text-blue-800">
-              Antes de probar Entrega2 App, este comercio debe tener latitud y longitud de
-              retiro configuradas. Si la API falla, Somos usará la tarifa local de respaldo
-              por rango de km cuando exista.
-            </p>
-          ) : null}
-        </section>
-      ) : null}
 
       {isEditing ? (
         <section className="mt-5 rounded-[28px] bg-red-50 p-4 ring-1 ring-red-100">

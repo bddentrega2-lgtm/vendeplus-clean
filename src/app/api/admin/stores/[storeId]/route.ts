@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth, adminErrorResponse } from "@/lib/admin/access";
 import {
   adminStoreSelect,
-  normalizeAdminDeliverySettingsPayload,
   normalizeAdminStorePayload,
 } from "@/lib/admin/stores";
 import {
@@ -44,25 +43,15 @@ export async function GET(
 
     if (error) throw error;
 
-    const [
-      assignmentsResult,
-      deliverySettingsResult,
-      metricsResult,
-    ] = await Promise.all([
+    const [assignmentsResult, metricsResult] = await Promise.all([
       supabase
         .from("store_users")
         .select("id, user_id, store_id, role, created_at")
         .eq("store_id", storeId),
-      supabase
-        .from("store_delivery_settings")
-        .select("delivery_enabled, pickup_enabled, delivery_provider, pricing_type")
-        .eq("store_id", storeId)
-        .maybeSingle(),
       supabase.rpc("admin_store_detail_metrics", { p_store_id: storeId }).maybeSingle(),
     ]);
 
     if (assignmentsResult.error) throw assignmentsResult.error;
-    if (deliverySettingsResult.error) throw deliverySettingsResult.error;
     if (metricsResult.error && !isMissingAdminMetricsRpc(metricsResult.error)) {
       throw metricsResult.error;
     }
@@ -83,7 +72,6 @@ export async function GET(
         totalRevenueUsd: toNumber(metrics.total_revenue_usd),
         customers: toNumber(metrics.customers),
       },
-      deliverySettings: deliverySettingsResult.data || null,
     });
   } catch (error) {
     return adminErrorResponse(error, "Error cargando comercio.");
@@ -99,7 +87,6 @@ export async function PATCH(
     const { storeId } = await context.params;
     const body = await request.json();
     const payload = normalizeAdminStorePayload(body);
-    const deliverySettingsPayload = normalizeAdminDeliverySettingsPayload(body);
 
     if (!storeId) return badRequest("Falta el ID del comercio.");
     if (!payload.name) return badRequest("El nombre del comercio es obligatorio.");
@@ -134,36 +121,7 @@ export async function PATCH(
 
     if (error) throw error;
 
-    let deliverySettings = null;
-    if (deliverySettingsPayload) {
-      const { data: settingsData, error: settingsError } = await supabase
-        .from("store_delivery_settings")
-        .upsert(
-          {
-            store_id: storeId,
-            ...deliverySettingsPayload,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "store_id" }
-        )
-        .select("delivery_enabled, pickup_enabled, delivery_provider, pricing_type")
-        .single();
-
-      if (settingsError) throw settingsError;
-      deliverySettings = settingsData;
-
-      const { error: syncError } = await supabase
-        .from("stores")
-        .update({
-          accepts_delivery: deliverySettingsPayload.delivery_enabled,
-          accepts_pickup: deliverySettingsPayload.pickup_enabled,
-        })
-        .eq("id", storeId);
-
-      if (syncError) throw syncError;
-    }
-
-    return NextResponse.json({ store: data, deliverySettings });
+    return NextResponse.json({ store: data });
   } catch (error) {
     return adminErrorResponse(error, "Error actualizando comercio.");
   }

@@ -10,6 +10,7 @@ import { isPremiumDispatchSchemaMissing } from "@/lib/transport/driver-dispatch"
 const transportOrderDetailSelect = `
   id,
   order_id,
+  particular_request_id,
   store_id,
   agency_id,
   connection_id,
@@ -54,6 +55,41 @@ const transportOrderDetailSelect = `
       unit_price_usd,
       notes
     )
+  ),
+  transport_particular_requests (
+    id,
+    public_code,
+    requester_role,
+    requester_name,
+    requester_phone,
+    pickup_name,
+    pickup_phone,
+    pickup_address,
+    pickup_reference,
+    pickup_lat,
+    pickup_lng,
+    delivery_name,
+    delivery_phone,
+    delivery_address,
+    delivery_reference,
+    delivery_lat,
+    delivery_lng,
+    package_description,
+    payment_method,
+    payment_reference,
+    distance_km,
+    pricing_type,
+    created_at
+  ),
+  order_integrations (
+    id,
+    provider,
+    external_id,
+    status,
+    last_error,
+    updated_at,
+    transport_order_id,
+    particular_request_id
   ),
   transport_order_events (
     id,

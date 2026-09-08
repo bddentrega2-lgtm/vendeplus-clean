@@ -32,6 +32,12 @@ interface TransportBillingOrder {
     public_code?: string | null;
     status?: string | null;
   } | null;
+  transport_particular_requests?: {
+    distance_km?: number | string | null;
+    payment_method?: string | null;
+    payment_reference?: string | null;
+    public_code?: string | null;
+  } | null;
   status?: string | null;
   store_id?: string | null;
   store_name_snapshot?: string | null;
@@ -82,7 +88,7 @@ function getDeliveryDetail(order: TransportBillingOrder) {
   const zone = order.delivery_zone_name || order.orders?.delivery_zone_name;
   if (zone) return `Zona: ${zone}`;
 
-  const distance = order.orders?.delivery_distance_km ?? order.orders?.distance_km;
+  const distance = order.orders?.delivery_distance_km ?? order.orders?.distance_km ?? order.transport_particular_requests?.distance_km;
   const parsedDistance = Number(distance);
   if (Number.isFinite(parsedDistance) && parsedDistance > 0) {
     return `${parsedDistance.toFixed(2)} km`;
@@ -92,7 +98,7 @@ function getDeliveryDetail(order: TransportBillingOrder) {
 }
 
 function getServiceId(order: TransportBillingOrder) {
-  return order.orders?.public_code || order.order_id?.slice(0, 8) || order.id.slice(0, 8);
+  return order.orders?.public_code || order.transport_particular_requests?.public_code || order.order_id?.slice(0, 8) || order.id.slice(0, 8);
 }
 
 function getPayoutAmount(entry: TransportDriverPayout) {
@@ -227,7 +233,7 @@ export function TransportBillingTab({ agencyId, billing, currency, symbol }: Tra
     }
 
     const filteredOrders = orders.filter((order) => {
-      const matchesStore = storeFilter === "all" || order.store_id === storeFilter;
+      const matchesStore = storeFilter === "all" || String(order.store_id || "sin-comercio") === storeFilter;
       const matchesStatus = statusFilter === "all" || String(order.status || "") === statusFilter;
       const matchesDriver = driverFilter === "all" || getDriverFilterValue(order) === driverFilter;
       return matchesStore && matchesStatus && matchesDriver;
@@ -317,14 +323,14 @@ export function TransportBillingTab({ agencyId, billing, currency, symbol }: Tra
           </label>
           <label className="space-y-1">
             <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
-              Comercio
+              Origen
             </span>
             <select
               value={storeFilter}
               onChange={(event) => setStoreFilter(event.target.value)}
               className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
             >
-              <option value="all">Todos los comercios</option>
+              <option value="all">Todos los orígenes</option>
               {stats.byStore.map((store) => (
                 <option key={store.storeId} value={store.storeId}>
                   {store.storeName}

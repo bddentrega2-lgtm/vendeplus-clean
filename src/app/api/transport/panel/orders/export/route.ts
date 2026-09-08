@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from("transport_orders")
-      .select(`id, agency_id, order_id, store_name_snapshot, customer_name_snapshot, customer_phone_snapshot, delivery_address, delivery_reference, delivery_zone_name, delivery_fee_usd, status, driver_name_snapshot, driver_payout_usd, created_at, orders(public_code, total_usd, payment_method, payment_status)`)
+      .select(`id, agency_id, order_id, store_name_snapshot, customer_name_snapshot, customer_phone_snapshot, delivery_address, delivery_reference, delivery_zone_name, delivery_fee_usd, status, driver_name_snapshot, driver_payout_usd, created_at, orders(public_code, total_usd, payment_method, payment_status), transport_particular_requests(public_code, pickup_name, pickup_address, delivery_name, delivery_address, payment_method, payment_reference)`)
       .gte("created_at", range.start)
       .lt("created_at", range.end)
       .order("created_at", { ascending: false })
@@ -75,14 +75,16 @@ export async function GET(request: NextRequest) {
     const { data, error } = await query;
     if (error) throw error;
 
-    const headers = ["Fecha", "Pedido", "Comercio", "Cliente", "Telefono", "Direccion", "Referencia", "Zona", "Delivery USD", "Estado", "Repartidor", "Pago repartidor USD", "Total pedido USD", "Metodo de pago", "Estado del pago"];
+    const headers = ["Fecha", "Pedido", "Origen", "Cliente", "Telefono", "Retiro", "Entrega", "Direccion", "Referencia", "Zona", "Delivery USD", "Estado", "Repartidor", "Pago repartidor USD", "Total pedido USD", "Metodo de pago", "Referencia de pago", "Estado del pago"];
     const rows = (data || []).map((entry: any) => [
       csvDate(entry.created_at),
-      entry.orders?.public_code || entry.order_id || entry.id,
+      entry.orders?.public_code || entry.transport_particular_requests?.public_code || entry.order_id || entry.id,
       entry.store_name_snapshot,
       entry.customer_name_snapshot,
       entry.customer_phone_snapshot,
-      entry.delivery_address,
+      entry.transport_particular_requests?.pickup_name,
+      entry.transport_particular_requests?.delivery_name,
+      entry.transport_particular_requests?.delivery_address || entry.delivery_address,
       entry.delivery_reference,
       entry.delivery_zone_name,
       Number(entry.delivery_fee_usd || 0).toFixed(2),
@@ -90,7 +92,8 @@ export async function GET(request: NextRequest) {
       entry.driver_name_snapshot,
       Number(entry.driver_payout_usd || 0).toFixed(2),
       Number(entry.orders?.total_usd || 0).toFixed(2),
-      entry.orders?.payment_method,
+      entry.orders?.payment_method || entry.transport_particular_requests?.payment_method,
+      entry.transport_particular_requests?.payment_reference,
       entry.orders?.payment_status,
     ]);
     const csv = [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");

@@ -21,6 +21,10 @@ import {
   logApiEvent,
 } from "@/lib/server/observability";
 import {
+  completeEntrega2Dispatch,
+  markEntrega2DispatchForReconciliation,
+} from "@/lib/server/entrega2-dispatch";
+import {
   insertTransportOrderEvent,
   mapTransportStatusToOrderDeliveryStatus,
   normalizeTransportOrderStatus,
@@ -121,6 +125,140 @@ function buildEntrega2Payload(order: any) {
     id_externo: externalOrderId,
     creado_por_usuario_id: getEntrega2CreatedByUserId(),
   };
+}
+
+async function sendCommerceOrderToEntrega2App(params: {
+  apiContext: ReturnType<typeof createApiRequestContext>;
+  order: any;
+  supabase: any;
+  transportOrderId?: string | null;
+}) {
+  const { apiContext, order, supabase, transportOrderId } = params;
+  const provider = getEntrega2Provider();
+  const externalOrderId = getEntrega2ExternalOrderId(order.id);
+  const { data: existingIntegration, error: existingError } = await supabase
+    .from("order_integrations")
+    .select("id, status")
+    .eq("order_id", order.id)
+    .eq("provider", provider)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+
+  if (
+    existingIntegration &&
+    !["error", "failed"].includes(existingIntegration.status)
+  ) {
+    const needsReconciliation = existingIntegration.status === "reconcile_required";
+    return attachApiResponseHeaders(
+      NextResponse.json(
+        {
+          error: needsReconciliation
+            ? "El resultado del envio necesita conciliacion antes de reintentar."
+            : "Este pedido ya fue enviado a Entrega2 App.",
+        },
+        { status: 409 }
+      ),
+      apiContext,
+      "send-delivery"
+    );
+  }
+
+  const requestPayload = buildEntrega2Payload(order);
+  const pendingPayload = {
+    order_id: order.id,
+    transport_order_id: transportOrderId || null,
+    provider,
+    external_id: externalOrderId,
+    status: "sending",
+    request_payload: requestPayload,
+    last_error: null,
+    updated_at: new Date().toISOString(),
+  };
+  const pendingResult = existingIntegration
+    ? await supabase
+        .from("order_integrations")
+        .update(pendingPayload)
+        .eq("id", existingIntegration.id)
+        .in("status", ["error", "failed"])
+        .select("id")
+        .maybeSingle()
+    : await supabase
+        .from("order_integrations")
+        .insert(pendingPayload)
+        .select("id")
+        .single();
+
+  if (pendingResult.error && pendingResult.error.code !== "23505") {
+    throw pendingResult.error;
+  }
+  if (pendingResult.error?.code === "23505" || !pendingResult.data) {
+    return attachApiResponseHeaders(
+      NextResponse.json(
+        { error: "Este pedido ya se esta enviando a Entrega2 App." },
+        { status: 409 }
+      ),
+      apiContext,
+      "send-delivery"
+    );
+  }
+
+  try {
+    const entrega2Response = await sendEntrega2Order(requestPayload);
+    const entrega2Status = normalizeEntrega2OrderStatus(
+      (entrega2Response.payload as any)?.estado
+    ) || "sent";
+    const entrega2ExternalId = (entrega2Response.payload as any)?.id
+      ? String((entrega2Response.payload as any).id)
+      : externalOrderId;
+
+    const integration = await completeEntrega2Dispatch(
+      supabase,
+      pendingResult.data.id,
+      {
+        external_id: entrega2ExternalId,
+        status: entrega2Status,
+        last_payload: entrega2Response.payload,
+        last_error: null,
+        updated_at: new Date().toISOString(),
+      }
+    );
+
+    await supabase
+      .from("orders")
+      .update({ delivery_status: entrega2Status })
+      .eq("id", order.id);
+
+    logApiEvent(apiContext, "entrega2_order_sent", {
+      orderId: order.id,
+      storeId: order.store_id,
+      transportOrderId: transportOrderId || null,
+      integrationId: integration.id,
+      entrega2Id: entrega2ExternalId,
+    });
+
+    return attachApiResponseHeaders(NextResponse.json({
+      ok: true,
+      provider,
+      integration,
+      entrega2: entrega2Response.payload,
+    }), apiContext, "send-delivery");
+  } catch (error) {
+    await markEntrega2DispatchForReconciliation(
+      supabase,
+      pendingResult.data.id,
+      {
+        externalId: externalOrderId,
+        payload:
+          error && typeof error === "object" && "payload" in error
+            ? (error as { payload: unknown }).payload
+            : null,
+        errorMessage: serializeError(error),
+      }
+    );
+
+    throw error;
+  }
 }
 
 function buildTransportAgencyMessage(order: any, agency: any, transportOrder?: any) {
@@ -387,7 +525,7 @@ export async function POST(
 
       const { data: agency, error: agencyError } = await supabase
         .from("transport_agencies")
-        .select("id, name, whatsapp_phone, contact_phone, contact_email")
+        .select("id, name, slug, whatsapp_phone, contact_phone, contact_email")
         .eq("id", order.transport_agency_id)
         .maybeSingle();
       if (agencyError) throw agencyError;
@@ -395,7 +533,7 @@ export async function POST(
 
       const { data: connection, error: connectionError } = await supabase
         .from("store_transport_agency_connections")
-        .select("id")
+        .select("id, delivery_billing_mode")
         .eq("store_id", order.store_id)
         .eq("agency_id", agency.id)
         .eq("status", "active")
@@ -415,6 +553,29 @@ export async function POST(
         connectionId: connection.id,
         actorUserId: auth.userId || null,
       });
+
+      if (cleanText(agency.slug).toLowerCase() === "entrega2") {
+        if (connection.delivery_billing_mode === "credit") {
+          return await sendCommerceOrderToEntrega2App({
+            apiContext,
+            order,
+            supabase,
+            transportOrderId: transportOrder.id,
+          });
+        }
+
+        await insertTransportOrderEvent(supabase, {
+          transportOrderId: transportOrder.id,
+          eventType: "cash_validation_required",
+          statusFrom: transportOrder.status,
+          statusTo: transportOrder.status,
+          note: "Pedido contado pendiente por validacion en Entrega2 Somos antes de enviarlo a Entrega2 App.",
+          actorType: "commerce",
+          actorUserId: auth.userId || null,
+          actorName: (order.stores as any)?.name || "Comercio",
+        });
+      }
+
       const transportStatus = normalizeTransportOrderStatus(transportOrder.status);
       const message = buildTransportAgencyMessage(order, agency, transportOrder);
       const whatsappUrl = buildWhatsappUrl(agencyPhone, message);
@@ -503,136 +664,7 @@ export async function POST(
       );
     }
 
-    const provider = getEntrega2Provider();
-    const externalOrderId = getEntrega2ExternalOrderId(order.id);
-    const { data: existingIntegration, error: existingError } = await supabase
-      .from("order_integrations")
-      .select("id, status")
-      .eq("order_id", order.id)
-      .eq("provider", provider)
-      .maybeSingle();
-
-    if (existingError) throw existingError;
-
-    if (
-      existingIntegration &&
-      !["error", "failed"].includes(existingIntegration.status)
-    ) {
-      return attachApiResponseHeaders(
-        NextResponse.json(
-          { error: "Este pedido ya fue enviado a Entrega2 App." },
-          { status: 409 }
-        ),
-        apiContext,
-        "send-delivery"
-      );
-    }
-
-    const requestPayload = buildEntrega2Payload(order);
-
-    const pendingPayload = {
-      order_id: order.id,
-      provider,
-      external_id: externalOrderId,
-      status: "sending",
-      request_payload: requestPayload,
-      last_error: null,
-      updated_at: new Date().toISOString(),
-    };
-    const pendingResult = existingIntegration
-      ? await supabase
-          .from("order_integrations")
-          .update(pendingPayload)
-          .eq("id", existingIntegration.id)
-          .in("status", ["error", "failed"])
-          .select("id")
-          .maybeSingle()
-      : await supabase
-          .from("order_integrations")
-          .insert(pendingPayload)
-          .select("id")
-          .single();
-
-    if (pendingResult.error && pendingResult.error.code !== "23505") {
-      throw pendingResult.error;
-    }
-    if (pendingResult.error?.code === "23505" || !pendingResult.data) {
-      return attachApiResponseHeaders(
-        NextResponse.json(
-          { error: "Este pedido ya se está enviando a Entrega2 App." },
-          { status: 409 }
-        ),
-        apiContext,
-        "send-delivery"
-      );
-    }
-
-    try {
-      const entrega2Response = await sendEntrega2Order(requestPayload);
-      const entrega2Status = normalizeEntrega2OrderStatus(
-        (entrega2Response.payload as any)?.estado
-      ) || "sent";
-      const entrega2ExternalId = (entrega2Response.payload as any)?.id
-        ? String((entrega2Response.payload as any).id)
-        : externalOrderId;
-
-      const { data: integration, error: integrationError } = await supabase
-        .from("order_integrations")
-        .upsert(
-          {
-            order_id: order.id,
-            provider,
-            external_id: entrega2ExternalId,
-            status: entrega2Status,
-            request_payload: requestPayload,
-            last_payload: entrega2Response.payload,
-            last_error: null,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "order_id,provider" }
-        )
-        .select()
-        .single();
-
-      if (integrationError) throw integrationError;
-
-      logApiEvent(apiContext, "entrega2_order_sent", {
-        orderId: order.id,
-        storeId: order.store_id,
-        integrationId: integration.id,
-        entrega2Id: entrega2ExternalId,
-      });
-
-      await supabase
-        .from("orders")
-        .update({ delivery_status: entrega2Status })
-        .eq("id", order.id);
-
-      return attachApiResponseHeaders(NextResponse.json({
-        ok: true,
-        integration,
-        entrega2: entrega2Response.payload,
-      }), apiContext, "send-delivery");
-    } catch (error) {
-      await supabase.from("order_integrations").upsert(
-        {
-          order_id: order.id,
-          provider,
-          external_id: externalOrderId,
-          status: "error",
-          request_payload: requestPayload,
-          last_payload:
-            error && typeof error === "object" && "payload" in error
-              ? (error as { payload: unknown }).payload
-              : null,
-          last_error: serializeError(error),
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "order_id,provider" }
-      );
-
-      throw error;
-    }
+    return await sendCommerceOrderToEntrega2App({ apiContext, order, supabase });
   } catch (error: any) {
     logApiError(apiContext, "send_delivery_failed", error, {
       orderId: scopedOrderId || null,

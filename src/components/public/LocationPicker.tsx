@@ -7,6 +7,16 @@ import type { Map as LeafletMap, Marker } from "leaflet";
 
 let leafletPromise: Promise<typeof import("leaflet")> | null = null;
 
+function escapeMarkerLabel(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;",
+  })[character] || character);
+}
+
 function loadLeaflet() {
   leafletPromise ||= import("leaflet");
   return leafletPromise;
@@ -19,6 +29,10 @@ type Props = {
   value: DeliveryLocation | null;
   onChange: (location: DeliveryLocation) => void;
   mode?: "delivery" | "store";
+  pointName?: string;
+  referenceMarkerLabel?: string;
+  referencePopupLabel?: string;
+  allowCurrentLocation?: boolean;
 };
 
 export function LocationPicker({
@@ -28,6 +42,10 @@ export function LocationPicker({
   value,
   onChange,
   mode = "delivery",
+  pointName,
+  referenceMarkerLabel = "Retiro aqui",
+  referencePopupLabel = "Punto de retiro",
+  allowCurrentLocation = true,
 }: Props) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const leafletMapRef = useRef<LeafletMap | null>(null);
@@ -45,8 +63,11 @@ export function LocationPicker({
   const [messageType, setMessageType] = useState<"info" | "success" | "error">(
     "info"
   );
-  const selectedLabel =
-    mode === "store" ? "Ubicacion del negocio" : "Punto elegido en el mapa";
+  const selectedLabel = pointName
+    ? `Ubicacion de ${pointName.toLowerCase()}`
+    : mode === "store"
+      ? "Ubicacion del negocio"
+      : "Punto elegido en el mapa";
 
   useEffect(() => {
     onChangeRef.current = onChange;
@@ -75,7 +96,9 @@ export function LocationPicker({
       const icon = leaflet.divIcon({
         className: "vendeplus-destination-marker",
         html:
-          mode === "store"
+          pointName
+            ? `<div class="vp-map-pin ${mode === "store" ? "vp-map-pin-store" : "vp-map-pin-delivery"}"><span>${escapeMarkerLabel(pointName)}</span></div>`
+            : mode === "store"
             ? '<div class="vp-map-pin vp-map-pin-store"><span>Comercio</span></div>'
             : '<div class="vp-map-pin vp-map-pin-delivery"><span>Recibir aqui</span></div>',
         iconSize: [118, 42],
@@ -92,7 +115,7 @@ export function LocationPicker({
 
       leafletMapRef.current.setView(latLng, 16);
     },
-    [mode]
+    [mode, pointName]
   );
 
   const selectDestination = useCallback(
@@ -121,7 +144,7 @@ export function LocationPicker({
 
       const storeIcon = leaflet.divIcon({
         className: "vendeplus-store-marker",
-        html: '<div class="vp-map-pin vp-map-pin-store"><span>Retiro aqui</span></div>',
+        html: `<div class="vp-map-pin vp-map-pin-store"><span>${escapeMarkerLabel(referenceMarkerLabel)}</span></div>`,
         iconSize: [104, 42],
         iconAnchor: [52, 42],
       });
@@ -148,7 +171,7 @@ export function LocationPicker({
         leaflet
           .marker([initialCenter.latitude, initialCenter.longitude], { icon: storeIcon })
           .addTo(map)
-          .bindPopup(`Punto de retiro: ${initialCenter.storeName}`);
+          .bindPopup(`${referencePopupLabel}: ${initialCenter.storeName}`);
       }
 
       map.on("click", (event) => {
@@ -179,7 +202,7 @@ export function LocationPicker({
         destinationMarkerRef.current = null;
       }
     };
-  }, [mode, selectDestination, selectedLabel, showMap]);
+  }, [mode, referenceMarkerLabel, referencePopupLabel, selectDestination, selectedLabel, showMap]);
 
   useEffect(() => {
     if (!value || !showMap || !isReady) return;
@@ -257,19 +280,23 @@ export function LocationPicker({
 
   return (
     <div className="space-y-3">
-      <div className="grid gap-2 sm:grid-cols-2">
-        <button
-          type="button"
-          onClick={useCurrentLocation}
-          className="vp-button-primary w-full"
-        >
-          <LocateFixed size={18} />{" "}
-          {isLocating
-            ? "Buscando..."
-            : mode === "store"
-              ? "Usar ubicacion del negocio"
-              : "Usar ubicacion actual"}
-        </button>
+      <div className={allowCurrentLocation ? "grid gap-2 sm:grid-cols-2" : "grid gap-2"}>
+        {allowCurrentLocation ? (
+          <button
+            type="button"
+            onClick={useCurrentLocation}
+            className="vp-button-primary w-full"
+          >
+            <LocateFixed size={18} />{" "}
+            {isLocating
+              ? "Buscando..."
+              : mode === "store"
+              ? pointName
+                ? `Usar mi ubicacion para ${pointName.toLowerCase()}`
+                : "Usar ubicacion del negocio"
+                : "Usar ubicacion actual"}
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => {

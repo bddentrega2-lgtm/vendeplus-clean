@@ -1,3 +1,172 @@
+# 2026-09-08 - Produccion tarjeta Delivery simplificada y compatibilidad China Town
+
+- Usuario aprobo el Preview `dpl_HdRSR2ydR5oU228LsnuHTXmdqvot`. Se promovio exactamente ese artefacto, sin reconstruir otro candidato y sin SQL.
+- Produccion nueva Ready: `dpl_4GotPD8R2EiHLg6BC2QFoiyJiwcn`, `https://vendeplus-clean-prxwynvhb-entrega2-s-projects.vercel.app`. Alias oficiales `www.somos-ve.com`, `somos-ve.com` y `vendeplus-clean.vercel.app` confirmados sobre este deployment.
+- Cambio visible: tarjeta del comercio usa moto y boton generico `Delivery`; azul antes del envio y verde/deshabilitado despues. No muestra `Entrega2 App: ...` ni `Empresa delivery: ...`. Pedidos historicos China Town con provider legacy e integracion `sent` conservan la moto verde aunque no tengan `transport_order`.
+- Smoke posterior: `/`, `/marketplace`, `/smash`, `/panel/login`, `/panel/pedidos`, `/transporte`, Marketplace/Particulares Entrega2 respondieron 200; APIs privadas de panel/transporte respondieron 401 sin sesion. Sin logs nivel error ni 5xx.
+- Supabase dry-run posterior: base remota al dia. Sin migracion ni SQL. Validaciones del artefacto: 65/65 criticos, 5/5 puente, TypeScript, ESLint, build local Webpack y Vercel Turbopack con 185 paginas.
+- Rollback web inmediato: produccion anterior `dpl_5A5wyGUYQt7CpqUd23uPFW7oJQQ5`. No se hizo commit ni push.
+- Siguiente paso: usuario confirma visualmente en produccion un pedido historico China Town enviado y uno nuevo/pendiente; ambos deben conservar una unica accion `Delivery` coherente.
+
+# 2026-09-08 - Preview compatibilidad visual pedidos legacy China Town
+
+- Usuario noto que en China Town no aparecia ninguna accion delivery despues de quitar los chips redundantes. Diagnostico remoto de lectura: los 12 pedidos delivery recientes consultados conservan `delivery_provider='entrega2'`, integracion `sent` y `delivery_status='sent'`, pero no tienen `transport_order` porque fueron enviados antes de la migracion al puente.
+- Se amplio la condicion visual `showDeliverySent` en `OrdersManager`: pedidos legacy Entrega2 con integracion/estado confirmado muestran moto verde `Delivery`; pedidos actuales de empresa delivery tambien usan como respaldo `order.transport_agency_status`. Estados pendientes, enviando, fallidos o en conciliacion no se marcan como enviados.
+- Se mantienen ocultos `Entrega2 App: ...` y `Empresa delivery: ...`; no cambio ninguna ruta, envio, estado interno ni dato remoto.
+- Validaciones: 65/65 contratos criticos, 5/5 puente, TypeScript, ESLint y `git diff --check` OK. `npm.cmd run build` conserva el fallo ambiental conocido del symlink Turbopack; build local Webpack con variables en memoria y build Vercel Turbopack aprobaron 185 paginas.
+- Preview corregido Ready y sin logs de error: `dpl_HdRSR2ydR5oU228LsnuHTXmdqvot`, `https://vendeplus-clean-pckfeajg2-entrega2-s-projects.vercel.app`. Produccion sigue intacta en `dpl_5A5wyGUYQt7CpqUd23uPFW7oJQQ5`.
+- Sin migracion, SQL, commit ni push. Siguiente paso: revisar China Town en el Preview; los pedidos legacy enviados deben mostrar el boton verde `Delivery` con moto.
+
+# 2026-09-08 - Preview tarjeta de pedido delivery simplificada
+
+- Usuario aclaro la UX correcta del comercio: solo debe saber que envio el pedido a su empresa delivery; no debe ver si internamente paso a Entrega2 App ni duplicar el mismo estado en chips.
+- En `src/components/panel/OrdersManager.tsx`, Delivery usa icono `Motorbike` en la modalidad y en los botones; se eliminaron de la tarjeta los chips `Entrega2 App: ...` y `Empresa delivery: ...`; el boton se llama siempre `Delivery`, azul antes de enviar y verde/deshabilitado despues. La logica, estados y puente interno no cambiaron.
+- `scripts/critical-contracts.test.mjs` protege la UX: exige moto y evita que vuelvan los textos internos o el camion de 16 px en la accion.
+- Validaciones: contratos criticos 65/65, puente 5/5, TypeScript, ESLint focal y `git diff --check` OK. `npm.cmd run build` exacto falla por el symlink conocido de Turbopack fuera del root; build Webpack con variables cargadas solo en memoria aprobo 185 paginas. Build remoto Vercel Turbopack aprobo 185 paginas.
+- Preview Ready: `dpl_2ZuqFpVMbu1hnVbyu9ziqKYHMae4`, `https://vendeplus-clean-2flvb24th-entrega2-s-projects.vercel.app`; sin logs de error. Produccion permanece sin cambios en `dpl_5A5wyGUYQt7CpqUd23uPFW7oJQQ5`.
+- Sin migracion, SQL, commit ni push. Siguiente paso: usuario revisa una tarjeta delivery enviada y otra pendiente en Preview; promover solo con aprobacion explicita.
+
+# 2026-09-08 - QA posterior a produccion puente Entrega2
+
+- Validacion solicitada por el usuario, sin crear pedidos ni modificar datos. Navegador integrado no disponible; se uso smoke HTTP directo, pruebas locales y lecturas de Supabase/Vercel.
+- Produccion sigue Ready en `dpl_5A5wyGUYQt7CpqUd23uPFW7oJQQ5`; siete rutas publicas/panel respondieron 200, APIs privadas de contexto y ambos endpoints de envio respondieron 401 sin sesion, y payloads invalidos de cotizacion/particulares respondieron 400. No hubo 5xx en logs desde el despliegue.
+- Pruebas repetidas: contratos criticos 65/65, puente Entrega2 5/5, `git diff --check` OK y Supabase dry-run al dia.
+- Estado remoto: 0 legacy, 15 configuraciones apuntan a Entrega2 Somos, 15 conexiones activas/default/exclusivas correctamente enlazadas, 14 credito y 1 contado.
+- Cotizacion real no destructiva para Smash: respuesta disponible desde Entrega2 App, provider `transport_agency`, 2484 ms; no activo fallback. El fallback de 4.5 s queda validado por contrato automatizado, no se forzo una falla real del proveedor.
+- Desde el despliegue no hay integraciones nuevas, fallidas ni en conciliacion. Ultimos envios comerciales previos visibles: Smash `VP-0908-DPK` y China Town con estado integracion/delivery `sent` y external ID presente.
+- Hallazgo historico: 9 integraciones de particulares del 6-7 de septiembre siguen en `sending`, todas anteriores al despliegue, sin `order_id` comercial ni error. No afectan pedidos nuevos ni comercios, pero esos nueve servicios antiguos no pueden reintentarse hasta conciliarlos. No se modificaron por tratarse de una validacion de lectura.
+- Pendiente E2E humano: ejecutar un pedido nuevo Smash credito, uno Sabore contado y un particular; esto genera datos/envios reales y requiere operacion controlada con sesion.
+
+# 2026-09-08 - Produccion puente Entrega2 Somos-App
+
+- Usuario aprobo expresamente el pase cauteloso a produccion despues de validar Smash credito y aclarar la etiqueta del boton.
+- Respaldo previo de las 13 configuraciones legacy: `../tmp/checkpoints/2026-09-08-entrega2-legacy-preprod-backup.json`, SHA256 `4543526FFEC7734CDB4DC7E248F3328908F866C720251D6681E11EF883E160A1`.
+- Migracion no destructiva aplicada: `supabase/migrations/20260907213000_align_legacy_entrega2_connections.sql`. Resultado: 0 configuraciones legacy pendientes, 13 configuraciones alineadas, 13 conexiones creadas/alineadas (12 credito y 1 contado: Sabore). Total de conexiones activas Entrega2: 15 incluyendo Smash y Andinos. Dry-run posterior: base remota al dia.
+- Se promovio exactamente el Preview validado `dpl_8MegoK5yEdDKmZjYmjiTffNhmo4a` (`vendeplus-clean-h3310xzpi-entrega2-s-projects.vercel.app`). Produccion nueva Ready: `dpl_5A5wyGUYQt7CpqUd23uPFW7oJQQ5`, `https://vendeplus-clean-fkouk33r7-entrega2-s-projects.vercel.app`.
+- Alias confirmados sobre el deployment nuevo: `https://www.somos-ve.com`, `https://somos-ve.com`, `https://vendeplus-clean.vercel.app` y el alias del proyecto.
+- Smoke posterior sobre `www.somos-ve.com`: `/`, `/marketplace`, `/smash`, `/panel/login`, `/transporte`, `/transporte/entrega2/marketplace` y `/transporte/entrega2/particulares` respondieron 200; `/api/panel/context` y `/api/transport/me` respondieron 401 sin sesion, esperado. Contenido principal verificado y sin logs Vercel de nivel error desde el despliegue.
+- Validaciones del candidato promovido: contratos criticos 65/65, puente Entrega2 5/5, ESLint focal y `git diff --check` OK; build local Webpack y build remoto Vercel aprobados con 185 paginas.
+- Rollback web disponible: deployment productivo anterior `dpl_2VEUZVTE5Arge4DJSifqkHgmMRru`. Reversion de datos solo de forma controlada usando el respaldo previo; no es necesaria actualmente.
+- No se hizo commit ni push. Riesgos P1 independientes pendientes: aislar Preview de Supabase productivo, rotar credenciales historicas y eliminar topes de 200 en facturacion/afiliados.
+- Siguiente paso exacto: prueba operativa corta del usuario en produccion: Smash credito debe crear registro Somos y enviarse directo a Entrega2 App; Sabore contado debe quedar en Somos hasta que la operadora pulse `Enviar a Entrega2 App`; un particular debe seguir el mismo flujo operado. Vigilar que cada caso tenga una sola integracion y no se duplique al reintentar.
+
+# 2026-09-08 - Checkpoint Puente Entrega2 Somos-App pendiente de validacion
+
+- Usuario confirma revision visual OK y pide guardar para validar antes de produccion.
+- Ficha principal: `../docs/checkpoints/2026-09-08-puente-entrega2-somos-app-pendiente-validacion.md`.
+- ZIP local verificado: `../tmp/checkpoints/2026-09-08-puente-entrega2-somos-app-pendiente-validacion.zip`, 445 entradas, sin `.env*`; SHA256 `27220EB8689FB87DE66C960DCDF980265B939CD50F4F64FE6C97D14CC2F100F1`.
+- Preview vigente: https://vendeplus-clean-r68ntp10u-entrega2-s-projects.vercel.app (`dpl_7mjJ1Sg1cQR3gJ4xPhLg5XtPWZ6v`). Etiqueta visible legacy retirada; compatibilidad interna conservada.
+- Cotizacion centralizada App con timeout 4.5 s y respaldo Somos; credito/contado/particulares segun arquitectura documentada en `docs/ENTREGA2_SOMOS_BRIDGE.md`.
+- Ultimo build local y Vercel aprobados (185 paginas); contratos 65/65; TypeScript/ESLint OK. Pruebas previas son de contrato/lectura, no E2E operativo.
+- No promover produccion ni ejecutar migraciones. Preview comparte base productiva; las pruebas con escrituras requieren entorno aislado. Migracion de alineacion pendiente: `20260907213000_align_legacy_entrega2_connections.sql`.
+- Se inicia auditoria de seguridad y escalabilidad de lectura solicitada por el usuario. Ver informe en `../docs/audits/2026-09-08-somos-seguridad-escalabilidad.md` cuando termine; sus hallazgos deben revisarse antes de publicar.
+- Auditoria finalizada en ese informe. Cinco P1: aislamiento de entornos, credenciales historicas, integridad del puente/eventos, validacion/latencia de cotizacion y agregados/listados truncados. Se reprodujeron localmente tarifa 0 ante costos invalidos, total $600 para 201 servicios de $3, regresion entregado -> aceptado y espera de ~8046 ms. Programa de reproduccion en `../docs/audits/2026-09-08-somos-behavior.cjs`; no usa servicios reales.
+- No se corrigio producto ni se promovio produccion. El checkpoint es la referencia visual, no una aprobacion operativa; resolver/revalidar estos hallazgos antes de proponer la publicacion.
+- Cierre de auditoria: build local Webpack repetido y aprobado, 185 paginas; contratos 65/65; tres APIs privadas del Preview devolvieron 401 sin sesion. No hubo deploy nuevo.
+- Codificacion de este historial y el principal reparada mecanicamente: dos bytes Windows-1252 invalidos por archivo convertidos a UTF-8, copias previas privadas en `../tmp/checkpoints/`. Se preservo el resto del contenido.
+
+# 2026-09-07 - Preview puente claro con comercios Entrega2 App legacy visibles
+
+- Usuario probo Preview anterior: podia entrar a `Comercios`, pero solo veia `Smash (Test)` y no veia otros comercios ni opcion clara para pasarlos a contado/credito.
+- Diagnostico: los comercios existentes con Entrega2 App viven en configuracion legacy `store_delivery_settings.delivery_provider = 'entrega2'`, no como filas reales en `store_transport_agency_connections`. Por eso Entrega2 Somos no los listaba.
+- Cambio aplicado: `/api/transport/me` ahora, cuando la cuenta es Entrega2 Somos, mezcla en `connections` los comercios legacy de Entrega2 App que aun no tienen conexion real. Salen con chip `Entrega2 App legacy`, `Credito directo` por defecto, excepto `sabore` como `Contado validado`.
+- Cambio aplicado: en `Comercios`, el selector de modalidad queda bloqueado para legacy hasta confirmar cobro. Al cambiar `Cobro` en un legacy, llama `POST /api/transport/legacy-entrega2/[storeId]`, crea/actualiza la conexion real con Entrega2 Somos, cambia `store_delivery_settings` de `entrega2` a `transport_agency`, apunta `transport_agency_connection_id`, y deja `delivery_billing_mode` segun lo elegido.
+- Cambio aplicado: la pantalla mantiene contadores y filtro `Todos/Solo credito/Solo contado`, y chips claros `Credito directo` / `Contado validado` + destino operativo.
+- Migracion global `20260907213000_align_legacy_entrega2_connections.sql` sigue preparada para alinear todos de una vez, pero no aplicada. El endpoint permite alinear uno por uno desde UI.
+- Validaciones aprobadas: contratos directos `65/65`; TypeScript OK; ESLint focal OK; `git diff --check` OK; Supabase dry-run detecta solo la migracion global pendiente; build local Webpack OK, 185 paginas.
+- Preview nuevo Ready: `dpl_45s1oqTJ7sBuRao3nZVLQuqXtV7z`, `https://vendeplus-clean-wxvp92jem-entrega2-s-projects.vercel.app`, target Preview. `vercel inspect` Ready y logs de error sin resultados.
+- Produccion codigo no fue promovida. Nota operativa: el Preview usa la base remota; ver la lista no cambia datos, pero cambiar el selector de cobro en un comercio legacy si crea/actualiza conexion real en la base. Para prueba segura usar primero `Smash (Test)`.
+# 2026-09-07 - Preview visibilidad y alineacion credito/contado Entrega2
+
+- Usuario aclaro regla operativa: todos los comercios que hoy estan conectados a Entrega2 App deben quedar tambien conectados a Entrega2 Somos. Desde Entrega2 Somos se elige quien es `Credito` y quien es `Contado`; actualmente todos son credito excepto `sabore`.
+- Diagnostico remoto de datos: las tiendas legacy con `store_delivery_settings.delivery_provider = 'entrega2'` no tenian fila en `store_transport_agency_connections`, por eso no aparecian en Comercios de Entrega2 Somos ni podian clasificarse contado/credito. La agencia Entrega2 Somos existe como `transport_agencies.slug = 'entrega2'`, id `3db97653-4a7a-4ab0-854d-0ca847ff88a9`.
+- Tiendas legacy detectadas para alinear: Andinos, China Town, Cookies Shop, Don Aniello, Happy chicken, La cabana, La Cremita Gourmet Guasimal, La Cremita Gourmet Las Ballenas, Pasteleria TDK Delicias, Pasteleria TDK Los Cedros, Pasteleria TDK Pinonal, Sabore, Santo Sabor, Smash (Test), Strawberry.
+- Cambio UI aplicado: en `Transporte > Panel > Comercios`, cuando la empresa es Entrega2, se muestra bloque `Cobro Entrega2` con contadores `Activos Entrega2`, `Credito directo`, `Contado validado`, filtro `Todos/Solo credito/Solo contado`, y chips por comercio: `Credito directo` + `Envia directo a Entrega2 App` o `Contado validado` + `Operadora libera desde Somos`.
+- Migracion nueva preparada pero NO aplicada a produccion: `supabase/migrations/20260907213000_align_legacy_entrega2_connections.sql`. Crea/actualiza conexiones activas Entrega2 Somos para tiendas legacy `delivery_provider='entrega2'`, cambia `store_delivery_settings` a `transport_agency`, asigna `credit` a todas excepto `sabore` como `cash`, y apunta `transport_agency_connection_id` a la conexion creada.
+- Supabase dry-run: detecta solo esta migracion pendiente (`20260907213000_align_legacy_entrega2_connections.sql`). No se ejecuto `db push` real.
+- Validaciones aprobadas: contratos directos `65/65`; TypeScript `npx.cmd tsc --noEmit` OK; ESLint focal OK; `git diff --check` OK; build local `npm.cmd run build -- --webpack` OK con 185 paginas.
+- Preview nuevo Ready: `dpl_7PJQgWZLJtQcNM5aMdJE5epiAyvg`, `https://vendeplus-clean-jk5kypv73-entrega2-s-projects.vercel.app`, target Preview. Build remoto Vercel Turbopack OK. Logs de error: sin resultados. Smoke HTTP cae en `Login - Vercel` por SSO de Preview.
+- Produccion no fue promovida ni tocada. Para prueba funcional completa hace falta decidir/aprobar aplicar la migracion de alineacion en la base remota, porque el Preview usa la misma base y sin esa migracion los comercios legacy no apareceran aun en Entrega2 Somos.
+# 2026-09-07 - Preview puente Entrega2 credito/contado sin produccion
+
+- Usuario recordo el objetivo: puente entre Entrega2 Somos y Entrega2 App. Comercios con credito deben enviarse directo a Entrega2 App desde el panel del comercio; comercios de contado deben llegar al panel Entrega2 Somos, donde la operadora valida y luego libera hacia Entrega2 App.
+- Se continuo exclusivamente en el worktree `.particular-delivery-clean`. No se promovio ni se toco produccion.
+- Implementacion verificada: `store_transport_agency_connections.delivery_billing_mode` soporta `cash` por defecto y `credit`; al aprobar afiliaciones Entrega2 se selecciona contado/credito; la empresa puede cambiarlo despues desde Comercios; el comercio ve el modo de cobro en su Marketplace de empresas delivery.
+- Ruta comercio verificada: `POST /api/panel/orders/[orderId]/send-delivery` para `transport_agency` + Entrega2 crea `transport_orders`; si la conexion es `credit`, envia directo a Entrega2 App con `sendCommerceOrderToEntrega2App`; si es `cash`, registra evento `cash_validation_required` y deja el servicio en Entrega2 Somos para validacion.
+- Ruta Entrega2 Somos verificada: `POST /api/transport/panel/orders/[transportOrderId]/send-entrega2` permite liberar a Entrega2 App tanto particulares como pedidos de comercio validados, con GPS requerido, deduplicacion en `order_integrations`, evento `entrega2_app_sent` o `entrega2_app_released`, y webhooks actualizando `transport_order_id`.
+- Supabase dry-run: `Remote database is up to date`; no hay SQL pendiente contra la base remota.
+- Validaciones aprobadas: contratos directos `65/65`; `npx.cmd tsc --noEmit` OK; ESLint focal OK; `git diff --check` OK; build local `npm.cmd run build -- --webpack` OK con variables cargadas desde `../.env.local` solo en memoria, 185 paginas.
+- `npm.cmd run build` normal falla localmente por el problema conocido de Turbopack con `node_modules` symlink fuera del root del worktree; el build remoto Vercel Turbopack aprobo.
+- Preview Ready: `dpl_ECXcWbXwnfgSDSK9fkpbzMzpbiwG`, `https://vendeplus-clean-3ovgj960m-entrega2-s-projects.vercel.app`, target Preview.
+- Smoke Preview: `vercel inspect` Ready y `vercel logs --level error --since 10m` sin logs. Smoke HTTP de rutas devuelve Vercel SSO (`Login - Vercel`), esperado por proteccion de Preview; prueba funcional requiere entrar con cuenta Vercel o bypass configurado.
+- Siguiente paso exacto: probar en Preview con sesion Entrega2 Somos: (1) marcar un comercio Entrega2 como `Credito`, crear/enviar pedido delivery y confirmar que pasa directo a Entrega2 App; (2) marcar otro como `Contado`, enviar pedido desde comercio, confirmar que aparece en Pedidos de Entrega2 Somos y solo se manda a Entrega2 App al pulsar el boton de enviar/liberar; (3) confirmar que reintentos quedan bloqueados si `order_integrations` ya tiene estado no fallido. No promover a produccion sin aprobacion explicita posterior.
+# 2026-09-07 - Auditoria produccion antes de arquitectura credito/contado Entrega2
+
+- Usuario pidio asegurar lo que esta en produccion antes de planificar cambios nuevos de cotizacion Entrega2 App y selector credito/contado.
+- Sin tocar codigo ni desplegar. `git status --short` conserva el worktree con cambios historicos de particulares y handoff; no se hizo commit ni push.
+- Produccion actual inspeccionada: `dpl_2VEUZVTE5Arge4DJSifqkHgmMRru`, `https://vendeplus-clean-i5l94eert-entrega2-s-projects.vercel.app`, target production, status Ready.
+- Aliases oficiales confirmados: `https://www.somos-ve.com`, `https://somos-ve.com`, `https://vendeplus-clean.vercel.app`, `https://vendeplus-clean-entrega2-s-projects.vercel.app`.
+- Supabase dry-run: `Remote database is up to date`; no migraciones ni SQL pendientes.
+- Smoke produccion OK: `/`, `/marketplace`, `/transporte`, `/transporte/entrega2/particulares`, `/transporte/panel`, `/panel`, `/china-town` en `www.somos-ve.com` respondieron 200 con contenido; tambien OK en alias `vendeplus-clean.vercel.app` para particulares y panel transporte.
+- Logs Vercel ultimos 20 minutos: actividad normal nivel info, multiples 200 en paneles/catalogos/API; un `POST /api/orders` 400 aislado nivel info, compatible con validacion de solicitud y sin indicio de fallo 5xx/server error.
+- Siguiente paso exacto: no modificar produccion hasta disenar y aprobar arquitectura para: cotizacion particulares primero contra Entrega2 App con fallback Somos; selector por comercio conectado a Entrega2 entre credito directo y contado con validacion/liberacion desde panel Entrega2 Somos.
+# 2026-09-07 - Produccion recordar solicitante particulares
+
+- Usuario aprobo el Preview `https://vendeplus-clean-fi4ujktf4-entrega2-s-projects.vercel.app` y pidio pasarlo a produccion con cuidado.
+- Verificacion previa: `vercel inspect` confirmo Preview Ready (`dpl_8PVcTuckFBY4wHtF5A17Nee8xpzh`) y `npx.cmd supabase db push --linked --dry-run` confirmo `Remote database is up to date`.
+- Se promovio exactamente ese Preview con `vercel.cmd promote vendeplus-clean-fi4ujktf4-entrega2-s-projects.vercel.app --yes`.
+- Produccion nueva Ready: `dpl_2VEUZVTE5Arge4DJSifqkHgmMRru`, `https://vendeplus-clean-i5l94eert-entrega2-s-projects.vercel.app`.
+- Aliases oficiales confirmados sobre el deployment nuevo: `https://www.somos-ve.com`, `https://somos-ve.com`, `https://vendeplus-clean.vercel.app` y `https://vendeplus-clean-entrega2-s-projects.vercel.app`.
+- Smoke produccion OK: `https://www.somos-ve.com/transporte/entrega2/particulares` 200 content-ok, `https://www.somos-ve.com/transporte/panel` 200 content-ok, y mismos checks OK en `vendeplus-clean.vercel.app`.
+- Logs Vercel recientes: solo eventos info 200 para formulario, panel, imagenes y `/api/transport/panel/orders`; sin errores reportados por CLI.
+- Supabase dry-run posterior: `Remote database is up to date`. Migracion `20260907190000_add_particular_request_contact_names.sql` ya aplicada. No hay SQL pendiente.
+- No se hizo commit ni push.
+- Siguiente paso exacto: prueba real controlada en produccion creando un particular Delivery/Usted envia y otro Delivery/Usted recibe, verificando que recuerda solicitante y que WhatsApp/panel muestran nombres de retiro/entrega.
+# 2026-09-07 - Preview generado recordar solicitante particulares
+
+- Usuario autorizo generar Preview para recordar datos del solicitante y pedir nombre de la otra parte en Delivery particular.
+- Migracion remota aplicada con `npx.cmd supabase db push --linked`: `20260907190000_add_particular_request_contact_names.sql` agrega `pickup_name` y `delivery_name` opcionales. Dry-run posterior: `Remote database is up to date`.
+- Validaciones previas/post: contratos directos 64/64 OK, `git diff --check` OK, build local `npm.cmd run build -- --webpack` OK, build remoto Vercel Turbopack OK con 181 paginas.
+- Preview READY: https://vendeplus-clean-fi4ujktf4-entrega2-s-projects.vercel.app (`dpl_8PVcTuckFBY4wHtF5A17Nee8xpzh`), target Preview, proyecto `vendeplus-clean`.
+- Smoke sin sesion contra `/transporte/entrega2/particulares` y `/transporte/panel` devolvio 302 por proteccion/SSO de Vercel Preview; `vercel inspect` confirma estado Ready. No se promovio a produccion.
+- Siguiente paso exacto: probar el Preview con sesion/bypass Vercel en movil: Delivery/Usted envia debe pedir nombre/telefono de quien recibe; Delivery/Usted recibe debe pedir nombre/telefono de quien entrega; recargar debe recordar nombre/telefono del solicitante si el checkbox queda activo. Si el usuario aprueba, promover a produccion y hacer smoke posterior en dominios oficiales.
+# 2026-09-07 - Preview pendiente: recordar solicitante y nombres por punto en particulares
+
+- Usuario pidio agregar a pedidos particulares la opcion de recordar datos de solicitante como en checkout de comercios, y pedir nombre de la otra parte en Delivery particular: si el solicitante envia, pedir nombre/telefono de quien recibe; si el solicitante recibe, pedir nombre/telefono de quien entrega.
+- Cambio aplicado en `.particular-delivery-clean`: `ParticularDeliveryForm` reutiliza `customer-browser-profile` para cargar/guardar nombre y telefono del solicitante en `localStorage`, con checkbox activado por defecto y opcion de limpiar si se desmarca.
+- Cambio aplicado: `Point` ahora soporta `name`; el formulario muestra `Nombre de quien recibe en entrega` o `Nombre de quien entrega en retiro` segun el rol del solicitante. Para traslado de persona se conserva la logica de pasajero ya existente.
+- Cambio aplicado server-side: la API publica de particulares valida `pickup.name` y `delivery.name`, inserta `pickup_name` y `delivery_name`, y los incluye en el WhatsApp de solicitud particular.
+- Cambio aplicado panel/operacion: las APIs de pedidos/particulares seleccionan `pickup_name` y `delivery_name`; el panel muestra contactos de retiro/entrega en el detalle y los incluye en la comanda WhatsApp al repartidor; el envio a Entrega2 App agrega esos nombres en `detalles`.
+- Migracion nueva pendiente de aplicar antes de Preview/produccion: `supabase/migrations/20260907190000_add_particular_request_contact_names.sql`, aditiva, agrega `pickup_name` y `delivery_name` opcionales con limite de 100 caracteres. No destruye datos viejos.
+- Validaciones aprobadas: `node --experimental-strip-types scripts/critical-contracts.test.mjs` 64/64; `npx.cmd tsc --noEmit` OK; ESLint focal OK; `git diff --check` OK; `npx.cmd supabase db push --linked --dry-run` OK y detecta solo esta migracion nueva; `npm.cmd run build -- --webpack` OK, Next.js 16.3.0, 181 paginas.
+- No se hizo deploy, no se promovio produccion, no se aplico la migracion remota en esta retoma.
+- Siguiente paso exacto: aplicar la migracion en Supabase remoto, desplegar Preview, probar en movil los caminos Delivery/Usted envia y Delivery/Usted recibe verificando que se cargan/guardan datos del solicitante y que se exigen los nombres de la otra parte; luego revisar panel y WhatsApp antes de aprobar produccion.
+# Enlace público para particulares por empresa delivery (2026-09-04)
+
+- Trabajo aislado en `.particular-delivery-clean`, rama `feature/particular-delivery-links`; sin commit, Preview, producción ni escrituras remotas.
+- Se agregó `/transporte/[agencySlug]/particulares`, un flujo móvil de cuatro pasos: solicitante, retiro, entrega y resumen. Distancia y tarifa se recalculan server-side antes de registrar y abrir WhatsApp.
+- El panel permite abrir/copiar el enlace y muestra solicitudes limitadas a la empresa autenticada. La API pública limita abuso por IP/empresa, cuerpos de 8 KB y valida slug, coordenadas, teléfonos, textos y pago.
+- Migración aditiva `20260905010000_transport_particular_requests.sql`, todavía NO aplicada: tabla con FK a empresa, checks, índice, RLS y acceso directo revocado a `public`, `anon` y `authenticated`.
+- Validaciones aprobadas después de liberar espacio: 63/63 contratos críticos, ESLint dirigido, `git diff --check`, TypeScript y build completo Next.js 16.3.0 con 193 páginas. El build usó Webpack porque Turbopack rechaza el junction local de dependencias compartidas; las variables privadas se cargaron solo en memoria desde `.env.local`, sin copiar ni modificar secretos.
+- Migración aditiva `20260905010000_transport_particular_requests.sql` aplicada remotamente con autorización, después de un dry-run que confirmó que era la única pendiente. Verificación: tabla vacía, RLS activo, `anon`/`authenticated` sin SELECT, `service_role` con SELECT, índice esperado y ocho constraints presentes.
+- Preview Ready: `dpl_9LcVAZiGmu96YZbNzdZFsjsdv65V`, `https://vendeplus-clean-lx9ddaaf8-entrega2-s-projects.vercel.app`, target Preview y proyecto correcto `vendeplus-clean`. Build remoto Next.js 16.3.0 de 193 páginas aprobado.
+- Smoke Preview: `/transporte/entrega2/particulares` HTTP 200; API pública GET 405; API de panel sin sesión 401; cotización POST sin crear solicitud devolvió 2,87 km y $1,50 desde tarifa server-side. La tabla continuó con 0 filas y no hubo logs de error.
+- Siguiente paso: probar desde teléfono el flujo visual con el enlace de una empresa activa y registrar una solicitud controlada; confirmar que abre WhatsApp y aparece solo en Pedidos de esa empresa. No promover a producción sin aprobación explícita.
+- Culminación técnica (2026-09-04): las solicitudes particulares ahora crean automáticamente un `transport_order`, aparecen en el listado operativo normal de Pedidos, admiten asignación de repartidor y sincronizan sus estados. La empresa configura métodos/datos de pago que el cliente puede consultar y copiar.
+- Se corrigió el orden de migraciones antes de aplicar: la integración quedó como `20260905020000_integrate_particular_delivery_orders_and_payments.sql`, posterior a la tabla base `20260905010000`. El dry-run propuso solo esa migración y fue aplicada remotamente sin errores.
+- Validaciones finales: 63/63 contratos críticos (ejecución directa por el `spawn EPERM` conocido del runner), ESLint global, TypeScript, `git diff --check` y build Next.js 16.3.0 de 193 páginas aprobados. El build local usó Webpack por el junction del worktree; el build remoto Turbopack también aprobó.
+- Preview final Ready: `dpl_CVeWAjv9wpLtZcaWgbgraE8sm1FH`, `https://vendeplus-clean-ey6d0ph5k-entrega2-s-projects.vercel.app`. Producción web no fue promovida.
+- Próximo paso exacto: configurar al menos un método de pago en una empresa controlada, crear una solicitud real desde teléfono y confirmar en Pedidos que aparece una sola vez, permite asignar repartidor y sincroniza estados. Promover solo después de esa validación.
+- Refinamiento visual solicitado sobre capturas: cabecera pública con mejor jerarquía, fondo suave, logo elevado y decoración discreta; cabecera del panel con acciones compactas, alturas consistentes y etiquetas más cortas para evitar la fila sobredimensionada.
+- Pagos particulares simplificados exclusivamente a `Pago móvil` y `Efectivo`. Configuración presentada en dos tarjetas; Pago móvil permite escribir libremente el nombre del banco, teléfono, cédula/RIF y titular. Métodos antiguos quedan filtrados en cliente y rechazados server-side.
+- Retiro y entrega unifican `Dirección escrita` + `Referencia opcional` en un solo campo `Dirección o referencia`. El GPS continúa siendo obligatorio y la descripción escrita opcional.
+- Pago móvil exige ahora `Referencia del pago` tanto en cliente como server-side. Se guarda en `transport_particular_requests.payment_reference`, aparece en WhatsApp y en el detalle operativo del pedido. Migración aditiva `20260905030000_add_particular_payment_reference.sql` aplicada remotamente; no requiere SQL manual.
+- Validaciones: TypeScript, ESLint dirigido, 63/63 contratos, `git diff --check` y build local Next.js 16.3.0 de 193 páginas aprobados. Preview final `dpl_5AHQ57ZSkSuxCtmLtwGx9wKqeB91`, `https://vendeplus-clean-8up7b5zkr-entrega2-s-projects.vercel.app`, Ready; build remoto Turbopack aprobado. Producción web intacta.
+- Próximo paso exacto: revisar en Preview la cabecera del panel y el formulario móvil; configurar Pago móvil/Efectivo, registrar una solicitud con referencia y confirmar su visualización en Pedidos. No promover sin aprobación explícita.
+- Hotfix visual posterior: el logo del enlace público ya no usa un contenedor con recorte ni estira la imagen al 100%. Ahora dispone de caja 72x72, margen interno real y una imagen 48x48 con `object-contain`, por lo que conserva completa cualquier proporción.
+- ESLint dirigido, TypeScript, `git diff --check` y build local/remoto Next.js 16.3.0 de 193 páginas aprobados. Preview corregida `dpl_C8eYcCd4FznLrvUsqcbAhNo7f5rK`, `https://vendeplus-clean-jpv44yxc8-entrega2-s-projects.vercel.app`, Ready. Sin migración adicional ni producción.
+- Segunda corrección del logo tras evidencia visual: el archivo de Entrega2 contiene margen blanco interno, por lo que `object-contain` mostraba la marca útil diminuta. La miniatura ahora usa el patrón de avatar (`object-cover`, centrado, sin padding) para ocupar completamente el cuadro 72x72. ESLint, TypeScript, diff check y build local/remoto de 193 páginas aprobados. Preview `dpl_BjkAzbqQqNdrALcarbKtJWTToayz`, `https://vendeplus-clean-95rvs0ki4-entrega2-s-projects.vercel.app`, Ready; producción intacta.
+
 # Optimización por sección del panel delivery (2026-08-26)
 
 - Rama local `perf/transport-panel-section-loading`; producción intacta y sin migración/SQL.
@@ -1039,3 +1208,227 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 - Exclusiones confirmadas: ninguna categoría/licor, `Galleta con Helado` y los demás productos sin precio del documento. Pepitos quedaron estándar, sin variantes; no se cargaron acompañantes porque los platos fuertes aplicables no tenían precio.
 - Catálogo productivo responde HTTP 200 en `https://www.somos-ve.com/sierra-yara`; tras revalidación contiene `Sierra Yara`, `Espresso` y `Bacon Star`, y no muestra estado inactivo.
 - Validación final: `git diff --check` aprobado y build Next.js 16.3.0 aprobado con 192 páginas, cargando secretos solo en memoria del proceso. PR #19 fusionado a `main` en `a704b20`; no hubo cambios adicionales en la base de datos.
+
+# Retoma: asignacion de repartidor en particulares (2026-09-05)
+
+- Usuario confirma que contrasena, colores y CSV ya estan en produccion. Particulares se probo en varias Previews; pendiente: al crear un pedido particular no dejaba asignar repartidor.
+- Trabajo vigente en `.particular-delivery-clean`. Vercel confirma ultima Preview Ready `dpl_BjkAzbqQqNdrALcarbKtJWTToayz`, https://vendeplus-clean-95rvs0ki4-entrega2-s-projects.vercel.app, creada 2026-09-04 21:56:57 America/Caracas.
+- Diagnostico: RPC original mutate_transport_order_atomic rechaza cuando order_id es null, caso normal de particulares. Correccion local existente en 20260905040000_complete_particular_delivery_operations.sql usa NOT FOUND y omite sincronizacion de orders cuando no hay order_id.
+- Verificacion remota migration list --linked: 20260905010000, 020000 y 030000 aplicadas; 20260905040000 pendiente. No se aplico SQL ni se cambio codigo en esta retoma; build no ejecutado por tratarse de diagnostico.
+- Siguiente paso exacto: revisar completa la migracion 20260905040000 (tambien incluye idempotencia), validar dry-run y aplicar la correccion; probar asignacion y transiciones de estado en Preview, incluyendo pedido de comercio como regresion. No dar por corregido hasta probar persistencia y eventos. No promover particulares a produccion todavia.
+
+# Validacion de correcciones de particulares (2026-09-05)
+
+- Esta verificacion reemplaza el pendiente anterior: Supabase db push --linked --dry-run responde que la base esta actualizada. Las funciones remotas confirman el guard NOT FOUND para servicios sin order_id y el guard store_id IS NOT NULL para broadcast. No se aplicaron migraciones ni cambios persistentes de datos en esta sesion.
+- Se agrego scripts/qa-particular-operations.sql en .particular-delivery-clean: prueba remota BEGIN/ROLLBACK aprobada para creacion, reintento duplicado, asignacion, 9 estados, sincronizacion de solicitud, 10 eventos, servicio inexistente, regresion de comercio y permisos RPC. Todos los datos de QA se revirtieron.
+- Validaciones: 63/63 contratos, ESLint global, TypeScript y git diff --check aprobados. npm.cmd run build -- --webpack aprobado: 193 paginas. npm.cmd run build con Turbopack fallo por el enlace node_modules del worktree; el primer intento Webpack carecia de variables privadas. Build final aprobado con ../.env.local cargado solo en memoria, sin modificar archivos de entorno.
+- Preview existente confirmada Ready: dpl_BjkAzbqQqNdrALcarbKtJWTToayz, https://vendeplus-clean-95rvs0ki4-entrega2-s-projects.vercel.app. No se hizo deploy, commit ni push.
+- Navegador integrado no disponible (iab); no se afirma validacion visual ni E2E de API autenticada. Siguiente paso: probar visualmente en Preview un particular: aceptar, asignar repartidor, En camino, Entregado, recargar y revisar historial. No promover a produccion hasta aprobacion explicita.
+
+# Correccion UX particulares: Entregado y textos del formulario (2026-09-05)
+
+- Usuario confirma que ya permite asignar repartidor, pero en el selector solo veia Repartidor asignado, En camino y Reportar novedad; faltaba mostrar Entregado antes de En camino en operaciones reales.
+- Cambios aplicados en `.particular-delivery-clean`: `src/components/transport/TransportOrdersTab.tsx` ahora muestra Entregado desde Aceptado, Repartidor asignado, Por retirar, Retirado y En camino. Tambien conserva Por retirar/Retirado donde aplica y Reportar novedad.
+- Cambios aplicados en `src/components/public/ParticularDeliveryForm.tsx`: las pestanas visibles del link de particulares pasan de Envio/Recibo a Usted envia/Usted recibe. No cambia la logica interna sender/receiver.
+- Validaciones: `node --experimental-strip-types scripts/critical-contracts.test.mjs` aprobado 63/63; ESLint focal aprobado para los dos componentes; verificacion dinamica UI-vs-servidor aprobada; `git diff --check` aprobado; `npm.cmd run build -- --webpack` aprobado con 193 paginas.
+- Preview nuevo Ready: `dpl_HNboUttVUxtATAvfJXdjVJvX579W`, https://vendeplus-clean-rfphl62wk-entrega2-s-projects.vercel.app. Build remoto de Vercel tambien aprobado con 193 paginas.
+- No hubo migracion nueva ni SQL a ejecutar. No se hizo commit, push ni promocion a produccion.
+- Siguiente prueba visual recomendada: abrir el Preview, crear/usar un particular, aceptar, asignar repartidor, abrir selector de estado y confirmar que Entregado aparece; marcar Entregado, recargar y revisar historial.
+
+# Revision final pre-produccion particulares (2026-09-05)
+
+- Usuario probo el Preview y reporta que todo se ve ok.
+- Revision final: Preview `dpl_HNboUttVUxtATAvfJXdjVJvX579W` sigue Ready y target preview. Supabase `db push --linked --dry-run` confirma base remota al dia, sin SQL pendiente.
+- Validaciones repetidas: contratos 63/63, ESLint amplio en transporte/particulares sin errores, `git diff --check` sin errores, build local `npm.cmd run build -- --webpack` aprobado con 193 paginas.
+- Higiene release: sin cambios en `.env`, `.next`, `node_modules`, package lock, next config ni configuracion Vercel; sin TODO/FIXME/debugger/console.log en el alcance revisado. Avisos CRLF de Git en Windows no bloqueantes.
+- Criterio: listo para promocion a produccion desde el Preview validado, con riesgo residual bajo propio de cualquier cambio nuevo. No se ejecuto promocion todavia.
+
+# Promocion a produccion particulares (2026-09-05)
+
+- Usuario autorizo "procede". Se ejecuto `vercel promote vendeplus-clean-rfphl62wk-entrega2-s-projects.vercel.app --yes`.
+- Produccion nueva Ready: `dpl_9spgVAKexmJbwVhwwYrbdmFxPieE`, https://vendeplus-clean-6yguima55-entrega2-s-projects.vercel.app.
+- Aliases confirmados sobre el deployment nuevo: https://www.somos-ve.com, https://somos-ve.com, https://vendeplus-clean.vercel.app y https://vendeplus-clean-entrega2-s-projects.vercel.app.
+- No se hizo commit ni push. No hubo SQL pendiente antes de promover.
+
+# Boton enviar particular a Entrega2 App (2026-09-06)
+
+- Usuario confirmo que Entrega2 App puede recibir origen particular y autorizo "procede con esto".
+- Se agrego migracion aplicada remotamente `20260906010000_allow_entrega2_integrations_for_particular_transport_orders.sql`: `order_integrations.order_id` ahora permite null y se agregan `transport_order_id` y `particular_request_id` con indices unicos por proveedor para registrar integraciones de particulares sin simular pedidos de comercio.
+- Se agrego endpoint `POST /api/transport/panel/orders/[transportOrderId]/send-entrega2`: protegido por sesion de empresa delivery, rol owner/admin/operator, solo permite `agency.slug = entrega2` y solo `transport_orders` con `particular_request_id`, sin `order_id` ni `store_id`. Valida GPS de retiro y entrega, arma payload particular para Entrega2 App, evita duplicados, registra `order_integrations` y evento `entrega2_app_sent`.
+- Se extendieron list/detail de pedidos delivery para incluir `order_integrations`; el panel muestra boton "Enviar a Entrega2 App" solo para particulares cuando la empresa seleccionada es Entrega2. Si ya fue enviado queda deshabilitado con estado de Entrega2.
+- Webhooks Entrega2 App `order-status` y `driver-location` ahora leen `transport_order_id`; `order-status` puede sincronizar estados hacia `transport_orders` particulares.
+- Validaciones: contratos `64/64`, ESLint focal, TypeScript `npx.cmd tsc --noEmit`, `git diff --check`, Supabase dry-run sin pendientes, build local `npm.cmd run build -- --webpack` con 193 paginas, build Vercel Preview Ready.
+- Preview Ready usado para promover: `dpl_JDn2jmjxZyfzWz5f3sWNeuLZMFRy`, https://vendeplus-clean-bpbd0pzye-entrega2-s-projects.vercel.app.
+- Produccion nueva Ready: `dpl_EzDrR3V7jopd1znpeojmFFwdVkTK`, https://vendeplus-clean-kubr19ria-entrega2-s-projects.vercel.app. Aliases confirmados: https://www.somos-ve.com, https://somos-ve.com, https://vendeplus-clean.vercel.app y https://vendeplus-clean-entrega2-s-projects.vercel.app.
+- No se hizo commit ni push. Prueba real pendiente: desde panel Entrega2, abrir Pedidos, tomar un particular con GPS retiro/entrega, pulsar Enviar a Entrega2 App y confirmar que Entrega2 App lo recibe. Si ya fue enviado, el boton debe quedar deshabilitado mostrando el estado.
+
+# Correccion Preview: puntos retiro/entrega y nota adicional (2026-09-06)
+
+- Usuario corrigio el proceso: no promover a produccion sin prueba explicita previa en Preview. Esta correccion queda solo en Preview; no se promovio.
+- Diagnostico: el formulario de particulares podia reutilizar estado interno del componente de mapa entre paso Retiro y paso Entrega. Se aislaron las instancias con keys separadas `pickup-fields` y `delivery-fields`, y tambien key en `LocationPicker` por modo/nombre.
+- Se agrego campo visible "Nota adicional (opcional)" al final del paso Resumen. Para evitar nueva migracion antes de prueba en Preview, la nota viaja en el payload, se valida server-side y se incorpora al detalle operativo/WhatsApp como "Nota adicional:" usando el campo existente `package_description`.
+- Validaciones: contratos `64/64`, ESLint focal, TypeScript, Supabase dry-run sin SQL pendiente, `git diff --check`, build local `npm.cmd run build -- --webpack` aprobado.
+- Preview Ready para prueba manual: `dpl_A4L1rSbmaa5jVLoPpv4ygugjY1q2`, https://vendeplus-clean-liki20t7s-entrega2-s-projects.vercel.app. No promover a produccion hasta que el usuario confirme que el flujo esta ok en este Preview.
+
+# Promocion controlada puntos/nota particulares (2026-09-06)
+
+- Usuario aprobo el Preview y pidio "ok pasalo a produccion controlado".
+- Se ejecuto `vercel promote vendeplus-clean-liki20t7s-entrega2-s-projects.vercel.app --yes`.
+- Produccion nueva Ready: `dpl_44YcMzKyKqDD5VnnC4orScKYPSwi`, https://vendeplus-clean-hh7vygwdb-entrega2-s-projects.vercel.app.
+- Aliases confirmados sobre el deployment nuevo: https://www.somos-ve.com, https://somos-ve.com, https://vendeplus-clean.vercel.app y https://vendeplus-clean-entrega2-s-projects.vercel.app.
+- Supabase dry-run posterior confirma base remota al dia. No hubo SQL nuevo para esta correccion de puntos/nota.
+
+# Correccion colores y boton Actualizar en empresas delivery (2026-09-06)
+
+- Diagnostico: los colores del Marketplace se guardaban desde `/api/transport/agencies/[agencyId]`, pero `/api/transport/me` no los incluia al cargar/refrescar el panel. El boton `Actualizar` en el panel delivery tambien llamaba `load()` con defaults dependientes de la pestaña; en `Pedidos` no traia configuracion completa, por eso podia verse estado viejo. El Marketplace publico de empresa delivery tenia `revalidate = 60`, asi que un cambio de color podia tardar hasta 60s.
+- Cambios aplicados en `.particular-delivery-clean`: `/api/transport/me` ahora selecciona `marketplace_primary_color` y `marketplace_accent_color` en carga completa y compacta; el boton `Actualizar` es `type="button"` y fuerza `includeConfiguration: true`; el formulario de perfil se remonta cuando cambian los colores; `/transporte/[agencySlug]/marketplace` queda dinamico con `force-dynamic`.
+- Contratos reforzados en `scripts/critical-contracts.test.mjs` para exigir colores en `/api/transport/me`, refresh completo, boton seguro y pagina publica dinamica.
+- Validaciones aprobadas: 64/64 contratos criticos, ESLint dirigido, TypeScript, `git diff --check`, Supabase dry-run remoto (`Remote database is up to date`) y build local Next.js 16.3.0 con Webpack de 181 paginas.
+- Preview Vercel Ready: `dpl_AneVjiUC8yrFTv3Lnc7NrZCAXhJb`, `https://vendeplus-clean-600zwtybb-entrega2-s-projects.vercel.app`. Build remoto Turbopack aprobado con 181 paginas; `/transporte/[agencySlug]/marketplace` sale dinamico. Smoke sin sesion queda redirigido a SSO de Vercel, esperado para Preview protegida.
+- No hubo migracion nueva ni SQL que ejecutar. No se promovio a produccion; siguiente paso: probar en Preview con login de Vercel/panel que cambiar colores, guardar y pulsar Actualizar refleja valores actuales y el Marketplace abre con los colores nuevos. Promover solo con aprobacion explicita posterior.
+
+# Refinamiento perceptible boton Actualizar delivery (2026-09-06)
+
+- Ajuste posterior a feedback del usuario: aunque el boton `Actualizar` ya refrescaba datos, visualmente no se percibia actividad porque `load()` no mostraba carga cuando habia cache inicial.
+- `TransportAgencyPanel` ahora agrega estado dedicado `isPanelRefreshing`: al tocar Actualizar muestra `Actualizando...` con spinner, queda deshabilitado durante la carga y termina con `Panel actualizado.`.
+- El refresh manual conserva el mensaje de progreso con `silent: true`, fuerza `includeConfiguration: true` e `includeRelations: true`, refresca pedidos si esta en `Pedidos` y repartidores si esta en `Repartidores`.
+- Contratos reforzados y aprobados: 64/64. Validaciones aprobadas: ESLint dirigido, TypeScript, `git diff --check`, build local Next.js 16.3.0 con Webpack de 181 paginas.
+- Preview Vercel Ready: `dpl_3Z6jxbKpZkC2ffzNYARhgM6fmf5x`, `https://vendeplus-clean-p7hsm1o7z-entrega2-s-projects.vercel.app`. Build remoto Turbopack aprobado de 181 paginas.
+- No hubo migracion ni SQL. No se promovio a produccion.
+
+# UX link particulares: tipo de servicio, notas por punto y ubicacion actual condicionada (2026-09-06)
+
+- Usuario reporto que el logo de Entrega2 no se veia centrado en el link de particulares y pidio ajustar el flujo.
+- `ParticularDeliveryForm` ahora muestra en el primer paso un selector de tipo de servicio: `Delivery` con icono de moto/bici y `Traslado de persona` con icono de usuario.
+- El logo de Entrega2 en la cabecera del link particular usa tratamiento especial `object-contain`, `object-center`, `scale-110` y padding minimo para evitar recorte/descentrado del archivo.
+- Se cambio el texto de los campos por punto a `Direccion, referencia o nota de retiro` y `Direccion, referencia o nota de entrega`, ambos opcionales.
+- Se elimino la nota adicional final del resumen. La nota/instruccion ahora vive en el campo del punto correspondiente.
+- `LocationPicker` agrega `allowCurrentLocation`: el boton de ubicacion actual solo aparece en Retiro cuando el solicitante elige `Usted envia`, y solo aparece en Entrega cuando el solicitante elige `Usted recibe`. El otro punto queda por mapa.
+- API publica de particulares acepta `serviceType` y guarda/envia por WhatsApp `Servicio` + `Detalle` dentro de `package_description`, sin cambiar esquema.
+- Validaciones aprobadas: 64/64 contratos criticos, ESLint focal, TypeScript, `git diff --check`, Supabase dry-run sin SQL pendiente, build local Next.js 16.3.0 con Webpack de 181 paginas.
+- Preview Vercel Ready: `dpl_AZGfjvJAmVKWHzUTwXtBRNyDB7cW`, `https://vendeplus-clean-4qz7g5ntt-entrega2-s-projects.vercel.app`. Build remoto Turbopack aprobado de 181 paginas.
+- No hubo migracion ni SQL. No se promovio a produccion; probar visualmente en Preview antes de promover.
+
+# Reorganizacion flujo particulares por tipo de servicio (2026-09-07)
+
+- Usuario pidio revertir ajuste especial del logo Entrega2 y rediseñar la logica de particulares para evitar confusion.
+- `ParticularDeliveryForm` fue reorganizado: primer paso inicia con selector principal `Delivery` o `Traslado de persona`. El resto del paso se despliega solo despues de elegir tipo.
+- Para `Delivery`: pide datos del solicitante y luego `Usted envia` o `Usted recibe`. Si envia, su telefono/ubicacion aplican a retiro y se pide telefono del receptor en entrega. Si recibe, su telefono/ubicacion aplican a entrega y se pide telefono de quien entrega en retiro.
+- Para `Traslado de persona`: pide datos del solicitante y luego `Viajo yo` o `Viaja otra persona`. Si viaja el solicitante, no duplica datos del pasajero; usa sus datos iniciales. Si viaja otra persona, pide nombre y telefono del pasajero.
+- La ubicacion actual queda restringida al punto donde esta el solicitante: delivery sender en retiro, delivery receiver en entrega, traslado self en retiro. En los demas puntos queda seleccion por mapa.
+- Logo de Entrega2 revertido: vuelve al render normal `object-cover object-center`; se quito el ajuste `scale-110 object-contain`.
+- API publica de particulares ahora acepta `travelerName`/`travelerPhone` y arma WhatsApp claro: `Servicio`, `Solicitante`, `Telefono solicitante`, y si aplica `Pasajero`/`Telefono pasajero`. Ya no usa `Cliente: ...` ni nota final.
+- No hubo migracion ni SQL. Validaciones aprobadas: contratos 64/64, ESLint focal, TypeScript, `git diff --check`, Supabase dry-run al dia, build local Next.js 16.3.0 con Webpack de 181 paginas.
+- Preview Vercel Ready: `dpl_F3yXYhfF5PE5yEh7NFpi7qVDxwH6`, `https://vendeplus-clean-hvdqp80sr-entrega2-s-projects.vercel.app`. Build remoto Turbopack aprobado de 181 paginas.
+- No se promovio a produccion. Probar visualmente en Preview los cuatro caminos: Delivery/Usted envia, Delivery/Usted recibe, Traslado/Viajo yo, Traslado/Viaja otra persona.
+
+# Cierre local ajustes particulares (2026-09-07)
+
+- Retoma ejecutada en el worktree `.particular-delivery-clean`; no se tocaron archivos de produccion desde la raiz principal.
+- Validaciones repetidas: TypeScript `npx.cmd tsc --noEmit` aprobado; ESLint focal aprobado para `ParticularDeliveryForm`, `LocationPicker`, API publica de particulares, pagina publica y `TransportOrdersTab`; `git diff --check` sin errores; contratos directos `64/64` aprobados. El runner `npm.cmd run test:critical` sigue fallando con `spawn EPERM`, por eso se uso ejecucion directa como en las sesiones previas.
+- Supabase dry-run remoto: `Remote database is up to date`; no hay SQL ni migraciones pendientes.
+- Build obligatorio: `npm.cmd run build` con Turbopack falla por el problema conocido del symlink `node_modules` fuera del root del worktree; `npm.cmd run build -- --webpack` primero fallo por falta de variables privadas en el worktree y luego aprobo cargando `../.env.local` solo en memoria. Resultado final: Next.js 16.3.0, Webpack, 181 paginas.
+- Verificacion visual automatizada local en `http://localhost:3105/transporte/entrega2/particulares` con viewport movil 390x844 aprobo los cuatro caminos: Delivery/Usted envia, Delivery/Usted recibe, Traslado/Viajo yo y Traslado/Viaja otra persona. En cada camino se llego al resumen y se valido que el boton de ubicacion actual solo aparece en el punto donde corresponde.
+- No se creo solicitud real ni se presiono `Registrar y enviar`; la prueba uso mapa local y se detuvo en Resumen para no generar datos operativos.
+- Preview vigente para revision: `dpl_F3yXYhfF5PE5yEh7NFpi7qVDxwH6`, `https://vendeplus-clean-hvdqp80sr-entrega2-s-projects.vercel.app`.
+- Produccion no fue promovida en esta retoma. Siguiente paso exacto: si el usuario aprueba, promover de forma controlada ese Preview a produccion y hacer smoke posterior de `/transporte/entrega2/particulares` y panel delivery. No promover sin aprobacion explicita.
+
+# Revision pre-produccion particulares y clave Entrega2 (2026-09-07)
+
+- Usuario pidio revisar produccion, ajustar terminos delivery/traslado y cambiar clave de entregados.venezuela a `entregados123`.
+- Cuenta identificada sin ambiguedad en Supabase remoto: `entregados.venezuela@gmail.com`, empresa delivery `Entrega2`, slug `entrega2`, rol `owner`, user_id `7685d856-3236-40ac-bae5-665802086c91`.
+- Supabase Auth rechazo la clave solicitada `entregados123` por ser debil/conocida. No se forzo por SQL ni se modifico `auth.users` manualmente por seguridad. Siguiente paso: usar una variante fuerte aprobada por el usuario, por ejemplo `Entregados123!`.
+- Auditoria de terminos: el flujo publico de particulares esta acorde para `Delivery` y `Traslado de persona`; separa solicitante, rol, pasajero, origen, destino, paquete y pago. Se detecto mejora menor en panel delivery: algunas etiquetas de particulares decian `Cliente`; se cambiaron a `Solicitante` donde aplica, `Cliente / Solicitante` en tabla y `Entrega WA` para el WhatsApp del destino particular. Pedidos de comercio conservan `Cliente` y `Cliente WA`.
+- Archivos modificados en esta retoma: `src/components/transport/TransportOrdersTab.tsx`, `scripts/critical-contracts.test.mjs` y `SESSION_HANDOFF.md`.
+- No hubo migracion ni SQL nuevo. Supabase dry-run remoto: `Remote database is up to date`.
+- Validaciones aprobadas: contratos directos `64/64`; TypeScript `npx.cmd tsc --noEmit`; ESLint focal; `git diff --check`; build local `npm.cmd run build -- --webpack` con variables en memoria, 181 paginas.
+- Preview Vercel nuevo Ready: `dpl_3qrVtKzkERDDbFPbLDiqrNaN1tjg`, `https://vendeplus-clean-219cygqvw-entrega2-s-projects.vercel.app`, target Preview. Build remoto Turbopack aprobado con 181 paginas.
+- Smoke Preview: `/transporte/entrega2/particulares` HTTP 200, contenido cargado; `vercel inspect` Ready; logs de error recientes sin resultados.
+- Criterio: listo tecnicamente para produccion cuando el usuario apruebe promover este Preview. No se promovio produccion en esta retoma.
+
+# Produccion particulares reorganizados (2026-09-07)
+
+- Usuario confirmo que probo el Preview de particulares y autorizo pasarlo a produccion.
+- Se promovio el Preview validado `https://vendeplus-clean-219cygqvw-entrega2-s-projects.vercel.app` con `vercel promote`.
+- Primer promote creo production `dpl_HPpw6D4xuSBEwgJJDLC41NGDrgiF` (`https://vendeplus-clean-ajabc9058-entrega2-s-projects.vercel.app`). Se repitio el promote con URL completa por confirmacion de alias y quedo production final `dpl_2dthwkhr5QsTrZ2iW3tj5Fn7rD5L`, `https://vendeplus-clean-g84qjqmjo-entrega2-s-projects.vercel.app`, estado Ready.
+- Aliases oficiales confirmados sobre `dpl_2dthwkhr5QsTrZ2iW3tj5Fn7rD5L`: `https://www.somos-ve.com`, `https://somos-ve.com`, `https://vendeplus-clean.vercel.app` y `https://vendeplus-clean-entrega2-s-projects.vercel.app`.
+- Smoke productivo final: `/transporte/entrega2/particulares` HTTP 200 y contenido de particulares cargado; `/transporte/panel` HTTP 200; logs de error de Vercel ultimos 10 minutos sin resultados.
+- Supabase dry-run posterior: sin migraciones pendientes. No hubo SQL nuevo en esta promocion.
+- Clave Entrega2 previamente cambiada y verificada: `entregados.venezuela@gmail.com` quedo con `entrega2026`.
+- No se hizo commit ni push.
+
+# Preview diferenciacion Delivery vs Traslado en panel delivery (2026-09-07)
+
+- Usuario pidio diferenciar traslados de delivery en el panel de pedidos de empresas delivery.
+- Cambio aplicado en `.particular-delivery-clean`: `TransportOrdersTab` detecta el tipo desde `transport_particular_requests.package_description`, que ya guarda prefijo `Delivery:` o `Traslado de persona:`. No requiere migracion.
+- En la tabla de pedidos, una solicitud particular ahora muestra `Delivery particular` o `Traslado particular` como origen, mas una etiqueta visual `Delivery`/`Traslado` con color distinto. Pedidos de comercio conservan nombre del comercio.
+- En el detalle, los particulares muestran `Tipo: Delivery` o `Tipo: Traslado`; el bloque de descripcion usa `Paquete` para delivery y `Detalle` para traslado. La comanda WhatsApp al repartidor tambien arranca con `Nuevo delivery particular` o `Nuevo traslado particular`.
+- Validaciones aprobadas: contratos directos `64/64`, TypeScript `npx.cmd tsc --noEmit`, ESLint focal `TransportOrdersTab`, `git diff --check`, Supabase dry-run remoto al dia y build local `npm.cmd run build -- --webpack` con 181 paginas.
+- Preview Vercel Ready: `dpl_6gkUy7eheujHaVgjnVs9sZxvEtrf`, `https://vendeplus-clean-k03mtrp40-entrega2-s-projects.vercel.app`, target Preview. Build remoto Turbopack aprobado con 181 paginas.
+- Smoke Preview: `/transporte/panel` HTTP 200; `vercel inspect` Ready; logs de error recientes sin resultados.
+- No se promovio a produccion. Siguiente paso: usuario prueba Preview en panel delivery con servicios particulares existentes o nuevos; si aprueba, promover este Preview a produccion.
+
+# Preview fix real diferenciacion Delivery/Traslado (2026-09-07)
+
+- Usuario probo Preview anterior y reporto que en panel todos seguian como `Particular`, sin diferenciar `Delivery` o `Traslado`.
+- Diagnostico: la relacion `transport_particular_requests` puede llegar al componente como arreglo desde Supabase en la lista; el helper leia solo objeto y no encontraba `package_description`, por eso caia al fallback `Particular`.
+- Fix aplicado: `particular(entry)` normaliza objeto/arreglo (`Array.isArray(request) ? request[0] : request`) y `particularServiceLabel` detecta `Delivery:` o `Traslado de persona:` aunque no esten estrictamente al inicio.
+- Se conserva lo ya implementado: tabla muestra `Delivery particular` o `Traslado particular`, etiqueta visual `Delivery`/`Traslado`, detalle con `Tipo`, y comanda WhatsApp del repartidor con `Nuevo delivery particular` o `Nuevo traslado particular`.
+- No hubo migracion ni SQL nuevo. Supabase dry-run remoto: base al dia.
+- Validaciones aprobadas: contratos directos `64/64`, TypeScript, ESLint focal, `git diff --check`, build local `npm.cmd run build -- --webpack` con 181 paginas.
+- Preview Vercel Ready: `dpl_4PsCrE2WBFq2f5gv59kJfmeNDbdE`, `https://vendeplus-clean-kml8k8cqu-entrega2-s-projects.vercel.app`, target Preview. Build remoto Turbopack aprobado con 181 paginas.
+- Smoke Preview: `/transporte/panel` HTTP 200; `vercel inspect` Ready; logs de error recientes sin resultados.
+- No se promovio a produccion. Siguiente paso: usuario prueba este Preview en panel delivery; si ya muestra `Delivery particular` y `Traslado particular`, promover este Preview a produccion.
+
+## 2026-09-07 - Preview ajustes textos particulares
+
+- Cambio aplicado: en panel delivery, pedidos particulares muestran origen `Particular`; el tipo queda debajo como `Delivery` o `Traslado`.
+- Cambio aplicado: mensajes WhatsApp de solicitudes particulares evitan redundancia de pasajero cuando coincide con solicitante.
+- Cambio aplicado: para traslados se usan `ORIGEN`/`DESTINO` y etiquetas de origen/destino; no `RETIRO`/`ENTREGA`.
+- Archivos clave: `src/components/transport/TransportOrdersTab.tsx`, `src/app/api/transport/particulares/[agencySlug]/route.ts`, `src/app/api/transport/panel/orders/[transportOrderId]/send-entrega2/route.ts`, `scripts/critical-contracts.test.mjs`.
+- Validaciones: `node --experimental-strip-types scripts/critical-contracts.test.mjs` 64/64; `npx.cmd tsc --noEmit` OK; ESLint focal OK; `git diff --check` OK; `npx.cmd supabase db push --linked --dry-run` OK, remota al dia; `npm.cmd run build -- --webpack` OK.
+- Preview Vercel READY: https://vendeplus-clean-m00p4o10w-entrega2-s-projects.vercel.app (`dpl_4rD5Rk5FE3fLdawebGRBq5oNpQLQ`).
+- Smoke: `/transporte/panel` 200, `/transporte/entrega2/particulares` 200. `vercel logs` local fallo por `ECONNREFUSED 127.0.0.1:9`; no se pudo leer logs desde CLI.
+- Siguiente paso: usuario debe probar preview y aprobar promocion a produccion si todo esta correcto.
+
+## 2026-09-07 - Preview etiquetas mapa traslado particular
+
+- Cambio aplicado: en `ParticularDeliveryForm`, cuando el servicio es `Traslado de persona`, los puntos del mapa y resumen usan `Origen` y `Destino`; para delivery siguen `Retiro` y `Entrega`.
+- Cambio aplicado: `LocationPicker` acepta `referenceMarkerLabel` y `referencePopupLabel` opcionales para que el pin/popup base no diga `Retiro aqui` en el mapa de destino de pasajeros.
+- Archivos: `src/components/public/LocationPicker.tsx`, `src/components/public/ParticularDeliveryForm.tsx`, `scripts/critical-contracts.test.mjs`.
+- Validaciones: contratos 64/64, `npx.cmd tsc --noEmit` OK, ESLint focal OK, `git diff --check` OK, `npm.cmd run build -- --webpack` OK.
+- Preview READY: https://vendeplus-clean-ps0wdknt9-entrega2-s-projects.vercel.app (`dpl_9axhfeAhBkeg2wUMRC4D3esZPKbM`). Smoke `/transporte/entrega2/particulares` y `/transporte/panel` 200.
+- Pendiente: usuario prueba preview y aprueba produccion.
+
+## 2026-09-07 - Produccion particulares traslado/delivery
+
+- Usuario probo preview y aprobo produccion.
+- Validacion previa: contratos 64/64, `npx.cmd tsc --noEmit` OK, `git diff --check` OK, `npm.cmd run build -- --webpack` OK.
+- Preview aprobado/promovido: https://vendeplus-clean-ps0wdknt9-entrega2-s-projects.vercel.app (`dpl_9axhfeAhBkeg2wUMRC4D3esZPKbM`).
+- Produccion promovida con `vercel.cmd promote ... --yes`; Vercel reporto deployment nuevo: https://vercel.com/entrega2-s-projects/vendeplus-clean/E1e4h2QDQdoZY3Wh4FQTD6tUfj5f.
+- Smoke produccion OK: `https://vendeplus-clean.vercel.app/transporte/entrega2/particulares` 200, `/transporte/panel` 200, `https://www.somos-ve.com/transporte/entrega2/particulares` 200, `/transporte/panel` 200.
+- `vercel logs` fallo localmente por `ECONNREFUSED 127.0.0.1:9`; no hubo lectura de logs desde CLI.
+- No hubo migracion nueva ni SQL pendiente en este ultimo ajuste.
+# 2026-09-08 - Puente Entrega2 reforzado y listo para validacion manual
+
+- Preview final: `https://vendeplus-clean-qng4gyk3g-entrega2-s-projects.vercel.app`, deployment `dpl_EC9M8VtvoETB84d9W1G5rCauH7Bc`, target Preview, READY. Produccion no fue tocada.
+- Se corrigieron dos hallazgos criticos de la auditoria: costos nulos/vacios/booleanos ya no se convierten en tarifa cero y la distancia OSRM se calcula en paralelo con la espera maxima de 4.5 s de Entrega2 App.
+- Los envios directos y manuales reservan primero `order_integrations` y finalizan por el ID exacto; ya no usan upsert sobre el indice parcial. Un resultado externo incierto queda `reconcile_required`, visible como `Revisar antes de reenviar`, y bloquea reenvios ciegos.
+- El webhook actualiza `orders.delivery_status`, no el estado comercial del pedido, y descarta regresiones/finales atrasados. Las actualizaciones usan comparacion del estado previo para reducir carreras concurrentes.
+- Pruebas: `test:entrega2-bridge` 5/5, contratos criticos 65/65, ESLint dirigido OK, `git diff --check` OK y build local Webpack 185 paginas OK. Build Vercel Turbopack 185 paginas OK.
+- Sin migracion nueva ni SQL aplicado. Sigue pendiente `supabase/migrations/20260907213000_align_legacy_entrega2_connections.sql`; aplicar primero en staging, nunca directamente en produccion sin validar.
+- El navegador integrado no estuvo disponible y la Preview exige SSO de Vercel, por lo que el smoke visual autenticado queda en manos del usuario. No se hicieron pedidos, cotizaciones ni mutaciones contra la base compartida con produccion.
+- Prueba manual siguiente: validar en Preview 1) Smash credito: directo a App y registro en Somos; 2) Smash contado: solo Somos/WhatsApp y boton manual hacia App; 3) particular: Somos/WhatsApp y boton manual; 4) otra empresa: nunca muestra envio a App; 5) cotizacion: respuesta normal y, en staging aislado, fallback menor de 5 s.
+# 2026-09-08 - Horario China Town corregido
+
+- Cambio de datos autorizado por el usuario y aplicado directamente al registro exacto `china-town` (`4fe11a35-7599-4328-ae75-d381259244cf`).
+- Lunes y viernes pasaron de no tener rangos a `12:20-22:20`, habilitados. Se conservaron los demas dias y `manual_open_status=auto`.
+- Verificacion posterior por lectura publica confirmo una sola fila, lunes `12:20-22:20` y viernes `12:20-22:20`.
+- No hubo cambios de codigo, migracion, SQL ni despliegue. El catalogo tiene revalidacion de 30 segundos.
+# 2026-09-08 - Etiqueta Entrega2 aclarada en pedidos del comercio
+
+- La prueba reciente de Smash si llego a Entrega2 App: pedido `VP-0908-DPK`, integracion `entrega2` en estado `sent`, ID externo `22190`, sin error. Tambien quedo su servicio operativo en Somos.
+- La confusion provenia del boton generico `Delivery` del panel del comercio para conexiones `transport_agency`.
+- En `OrdersManager`, cuando la empresa snapshot es Entrega2 el boton ahora muestra `Entrega2`; cuando ya existe integracion externa muestra `Entrega2 App`. Otras empresas conservan `Delivery`.
+- Preview nueva: `https://vendeplus-clean-h3310xzpi-entrega2-s-projects.vercel.app`, deployment `dpl_8MegoK5yEdDKmZjYmjiTffNhmo4a`, READY, target Preview. Produccion web no fue desplegada.
+- Validaciones: contratos 65/65, puente 5/5, ESLint dirigido, diff check, build local Webpack y remoto Turbopack de 185 paginas aprobados. Sin migracion ni SQL.

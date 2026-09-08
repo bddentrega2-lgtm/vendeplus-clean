@@ -1,7 +1,11 @@
 import "server-only";
+import {
+  canAdvanceEntrega2OrderStatus as canAdvanceNormalizedEntrega2OrderStatus,
+  type Entrega2OrderStatus,
+} from "@/lib/entrega2-contract";
 
 const PROVIDER = "entrega2";
-const ENTREGA2_QUOTE_TIMEOUT_MS = 4_500;
+export const ENTREGA2_QUOTE_TIMEOUT_MS = 4_500;
 const ENTREGA2_ORDER_TIMEOUT_MS = 8_000;
 const ENTREGA2_CIRCUIT_FAILURE_LIMIT = 3;
 const ENTREGA2_CIRCUIT_OPEN_MS = 30_000;
@@ -240,4 +244,14 @@ export function normalizeEntrega2OrderStatus(value: unknown) {
   };
 
   return map[status] || null;
+}
+
+export function canAdvanceEntrega2OrderStatus(
+  currentValue: unknown,
+  nextValue: unknown
+) {
+  return canAdvanceNormalizedEntrega2OrderStatus(
+    normalizeEntrega2OrderStatus(currentValue) as Entrega2OrderStatus | null,
+    normalizeEntrega2OrderStatus(nextValue) as Entrega2OrderStatus | null
+  );
 }

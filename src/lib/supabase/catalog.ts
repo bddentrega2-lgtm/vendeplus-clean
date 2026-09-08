@@ -1044,7 +1044,7 @@ export async function getPublicTransportAgencyMarketplaceBySlug(slug: string): P
 
   const { data: connections, error: connectionsError } = await supabase
     .from("store_transport_agency_connections")
-    .select("store_id, disengagement_effective_at")
+    .select("store_id, delivery_billing_mode, disengagement_effective_at")
     .eq("agency_id", agency.id)
     .eq("status", "active")
     .order("connected_at", { ascending: false })
@@ -1052,16 +1052,30 @@ export async function getPublicTransportAgencyMarketplaceBySlug(slug: string): P
 
   if (connectionsError) return null;
 
+  const legacyEntrega2Settings =
+    normalizedSlug === "entrega2"
+      ? await supabase
+          .from("store_delivery_settings")
+          .select("store_id")
+          .eq("delivery_provider", "entrega2")
+          .limit(200)
+      : { data: [], error: null };
+
+  if (legacyEntrega2Settings.error) return null;
+
   const now = Date.now();
   const storeIds = Array.from(
     new Set(
-      (connections || [])
-        .filter((connection) => {
-          if (!connection.store_id) return false;
-          if (!connection.disengagement_effective_at) return true;
-          return new Date(connection.disengagement_effective_at).getTime() > now;
-        })
-        .map((connection) => connection.store_id)
+      [
+        ...(connections || [])
+          .filter((connection) => {
+            if (!connection.store_id) return false;
+            if (!connection.disengagement_effective_at) return true;
+            return new Date(connection.disengagement_effective_at).getTime() > now;
+          })
+          .map((connection) => connection.store_id),
+        ...(legacyEntrega2Settings.data || []).map((settings) => settings.store_id),
+      ].filter(Boolean)
     )
   );
 
@@ -1093,14 +1107,7 @@ export async function getPublicTransportAgencyMarketplaceBySlug(slug: string): P
   if (storesError) return null;
 
   const marketplaceCandidates = ((storesData || []) as AnyRecord[]).filter(
-    (row) => !isStoreSubscriptionPastDue(row) && Boolean(String(row.logo_url || "").trim())
-  );
-  const eligibleStoreIds = await getMarketplaceEligibleStoreIds(
-    supabase,
-    marketplaceCandidates.map((row) => String(row.id))
-  );
-  const eligibleMarketplaceStores = marketplaceCandidates.filter((row) =>
-    eligibleStoreIds.has(String(row.id))
+    (row) => !isStoreSubscriptionPastDue(row)
   );
 
   return {
@@ -1116,7 +1123,7 @@ export async function getPublicTransportAgencyMarketplaceBySlug(slug: string): P
       primaryColor: agency.marketplace_primary_color || "#143D42",
       accentColor: agency.marketplace_accent_color || "#FF7133",
     },
-    stores: (await hydrateStoresDeliveryRelations(eligibleMarketplaceStores))
+    stores: (await hydrateStoresDeliveryRelations(marketplaceCandidates))
       .map((row) => mapStore(row, { includeFallbackCatalog: false })),
   };
 }

@@ -28,6 +28,7 @@ function statusesForFilter(filter: string) {
 const transportOrdersSummarySelect = `
   id,
   order_id,
+  particular_request_id,
   store_id,
   agency_id,
   connection_id,
@@ -58,6 +59,38 @@ const transportOrdersSummarySelect = `
     delivery_lat,
     delivery_lng,
     delivery_reference
+  ),
+  transport_particular_requests (
+    id,
+    public_code,
+    requester_role,
+    pickup_name,
+    pickup_phone,
+    pickup_address,
+    pickup_reference,
+    pickup_lat,
+    pickup_lng,
+    delivery_name,
+    delivery_phone,
+    delivery_address,
+    delivery_reference,
+    delivery_lat,
+    delivery_lng,
+    package_description,
+    payment_method,
+    payment_reference,
+    distance_km,
+    created_at
+  ),
+  order_integrations (
+    id,
+    provider,
+    external_id,
+    status,
+    last_error,
+    updated_at,
+    transport_order_id,
+    particular_request_id
   )
 `;
 
@@ -112,7 +145,8 @@ export async function GET(request: NextRequest) {
 
       const filteredStatuses = statusesForFilter(status);
       if (filteredStatuses.length) query = query.in("status", filteredStatuses);
-      if (storeId) query = query.eq("store_id", storeId);
+      if (storeId === "particular") query = query.is("store_id", null).not("particular_request_id", "is", null);
+      else if (storeId) query = query.eq("store_id", storeId);
 
       if (period === "today") {
         const now = new Date();
@@ -143,6 +177,7 @@ export async function GET(request: NextRequest) {
     const storeMap = new Map<string, any>();
     for (const order of (data || []) as any[]) {
       if (order.stores?.id) storeMap.set(order.stores.id, order.stores);
+      if (order.particular_request_id) storeMap.set("particular", { id: "particular", name: "Particulares" });
     }
 
     return NextResponse.json({

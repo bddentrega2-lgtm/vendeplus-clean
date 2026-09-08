@@ -25,7 +25,7 @@ async function findIntegration(supabase: any, externalId: string) {
   const provider = getEntrega2Provider();
   const { data: byExternalId, error: externalError } = await supabase
     .from("order_integrations")
-    .select("id, order_id")
+    .select("id, order_id, transport_order_id, particular_request_id")
     .eq("provider", provider)
     .eq("external_id", externalId)
     .maybeSingle();
@@ -36,7 +36,7 @@ async function findIntegration(supabase: any, externalId: string) {
   const orderId = externalId.replace(/^vendeplus_/, "");
   const { data: byOrderId, error: orderError } = await supabase
     .from("order_integrations")
-    .select("id, order_id")
+    .select("id, order_id, transport_order_id, particular_request_id")
     .eq("provider", provider)
     .eq("order_id", orderId)
     .maybeSingle();
@@ -93,6 +93,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       orderId: integration.order_id,
+      transportOrderId: integration.transport_order_id,
     });
   } catch {
     return NextResponse.json(

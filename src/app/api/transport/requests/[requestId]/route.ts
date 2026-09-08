@@ -26,6 +26,8 @@ export async function PATCH(
     const body = await request.json();
     const action = cleanTransportText(body.action);
     const relationshipMode = cleanTransportText(body.relationshipMode);
+    const deliveryBillingMode =
+      cleanTransportText(body.deliveryBillingMode) === "credit" ? "credit" : "cash";
     const supabase = createSupabaseAdminClient();
 
     if (relationshipMode && !["exclusive", "mixed"].includes(relationshipMode)) {
@@ -137,6 +139,7 @@ export async function PATCH(
             is_exclusive:
               relationshipMode === "exclusive" ||
               (!relationshipMode && agency?.modality === "exclusive"),
+            delivery_billing_mode: deliveryBillingMode,
             disengagement_requested_at: null,
             disengagement_confirmed_at: null,
             disengagement_effective_at: null,

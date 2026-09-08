@@ -24,14 +24,21 @@ export async function PATCH(
     const auth = await requireTransportAgencyAuth(request);
     const body = await request.json().catch(() => ({}));
     const relationshipMode = cleanTransportText(body.relationshipMode);
+    const deliveryBillingMode = cleanTransportText(body.deliveryBillingMode);
     const isExclusive =
       relationshipMode === "exclusive"
         ? true
         : relationshipMode === "mixed"
           ? false
           : null;
+    const nextDeliveryBillingMode =
+      deliveryBillingMode === "credit"
+        ? "credit"
+        : deliveryBillingMode === "cash"
+          ? "cash"
+          : null;
 
-    if (isExclusive === null) {
+    if (isExclusive === null && nextDeliveryBillingMode === null) {
       return badRequest("Modalidad invalida.");
     }
 
@@ -77,12 +84,15 @@ export async function PATCH(
       }
     }
 
+    const payload: Record<string, any> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (isExclusive !== null) payload.is_exclusive = isExclusive;
+    if (nextDeliveryBillingMode !== null) payload.delivery_billing_mode = nextDeliveryBillingMode;
+
     const { data: updated, error: updateError } = await supabase
       .from("store_transport_agency_connections")
-      .update({
-        is_exclusive: isExclusive,
-        updated_at: new Date().toISOString(),
-      })
+      .update(payload)
       .eq("id", connection.id)
       .select("*")
       .maybeSingle();
@@ -92,9 +102,14 @@ export async function PATCH(
     return NextResponse.json({
       ok: true,
       connection: updated,
-      message: isExclusive
-        ? "Afiliacion marcada como exclusiva."
-        : "Afiliacion marcada como mixta.",
+      message:
+        nextDeliveryBillingMode === "credit"
+          ? "Cobro marcado como credito."
+          : nextDeliveryBillingMode === "cash"
+            ? "Cobro marcado como contado."
+            : isExclusive
+              ? "Afiliacion marcada como exclusiva."
+              : "Afiliacion marcada como mixta.",
     });
   } catch (error) {
     return transportErrorResponse(error, "Error actualizando modalidad de afiliacion.");

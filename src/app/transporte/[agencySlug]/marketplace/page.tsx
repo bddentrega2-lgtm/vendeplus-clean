@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { MarketplaceClient } from "@/components/public/MarketplaceClient";
 import { getPublicTransportAgencyMarketplaceBySlug } from "@/lib/supabase/catalog";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 export default async function TransportAgencyMarketplacePage({
   params,

@@ -18,6 +18,8 @@ const agencySelect = `
   rates_visibility,
   logo_url,
   banner_image_url,
+  marketplace_primary_color,
+  marketplace_accent_color,
   legal_name,
   rif,
   contact_name,
@@ -37,6 +39,8 @@ const agencySelect = `
   payment_terms,
   credit_terms,
   additional_conditions,
+  particular_payment_methods,
+  particular_payment_details,
   premium_dispatch_enabled,
   driver_whatsapp_dispatch_enabled,
   created_at,
@@ -86,6 +90,8 @@ const compactAgencySelect = `
   is_active,
   modality,
   logo_url,
+  marketplace_primary_color,
+  marketplace_accent_color,
   billing_currency,
   premium_dispatch_enabled,
   driver_whatsapp_dispatch_enabled,
@@ -133,6 +139,12 @@ const billingOrdersSelect = `
     distance_km,
     status,
     created_at
+  ),
+  transport_particular_requests(
+    public_code,
+    payment_method,
+    payment_reference,
+    distance_km
   )
 `;
 
@@ -158,6 +170,12 @@ const billingOrdersSelectWithoutDrivers = `
     distance_km,
     status,
     created_at
+  ),
+  transport_particular_requests(
+    public_code,
+    payment_method,
+    payment_reference,
+    distance_km
   )
 `;
 
@@ -206,6 +224,67 @@ function aggregateDriverPayouts(orders: any[]) {
   }
 
   return Array.from(map.values()).sort((a, b) => b.payoutUsd - a.payoutUsd);
+}
+
+async function loadLegacyEntrega2Connections(params: {
+  supabase: any;
+  agencies: any[];
+  connections: any[];
+}) {
+  const entrega2Agency = params.agencies.find(
+    (agency: any) => String(agency.slug || "").toLowerCase() === "entrega2"
+  );
+  if (!entrega2Agency?.id) return [];
+
+  const connectedStoreIds = new Set(
+    (params.connections || [])
+      .filter((connection: any) => connection.agency_id === entrega2Agency.id)
+      .map((connection: any) => connection.store_id)
+      .filter(Boolean)
+  );
+
+  const { data, error } = await params.supabase
+    .from("store_delivery_settings")
+    .select(
+      `
+      store_id,
+      delivery_provider,
+      transport_agency_id,
+      transport_agency_connection_id,
+      stores(id, name, slug, whatsapp)
+    `
+    )
+    .eq("delivery_provider", "entrega2")
+    .limit(200);
+
+  if (error) throw error;
+
+  return (data || [])
+    .filter((settings: any) => settings.store_id && !connectedStoreIds.has(settings.store_id))
+    .map((settings: any) => {
+      const store = Array.isArray(settings.stores) ? settings.stores[0] : settings.stores;
+      const storeSlug = String(store?.slug || "").toLowerCase();
+
+      return {
+        id: `legacy-entrega2-${settings.store_id}`,
+        store_id: settings.store_id,
+        agency_id: entrega2Agency.id,
+        status: "active",
+        is_default: true,
+        is_exclusive: true,
+        delivery_billing_mode: storeSlug === "sabore" ? "cash" : "credit",
+        connected_at: null,
+        paused_at: null,
+        disengagement_requested_at: null,
+        disengagement_requested_by: null,
+        disengagement_confirmed_at: null,
+        disengagement_confirmed_by: null,
+        disengagement_effective_at: null,
+        disengagement_notes: null,
+        stores: store,
+        __legacy_entrega2_app: true,
+      };
+    });
 }
 
 export async function GET(request: NextRequest) {
@@ -313,6 +392,7 @@ export async function GET(request: NextRequest) {
                 status,
                 is_default,
                 is_exclusive,
+                delivery_billing_mode,
                 connected_at,
                 paused_at,
                 disengagement_requested_at,
@@ -346,6 +426,13 @@ export async function GET(request: NextRequest) {
 
     if (requestsResult.error) throw requestsResult.error;
     if (connectionsResult.error) throw connectionsResult.error;
+    const legacyEntrega2Connections = includeRelations
+      ? await loadLegacyEntrega2Connections({
+          supabase,
+          agencies: agencies || [],
+          connections: connectionsResult.data || [],
+        })
+      : [];
     if (includeBillingDetail && ordersResult.error && isPremiumDispatchSchemaMissing(ordersResult.error)) {
       ordersResult = includeBilling
         ? await supabase
@@ -369,7 +456,7 @@ export async function GET(request: NextRequest) {
       agencies: agencies || [],
       cities: citiesResult.data || [],
       requests: requestsResult.data || [],
-      connections: connectionsResult.data || [],
+      connections: [...(connectionsResult.data || []), ...legacyEntrega2Connections],
       configurationLoaded: includeConfiguration,
       relationsLoaded: includeRelations,
       billing: includeBilling ? {

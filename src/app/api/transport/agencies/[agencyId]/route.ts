@@ -23,6 +23,26 @@ function colorHex(value: unknown, fallback: string) {
   return /^#[0-9A-F]{6}$/.test(color) ? color : fallback;
 }
 
+const particularPaymentMethods = ["Pago móvil", "Efectivo"];
+
+function normalizeParticularPaymentMethods(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.map((item) => cleanTransportText(item, 40))))
+    .filter((item) => particularPaymentMethods.includes(item));
+}
+
+function normalizeParticularPaymentDetails(value: unknown) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : {};
+  const section = (key: string, fields: string[]) => Object.fromEntries(fields.map((field) => [
+    field,
+    cleanTransportText(source[key]?.[field], 160),
+  ]));
+  return {
+    pagoMovil: section("pagoMovil", ["bank", "phone", "idNumber"]),
+    efectivo: section("efectivo", ["note"]),
+  };
+}
+
 export async function PATCH(
   request: NextRequest,
   context: { params: Promise<{ agencyId: string }> }
@@ -50,6 +70,15 @@ export async function PATCH(
       if (citiesError) throw citiesError;
       if ((validCities || []).length !== coverageCityIds.length) return badRequest("La cobertura contiene una ciudad no disponible.");
       const baseCity = (validCities || []).find((city: any) => city.id === baseCityId);
+      const paymentMethods = normalizeParticularPaymentMethods(body.particularPaymentMethods);
+      const paymentDetails = normalizeParticularPaymentDetails(body.particularPaymentDetails);
+      if (paymentMethods.includes("Pago móvil")) {
+        const pagoMovil = paymentDetails.pagoMovil;
+        const phoneDigits = pagoMovil.phone.replace(/\D/g, "");
+        if (!pagoMovil.bank || phoneDigits.length < 10 || phoneDigits.length > 15 || !pagoMovil.idNumber) {
+          return badRequest("Completa banco, telefono y cedula/RIF para activar Pago movil.");
+        }
+      }
       const payload: Record<string, any> = {
         name: cleanTransportText(body.name, 140),
         legal_name: cleanTransportText(body.legalName, 160) || null,
@@ -81,6 +110,8 @@ export async function PATCH(
         rates_visibility: normalizeRatesVisibility(body.ratesVisibility),
         marketplace_primary_color: colorHex(body.marketplacePrimaryColor, "#143D42"),
         marketplace_accent_color: colorHex(body.marketplaceAccentColor, "#FF7133"),
+        particular_payment_methods: paymentMethods,
+        particular_payment_details: paymentDetails,
         pricing_type: ["flat", "zones", "distance_ranges", "manual"].includes(
           cleanTransportText(body.pricingType)
         )

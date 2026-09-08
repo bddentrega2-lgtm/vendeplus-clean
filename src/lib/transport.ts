@@ -362,7 +362,7 @@ export async function loadTransportAgencyDeliverySettings(
   const { data: connection, error: connectionError } = await supabase
     .from("store_transport_agency_connections")
     .select(
-      "id, store_id, agency_id, status, is_default, is_exclusive, disengagement_requested_at, disengagement_confirmed_at, disengagement_effective_at"
+      "id, store_id, agency_id, status, is_default, is_exclusive, delivery_billing_mode, disengagement_requested_at, disengagement_confirmed_at, disengagement_effective_at"
     )
     .eq("store_id", storeId)
     .eq("status", "active")

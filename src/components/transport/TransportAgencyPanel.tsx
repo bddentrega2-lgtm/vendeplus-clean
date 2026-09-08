@@ -15,6 +15,7 @@ import {
   PlusCircle,
   RefreshCcw,
   Save,
+  Send,
   Trash2,
   Truck,
   XCircle,
@@ -110,6 +111,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
   const [message, setMessage] = useState("");
   const [newOrderToast, setNewOrderToast] = useState<NewOrderToastData | null>(null);
   const [isLoading, setIsLoading] = useState(!hasUsableInitialCache);
+  const [isPanelRefreshing, setIsPanelRefreshing] = useState(false);
   const [hasSession, setHasSession] = useState(Boolean(hasUsableInitialCache));
   const [hasCheckedSession, setHasCheckedSession] = useState(Boolean(hasUsableInitialCache));
   const [loginEmail, setLoginEmail] = useState("");
@@ -135,6 +137,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
   const [transportOrderPage, setTransportOrderPage] = useState(1);
   const [transportOrdersHasMore, setTransportOrdersHasMore] = useState(false);
   const [savingTransportOrderId, setSavingTransportOrderId] = useState<string | null>(null);
+  const [sendingEntrega2OrderId, setSendingEntrega2OrderId] = useState<string | null>(null);
   const [loadingTransportOrderDetailId, setLoadingTransportOrderDetailId] = useState<string | null>(null);
   const [transportDrivers, setTransportDrivers] = useState<any[]>([]);
   const [isTransportDriversLoading, setIsTransportDriversLoading] = useState(false);
@@ -143,7 +146,10 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
   const [hasLoadedTransportDrivers, setHasLoadedTransportDrivers] = useState(false);
   const [savingConnectionModeId, setSavingConnectionModeId] = useState<string | null>(null);
   const [requestRelationshipModes, setRequestRelationshipModes] = useState<Record<string, "exclusive" | "mixed">>({});
+  const [requestBillingModes, setRequestBillingModes] = useState<Record<string, "cash" | "credit">>({});
+  const [connectionBillingFilter, setConnectionBillingFilter] = useState<"all" | "credit" | "cash">("all");
   const [marketplaceCopied, setMarketplaceCopied] = useState(false);
+  const [particularLinkCopied, setParticularLinkCopied] = useState(false);
   const [nowMs, setNowMs] = useState(0);
   const [hasLoadedRelations, setHasLoadedRelations] = useState(Boolean(hasUsableInitialCache));
   const [hasLoadedBillingDetail, setHasLoadedBillingDetail] = useState(
@@ -166,6 +172,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
   const agencyId = agency?.id || "";
   const agencyPricingType = agency?.pricing_type || "";
   const premiumDispatchEnabled = agency?.premium_dispatch_enabled === true;
+  const canSendParticularToEntrega2 = (agency?.slug || "").toLowerCase() === "entrega2";
   const driverWhatsappDispatchEnabled =
     agency?.driver_whatsapp_dispatch_enabled === true;
   const billingCurrency = agency?.billing_currency === "EUR" ? "EUR" : "USD";
@@ -178,6 +185,31 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     rate,
     zones,
   } = useTransportPanelDerivedData({ agency, requests, connections, nowMs });
+  const connectionBillingStats = useMemo(() => {
+    const activeConnections = connections.filter(
+      (entry) => entry.status === "active" && !connectionEnded(entry, nowMs)
+    );
+    const credit = activeConnections.filter(
+      (entry) => entry.delivery_billing_mode === "credit"
+    ).length;
+    const cash = activeConnections.filter(
+      (entry) => entry.delivery_billing_mode !== "credit"
+    ).length;
+
+    return {
+      active: activeConnections.length,
+      credit,
+      cash,
+    };
+  }, [connections, nowMs]);
+  const visibleConnections = useMemo(() => {
+    if (!canSendParticularToEntrega2 || connectionBillingFilter === "all") return connections;
+    return connections.filter((entry) =>
+      connectionBillingFilter === "credit"
+        ? entry.delivery_billing_mode === "credit"
+        : entry.delivery_billing_mode !== "credit"
+    );
+  }, [canSendParticularToEntrega2, connectionBillingFilter, connections]);
   const distanceFactorUsd = optionalPanelNumber(rate.distance_factor_usd);
   const simulatedDistanceKm = optionalPanelNumber(distanceSimulatorKm);
   const panelDistanceRates = useMemo(
@@ -251,6 +283,19 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       window.setTimeout(() => setMarketplaceCopied(false), 2200);
     } catch {
       setMessage("No se pudo copiar el link del marketplace.");
+    }
+  }
+
+  async function copyParticularLink() {
+    if (!agency?.slug) return;
+    const url = buildClientPublicUrl(`/transporte/${agency.slug}/particulares`);
+
+    try {
+      await navigator.clipboard.writeText(url);
+      setParticularLinkCopied(true);
+      window.setTimeout(() => setParticularLinkCopied(false), 2200);
+    } catch {
+      setMessage("No se pudo copiar el link para particulares.");
     }
   }
 
@@ -467,9 +512,8 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       const storeId = overrides.storeId || transportOrderStoreFilter;
       if (storeId && storeId !== "all") params.set("storeId", storeId);
 
-      const response = await fetch(`/api/transport/panel/orders?${params.toString()}`, {
-        headers: await authHeaders(),
-      });
+      const headers = await authHeaders();
+      const response = await fetch(`/api/transport/panel/orders?${params.toString()}`, { headers });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "No se pudieron cargar pedidos.");
       const nextOrders = data.orders || [];
@@ -482,9 +526,9 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
             void playNewOrderSound();
             setNewOrderToast({
               id: `${newOrder.id}-${Date.now()}`,
-              title: newOrder.orders?.public_code || newOrder.order_id?.slice(0, 8) || "Servicio recibido",
+              title: newOrder.orders?.public_code || newOrder.transport_particular_requests?.public_code || newOrder.order_id?.slice(0, 8) || "Servicio recibido",
               subtitle: [
-                newOrder.store_name_snapshot || newOrder.stores?.name || "Comercio",
+                newOrder.store_name_snapshot || newOrder.stores?.name || "Particular",
                 newOrder.customer_name_snapshot || "Cliente",
               ].filter(Boolean).join(" · "),
             });
@@ -614,7 +658,9 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       channel = supabase
         .channel(`agency:${agencyId}:transport-orders`, { config: { private: true } })
         .on("broadcast", { event: "transport_order_changed" }, refreshOrders)
-        .subscribe();
+        .subscribe((status) => {
+          if (status === "SUBSCRIBED") refreshOrders();
+        });
     })();
 
     return () => {
@@ -635,12 +681,26 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
   useEffect(() => {
     if (tab !== "pedidos" || !hasSession || !agencyId) return;
 
-    const interval = window.setInterval(() => {
+    let refreshing = false;
+    const refreshVisibleOrders = async () => {
       if (document.visibilityState !== "visible") return;
-      void loadTransportOrders({ notifyNew: "true" });
-    }, 180_000);
+      if (refreshing || localTransportMutationsRef.current.size > 0) return;
+      refreshing = true;
+      try {
+        await loadTransportOrders({ notifyNew: "true" });
+      } finally {
+        refreshing = false;
+      }
+    };
+    const interval = window.setInterval(() => void refreshVisibleOrders(), 15_000);
+    document.addEventListener("visibilitychange", refreshVisibleOrders);
+    window.addEventListener("online", refreshVisibleOrders);
 
-    return () => window.clearInterval(interval);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshVisibleOrders);
+      window.removeEventListener("online", refreshVisibleOrders);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, hasSession, agencyId, transportOrderPeriod, transportOrderStatusFilter, transportOrderStoreFilter]);
 
@@ -916,6 +976,11 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
           driverWhatsappDispatchEnabled: form.get("driverWhatsappDispatchEnabled") === "on",
           marketplacePrimaryColor: form.get("marketplacePrimaryColor"),
           marketplaceAccentColor: form.get("marketplaceAccentColor"),
+          particularPaymentMethods: form.getAll("particularPaymentMethods"),
+          particularPaymentDetails: {
+            pagoMovil: { bank: form.get("particularPagoMovilBank"), phone: form.get("particularPagoMovilPhone"), idNumber: form.get("particularPagoMovilId") },
+            efectivo: { note: form.get("particularCashNote") },
+          },
         }),
       });
       const data = await response.json();
@@ -999,10 +1064,11 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
 
   async function reviewRequest(requestId: string, action: "approve" | "reject") {
     const relationshipMode = requestRelationshipModes[requestId] || (agency?.modality === "exclusive" ? "exclusive" : "mixed");
+    const deliveryBillingMode = requestBillingModes[requestId] || "cash";
     const response = await fetch(`/api/transport/requests/${requestId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-      body: JSON.stringify({ action, relationshipMode }),
+      body: JSON.stringify({ action, relationshipMode, deliveryBillingMode }),
     });
     const data = await response.json();
     if (!response.ok) {
@@ -1013,18 +1079,34 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     load();
   }
 
-  async function updateConnectionMode(connectionId: string, relationshipMode: "exclusive" | "mixed") {
+  async function updateConnectionMode(
+    connectionId: string,
+    payload: { relationshipMode?: "exclusive" | "mixed"; deliveryBillingMode?: "cash" | "credit" }
+  ) {
     setSavingConnectionModeId(connectionId);
     setMessage("");
 
     try {
-      const response = await fetch(`/api/transport/connections/${connectionId}/mode`, {
-        method: "PATCH",
+      const legacyConnection = connections.find(
+        (connection) => connection.id === connectionId && connection.__legacy_entrega2_app
+      );
+      const endpoint = legacyConnection
+        ? `/api/transport/legacy-entrega2/${legacyConnection.store_id}`
+        : `/api/transport/connections/${connectionId}/mode`;
+      const response = await fetch(endpoint, {
+        method: legacyConnection ? "POST" : "PATCH",
         headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-        body: JSON.stringify({ relationshipMode }),
+        body: JSON.stringify(payload),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "No se pudo cambiar la modalidad.");
+      if (legacyConnection && data.connection) {
+        setConnections((current) =>
+          current.map((connection) =>
+            connection.id === connectionId ? data.connection : connection
+          )
+        );
+      }
       setMessage(data.message || "Modalidad actualizada.");
       await load();
     } catch (error: any) {
@@ -1169,6 +1251,42 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     }
   }
 
+  async function sendParticularToEntrega2(orderId: string) {
+    setSendingEntrega2OrderId(orderId);
+    localTransportMutationsRef.current.add(orderId);
+    setMessage("");
+
+    try {
+      const response = await fetch(`/api/transport/panel/orders/${orderId}/send-entrega2`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudo enviar a Entrega2 App.");
+      setTransportOrders((current) =>
+        current.map((order) =>
+          order.id === orderId
+            ? {
+                ...order,
+                order_integrations: [
+                  ...((order.order_integrations || []).filter((integration: any) => integration.provider !== "entrega2")),
+                  data.integration,
+                ].filter(Boolean),
+              }
+            : order
+        )
+      );
+      setMessage(data.message || "Servicio enviado a Entrega2 App.");
+    } catch (error: any) {
+      setMessage(error.message || "No se pudo enviar a Entrega2 App.");
+    } finally {
+      recentLocalTransportMutationsRef.current.set(orderId, Date.now() + 2_000);
+      localTransportMutationsRef.current.delete(orderId);
+      window.setTimeout(() => recentLocalTransportMutationsRef.current.delete(orderId), 2_100);
+      setSendingEntrega2OrderId(null);
+    }
+  }
+
   const totals = useMemo(() => {
     const orders = billing?.orders || [];
     return {
@@ -1307,7 +1425,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
               </label>
             ) : null}
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="flex flex-wrap items-center gap-2 md:max-w-[620px] md:justify-end">
             <Link
               href="/transporte/panel/seguridad"
               aria-label="Cambiar contraseña"
@@ -1322,34 +1440,69 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
                   href={`/transporte/${agency.slug}/marketplace`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-2 rounded-full bg-white/10 px-5 py-3 text-sm font-black text-white"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 text-sm font-black text-white transition hover:bg-white/20"
                 >
                   <Eye size={16} />
-                  Ver marketplace
+                  Marketplace
                 </Link>
                 <button
                   type="button"
                   onClick={copyMarketplaceLink}
-                  className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-black text-[#2E3A79]"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-white px-4 text-sm font-black text-[#2E3A79] transition hover:bg-[#F8F3E8]"
                 >
                   <Copy size={16} />
-                  {marketplaceCopied ? "Link copiado" : "Copiar link"}
+                  {marketplaceCopied ? "Copiado" : "Copiar"}
+                </button>
+                <Link
+                  href={`/transporte/${agency.slug}/particulares`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-[#FFB547] px-4 text-sm font-black text-[#25262B] transition hover:bg-[#ffc66c]"
+                >
+                  <Send size={16} />
+                  Particulares
+                </Link>
+                <button
+                  type="button"
+                  onClick={copyParticularLink}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 text-sm font-black text-white transition hover:bg-white/20"
+                >
+                  <Copy size={16} />
+                  {particularLinkCopied ? "Copiado" : "Copiar"}
                 </button>
               </>
             ) : null}
             <button
+              type="button"
+              disabled={isPanelRefreshing}
               onClick={async () => {
-                await load();
-                if (tab === "pedidos") await loadTransportOrders();
+                setIsPanelRefreshing(true);
+                setMessage("Actualizando panel...");
+                try {
+                  await load({
+                    silent: true,
+                    includeBilling: ["resumen", "facturacion"].includes(tab),
+                    includeBillingDetail: tab === "facturacion",
+                    includeConfiguration: true,
+                    includeRelations: true,
+                  });
+                  if (tab === "pedidos") await loadTransportOrders();
+                  if (tab === "repartidores") await loadTransportDrivers();
+                  setMessage("Panel actualizado.");
+                } catch (error: any) {
+                  setMessage(error.message || "No se pudo actualizar el panel.");
+                } finally {
+                  setIsPanelRefreshing(false);
+                }
               }}
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 text-sm font-black text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <RefreshCcw size={16} />
-              Actualizar
+              {isPanelRefreshing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16} />}
+              {isPanelRefreshing ? "Actualizando..." : "Actualizar"}
             </button>
             <button
               onClick={logout}
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-white/10 px-5 py-3 text-sm font-black text-white"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 text-sm font-black text-white transition hover:bg-white/20"
             >
               <LogOut size={16} />
               Cerrar sesion
@@ -1416,8 +1569,10 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       ) : null}
 
       {tab === "pedidos" ? (
-        <TransportOrdersTab
+        <div className="space-y-4">
+          <TransportOrdersTab
           billingSymbol={billingSymbol}
+          canSendParticularToEntrega2={canSendParticularToEntrega2}
           drivers={transportDrivers}
           hasMore={transportOrdersHasMore}
           isLoading={isTransportOrdersLoading}
@@ -1425,6 +1580,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
           loadOrders={loadTransportOrders}
           onLoadOrderDetail={loadTransportOrderDetail}
           onAssignDriver={assignTransportOrderDriver}
+          onSendParticularToEntrega2={sendParticularToEntrega2}
           driverWhatsappDispatchEnabled={driverWhatsappDispatchEnabled}
           onPeriodChange={(value) => {
             setTransportOrderPeriod(value);
@@ -1443,11 +1599,13 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
           page={transportOrderPage}
           period={transportOrderPeriod}
           savingOrderId={savingTransportOrderId}
+          sendingEntrega2OrderId={sendingEntrega2OrderId}
           statusFilter={transportOrderStatusFilter}
           storeFilter={transportOrderStoreFilter}
           stores={transportOrderStores}
           premiumDispatchEnabled={premiumDispatchEnabled}
-        />
+          />
+        </div>
       ) : null}
 
       {tab === "repartidores" ? (
@@ -1782,7 +1940,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
           </div>
 
           <form
-            key={`profile-${agency.id}`}
+            key={`profile-${agency.id}-${agency.marketplace_primary_color || ""}-${agency.marketplace_accent_color || ""}`}
             onSubmit={saveProfile}
             onChangeCapture={markDirty}
             className="rounded-[32px] bg-white p-5 shadow-xl shadow-[#25262B]/10"
@@ -1910,6 +2068,27 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
                   className="h-12 w-full rounded-2xl border border-[#25262B]/10 bg-white p-2"
                 />
               </label>
+            </div>
+
+            <h2 className="mt-6 text-xl font-black">Pagos de particulares</h2>
+            <p className="mt-1 text-sm font-bold text-[#746f69]">
+              El cliente verá estos métodos y podrá copiar los datos antes de enviar la solicitud.
+            </p>
+            <div className="mt-4 grid gap-4 lg:grid-cols-2">
+              <section className="rounded-[24px] border border-[#2E3A79]/10 bg-[#F7F8FC] p-4">
+                <label className="flex items-center gap-3 text-base font-black text-[#162033]"><input type="checkbox" name="particularPaymentMethods" value="Pago móvil" defaultChecked={(agency.particular_payment_methods || []).includes("Pago móvil")} className="h-5 w-5 accent-[#2E3A79]" />Pago móvil</label>
+                <p className="mt-1 text-xs font-bold text-[#746f69]">Actívalo y completa los datos que verá el cliente.</p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <Input name="particularPagoMovilBank" label="Nombre del banco" defaultValue={agency.particular_payment_details?.pagoMovil?.bank} />
+                  <Input name="particularPagoMovilPhone" label="Teléfono" defaultValue={agency.particular_payment_details?.pagoMovil?.phone} />
+                  <Input name="particularPagoMovilId" label="Cédula o RIF" defaultValue={agency.particular_payment_details?.pagoMovil?.idNumber} />
+                </div>
+              </section>
+              <section className="rounded-[24px] border border-[#FFB547]/25 bg-[#FFF9EA] p-4">
+                <label className="flex items-center gap-3 text-base font-black text-[#162033]"><input type="checkbox" name="particularPaymentMethods" value="Efectivo" defaultChecked={(agency.particular_payment_methods || []).includes("Efectivo")} className="h-5 w-5 accent-[#FF7133]" />Efectivo</label>
+                <p className="mt-1 text-xs font-bold text-[#746f69]">Indica si debe pagar exacto o cualquier instrucción útil.</p>
+                <div className="mt-4"><Input name="particularCashNote" label="Indicación para el cliente" defaultValue={agency.particular_payment_details?.efectivo?.note} /></div>
+              </section>
             </div>
 
             <h2 className="mt-6 text-xl font-black">Capacidad y condiciones</h2>
@@ -2116,6 +2295,26 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
                       <option value="exclusive">Exclusiva: oculta otras empresas</option>
                     </select>
                   </label>
+                  {canSendParticularToEntrega2 ? (
+                    <label className="space-y-1">
+                      <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69]">
+                        Cobro del delivery
+                      </span>
+                      <select
+                        value={requestBillingModes[entry.id] || "cash"}
+                        onChange={(event) =>
+                          setRequestBillingModes((current) => ({
+                            ...current,
+                            [entry.id]: event.target.value as "cash" | "credit",
+                          }))
+                        }
+                        className="w-full rounded-2xl border border-[#25262B]/10 px-3 py-2 text-xs font-black outline-none focus:border-[#2E3A79]"
+                      >
+                        <option value="cash">Contado: validar en Somos</option>
+                        <option value="credit">Credito: directo a Entrega2 App</option>
+                      </select>
+                    </label>
+                  ) : null}
                   <div className="flex gap-2">
                   <button onClick={() => reviewRequest(entry.id, "approve")} className="rounded-full bg-green-100 px-4 py-2 text-xs font-black text-green-700">
                     <CheckCircle2 size={15} className="inline" /> Aprobar
@@ -2132,12 +2331,44 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       ) : null}
 
       {tab === "comercios" ? (
-        <List
+        <div className="space-y-3">
+          {canSendParticularToEntrega2 ? (
+            <section className="rounded-[28px] bg-white p-4 shadow-lg shadow-[#25262B]/8">
+              <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+                <div>
+                  <h2 className="text-lg font-black text-[#162033]">Cobro Entrega2</h2>
+                  <p className="mt-1 text-xs font-bold leading-relaxed text-[#746f69]">
+                    Credito sale directo a Entrega2 App. Contado queda para validacion de la operadora en Somos.
+                  </p>
+                </div>
+                <select
+                  value={connectionBillingFilter}
+                  onChange={(event) =>
+                    setConnectionBillingFilter(event.target.value as "all" | "credit" | "cash")
+                  }
+                  className="rounded-2xl border border-[#25262B]/10 px-3 py-2 text-xs font-black outline-none focus:border-[#2E3A79]"
+                  aria-label="Filtrar comercios por cobro"
+                >
+                  <option value="all">Todos</option>
+                  <option value="credit">Solo credito</option>
+                  <option value="cash">Solo contado</option>
+                </select>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                <Metric label="Activos Entrega2" value={connectionBillingStats.active} />
+                <Metric label="Credito directo" value={connectionBillingStats.credit} />
+                <Metric label="Contado validado" value={connectionBillingStats.cash} />
+              </div>
+            </section>
+          ) : null}
+
+          <List
           empty="Aun no hay comercios conectados."
-          items={connections}
+          items={visibleConnections}
           render={(entry) => {
             const isEnded = connectionEnded(entry, nowMs);
             const isPendingExit = connectionPendingExit(entry, nowMs);
+            const isCredit = entry.delivery_billing_mode === "credit";
 
             return (
               <div className="rounded-3xl bg-white p-4">
@@ -2151,6 +2382,27 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
                     <p className="mt-1 inline-flex rounded-full bg-[#F8F3E8] px-3 py-1 text-xs font-black text-[#2E3A79]">
                       Modalidad: {relationshipModeLabel(Boolean(entry.is_exclusive))}
                     </p>
+                    {canSendParticularToEntrega2 ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <p
+                          className={[
+                            "inline-flex rounded-full px-3 py-1 text-xs font-black",
+                            isCredit
+                              ? "bg-blue-100 text-blue-800"
+                              : "bg-amber-100 text-amber-900",
+                          ].join(" ")}
+                        >
+                          {isCredit
+                            ? "Conectado a Entrega2 App (credito)"
+                            : "Conectado a Entrega2 Somos (contado)"}
+                        </p>
+                        <p className="inline-flex rounded-full bg-[#F8F3E8] px-3 py-1 text-xs font-black text-[#746f69]">
+                          {isCredit
+                            ? "Los pedidos nuevos se envian directo"
+                            : "La operadora libera los pedidos desde Somos"}
+                        </p>
+                      </div>
+                    ) : null}
                     {entry.stores?.whatsapp ? (
                       <p className="mt-1 text-xs font-bold text-[#746f69]">
                         WhatsApp: {entry.stores.whatsapp}
@@ -2180,11 +2432,15 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
                         </span>
                         <select
                           value={entry.is_exclusive ? "exclusive" : "mixed"}
-                          disabled={savingConnectionModeId === entry.id || isPendingExit}
+                          disabled={
+                            savingConnectionModeId === entry.id ||
+                            isPendingExit ||
+                            entry.__legacy_entrega2_app
+                          }
                           onChange={(event) =>
                             updateConnectionMode(
                               entry.id,
-                              event.target.value as "exclusive" | "mixed"
+                              { relationshipMode: event.target.value as "exclusive" | "mixed" }
                             )
                           }
                           className="w-full rounded-2xl border border-[#25262B]/10 px-3 py-2 text-xs font-black outline-none focus:border-[#2E3A79] disabled:bg-[#F8F3E8] disabled:text-[#746f69]"
@@ -2192,7 +2448,38 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
                           <option value="mixed">Mixta</option>
                           <option value="exclusive">Exclusiva</option>
                         </select>
+                        {entry.__legacy_entrega2_app ? (
+                          <span className="block text-[11px] font-bold leading-relaxed text-[#746f69]">
+                            Primero confirma el cobro para conectarlo a Somos.
+                          </span>
+                        ) : null}
                       </label>
+                      {canSendParticularToEntrega2 ? (
+                        <label className="space-y-1">
+                          <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69]">
+                            Cobro
+                          </span>
+                          <select
+                            value={entry.delivery_billing_mode === "credit" ? "credit" : "cash"}
+                            disabled={savingConnectionModeId === entry.id || isPendingExit}
+                            onChange={(event) =>
+                              updateConnectionMode(
+                                entry.id,
+                                { deliveryBillingMode: event.target.value as "cash" | "credit" }
+                              )
+                            }
+                            className="w-full rounded-2xl border border-[#25262B]/10 px-3 py-2 text-xs font-black outline-none focus:border-[#2E3A79] disabled:bg-[#F8F3E8] disabled:text-[#746f69]"
+                          >
+                            <option value="cash">Contado: validar en Somos</option>
+                            <option value="credit">Credito: directo a Entrega2 App</option>
+                          </select>
+                          {entry.__legacy_entrega2_app ? (
+                            <span className="block text-[11px] font-bold leading-relaxed text-[#746f69]">
+                              Al guardar este cobro queda conectado a Entrega2 Somos.
+                            </span>
+                          ) : null}
+                        </label>
+                      ) : null}
                       <div className="flex flex-col gap-2 sm:flex-row">
                       {entry.disengagement_requested_at &&
                       !entry.disengagement_confirmed_at &&
@@ -2220,7 +2507,8 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
               </div>
             );
           }}
-        />
+          />
+        </div>
       ) : null}
 
       {tab === "facturacion" ? (

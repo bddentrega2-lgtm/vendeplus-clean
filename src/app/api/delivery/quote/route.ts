@@ -1,20 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   calculateDeliveryQuoteFromSettings,
-  calculateEntrega2FallbackQuote,
   calculateRouteDistanceKm,
   disableUnavailableTransportAgencySettings,
   mapStoreDeliverySettings,
 } from "@/lib/delivery";
-import {
-  getEntrega2DefaultVehicleType,
-  quoteEntrega2Delivery,
-} from "@/lib/integrations/entrega2";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   loadTransportAgencyDeliverySettings,
   loadTransportAgencyDeliverySettingsBySlug,
 } from "@/lib/transport";
+import {
+  isEntrega2AgencySlug,
+  quoteEntrega2ThroughSomos,
+} from "@/lib/server/entrega2-bridge";
 import {
   attachApiResponseHeaders,
   createApiRequestContext,
@@ -93,7 +92,10 @@ async function loadStoreDeliverySettings(
   ]);
 
   if (settingsResult.error || zonesResult.error || ratesResult.error) {
-    return mapStoreDeliverySettings(row);
+    return {
+      settings: mapStoreDeliverySettings(row),
+      transportAgency: null,
+    };
   }
 
   row.store_delivery_settings = settingsResult.data ? [settingsResult.data] : [];
@@ -114,7 +116,17 @@ async function loadStoreDeliverySettings(
   }
   else settings = disableUnavailableTransportAgencySettings(settings);
 
-  return settings;
+  return {
+    settings,
+    transportAgency: transportSettings
+      ? {
+          id: String(transportSettings.agency.id),
+          name: String(transportSettings.agency.name || "Empresa delivery"),
+          slug: String(transportSettings.agency.slug || ""),
+          logoUrl: transportSettings.agency.logo_url || null,
+        }
+      : null,
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -184,22 +196,16 @@ export async function POST(request: NextRequest) {
       return withHeaders(badRequest("No encontramos el comercio para cotizar delivery."));
     }
 
-    const settings = await loadStoreDeliverySettings(supabase, store);
+    const deliveryContext = await loadStoreDeliverySettings(supabase, store);
+    const settings = deliveryContext.settings;
     const storeLat = toSafeNumber(store.latitude);
     const storeLng = toSafeNumber(store.longitude);
     if (!hasValidCoordinates(storeLat, storeLng)) {
       return withHeaders(
-        badRequest("El comercio necesita ubicacion GPS configurada para cotizar con Entrega2 App.")
+        badRequest("El comercio necesita ubicacion GPS configurada para cotizar delivery.")
       );
     }
 
-    const routeDistance = await calculateRouteDistanceKm({
-      originLat: storeLat,
-      originLng: storeLng,
-      destinationLat: latitude,
-      destinationLng: longitude,
-    });
-    const routeDistanceKm = Number(routeDistance.distanceKm.toFixed(2));
     const attachQuoteToken = (quote: DeliveryQuote): DeliveryQuote => ({
       ...quote,
       quoteToken: signDeliveryQuote({
@@ -212,7 +218,19 @@ export async function POST(request: NextRequest) {
       }),
     });
 
-    if (settings.deliveryProvider !== "entrega2") {
+    const isLegacyEntrega2 = settings.deliveryProvider === "entrega2";
+    const isEntrega2SomosConnection = isEntrega2AgencySlug(
+      deliveryContext.transportAgency?.slug
+    );
+
+    if (!isLegacyEntrega2 && !isEntrega2SomosConnection) {
+      const routeDistance = await calculateRouteDistanceKm({
+        originLat: storeLat,
+        originLng: storeLng,
+        destinationLat: latitude,
+        destinationLng: longitude,
+      });
+      const routeDistanceKm = Number(routeDistance.distanceKm.toFixed(2));
       const quote = calculateDeliveryQuoteFromSettings({
         settings,
         deliveryType: "delivery",
@@ -225,70 +243,8 @@ export async function POST(request: NextRequest) {
       return withHeaders(NextResponse.json({ ok: true, quote: attachQuoteToken(quote) }));
     }
 
-    try {
-      const entrega2Quote = await quoteEntrega2Delivery({
-        latitud_retiro: storeLat,
-        longitud_retiro: storeLng,
-        latitud_entrega: latitude,
-        longitud_entrega: longitude,
-        tipo_vehiculo: getEntrega2DefaultVehicleType(),
-      });
-
-      const payload = (entrega2Quote.payload || {}) as any;
-      const cost = toSafeNumber(payload.costo_total);
-      if (!Number.isFinite(cost) || cost < 0) {
-        throw new Error("Entrega2 App no devolvio una cotizacion valida.");
-      }
-
-      const roundedCost = Number(cost.toFixed(2));
-      const entrega2Distance = Number.isFinite(Number(payload.distancia_km))
-        ? Number(Number(payload.distancia_km).toFixed(2))
-        : null;
-      const quotedDistance =
-        entrega2Distance !== null && entrega2Distance > 0 ? entrega2Distance : routeDistanceKm;
-      const duration = String(payload.duracion_estimada || "").trim();
-      const detail = [
-        `${quotedDistance.toFixed(2)} km`,
-        duration && duration.toLowerCase() !== "n/a" ? duration : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-
-      const quote = calculateDeliveryQuoteFromSettings({
-        settings,
-        deliveryType: "delivery",
-        subtotalUsd,
-        distanceKm: quotedDistance,
-        source: routeDistance.source,
-      });
-
-      const finalQuote = {
-            ...quote,
-            distanceKm: quotedDistance,
-            feeUsd: roundedCost,
-            originalFeeUsd: roundedCost,
-            discountUsd: 0,
-            label: `Entrega2 App · ${detail} · $${roundedCost.toFixed(2)}`,
-            source: "route",
-            available: true,
-            provider: "entrega2",
-            pricingType: "manual",
-            message: undefined,
-            ruleSummary: detail || "Cotizado por Entrega2 App",
-          } satisfies DeliveryQuote;
-
-      return withHeaders(
-        NextResponse.json({
-          ok: true,
-          quote: attachQuoteToken(finalQuote),
-        })
-      );
-    } catch (error) {
-      logApiError(apiContext, "entrega2_quote_fallback_used", error, { storeId });
-      const entrega2FallbackSettings = await loadTransportAgencyDeliverySettingsBySlug(
-        supabase,
-        "entrega2",
-        {
+    const legacyFallbackConfiguration = isLegacyEntrega2
+      ? await loadTransportAgencyDeliverySettingsBySlug(supabase, "entrega2", {
           pickupEnabled: settings.pickupEnabled,
           promoSettings: {
             freeDeliveryMinUsd: settings.freeDeliveryMinUsd,
@@ -297,27 +253,35 @@ export async function POST(request: NextRequest) {
             deliveryPromoDiscountType: settings.deliveryPromoDiscountType,
             deliveryPromoDiscountValue: settings.deliveryPromoDiscountValue,
           },
-        }
-      );
-      const fallbackQuote = calculateEntrega2FallbackQuote({
-        settings: entrega2FallbackSettings?.settings || settings,
-        subtotalUsd,
-        distanceKm: routeDistanceKm,
-        source: routeDistance.source,
-      });
-
-      return withHeaders(
-        NextResponse.json({
-          ok: true,
-          quote: attachQuoteToken(fallbackQuote),
-          fallback: {
-            provider: "entrega2",
-            reason: "entrega2_quote_failed",
-            rateSource: entrega2FallbackSettings ? "entrega2_agency" : "store",
-          },
         })
+      : null;
+    const bridgeResult = await quoteEntrega2ThroughSomos({
+      pickupLat: storeLat,
+      pickupLng: storeLng,
+      deliveryLat: latitude,
+      deliveryLng: longitude,
+      subtotalUsd,
+      fallbackSettings: legacyFallbackConfiguration?.settings || settings,
+      provider: isEntrega2SomosConnection ? "transport_agency" : "entrega2",
+      agency: isEntrega2SomosConnection ? deliveryContext.transportAgency : null,
+    });
+
+    if (bridgeResult.fallback) {
+      logApiError(
+        apiContext,
+        "entrega2_quote_fallback_used",
+        bridgeResult.fallbackError,
+        { storeId }
       );
     }
+
+    return withHeaders(
+      NextResponse.json({
+        ok: true,
+        quote: attachQuoteToken(bridgeResult.quote),
+        ...(bridgeResult.fallback ? { fallback: bridgeResult.fallback } : {}),
+      })
+    );
   } catch (error) {
     logApiError(apiContext, "delivery_quote_failed", error);
     return withHeaders(

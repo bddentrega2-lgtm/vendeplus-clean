@@ -138,6 +138,10 @@ test("cotizacion de delivery limita abuso por IP y comercio", () => {
     new URL("../src/app/api/delivery/quote/route.ts", import.meta.url),
     "utf8",
   );
+  const bridge = readFileSync(
+    new URL("../src/lib/server/entrega2-bridge.ts", import.meta.url),
+    "utf8",
+  );
 
   assert.match(route, /key:\s*`delivery-quote:ip:\$\{clientIp\}`/);
   assert.match(route, /key:\s*`delivery-quote:store:\$\{storeId\}:ip:\$\{clientIp\}`/);
@@ -145,7 +149,7 @@ test("cotizacion de delivery limita abuso por IP y comercio", () => {
   assert.match(route, /rateLimitHeaders\(globalLimit, DELIVERY_QUOTE_IP_LIMIT\)/);
   assert.match(route, /rateLimitHeaders\(storeLimit, DELIVERY_QUOTE_STORE_IP_LIMIT\)/);
   assert.match(route, /loadTransportAgencyDeliverySettingsBySlug/);
-  assert.match(route, /rateSource:\s*entrega2FallbackSettings \? "entrega2_agency" : "store"/);
+  assert.match(bridge, /rateSource: "entrega2_somos"/);
 });
 
 test("cotizacion rechaza coordenadas ausentes o fuera de rango", () => {
@@ -472,7 +476,9 @@ test("panel delivery evita recargas duplicadas en operaciones frecuentes", () =>
 
   assert.match(panel, /localTransportMutationsRef/);
   assert.match(panel, /recentLocalTransportMutationsRef/);
-  assert.match(panel, /180_000/);
+  assert.match(panel, /15_000/);
+  assert.match(panel, /addEventListener\("visibilitychange", refreshVisibleOrders\)/);
+  assert.match(panel, /removeEventListener\("visibilitychange", refreshVisibleOrders\)/);
   assert.doesNotMatch(panel, /await loadTransportOrders\(\);\s*await load\(\);/);
   assert.doesNotMatch(panel, /hasLoadedBilling[\s\S]{0,100}includeBilling: true/);
   assert.doesNotMatch(ordersRoute, /count:\s*"exact"/);
@@ -608,6 +614,10 @@ test("Entrega2 corta esperas largas y activa contingencia temporal", () => {
     new URL("../src/app/api/delivery/quote/route.ts", import.meta.url),
     "utf8",
   );
+  const bridge = readFileSync(
+    new URL("../src/lib/server/entrega2-bridge.ts", import.meta.url),
+    "utf8",
+  );
 
   assert.match(integration, /ENTREGA2_QUOTE_TIMEOUT_MS = 4_500/);
   assert.match(integration, /ENTREGA2_ORDER_TIMEOUT_MS = 8_000/);
@@ -616,7 +626,7 @@ test("Entrega2 corta esperas largas y activa contingencia temporal", () => {
   assert.match(integration, /ENTREGA2_CIRCUIT_FAILURE_LIMIT = 3/);
   assert.match(integration, /assertEntrega2QuoteCircuitAvailable/);
   assert.match(quoteRoute, /entrega2_quote_fallback_used/);
-  assert.match(quoteRoute, /calculateEntrega2FallbackQuote/);
+  assert.match(bridge, /calculateEntrega2FallbackQuote/);
 });
 
 test("Home y Marketplace hidratan delivery en tres consultas por lote", () => {
@@ -1266,16 +1276,28 @@ test("cuentas pueden cambiar contraseña desde ambos paneles", () => {
 test("empresa delivery personaliza colores de su Marketplace con validacion server-side", () => {
   const migration = readFileSync(new URL("../supabase/migrations/20260904044204_transport_agency_marketplace_colors.sql", import.meta.url), "utf8");
   const route = readFileSync(new URL("../src/app/api/transport/agencies/[agencyId]/route.ts", import.meta.url), "utf8");
+  const meRoute = readFileSync(new URL("../src/app/api/transport/me/route.ts", import.meta.url), "utf8");
+  const panel = readFileSync(new URL("../src/components/transport/TransportAgencyPanel.tsx", import.meta.url), "utf8");
+  const page = readFileSync(new URL("../src/app/transporte/[agencySlug]/marketplace/page.tsx", import.meta.url), "utf8");
   const marketplace = readFileSync(new URL("../src/components/public/MarketplaceClient.tsx", import.meta.url), "utf8");
 
   assert.match(migration, /marketplace_primary_color text not null default '#143D42'/);
   assert.match(migration, /check \(marketplace_primary_color ~ '\^#\[0-9A-Fa-f\]\{6\}\$'\)/);
   assert.match(route, /assertAgencyManager\(auth, agencyId/);
   assert.match(route, /\^#\[0-9A-F\]\{6\}\$/);
+  assert.match(meRoute, /marketplace_primary_color/);
+  assert.match(meRoute, /marketplace_accent_color/);
+  assert.match(panel, /profile-\$\{agency\.id\}-\$\{agency\.marketplace_primary_color/);
+  assert.match(panel, /isPanelRefreshing/);
+  assert.match(panel, /Actualizando panel\.\.\./);
+  assert.match(panel, /Panel actualizado\./);
+  assert.match(panel, /includeConfiguration:\s*true/);
+  assert.match(panel, /includeRelations:\s*true/);
+  assert.match(panel, /<button\s+type="button"[\s\S]*?includeConfiguration:\s*true[\s\S]*?<RefreshCcw/);
+  assert.match(page, /export const dynamic = "force-dynamic"/);
   assert.match(marketplace, /--marketplace-primary/);
   assert.match(marketplace, /bg-\[var\(--marketplace-primary\)\]/);
 });
-
 test("respaldo CSV de pedidos delivery queda limitado a la empresa autorizada", () => {
   const route = readFileSync(new URL("../src/app/api/transport/panel/orders/export/route.ts", import.meta.url), "utf8");
   const billing = readFileSync(new URL("../src/components/transport/TransportBillingTab.tsx", import.meta.url), "utf8");
@@ -1289,4 +1311,236 @@ test("respaldo CSV de pedidos delivery queda limitado a la empresa autorizada", 
   assert.match(route, /X-Content-Type-Options": "nosniff"/);
   assert.match(route, /\^\[=\+\\-@\\t\\r\]/);
   assert.match(billing, /Descargar respaldo CSV/);
+});
+
+test("link de particulares calcula en servidor y aisla solicitudes por empresa", () => {
+  const publicRoute = readFileSync(new URL("../src/app/api/transport/particulares/[agencySlug]/route.ts", import.meta.url), "utf8");
+  const panelRoute = readFileSync(new URL("../src/app/api/transport/panel/particulares/route.ts", import.meta.url), "utf8");
+  const migration = readFileSync(new URL("../supabase/migrations/20260905010000_transport_particular_requests.sql", import.meta.url), "utf8");
+  const panel = readFileSync(new URL("../src/components/transport/TransportAgencyPanel.tsx", import.meta.url), "utf8");
+  const form = readFileSync(new URL("../src/components/public/ParticularDeliveryForm.tsx", import.meta.url), "utf8");
+  const operationMigration = readFileSync(new URL("../supabase/migrations/20260905040000_complete_particular_delivery_operations.sql", import.meta.url), "utf8");
+  const contactNamesMigration = readFileSync(new URL("../supabase/migrations/20260907190000_add_particular_request_contact_names.sql", import.meta.url), "utf8");
+  const ordersRoute = readFileSync(new URL("../src/app/api/transport/panel/orders/route.ts", import.meta.url), "utf8");
+  const exportRoute = readFileSync(new URL("../src/app/api/transport/panel/orders/export/route.ts", import.meta.url), "utf8");
+  const ordersTab = readFileSync(new URL("../src/components/transport/TransportOrdersTab.tsx", import.meta.url), "utf8");
+
+  assert.match(publicRoute, /MAX_BODY_BYTES = 8 \* 1024/);
+  assert.match(publicRoute, /checkDistributedRateLimit/);
+  assert.match(publicRoute, /calculateRouteDistanceKm/);
+  assert.match(publicRoute, /calculateDeliveryQuoteFromSettings/);
+  assert.match(publicRoute, /agency_id: loaded\.configuration\.agency\.id/);
+  assert.match(publicRoute, /idempotency_key: requestKey/);
+  assert.match(publicRoute, /error\?\.code === "23505"/);
+  assert.match(panelRoute, /requireTransportAgencyAuth\(request\)/);
+  assert.match(panelRoute, /assertAgencyAccess\(auth, agencyId\)/);
+  assert.match(panelRoute, /\.eq\("agency_id", agencyId\)/);
+  assert.match(migration, /enable row level security/);
+  assert.match(migration, /revoke all .* from public, anon, authenticated/);
+  assert.match(panel, /\/transporte\/\$\{agency\.slug\}\/particulares/);
+  assert.match(form, /key="pickup-fields"/);
+  assert.match(form, /key="delivery-fields"/);
+  assert.match(form, /selectService/);
+  assert.match(form, /Delivery/);
+  assert.match(form, /Traslado de persona/);
+  assert.match(form, /Usted envia/);
+  assert.match(form, /Usted recibe/);
+  assert.match(form, /Viajo yo/);
+  assert.match(form, /Viaja otra persona/);
+  assert.match(form, /getCustomerBrowserProfile/);
+  assert.match(form, /saveCustomerBrowserProfile\(requesterName, requesterPhone\)/);
+  assert.match(form, /Recordar mis datos para proximas solicitudes/);
+  assert.match(form, /Nombre de quien entrega en retiro/);
+  assert.match(form, /Nombre de quien recibe en entrega/);
+  assert.match(form, /Nombre del pasajero/);
+  assert.match(form, /pickupPointLabel = serviceType === "person" \? "Origen" : "Retiro"/);
+  assert.match(form, /deliveryPointLabel = serviceType === "person" \? "Destino" : "Entrega"/);
+  assert.match(form, /referenceMarkerLabel=\{serviceType === "person" \? "Origen" : undefined\}/);
+  assert.match(form, /referencePopupLabel=\{serviceType === "person" \? "Punto de origen" : undefined\}/);
+  assert.match(form, /allowPickupCurrent/);
+  assert.match(form, /allowDeliveryCurrent/);
+  assert.match(form, /className="h-full w-full object-cover object-center"/);
+  assert.doesNotMatch(form, /scale-110 object-contain/);
+  assert.match(ordersTab, /Cliente \/ Solicitante/);
+  assert.match(ordersTab, /Solicitante/);
+  assert.match(ordersTab, /Entrega WA/);
+  assert.match(ordersTab, /particularServiceLabel/);
+  assert.match(ordersTab, /Array\.isArray\(request\)/);
+  assert.match(ordersTab, /return "Delivery"/);
+  assert.match(ordersTab, /return "Traslado"/);
+  assert.match(ordersTab, /return "Particular"/);
+  assert.doesNotMatch(ordersTab, /\$\{particularServiceLabel\(entry\)\} particular/);
+  assert.match(ordersTab, /serviceLabel === "Traslado" \? "Origen" : "Retiro"/);
+  assert.match(ordersTab, /Traslado de persona:/);
+  assert.match(publicRoute, /serviceType/);
+  assert.match(publicRoute, /travelerName/);
+  assert.match(publicRoute, /travelerPhone/);
+  assert.match(publicRoute, /pickupName/);
+  assert.match(publicRoute, /deliveryName/);
+  assert.match(publicRoute, /pickup_name: pickupName/);
+  assert.match(publicRoute, /delivery_name: deliveryName/);
+  assert.match(publicRoute, /Servicio: \${serviceLabel}/);
+  assert.match(publicRoute, /travelerIsRequester/);
+  assert.match(publicRoute, /\*ORIGEN\*/);
+  assert.match(publicRoute, /\*DESTINO\*/);
+  assert.match(publicRoute, /serviceType === "delivery" \? `Telefono: \${pickupPhone}` : null/);
+  assert.doesNotMatch(publicRoute, /Cliente: \${requesterName}/);
+  assert.doesNotMatch(form, /additionalNote/);
+  assert.doesNotMatch(publicRoute, /additionalNote/);
+  assert.doesNotMatch(publicRoute, /Nota adicional:/);
+  assert.match(operationMigration, /if not found then/);
+  assert.match(operationMigration, /if v_order_id is not null and p_order_delivery_status is not null/);
+  assert.match(operationMigration, /transport_particular_requests_agency_idempotency_idx/);
+  assert.match(contactNamesMigration, /add column if not exists pickup_name text/);
+  assert.match(contactNamesMigration, /add column if not exists delivery_name text/);
+  assert.match(ordersRoute, /storeId === "particular"/);
+  assert.match(ordersRoute, /pickup_name/);
+  assert.match(ordersRoute, /delivery_name/);
+  assert.match(exportRoute, /transport_particular_requests\(public_code, pickup_name, pickup_address, delivery_name, delivery_address, payment_method, payment_reference\)/);
+});
+
+test("particulares de Entrega2 se pueden enviar a Entrega2 App sin simular pedido de comercio", () => {
+  const route = readFileSync(new URL("../src/app/api/transport/panel/orders/[transportOrderId]/send-entrega2/route.ts", import.meta.url), "utf8");
+  const migration = readFileSync(new URL("../supabase/migrations/20260906010000_allow_entrega2_integrations_for_particular_transport_orders.sql", import.meta.url), "utf8");
+  const ordersRoute = readFileSync(new URL("../src/app/api/transport/panel/orders/route.ts", import.meta.url), "utf8");
+  const detailRoute = readFileSync(new URL("../src/app/api/transport/panel/orders/[transportOrderId]/route.ts", import.meta.url), "utf8");
+  const panel = readFileSync(new URL("../src/components/transport/TransportAgencyPanel.tsx", import.meta.url), "utf8");
+  const tab = readFileSync(new URL("../src/components/transport/TransportOrdersTab.tsx", import.meta.url), "utf8");
+  const webhook = readFileSync(new URL("../src/app/api/integrations/entrega2/order-status/route.ts", import.meta.url), "utf8");
+
+  assert.match(migration, /alter column order_id drop not null/);
+  assert.match(migration, /transport_order_id uuid/);
+  assert.match(migration, /particular_request_id uuid/);
+  assert.match(migration, /order_integrations_transport_order_provider_idx/);
+  assert.match(route, /requireTransportAgencyAuth\(request\)/);
+  assert.match(route, /assertAgencyRole\(/);
+  assert.match(route, /cleanText\(agency\.slug\)\.toLowerCase\(\) !== "entrega2"/);
+  assert.match(route, /isParticular/);
+  assert.match(route, /isCommerceOrder/);
+  assert.match(route, /getParticularExternalId\(order\.id\)/);
+  assert.match(route, /transport_order_id: order\.id/);
+  assert.match(route, /particular_request_id: isParticular \? order\.particular_request_id : null/);
+  assert.match(route, /getParticularServiceLabel/);
+  assert.match(route, /pickup_name/);
+  assert.match(route, /delivery_name/);
+  assert.match(route, /serviceLabel === "Traslado" \? "Detalle" : "Paquete"/);
+  assert.match(route, /serviceLabel === "Traslado" \? "origen" : "retiro"/);
+  assert.match(route, /serviceLabel === "Traslado" \? "destino" : "entrega"/);
+  assert.match(route, /sendEntrega2Order\(requestPayload\)/);
+  assert.match(ordersRoute, /order_integrations \(/);
+  assert.match(detailRoute, /order_integrations \(/);
+  assert.match(panel, /canSendParticularToEntrega2/);
+  assert.match(panel, /sendParticularToEntrega2/);
+  assert.match(tab, /Enviar a Entrega2 App/);
+  assert.match(webhook, /transport_order_id/);
+  assert.match(webhook, /mapEntrega2StatusToTransportStatus/);
+});
+
+test("puente Entrega2 separa comercios credito directo y contado validado", () => {
+  const migration = readFileSync(new URL("../supabase/migrations/20260907200000_entrega2_connection_billing_mode.sql", import.meta.url), "utf8");
+  const alignmentMigration = readFileSync(new URL("../supabase/migrations/20260907213000_align_legacy_entrega2_connections.sql", import.meta.url), "utf8");
+  const requestRoute = readFileSync(new URL("../src/app/api/transport/requests/[requestId]/route.ts", import.meta.url), "utf8");
+  const modeRoute = readFileSync(new URL("../src/app/api/transport/connections/[connectionId]/mode/route.ts", import.meta.url), "utf8");
+  const legacyRoute = readFileSync(new URL("../src/app/api/transport/legacy-entrega2/[storeId]/route.ts", import.meta.url), "utf8");
+  const meRoute = readFileSync(new URL("../src/app/api/transport/me/route.ts", import.meta.url), "utf8");
+  const commerceRoute = readFileSync(new URL("../src/app/api/panel/orders/[orderId]/send-delivery/route.ts", import.meta.url), "utf8");
+  const ordersManager = readFileSync(new URL("../src/components/panel/OrdersManager.tsx", import.meta.url), "utf8");
+  const agencyRoute = readFileSync(new URL("../src/app/api/transport/panel/orders/[transportOrderId]/send-entrega2/route.ts", import.meta.url), "utf8");
+  const agencyPanel = readFileSync(new URL("../src/components/transport/TransportAgencyPanel.tsx", import.meta.url), "utf8");
+  const tab = readFileSync(new URL("../src/components/transport/TransportOrdersTab.tsx", import.meta.url), "utf8");
+  const commerceMarketplace = readFileSync(new URL("../src/components/panel/TransportMarketplaceSection.tsx", import.meta.url), "utf8");
+  const quoteRoute = readFileSync(new URL("../src/app/api/delivery/quote/route.ts", import.meta.url), "utf8");
+  const particularRoute = readFileSync(new URL("../src/app/api/transport/particulares/[agencySlug]/route.ts", import.meta.url), "utf8");
+  const bridge = readFileSync(new URL("../src/lib/server/entrega2-bridge.ts", import.meta.url), "utf8");
+  const entrega2Integration = readFileSync(new URL("../src/lib/integrations/entrega2.ts", import.meta.url), "utf8");
+  const adminForm = readFileSync(new URL("../src/components/admin/AdminStoreForm.tsx", import.meta.url), "utf8");
+  const adminStoreRoute = readFileSync(new URL("../src/app/api/admin/stores/[storeId]/route.ts", import.meta.url), "utf8");
+  const agencyMarketplace = readFileSync(new URL("../src/lib/supabase/catalog.ts", import.meta.url), "utf8");
+  const adminPatchRoute = adminStoreRoute.slice(
+    adminStoreRoute.indexOf("export async function PATCH"),
+    adminStoreRoute.indexOf("export async function DELETE")
+  );
+  const agencyMarketplaceFunction = agencyMarketplace.slice(
+    agencyMarketplace.indexOf("export async function getPublicTransportAgencyMarketplaceBySlug"),
+    agencyMarketplace.indexOf("export async function getPublicStoreShellBySlug")
+  );
+
+  assert.match(migration, /delivery_billing_mode text not null default 'cash'/);
+  assert.match(migration, /check \(delivery_billing_mode in \('cash', 'credit'\)\)/);
+  assert.match(alignmentMigration, /settings\.delivery_provider = 'entrega2'/);
+  assert.match(alignmentMigration, /lower\(stores\.slug\) = 'sabore' then 'cash' else 'credit'/);
+  assert.match(alignmentMigration, /delivery_provider = 'transport_agency'/);
+  assert.match(alignmentMigration, /transport_agency_connection_id = connection\.id/);
+  assert.match(meRoute, /loadLegacyEntrega2Connections/);
+  assert.match(meRoute, /\.eq\("delivery_provider", "entrega2"\)/);
+  assert.match(meRoute, /__legacy_entrega2_app: true/);
+  assert.match(requestRoute, /deliveryBillingMode/);
+  assert.match(requestRoute, /delivery_billing_mode: deliveryBillingMode/);
+  assert.match(modeRoute, /nextDeliveryBillingMode/);
+  assert.match(modeRoute, /payload\.delivery_billing_mode = nextDeliveryBillingMode/);
+  assert.match(legacyRoute, /requireTransportAgencyAuth\(request\)/);
+  assert.match(legacyRoute, /assertAgencyManager/);
+  assert.match(legacyRoute, /\.eq\("slug", "entrega2"\)/);
+  assert.match(legacyRoute, /settings\.delivery_provider !== "entrega2"/);
+  assert.match(legacyRoute, /delivery_provider: "transport_agency"/);
+  assert.match(legacyRoute, /transport_agency_connection_id: connection\.id/);
+  assert.match(commerceRoute, /select\("id, delivery_billing_mode"\)/);
+  assert.match(commerceRoute, /connection\.delivery_billing_mode === "credit"/);
+  assert.match(commerceRoute, /sendCommerceOrderToEntrega2App/);
+  assert.match(commerceRoute, /cash_validation_required/);
+  assert.match(agencyRoute, /buildEntrega2CommercePayload/);
+  assert.match(agencyRoute, /entrega2_app_released/);
+  assert.match(agencyRoute, /order_id: isCommerceOrder \? order\.order_id : null/);
+  assert.match(agencyRoute, /Pedido de comercio enviado a Entrega2 App\./);
+  assert.match(agencyPanel, /requestBillingModes/);
+  assert.match(agencyPanel, /Contado: validar en Somos/);
+  assert.match(agencyPanel, /Credito: directo a Entrega2 App/);
+  assert.match(agencyPanel, /connectionBillingFilter/);
+  assert.match(agencyPanel, /legacyConnection/);
+  assert.match(agencyPanel, /\/api\/transport\/legacy-entrega2\/\$\{legacyConnection\.store_id\}/);
+  assert.doesNotMatch(agencyPanel, /Entrega2 App legacy/);
+  assert.doesNotMatch(legacyRoute, /comercios legacy|configuracion legacy/);
+  assert.match(agencyPanel, /Al guardar este cobro queda conectado a Entrega2 Somos/);
+  assert.match(agencyPanel, /Credito sale directo a Entrega2 App/);
+  assert.match(agencyPanel, /Contado queda para validacion de la operadora en Somos/);
+  assert.match(agencyPanel, /Metric label="Credito directo"/);
+  assert.match(agencyPanel, /Metric label="Contado validado"/);
+  assert.match(agencyPanel, /"Conectado a Entrega2 App \(credito\)"/);
+  assert.match(agencyPanel, /"Conectado a Entrega2 Somos \(contado\)"/);
+  assert.match(agencyPanel, /"Los pedidos nuevos se envian directo"/);
+  assert.match(agencyPanel, /data\.message \|\| "Servicio enviado a Entrega2 App\."/);
+  assert.match(ordersManager, /\? \{ label: "Delivery", Icon: Motorbike/);
+  assert.match(ordersManager, /<Motorbike size=\{16\} \/>/);
+  assert.match(ordersManager, /const entrega2Integration = getEntrega2Integration\(order\)/);
+  assert.match(ordersManager, /const showDeliverySent = Boolean/);
+  assert.match(ordersManager, /entrega2Integration\?\.status \|\| order\.delivery_status/);
+  assert.match(ordersManager, /order\.transport_agency_status/);
+  assert.doesNotMatch(ordersManager, /Entrega2 App:/);
+  assert.doesNotMatch(ordersManager, /Empresa delivery:/);
+  assert.doesNotMatch(ordersManager, /<Truck size=\{16\} \/>/);
+  assert.match(commerceMarketplace, /Cobro \{connection\.delivery_billing_mode === "credit" \? "credito" : "contado"\}/);
+  assert.match(tab, /Boolean\(particular\(entry\) \|\| entry\.order_id\)/);
+  assert.match(tab, /aria-label=\{entrega2 \? `Entrega2 App: \$\{entrega2StatusLabel\(entrega2\.status\)\}` : "Enviar a Entrega2 App"\}/);
+  assert.match(tab, /reconcile_required: "Revisar antes de reenviar"/);
+  assert.match(entrega2Integration, /export const ENTREGA2_QUOTE_TIMEOUT_MS = 4_500/);
+  assert.match(bridge, /quoteEntrega2Delivery\(/);
+  assert.match(bridge, /calculateEntrega2FallbackQuote\(/);
+  assert.match(bridge, /rateSource: "entrega2_somos"/);
+  assert.match(bridge, /provider: params\.provider/);
+  assert.match(quoteRoute, /isEntrega2SomosConnection/);
+  assert.match(quoteRoute, /provider: isEntrega2SomosConnection \? "transport_agency" : "entrega2"/);
+  assert.match(quoteRoute, /quoteEntrega2ThroughSomos\(/);
+  assert.match(particularRoute, /isEntrega2AgencySlug\(loaded\.configuration\.agency\.slug\)/);
+  assert.match(particularRoute, /quoteEntrega2ThroughSomos\(/);
+  assert.match(particularRoute, /provider: "transport_agency"/);
+  assert.match(particularRoute, /Cotizacion: respaldo de Entrega2 Somos/);
+  assert.doesNotMatch(adminForm, /admin_delivery_provider/);
+  assert.doesNotMatch(adminForm, /Entrega2 App activa/);
+  assert.doesNotMatch(adminPatchRoute, /store_delivery_settings/);
+  assert.match(agencyMarketplace, /select\("store_id, delivery_billing_mode, disengagement_effective_at"\)/);
+  assert.match(agencyMarketplace, /normalizedSlug === "entrega2"/);
+  assert.match(agencyMarketplace, /\.eq\("delivery_provider", "entrega2"\)/);
+  assert.match(agencyMarketplace, /legacyEntrega2Settings\.data/);
+  assert.doesNotMatch(agencyMarketplaceFunction, /getMarketplaceEligibleStoreIds\(/);
+  assert.doesNotMatch(agencyMarketplaceFunction, /marketplace_visible/);
 });

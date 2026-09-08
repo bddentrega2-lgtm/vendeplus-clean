@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Eye, Loader2, MessageCircle, RefreshCcw, X } from "lucide-react";
+import { Eye, Loader2, MessageCircle, RefreshCcw, Send, X } from "lucide-react";
 import { transportStatusLabels } from "@/components/transport/transport-panel-helpers";
 
 type LoadOrders = (overrides?: Record<string, string>) => Promise<void>;
@@ -14,8 +14,10 @@ interface TransportOrdersTabProps {
   isLoading: boolean;
   loadingDetailOrderId: string | null;
   loadOrders: LoadOrders;
+  canSendParticularToEntrega2: boolean;
   onAssignDriver: (orderId: string, driverId: string) => Promise<void>;
   onLoadOrderDetail: (orderId: string) => Promise<void>;
+  onSendParticularToEntrega2: (orderId: string) => Promise<void>;
   onPeriodChange: (value: string) => void;
   onStatusChange: (value: string) => void;
   onStoreChange: (value: string) => void;
@@ -25,6 +27,7 @@ interface TransportOrdersTabProps {
   period: string;
   premiumDispatchEnabled: boolean;
   savingOrderId: string | null;
+  sendingEntrega2OrderId: string | null;
   statusFilter: string;
   storeFilter: string;
   stores: any[];
@@ -34,15 +37,30 @@ const statusActionsByCurrent: Record<string, Array<readonly [string, string]>> =
   pending_agency: [["agency_accepted", "Aceptar"], ["agency_rejected", "Rechazar"]],
   sent_to_agency: [["agency_accepted", "Aceptar"], ["agency_rejected", "Rechazar"]],
   agency_received: [["agency_accepted", "Aceptar"], ["agency_rejected", "Rechazar"]],
-  agency_accepted: [["on_the_way", "En camino"], ["issue_reported", "Reportar novedad"]],
-  driver_assigned: [["on_the_way", "En camino"], ["issue_reported", "Reportar novedad"]],
-  pickup_pending: [["on_the_way", "En camino"], ["issue_reported", "Reportar novedad"]],
-  picked_up: [["on_the_way", "En camino"], ["issue_reported", "Reportar novedad"]],
+  agency_accepted: [["pickup_pending", "Por retirar"], ["picked_up", "Retirado"], ["delivered", "Entregado"], ["issue_reported", "Reportar novedad"]],
+  driver_assigned: [["pickup_pending", "Por retirar"], ["picked_up", "Retirado"], ["delivered", "Entregado"], ["issue_reported", "Reportar novedad"]],
+  pickup_pending: [["picked_up", "Retirado"], ["delivered", "Entregado"], ["issue_reported", "Reportar novedad"]],
+  picked_up: [["on_the_way", "En camino"], ["delivered", "Entregado"], ["issue_reported", "Reportar novedad"]],
   on_the_way: [["delivered", "Entregado"], ["delivery_failed", "Entrega fallida"], ["issue_reported", "Reportar novedad"]],
   issue_reported: [["agency_accepted", "Retomar"], ["on_the_way", "En camino"], ["cancelled", "Cancelar"]],
 };
 
 const closedStatuses = ["delivered", "agency_rejected", "cancelled", "delivery_failed"];
+
+function entrega2StatusLabel(status: unknown) {
+  const normalized = String(status || "");
+  const labels: Record<string, string> = {
+    sending: "Enviando",
+    sent: "Enviado",
+    accepted: "Aceptado",
+    delivering: "En camino",
+    completed: "Completado",
+    error: "Error",
+    failed: "Error",
+    reconcile_required: "Revisar antes de reenviar",
+  };
+  return labels[normalized] || normalized || "Registrado";
+}
 
 function formatTime(value: unknown) {
   if (!value) return "--:--";
@@ -77,8 +95,10 @@ export function TransportOrdersTab({
   isLoading,
   loadingDetailOrderId,
   loadOrders,
+  canSendParticularToEntrega2,
   onAssignDriver,
   onLoadOrderDetail,
+  onSendParticularToEntrega2,
   onPeriodChange,
   onStatusChange,
   onStoreChange,
@@ -87,6 +107,7 @@ export function TransportOrdersTab({
   page,
   period,
   savingOrderId,
+  sendingEntrega2OrderId,
   statusFilter,
   storeFilter,
   stores,
@@ -102,9 +123,45 @@ export function TransportOrdersTab({
     return String(value || "").replace(/[^0-9]/g, "");
   }
 
+  function particular(entry: any) {
+    const request = entry.transport_particular_requests;
+    return Array.isArray(request) ? request[0] || null : request || null;
+  }
+
+  function particularServiceLabel(entry: any) {
+    const request = particular(entry);
+    const description = String(request?.package_description || "");
+    if (!request) return "Pedido";
+    if (/Traslado de persona:/i.test(description)) return "Traslado";
+    if (/Delivery:/i.test(description)) return "Delivery";
+    return "Particular";
+  }
+
+  function originLabel(entry: any) {
+    const request = particular(entry);
+    if (!request) return entry.store_name_snapshot || entry.stores?.name || "Comercio";
+    return "Particular";
+  }
+
+  function requestDetailLabel(entry: any) {
+    return particularServiceLabel(entry) === "Traslado" ? "Detalle" : "Paquete";
+  }
+
+  function orderCode(entry: any) {
+    return entry.orders?.public_code || particular(entry)?.public_code || "Pedido";
+  }
+
+  function entrega2Integration(entry: any) {
+    return (entry.order_integrations || []).find((integration: any) => integration.provider === "entrega2") || null;
+  }
+
+  function canShowEntrega2Button(entry: any) {
+    return canSendParticularToEntrega2 && Boolean(particular(entry) || entry.order_id);
+  }
+
   function buildMapsUrl(entry: any) {
-    const latitude = Number(entry.orders?.delivery_lat);
-    const longitude = Number(entry.orders?.delivery_lng);
+    const latitude = Number(entry.orders?.delivery_lat ?? particular(entry)?.delivery_lat);
+    const longitude = Number(entry.orders?.delivery_lng ?? particular(entry)?.delivery_lng);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return "";
     return `https://www.google.com/maps?q=${latitude},${longitude}`;
   }
@@ -117,23 +174,34 @@ export function TransportOrdersTab({
     const driverPhone = cleanPhone(driver?.phone);
     if (!driverPhone) return "";
 
-    const paymentMethod = String(entry.orders?.payment_method || "No indicado");
+    const request = particular(entry);
+    const serviceLabel = particularServiceLabel(entry);
+    const paymentMethod = String(entry.orders?.payment_method || request?.payment_method || "No indicado");
     const cashPayment = isCashPayment(paymentMethod);
     const mapsUrl = buildMapsUrl(entry);
     const total = Number(entry.orders?.total_usd || 0);
     const message = [
-      "*Nuevo servicio delivery*",
-      entry.orders?.public_code ? `Pedido: ${entry.orders.public_code}` : null,
+      request ? `*Nuevo ${serviceLabel.toLowerCase()} particular*` : "*Nuevo servicio delivery*",
+      `Pedido: ${orderCode(entry)}`,
       "",
-      `Comercio: ${entry.store_name_snapshot || entry.stores?.name || "Comercio"}`,
-      `Telefono comercio: ${entry.store_whatsapp_snapshot || entry.stores?.whatsapp || "No indicado"}`,
+      `Origen: ${originLabel(entry)}`,
+      request
+        ? `${serviceLabel === "Traslado" ? "Pasajero" : "Retiro"}: ${request.pickup_name || entry.customer_name_snapshot || "No indicado"}`
+        : null,
+      request && serviceLabel !== "Traslado"
+        ? `Entrega: ${request.delivery_name || "No indicado"}`
+        : null,
+      request
+        ? `Telefono ${serviceLabel === "Traslado" ? "de contacto" : "de retiro"}: ${request.pickup_phone || "No indicado"}`
+        : `Telefono comercio: ${entry.store_whatsapp_snapshot || entry.stores?.whatsapp || "No indicado"}`,
       "",
-      `Cliente: ${entry.customer_name_snapshot || "Cliente"}`,
-      `Telefono cliente: ${entry.customer_phone_snapshot || "No indicado"}`,
+      `${request ? "Solicitante" : "Cliente"}: ${entry.customer_name_snapshot || (request ? "Solicitante" : "Cliente")}`,
+      `Telefono ${request ? "solicitante" : "cliente"}: ${entry.customer_phone_snapshot || "No indicado"}`,
       mapsUrl ? `Ubicacion GPS: ${mapsUrl}` : "Ubicacion GPS: no indicada",
       entry.delivery_address || entry.delivery_reference
         ? `Referencia: ${entry.delivery_address || entry.delivery_reference}`
         : null,
+      request?.package_description ? `${requestDetailLabel(entry)}: ${request.package_description}` : null,
       "",
       cashPayment
         ? `Pago: efectivo. Cobrar al cliente: $${total.toFixed(2)}`
@@ -167,7 +235,7 @@ export function TransportOrdersTab({
           "w-full rounded-xl border border-[#D8DEEA] bg-white font-bold text-[#2E3A79] outline-none disabled:bg-[#F8F3E8] disabled:text-[#746f69]",
           compact ? "px-2 py-1.5 text-xs" : "px-4 py-3 text-sm",
         ].join(" ")}
-        aria-label={`Asignar repartidor a ${entry.orders?.public_code || "pedido"}`}
+        aria-label={`Asignar repartidor a ${orderCode(entry)}`}
       >
         <option value="">-- Sin asignar --</option>
         {activeDrivers.map((driver) => (
@@ -251,7 +319,7 @@ export function TransportOrdersTab({
               <div className="grid grid-cols-[115px_210px_210px_100px_150px_235px_100px] items-center border-b border-[#D8DEEA] bg-[#F8FAFC] px-4 py-3 text-xs font-black text-[#52647A]">
                 <span>ID / Hora</span>
                 <span>Comercio</span>
-                <span>Cliente</span>
+                <span>Cliente / Solicitante</span>
                 <span>Precio</span>
                 <span>Estado</span>
                 <span>Repartidor</span>
@@ -260,8 +328,10 @@ export function TransportOrdersTab({
 
               {orders.map((entry) => {
                 const isSaving = savingOrderId === entry.id;
+                const isSendingEntrega2 = sendingEntrega2OrderId === entry.id;
                 const isDetailLoading = loadingDetailOrderId === entry.id;
                 const assignedDriver = drivers.find((driver) => driver.id === entry.driver_id);
+                const entrega2 = entrega2Integration(entry);
                 const driverCommandUrl =
                   driverWhatsappDispatchEnabled && assignedDriver
                     ? buildDriverCommandUrl(entry, assignedDriver)
@@ -275,18 +345,32 @@ export function TransportOrdersTab({
                   >
                     <div className="min-w-0">
                       <p className="truncate font-black text-[#162033]">
-                        {entry.orders?.public_code || "Pedido"}
+                        {orderCode(entry)}
                       </p>
                       <p className="mt-1 text-xs font-bold text-[#8A98AA]">
                         {formatTime(entry.created_at || entry.orders?.created_at)}
                       </p>
                     </div>
-                    <p className="truncate pr-3 font-black text-[#162033]">
-                      {entry.store_name_snapshot || entry.stores?.name || "Comercio"}
-                    </p>
                     <div className="min-w-0 pr-3">
                       <p className="truncate font-black text-[#162033]">
-                        {entry.customer_name_snapshot || "Cliente"}
+                        {originLabel(entry)}
+                      </p>
+                      {particular(entry) ? (
+                        <span
+                          className={[
+                            "mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-black uppercase",
+                            particularServiceLabel(entry) === "Traslado"
+                              ? "bg-violet-100 text-violet-800"
+                              : "bg-blue-100 text-blue-800",
+                          ].join(" ")}
+                        >
+                          {particularServiceLabel(entry)}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="min-w-0 pr-3">
+                      <p className="truncate font-black text-[#162033]">
+                        {entry.customer_name_snapshot || (particular(entry) ? "Solicitante" : "Cliente")}
                       </p>
                       <p className="truncate text-xs font-bold text-[#8A98AA]">
                         {entry.customer_phone_snapshot || "sin teléfono"}
@@ -305,7 +389,7 @@ export function TransportOrdersTab({
                           "max-w-[112px] rounded-full px-2 py-1 text-[10px] font-black uppercase leading-none outline-none ring-1 disabled:opacity-65",
                           statusPillClass(entry.status),
                         ].join(" ")}
-                        aria-label={`Actualizar estado de ${entry.orders?.public_code || "pedido"}`}
+                        aria-label={`Actualizar estado de ${orderCode(entry)}`}
                       >
                         <option value={entry.status}>{isSaving ? "Actualizando..." : statusLabel}</option>
                         {(statusActionsByCurrent[entry.status] || []).map(([status, label]) => (
@@ -317,6 +401,18 @@ export function TransportOrdersTab({
                     </div>
                     <div className="pr-3">{renderDriverSelect(entry)}</div>
                     <div className="flex items-center justify-end gap-2">
+                      {canShowEntrega2Button(entry) ? (
+                        <button
+                          type="button"
+                          onClick={() => void onSendParticularToEntrega2(entry.id)}
+                          disabled={isSendingEntrega2 || Boolean(entrega2 && !["error", "failed"].includes(entrega2.status))}
+                          title={entrega2 ? `Entrega2 App: ${entrega2StatusLabel(entrega2.status)}` : "Enviar a Entrega2 App"}
+                          aria-label={entrega2 ? `Entrega2 App: ${entrega2StatusLabel(entrega2.status)}` : "Enviar a Entrega2 App"}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#2E3A79] text-white hover:bg-[#243061] disabled:bg-[#D8DEEA] disabled:text-[#52647A]"
+                        >
+                          {isSendingEntrega2 ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                        </button>
+                      ) : null}
                       {driverCommandUrl ? (
                         <a
                           href={driverCommandUrl}
@@ -369,6 +465,14 @@ export function TransportOrdersTab({
           mapsUrl={buildMapsUrl(selectedOrder)}
           onClose={() => setSelectedOrderId(null)}
           renderDriverSelect={renderDriverSelect}
+          orderCode={orderCode}
+          originLabel={originLabel}
+          particularServiceLabel={particularServiceLabel}
+          requestDetailLabel={requestDetailLabel}
+          canShowEntrega2Button={canShowEntrega2Button}
+          entrega2Integration={entrega2Integration}
+          onSendParticularToEntrega2={onSendParticularToEntrega2}
+          sendingEntrega2OrderId={sendingEntrega2OrderId}
         />
       ) : null}
     </section>
@@ -383,6 +487,14 @@ function OrderDetailModal({
   mapsUrl,
   onClose,
   renderDriverSelect,
+  orderCode,
+  originLabel,
+  particularServiceLabel,
+  requestDetailLabel,
+  canShowEntrega2Button,
+  entrega2Integration,
+  onSendParticularToEntrega2,
+  sendingEntrega2OrderId,
 }: {
   billingSymbol: string;
   cleanPhone: (value: unknown) => string;
@@ -391,10 +503,23 @@ function OrderDetailModal({
   mapsUrl: string;
   onClose: () => void;
   renderDriverSelect: (entry: any, compact?: boolean) => ReactNode;
+  orderCode: (entry: any) => string;
+  originLabel: (entry: any) => string;
+  particularServiceLabel: (entry: any) => string;
+  requestDetailLabel: (entry: any) => string;
+  canShowEntrega2Button: (entry: any) => boolean;
+  entrega2Integration: (entry: any) => any;
+  onSendParticularToEntrega2: (orderId: string) => Promise<void>;
+  sendingEntrega2OrderId: string | null;
 }) {
-  const commercePhone = cleanPhone(entry.store_whatsapp_snapshot || entry.stores?.whatsapp);
-  const customerPhone = cleanPhone(entry.customer_phone_snapshot);
-  const paymentMethod = String(entry.orders?.payment_method || "No indicado");
+  const rawRequest = entry.transport_particular_requests;
+  const request = Array.isArray(rawRequest) ? rawRequest[0] || null : rawRequest || null;
+  const commercePhone = cleanPhone(request?.pickup_phone || entry.store_whatsapp_snapshot || entry.stores?.whatsapp);
+  const customerPhone = cleanPhone(request?.delivery_phone || entry.customer_phone_snapshot);
+  const paymentMethod = String(entry.orders?.payment_method || request?.payment_method || "No indicado");
+  const entrega2 = entrega2Integration(entry);
+  const isSendingEntrega2 = sendingEntrega2OrderId === entry.id;
+  const serviceLabel = particularServiceLabel(entry);
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-[#162033]/50 p-4">
@@ -405,11 +530,11 @@ function OrderDetailModal({
               Detalle del servicio
             </p>
             <h3 className="mt-1 text-2xl font-black text-[#162033]">
-              {entry.orders?.public_code || "Pedido"}
+              {orderCode(entry)}
             </h3>
             <p className="mt-1 text-sm font-bold text-[#746f69]">
-              {entry.store_name_snapshot || entry.stores?.name || "Comercio"} ·{" "}
-              {entry.customer_name_snapshot || "Cliente"}
+              {originLabel(entry)} ·{" "}
+              {entry.customer_name_snapshot || (request ? "Solicitante" : "Cliente")}
             </p>
           </div>
           <button
@@ -437,19 +562,48 @@ function OrderDetailModal({
                     Servicio
                   </p>
                   <div className="mt-3 grid gap-2 text-sm font-bold text-[#746f69]">
+                    {request ? (
+                      <p>
+                        Tipo:{" "}
+                        <span
+                          className={[
+                            "inline-flex rounded-full px-2 py-0.5 text-[10px] font-black uppercase",
+                            serviceLabel === "Traslado"
+                              ? "bg-violet-100 text-violet-800"
+                              : "bg-blue-100 text-blue-800",
+                          ].join(" ")}
+                        >
+                          {serviceLabel}
+                        </span>
+                      </p>
+                    ) : null}
                     <p>
-                      Delivery:{" "}
+                      {request ? "Tarifa" : "Delivery"}:{" "}
                       <span className="font-black text-[#162033]">
                         {billingSymbol}
                         {Number(entry.delivery_fee_usd || 0).toFixed(2)}
                       </span>
                     </p>
                     <p>Pago: {paymentMethod}</p>
+                    {request?.payment_reference ? <p>Referencia de pago: {request.payment_reference}</p> : null}
                     <p>
                       Dirección:{" "}
-                      {entry.delivery_address || entry.delivery_reference || "Por confirmar"}
+                      {request?.delivery_address || entry.delivery_address || request?.delivery_reference || entry.delivery_reference || "Ver punto GPS"}
                       {entry.delivery_zone_name ? ` · ${entry.delivery_zone_name}` : ""}
                     </p>
+                    {request ? (
+                      <p>
+                        {serviceLabel === "Traslado" ? "Origen" : "Retiro"}:{" "}
+                        {request.pickup_address || request.pickup_reference || "Ver punto GPS"}
+                      </p>
+                    ) : null}
+                    {request?.pickup_name ? (
+                      <p>{serviceLabel === "Traslado" ? "Pasajero" : "Contacto retiro"}: {request.pickup_name}</p>
+                    ) : null}
+                    {request?.delivery_name && serviceLabel !== "Traslado" ? (
+                      <p>Contacto entrega: {request.delivery_name}</p>
+                    ) : null}
+                    {request?.distance_km != null ? <p>Distancia: {Number(request.distance_km).toFixed(2)} km</p> : null}
                   </div>
                 </div>
 
@@ -467,6 +621,18 @@ function OrderDetailModal({
                 </div>
 
                 <div className="flex flex-wrap gap-2">
+                  {canShowEntrega2Button(entry) ? (
+                    <button
+                      type="button"
+                      onClick={() => void onSendParticularToEntrega2(entry.id)}
+                      disabled={isSendingEntrega2 || Boolean(entrega2 && !["error", "failed"].includes(entrega2.status))}
+                      aria-label={entrega2 ? `Entrega2 App: ${entrega2StatusLabel(entrega2.status)}` : "Enviar a Entrega2 App"}
+                      className="inline-flex items-center gap-2 rounded-full bg-[#2E3A79] px-4 py-2 text-xs font-black text-white disabled:bg-[#D8DEEA] disabled:text-[#52647A]"
+                    >
+                      {isSendingEntrega2 ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                      {entrega2 ? `Entrega2 App: ${entrega2StatusLabel(entrega2.status)}` : "Enviar a Entrega2 App"}
+                    </button>
+                  ) : null}
                   {mapsUrl ? (
                     <a
                       href={mapsUrl}
@@ -484,7 +650,7 @@ function OrderDetailModal({
                       rel="noopener noreferrer"
                       className="rounded-full bg-green-100 px-4 py-2 text-xs font-black text-green-700"
                     >
-                      Comercio WA
+                      {request ? "Retiro WA" : "Comercio WA"}
                     </a>
                   ) : null}
                   {customerPhone ? (
@@ -494,7 +660,7 @@ function OrderDetailModal({
                       rel="noopener noreferrer"
                       className="rounded-full bg-green-100 px-4 py-2 text-xs font-black text-green-700"
                     >
-                      Cliente WA
+                      {request ? "Entrega WA" : "Cliente WA"}
                     </a>
                   ) : null}
                 </div>
@@ -513,6 +679,13 @@ function OrderDetailModal({
                           {item.variant_name ? ` · ${item.variant_name}` : ""}
                         </p>
                       ))}
+                    </div>
+                  ) : request?.package_description ? (
+                    <div className="mt-3 rounded-2xl bg-[#F8F3E8] px-3 py-2">
+                      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#746f69]">
+                        {requestDetailLabel(entry)}
+                      </p>
+                      <p className="mt-1 text-sm font-bold text-[#746f69]">{request.package_description}</p>
                     </div>
                   ) : (
                     <p className="mt-3 text-sm font-bold text-[#746f69]">

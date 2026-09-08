@@ -157,6 +157,7 @@ export const entrega2StatusLabels: Record<string, string> = {
   completed: "Completado",
   error: "Error",
   failed: "Error",
+  reconcile_required: "Revisar antes de reenviar",
 };
 
 export const entrega2StatusStyles: Record<string, string> = {
@@ -169,6 +170,7 @@ export const entrega2StatusStyles: Record<string, string> = {
   completed: "bg-green-100 text-green-700",
   error: "bg-red-100 text-red-700",
   failed: "bg-red-100 text-red-700",
+  reconcile_required: "bg-amber-100 text-amber-800",
 };
 
 export const transportStatusLabels: Record<string, string> = {

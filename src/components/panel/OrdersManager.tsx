@@ -48,8 +48,6 @@ import {
   canSendToEntrega2,
   canSendToTransportAgency,
   dateOptions,
-  entrega2StatusLabels,
-  entrega2StatusStyles,
   formatDate,
   formatOrderAge,
   getCurrentTransportOrder,
@@ -1176,7 +1174,6 @@ export function OrdersManager() {
           const entrega2Integration = getEntrega2Integration(order);
           const transportAgencyIntegration = getTransportAgencyIntegration(order);
           const currentTransportOrder = getCurrentTransportOrder(order);
-          const entrega2Status = entrega2Integration?.status || "";
           const transportAgencyStatus =
             currentTransportOrder?.status ||
             transportAgencyIntegration?.status ||
@@ -1184,16 +1181,27 @@ export function OrdersManager() {
           const hasAgencyHandoff = hasActiveTransportAgencyHandoff(order);
           const showEntrega2Button = canSendToEntrega2(order);
           const showTransportAgencyButton = canSendToTransportAgency(order);
-          const showTransportAgencySent = Boolean(
+          const legacyEntrega2Status =
+            entrega2Integration?.status || order.delivery_status || "";
+          const showDeliverySent = Boolean(
             order.delivery_type === "delivery" &&
-              order.delivery_provider === "transport_agency" &&
-              (currentTransportOrder || transportAgencyIntegration) &&
-              !showTransportAgencyButton
-          );
-          const shouldShowTransportAgencyStatus = Boolean(
-            (currentTransportOrder || transportAgencyIntegration) &&
-              transportAgencyStatus &&
-              !["pending", "pending_agency"].includes(transportAgencyStatus)
+              (
+                (
+                  order.delivery_provider === "entrega2" &&
+                  !showEntrega2Button &&
+                  legacyEntrega2Status &&
+                  !["pending", "sending", "error", "failed", "reconcile_required"].includes(
+                    legacyEntrega2Status
+                  )
+                ) ||
+                (
+                  order.delivery_provider === "transport_agency" &&
+                  (currentTransportOrder ||
+                    transportAgencyIntegration ||
+                    order.transport_agency_status) &&
+                  !showTransportAgencyButton
+                )
+              )
           );
           const isSendingDelivery = sendingDeliveryId === order.id;
           const isSavingPayment = savingPaymentId === order.id;
@@ -1210,7 +1218,7 @@ export function OrdersManager() {
               : order.delivery_type === "pickup"
                 ? { label: "Retiro", Icon: PackageCheck, style: "bg-sky-100 text-sky-800" }
                 : order.delivery_type === "delivery"
-                  ? { label: "Delivery", Icon: Truck, style: "bg-emerald-100 text-emerald-800" }
+                  ? { label: "Delivery", Icon: Motorbike, style: "bg-emerald-100 text-emerald-800" }
                   : { label: "Envío nacional", Icon: Truck, style: "bg-indigo-100 text-indigo-800" };
 
           return (
@@ -1329,29 +1337,13 @@ export function OrdersManager() {
 
                   {order.delivery_type === "delivery" && (
                     <>
-                      {entrega2Integration && (
-                        <span
-                          title={entrega2Integration.last_error || undefined}
-                          className={[
-                            "inline-flex h-8 items-center rounded-full px-2.5 text-[11px] font-black",
-                            entrega2StatusStyles[entrega2Status] ||
-                              "bg-[#F8F3E8] text-[#746f69]",
-                          ].join(" ")}
-                        >
-                          Entrega2 App:{" "}
-                          {entrega2StatusLabels[entrega2Status] ||
-                            entrega2Status ||
-                            "Registrado"}
-                        </span>
-                      )}
-
                       {showEntrega2Button && (
                         <button
                           type="button"
                           onClick={() => sendOrderToDelivery(order.id)}
                           disabled={isSendingDelivery}
-                          title={entrega2Integration ? "Reintentar envío a Entrega2" : "Enviar a Entrega2"}
-                          aria-label={entrega2Integration ? "Reintentar envío a Entrega2" : "Enviar a Entrega2"}
+                          title="Enviar a la empresa delivery"
+                          aria-label="Enviar a la empresa delivery"
                           className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-[#2E3A79] px-2.5 text-[11px] font-black text-white disabled:opacity-60"
                         >
                           {isSendingDelivery ? (
@@ -1359,48 +1351,18 @@ export function OrdersManager() {
                           ) : (
                             <Motorbike size={16} />
                           )}
-                          Entrega2
+                          Delivery
                         </button>
                       )}
 
-                      {shouldShowTransportAgencyStatus ? (
-                        <span
-                          title={currentTransportOrder?.agency_status_note || transportAgencyIntegration?.last_error || undefined}
-                          className={[
-                            "inline-flex h-8 items-center rounded-full px-2.5 text-[11px] font-black",
-                            transportAgencyStatus === "sent" ||
-                            transportAgencyStatus === "sent_to_agency" ||
-                            transportAgencyStatus === "agency_received"
-                              ? "bg-indigo-100 text-indigo-700"
-                              : transportAgencyStatus === "agency_accepted" ||
-                                  transportAgencyStatus === "picked_up" ||
-                                  transportAgencyStatus === "on_the_way"
-                                ? "bg-purple-100 text-purple-700"
-                              : transportAgencyStatus === "delivered"
-                                ? "bg-green-100 text-green-700"
-                              : transportAgencyStatus === "error" ||
-                                  transportAgencyStatus === "failed" ||
-                                  transportAgencyStatus === "agency_rejected" ||
-                                  transportAgencyStatus === "cancelled"
-                                ? "bg-red-100 text-red-700"
-                                : "bg-[#F8F3E8] text-[#746f69]",
-                          ].join(" ")}
-                        >
-                          Empresa delivery:{" "}
-                          {transportStatusLabels[transportAgencyStatus] ||
-                            (transportAgencyStatus === "sent" ? "Enviado" : transportAgencyStatus) ||
-                            "Pendiente"}
-                        </span>
-                      ) : null}
-
-                      {showTransportAgencySent ? (
+                      {showDeliverySent ? (
                         <button
                           type="button"
                           disabled
                           className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-green-100 px-2.5 text-[11px] font-black text-green-700 ring-1 ring-green-200"
                           title="Pedido ya solicitado a la empresa delivery"
                         >
-                          <Truck size={16} />
+                          <Motorbike size={16} />
                           Delivery
                         </button>
                       ) : null}
@@ -1415,7 +1377,7 @@ export function OrdersManager() {
                           {isSendingDelivery ? (
                             <Loader2 size={16} className="animate-spin" />
                           ) : (
-                            <Truck size={16} />
+                            <Motorbike size={16} />
                           )}
                           Delivery
                         </button>

@@ -309,6 +309,11 @@ export function TransportMarketplaceSection({ pin, onChanged }: Props) {
                     Afiliacion {connection.is_exclusive ? "exclusiva" : "mixta"}
                   </p>
                 ) : null}
+                {connection && !isEnded && agency.slug === "entrega2" ? (
+                  <p className="mt-1 text-[11px] font-black text-[#2E3A79]">
+                    Cobro {connection.delivery_billing_mode === "credit" ? "credito" : "contado"}
+                  </p>
+                ) : null}
 
                 {!isReady ? (
                   <p className="mt-3 rounded-2xl bg-amber-50 p-3 text-xs font-black leading-relaxed text-amber-800">

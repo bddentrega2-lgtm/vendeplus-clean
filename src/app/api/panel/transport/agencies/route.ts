@@ -123,7 +123,7 @@ export async function GET(request: NextRequest) {
         ? supabase
             .from("store_transport_agency_connections")
             .select(
-              "id, store_id, agency_id, status, is_default, is_exclusive, connected_at, disengagement_requested_at, disengagement_requested_by, disengagement_confirmed_at, disengagement_confirmed_by, disengagement_effective_at"
+              "id, store_id, agency_id, status, is_default, is_exclusive, delivery_billing_mode, connected_at, disengagement_requested_at, disengagement_requested_by, disengagement_confirmed_at, disengagement_confirmed_by, disengagement_effective_at"
             )
             .in("store_id", storeIds)
             .order("connected_at", { ascending: false })
