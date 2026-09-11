@@ -6,6 +6,7 @@ import {
 } from "@/lib/transport/access";
 import { getTransportBillingRange } from "@/lib/transport";
 import { isPremiumDispatchSchemaMissing } from "@/lib/transport/driver-dispatch";
+import { loadCompleteBillingRows } from "@/lib/transport/billing-pagination";
 
 const agencySelect = `
   id,
@@ -102,16 +103,6 @@ const compactAgencySelectWithoutPremium = compactAgencySelect
   .replace("premium_dispatch_enabled,", "")
   .replace("driver_whatsapp_dispatch_enabled,", "");
 
-const billingSummarySelect = `
-  id,
-  status,
-  delivery_fee_usd,
-  orders(
-    delivery_usd,
-    status
-  )
-`;
-
 const billingOrdersSelect = `
   id,
   order_id,
@@ -183,47 +174,6 @@ function isCancelledBillingStatus(value: unknown) {
   return ["cancelled", "canceled", "cancelado", "agency_rejected", "delivery_failed"].includes(
     String(value || "").toLowerCase()
   );
-}
-
-function getBillingAmount(order: any) {
-  const parsed = Number(order?.delivery_fee_usd ?? order?.orders?.delivery_usd ?? 0);
-  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
-}
-
-function getDriverPayoutAmount(order: any) {
-  const parsed = Number(order?.driver_payout_usd || 0);
-  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
-}
-
-function aggregateDriverPayouts(orders: any[]) {
-  const map = new Map<
-    string,
-    {
-      driverId: string | null;
-      driverName: string;
-      ordersCount: number;
-      deliveryTotalUsd: number;
-      payoutUsd: number;
-    }
-  >();
-
-  for (const order of orders) {
-    const driverId = order.driver_id || "unassigned";
-    const current = map.get(driverId) || {
-      driverId: order.driver_id || null,
-      driverName: order.driver_name_snapshot || "Sin repartidor asignado",
-      ordersCount: 0,
-      deliveryTotalUsd: 0,
-      payoutUsd: 0,
-    };
-
-    current.ordersCount += 1;
-    current.deliveryTotalUsd += getBillingAmount(order);
-    current.payoutUsd += getDriverPayoutAmount(order);
-    map.set(driverId, current);
-  }
-
-  return Array.from(map.values()).sort((a, b) => b.payoutUsd - a.payoutUsd);
 }
 
 async function loadLegacyEntrega2Connections(params: {
@@ -333,7 +283,13 @@ export async function GET(request: NextRequest) {
 
     if (agenciesError) throw agenciesError;
 
+    const requestedAgencyId = request.nextUrl.searchParams.get("agencyId");
     const agencyIds = (agencies || []).map((agency: any) => agency.id);
+    if (requestedAgencyId && !agencyIds.includes(requestedAgencyId)) {
+      return NextResponse.json({ error: "Empresa no autorizada." }, { status: 403 });
+    }
+    const relationAgencyIds = requestedAgencyId ? [requestedAgencyId] : agencyIds;
+    const billingAgencyIds = requestedAgencyId ? [requestedAgencyId] : agencyIds;
     const [citiesResult, coverageResult] = await Promise.all([
       includeConfiguration
         ? supabase.from("service_cities").select("id, name, state_name, slug").eq("is_active", true).order("sort_order")
@@ -349,6 +305,13 @@ export async function GET(request: NextRequest) {
       city_coverage: (coverageResult.data || []).filter((coverage: any) => coverage.agency_id === agency.id),
     }));
     const billingRange = getTransportBillingRange(request.nextUrl.searchParams);
+    const loadBillingDetail = (select: string) => loadCompleteBillingRows<any>((from, to) =>
+      supabase.from("transport_orders").select(select, { count: "exact" })
+        .in("agency_id", billingAgencyIds)
+        .gte("created_at", billingRange.start).lt("created_at", billingRange.end)
+        .order("created_at", { ascending: false }).order("id", { ascending: false })
+        .range(from, to)
+    );
 
     let requestsResult: any;
     let connectionsResult: any;
@@ -379,7 +342,7 @@ export async function GET(request: NextRequest) {
                 stores(id, name, slug, whatsapp)
               `
               )
-              .in("agency_id", agencyIds)
+              .in("agency_id", relationAgencyIds)
               .order("created_at", { ascending: false })
               .limit(200) : Promise.resolve({ data: [], error: null }),
             includeRelations ? supabase
@@ -404,18 +367,11 @@ export async function GET(request: NextRequest) {
                 stores(id, name, slug, whatsapp)
               `
               )
-              .in("agency_id", agencyIds)
+              .in("agency_id", relationAgencyIds)
               .order("connected_at", { ascending: false })
               .limit(200) : Promise.resolve({ data: [], error: null }),
-            includeBilling
-              ? supabase
-                  .from("transport_orders")
-                  .select(includeBillingDetail ? billingOrdersSelect : billingSummarySelect)
-                  .in("agency_id", agencyIds)
-                  .gte("created_at", billingRange.start)
-                  .lt("created_at", billingRange.end)
-                  .order("created_at", { ascending: false })
-                  .limit(200)
+            includeBilling && includeBillingDetail
+              ? loadBillingDetail(billingOrdersSelect).catch((error) => ({ data: [], error }))
               : Promise.resolve({ data: [], error: null }),
           ])
         : [
@@ -429,20 +385,15 @@ export async function GET(request: NextRequest) {
     const legacyEntrega2Connections = includeRelations
       ? await loadLegacyEntrega2Connections({
           supabase,
-          agencies: agencies || [],
+          agencies: (agencies || []).filter((agency: any) =>
+            relationAgencyIds.includes(agency.id)
+          ),
           connections: connectionsResult.data || [],
         })
       : [];
     if (includeBillingDetail && ordersResult.error && isPremiumDispatchSchemaMissing(ordersResult.error)) {
       ordersResult = includeBilling
-        ? await supabase
-            .from("transport_orders")
-            .select(billingOrdersSelectWithoutDrivers)
-            .in("agency_id", agencyIds)
-            .gte("created_at", billingRange.start)
-            .lt("created_at", billingRange.end)
-            .order("created_at", { ascending: false })
-            .limit(200)
+        ? await loadBillingDetail(billingOrdersSelectWithoutDrivers)
         : { data: [], error: null };
     }
     if (ordersResult.error) throw ordersResult.error;
@@ -452,6 +403,13 @@ export async function GET(request: NextRequest) {
         !isCancelledBillingStatus(order.orders?.status)
     );
 
+    const summaryResult = includeBilling && agencyIds.length
+      ? await supabase.rpc("transport_billing_summary", {
+          p_agency_ids: billingAgencyIds, p_start: billingRange.start, p_end: billingRange.end,
+        })
+      : { data: { ordersCount: 0, totalUsd: 0, driverPayouts: [] }, error: null };
+    // No fallback to a partial list if the aggregate is unavailable.
+    if (summaryResult.error || !summaryResult.data) throw summaryResult.error || new Error("Resumen no disponible.");
     const response = NextResponse.json({
       agencies: agencies || [],
       cities: citiesResult.data || [],
@@ -460,14 +418,13 @@ export async function GET(request: NextRequest) {
       configurationLoaded: includeConfiguration,
       relationsLoaded: includeRelations,
       billing: includeBilling ? {
+        agencyId: billingAgencyIds.length === 1 ? billingAgencyIds[0] : null,
         range: billingRange,
         week: billingRange,
         orders: billableOrders,
-        totalUsd: billableOrders.reduce(
-          (sum: number, order: any) => sum + getBillingAmount(order),
-          0
-        ),
-        driverPayouts: includeBillingDetail ? aggregateDriverPayouts(billableOrders) : [],
+        ordersCount: summaryResult.data.ordersCount,
+        totalUsd: summaryResult.data.totalUsd,
+        driverPayouts: includeBillingDetail ? summaryResult.data.driverPayouts : [],
       } : null,
       billingDetailLoaded: includeBilling && includeBillingDetail,
     });

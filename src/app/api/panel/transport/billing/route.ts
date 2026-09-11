@@ -7,6 +7,7 @@ import {
 } from "@/lib/panel/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { cleanTransportText, getTransportBillingRange } from "@/lib/transport";
+import { loadCompleteBillingRows } from "@/lib/transport/billing-pagination";
 
 function isCancelledStatus(value: unknown) {
   return ["cancelled", "canceled", "cancelado", "agency_rejected", "delivery_failed"].includes(
@@ -34,8 +35,11 @@ export async function GET(request: NextRequest) {
 
     const supabase = createSupabaseAdminClient();
     const range = getTransportBillingRange(searchParams);
+    if (!storeId && managerStoreIds?.length === 0) {
+      return NextResponse.json({ range, week: range, orders: [], ordersCount: 0, totalUsd: 0 });
+    }
 
-    let transportQuery = supabase
+    const buildTransportQuery = () => supabase
       .from("transport_orders")
       .select(`
         id,
@@ -58,12 +62,12 @@ export async function GET(request: NextRequest) {
           delivery_zone_name,
           status
         )
-      `)
+      `, { count: "exact" })
       .gte("created_at", range.start)
       .lt("created_at", range.end)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false }).order("id", { ascending: false });
 
-    let entrega2Query = supabase
+    const buildEntrega2Query = () => supabase
       .from("orders")
       .select(`
         id,
@@ -78,30 +82,26 @@ export async function GET(request: NextRequest) {
         delivery_status,
         status,
         created_at
-      `)
+      `, { count: "exact" })
       .eq("delivery_provider", "entrega2")
       .gte("created_at", range.start)
       .lt("created_at", range.end)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false }).order("id", { ascending: false });
 
-    if (storeId) {
-      transportQuery = transportQuery.eq("store_id", storeId);
-      entrega2Query = entrega2Query.eq("store_id", storeId);
-    }
-    else if (managerStoreIds !== null) {
-      transportQuery = managerStoreIds.length
-        ? transportQuery.in("store_id", managerStoreIds)
-        : transportQuery.eq("store_id", "__no_authorized_store__");
-      entrega2Query = managerStoreIds.length
-        ? entrega2Query.in("store_id", managerStoreIds)
-        : entrega2Query.eq("store_id", "__no_authorized_store__");
-    }
-
-    const [transportResult, entrega2Result] = await Promise.all([transportQuery, entrega2Query]);
+    const scope = (query: any) => storeId ? query.eq("store_id", storeId)
+      : managerStoreIds !== null ? query.in("store_id", managerStoreIds) : query;
+    const [transportResult, entrega2Result] = await Promise.all([
+      loadCompleteBillingRows<any>((from, to) => scope(buildTransportQuery()).range(from, to)),
+      loadCompleteBillingRows<any>((from, to) => scope(buildEntrega2Query()).range(from, to)),
+    ]);
     if (transportResult.error) throw transportResult.error;
     if (entrega2Result.error) throw entrega2Result.error;
 
     const transportOrders = (transportResult.data || [])
+      .filter((order: any) => {
+        const nested = Array.isArray(order.orders) ? order.orders[0] : order.orders;
+        return !isCancelledStatus(order.status) && !isCancelledStatus(nested?.status);
+      })
       .map((order: any) => {
         const nestedOrder = Array.isArray(order.orders) ? order.orders[0] : order.orders || {};
         const feeUsd = toAmount(order.delivery_fee_usd ?? nestedOrder.delivery_usd);
@@ -125,7 +125,9 @@ export async function GET(request: NextRequest) {
       })
       .filter((order: any) => !isCancelledStatus(order.status));
 
+    const transportOrderIds = new Set((transportResult.data || []).map((order: any) => order.order_id).filter(Boolean));
     const entrega2Orders = (entrega2Result.data || [])
+      .filter((order: any) => !transportOrderIds.has(order.id))
       .filter((order: any) => !isCancelledStatus(order.status) && !isCancelledStatus(order.delivery_status))
       .map((order: any) => {
         const feeUsd = toAmount(order.delivery_usd);

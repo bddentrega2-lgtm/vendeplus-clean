@@ -22,7 +22,9 @@ function publicCode() { return `PAR-${new Date().toISOString().slice(5, 10).repl
 async function context(agencySlug: string) {
   const supabase = createSupabaseAdminClient();
   const configuration = await loadTransportAgencyDeliverySettingsBySlug(supabase, agencySlug, { pickupEnabled: false });
-  return configuration ? { supabase, configuration } : null;
+  return configuration?.agency?.premium_dispatch_enabled === true
+    ? { supabase, configuration }
+    : null;
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ agencySlug: string }> }) {
@@ -103,7 +105,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     ? loaded.configuration.agency.particular_payment_methods.map((method: unknown) => text(method, 40)).filter(Boolean)
     : [];
   if (!["Pago móvil", "Efectivo"].includes(paymentMethod) || !availablePaymentMethods.includes(paymentMethod)) return badRequest("Selecciona un metodo de pago disponible.");
-  if (paymentMethod === "Pago móvil" && !paymentReference) return badRequest("Escribe la referencia del pago movil.");
+  if (paymentMethod === "Pago móvil" && paymentReference.replace(/\D/g, "").length < 4) return badRequest("La referencia debe tener al menos 4 digitos.");
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestKey)) return badRequest("Actualiza la pagina e intenta nuevamente.");
 
   let code = publicCode();

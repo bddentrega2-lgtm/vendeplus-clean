@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, Crown, Loader2, PauseCircle, RefreshCcw, XCircle } from "lucide-react";
+import { CheckCircle2, Crown, Loader2, PauseCircle, RefreshCcw, Trash2, XCircle } from "lucide-react";
 import {
   getPanelAuthHeaders,
   getSavedPanelPin,
@@ -137,6 +137,23 @@ export function AdminTransportManager() {
     load();
   }
 
+  async function archiveAgency(agency: any) {
+    if (!window.confirm(`Eliminar ${agency.name}? Se archivará, se pausarán sus afiliaciones y se desactivará el delivery de los comercios que la usen.`)) return;
+    setMessage("");
+    const response = await fetch("/api/admin/transport/agencies", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", ...(await getPanelAuthHeaders(pin)) },
+      body: JSON.stringify({ agencyId: agency.id }),
+    });
+    const next = await response.json();
+    if (!response.ok) {
+      setMessage(next.error || "No se pudo eliminar la empresa.");
+      return;
+    }
+    setMessage("Empresa archivada sin borrar su historial.");
+    load();
+  }
+
   const summary = data.summary || {};
   const normalizedStoreQuery = storeQuery.trim().toLowerCase();
   const filteredRequests = (data.requests || []).filter((entry: any) => {
@@ -243,6 +260,15 @@ export function AdminTransportManager() {
                     <XCircle size={15} />
                     Rechazar
                   </button>
+                  {agency.slug !== "entrega2" ? (
+                    <button
+                      onClick={() => archiveAgency(agency)}
+                      className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-black text-red-700 ring-1 ring-red-200"
+                    >
+                      <Trash2 size={15} />
+                      Eliminar
+                    </button>
+                  ) : null}
                 </div>
               </div>
             </div>

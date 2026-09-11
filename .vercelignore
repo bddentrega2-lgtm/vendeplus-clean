@@ -1,3 +1,10 @@
 .next-dev-*.log
 .next
 node_modules
+SESSION_HANDOFF.md
+AGENTS.md
+docs
+tmp
+.env*
+supabase/.temp
+.git

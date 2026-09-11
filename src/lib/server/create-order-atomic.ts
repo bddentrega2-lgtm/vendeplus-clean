@@ -13,6 +13,11 @@ type AtomicOrderItem = {
   unit_price_usd: number;
   total_usd: number;
   notes: string | null;
+  variant_id?: string | null;
+  inventory: Array<{
+    sku_id: string;
+    quantity: number;
+  }>;
   options: Array<{
     option_group_name: string;
     option_name: string;

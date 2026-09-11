@@ -15,6 +15,10 @@ import {
   verifyDeliveryQuote,
 } from "../src/lib/server/signed-delivery-quote.ts";
 
+function read(relativePath) {
+  return readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
+}
+
 function deliverySettings(overrides = {}) {
   return {
     ...createDefaultDeliverySettings(),
@@ -498,12 +502,14 @@ test("panel delivery carga solo los datos necesarios por seccion", () => {
 
   assert.match(panel, /includeConfiguration:\s*initialTab !== "pedidos"/);
   assert.match(panel, /includeBillingDetail:\s*initialTab === "facturacion"/);
-  assert.match(panel, /const needsBilling = tab === "facturacion" && !hasLoadedBillingDetail/);
+  assert.match(panel, /const needsBilling = \(tab === "facturacion" && !hasLoadedBillingDetail\)/);
+  assert.match(panel, /\["resumen", "facturacion"\]\.includes\(tab\) && Boolean\(agencyId\) && billing\?\.agencyId !== agencyId/);
   assert.match(panel, /const needsConfiguration = tab !== "pedidos" && !hasLoadedConfiguration/);
   assert.match(panel, /hasLoadedConfiguration && configIssues\.length/);
   assert.match(route, /const compactAgencySelect =/);
-  assert.match(route, /const billingSummarySelect =/);
-  assert.match(route, /includeBillingDetail \? billingOrdersSelect : billingSummarySelect/);
+  assert.match(route, /rpc\("transport_billing_summary"/);
+  assert.match(route, /includeBilling && includeBillingDetail/);
+  assert.match(route, /loadCompleteBillingRows/);
   assert.match(route, /configurationLoaded:\s*includeConfiguration/);
   assert.match(route, /billingDetailLoaded:\s*includeBilling && includeBillingDetail/);
 });
@@ -1298,6 +1304,27 @@ test("empresa delivery personaliza colores de su Marketplace con validacion serv
   assert.match(marketplace, /--marketplace-primary/);
   assert.match(marketplace, /bg-\[var\(--marketplace-primary\)\]/);
 });
+
+test("panel fundador aisla solicitudes y conexiones por empresa delivery activa", () => {
+  const meRoute = readFileSync(new URL("../src/app/api/transport/me/route.ts", import.meta.url), "utf8");
+  const requestRoute = readFileSync(new URL("../src/app/api/transport/requests/[requestId]/route.ts", import.meta.url), "utf8");
+  const panel = readFileSync(new URL("../src/components/transport/TransportAgencyPanel.tsx", import.meta.url), "utf8");
+
+  assert.match(meRoute, /const relationAgencyIds = requestedAgencyId \? \[requestedAgencyId\] : agencyIds/);
+  assert.equal((meRoute.match(/\.in\("agency_id", relationAgencyIds\)/g) || []).length, 2);
+  assert.match(panel, /requests\.filter\(\(entry\) => entry\.agency_id === agencyId\)/);
+  assert.match(panel, /connections\.filter\(\(entry\) => entry\.agency_id === agencyId\)/);
+  assert.match(panel, /items=\{agencyRequests\}/);
+  assert.match(panel, /body: JSON\.stringify\(\{[\s\S]{0,180}agencyId,/);
+  assert.match(panel, /Vas a aprobar a \$\{storeName\} para \$\{agency\?\.name/);
+  assert.match(panel, /setHasLoadedRelations\(false\)/);
+  assert.match(requestRoute, /selectedAgencyId !== transportRequest\.agency_id/);
+  assert.match(requestRoute, /endedConnectionIds/);
+  assert.match(requestRoute, /status: "cancelled",\s+is_default: false,\s+is_exclusive: false/);
+  assert.ok(requestRoute.indexOf("normalizeEndedError") < requestRoute.indexOf("connectionError"));
+  assert.ok(requestRoute.indexOf("connectionError") < requestRoute.lastIndexOf("updateError"));
+});
+
 test("respaldo CSV de pedidos delivery queda limitado a la empresa autorizada", () => {
   const route = readFileSync(new URL("../src/app/api/transport/panel/orders/export/route.ts", import.meta.url), "utf8");
   const billing = readFileSync(new URL("../src/components/transport/TransportBillingTab.tsx", import.meta.url), "utf8");
@@ -1515,6 +1542,11 @@ test("puente Entrega2 separa comercios credito directo y contado validado", () =
   assert.match(ordersManager, /const showDeliverySent = Boolean/);
   assert.match(ordersManager, /entrega2Integration\?\.status \|\| order\.delivery_status/);
   assert.match(ordersManager, /order\.transport_agency_status/);
+  assert.match(ordersManager, /grid-cols-\[58px_104px_48px\]/);
+  assert.match(ordersManager, /showEntrega2Button \|\| showTransportAgencyButton/);
+  assert.match(ordersManager, /w-\[104px\][\s\S]*orderMode\.style/);
+  assert.match(ordersManager, /flex flex-nowrap items-center gap-1/);
+  assert.doesNotMatch(ordersManager, /mt-1 inline-flex items-center gap-1 rounded-full/);
   assert.doesNotMatch(ordersManager, /Entrega2 App:/);
   assert.doesNotMatch(ordersManager, /Empresa delivery:/);
   assert.doesNotMatch(ordersManager, /<Truck size=\{16\} \/>/);
@@ -1543,4 +1575,52 @@ test("puente Entrega2 separa comercios credito directo y contado validado", () =
   assert.match(agencyMarketplace, /legacyEntrega2Settings\.data/);
   assert.doesNotMatch(agencyMarketplaceFunction, /getMarketplaceEligibleStoreIds\(/);
   assert.doesNotMatch(agencyMarketplaceFunction, /marketplace_visible/);
+});
+
+test("comprobantes de pago son privados, configurables y se eliminan a los 30 dias", () => {
+  const checkout = read("src/components/public/CheckoutForm.tsx");
+  const catalog = read("src/lib/supabase/catalog.ts");
+  const upload = read("src/app/api/orders/payment-receipt/route.ts");
+  const cleanup = read("src/app/api/cron/payment-receipts-cleanup/route.ts");
+  const migration = read("supabase/migrations/20260908193000_payment_proofs_and_agency_archiving.sql");
+  assert.match(checkout, /Subir captura de pago o foto del billete/);
+  assert.match(checkout, /bg-emerald-600/);
+  assert.match(checkout, /Imagen cargada · Cambiar/);
+  assert.match(checkout, /paymentProofRequired/);
+  assert.match(catalog, /const storeShellSelect = `[\s\S]*payment_proof_mode[\s\S]*payment_proof_required/);
+  assert.match(upload, /payment_proof_mode.*image/s);
+  assert.match(upload, /sharp\(input\)/);
+  assert.match(migration, /payment-receipts[\s\S]*false/);
+  assert.match(migration, /interval '30 days'/);
+  assert.match(cleanup, /CRON_SECRET/);
+  const panel = read("src/components/panel/OrdersManager.tsx");
+  assert.match(panel, /Comprobante recibido/);
+  assert.match(panel, /window\.open\("about:blank", "_blank"\)/);
+  assert.match(panel, /Revisar pago/);
+  assert.match(panel, /¿Marcar \$\{order\.public_code\} como pagado\?/);
+  assert.match(panel, /has_payment_receipt/);
+  const settings = read("src/components/panel/ConfigManager.tsx");
+  const settingsRoute = read("src/app/api/panel/settings/route.ts");
+  assert.match(settings, /payment_proof_required", false/);
+  assert.match(settings, /payment_proof_required", true/);
+  assert.match(settingsRoute, /revalidatePath\(`\/\$\{savedSlug\}\/checkout`\)/);
+});
+
+test("referencias exigen cuatro digitos y particulares requieren premium", () => {
+  const orders = read("src/app/api/orders/route.ts");
+  const particulars = read("src/app/api/transport/particulares/[agencySlug]/route.ts");
+  const page = read("src/app/transporte/[agencySlug]/particulares/page.tsx");
+  assert.match(orders, /length < 4/);
+  assert.match(particulars, /premium_dispatch_enabled === true/);
+  assert.match(particulars, /length < 4/);
+  assert.match(page, /premium_dispatch_enabled !== true/);
+});
+
+test("eliminar empresa delivery archiva sin borrar historial", () => {
+  const route = read("src/app/api/admin/transport/agencies/route.ts");
+  const migration = read("supabase/migrations/20260908193000_payment_proofs_and_agency_archiving.sql");
+  assert.match(route, /export async function DELETE/);
+  assert.match(route, /archive_transport_agency/);
+  assert.doesNotMatch(route, /\.from\("transport_agencies"\)\s*\.delete\(/);
+  assert.match(migration, /if v_slug = 'entrega2'/);
 });

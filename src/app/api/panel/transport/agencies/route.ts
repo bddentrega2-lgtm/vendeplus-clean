@@ -11,6 +11,7 @@ import {
   getTransportAgencyRateFromRelation,
 } from "@/lib/transport";
 import { isTransportConnectionEnded } from "@/lib/transport/disengagement";
+import { loadCompleteBillingRows } from "@/lib/transport/billing-pagination";
 
 export async function GET(request: NextRequest) {
   const startedAt = performance.now();
@@ -130,9 +131,9 @@ export async function GET(request: NextRequest) {
             .limit(200)
         : Promise.resolve({ data: [], error: null }),
       storeIds.length
-        ? supabase
+        ? loadCompleteBillingRows<any>((from, to) => supabase
             .from("orders")
-            .select("store_id, transport_agency_id, delivery_usd, transport_agency_fee_usd, created_at")
+            .select("id, store_id, transport_agency_id, delivery_usd, transport_agency_fee_usd, created_at", { count: "exact" })
             .in("store_id", storeIds)
             .not("transport_agency_id", "is", null)
             .in("transport_agency_status", [
@@ -145,6 +146,8 @@ export async function GET(request: NextRequest) {
             ])
             .gte("created_at", week.start)
             .lt("created_at", week.end)
+            .order("created_at", { ascending: false }).order("id", { ascending: false })
+            .range(from, to))
         : Promise.resolve({ data: [], error: null }),
       storeIds.length
         ? supabase

@@ -11,6 +11,7 @@ import { isMissingColumnError } from "@/lib/supabase/schema-compat";
 import { loadTransportAgencyDeliverySettings } from "@/lib/transport";
 import { assertAchievementFeature, loadStoreAchievements } from "@/lib/achievements";
 import { normalizeBusinessType } from "@/lib/business-types";
+import { revalidatePath } from "next/cache";
 
 function optionalNumber(value: unknown) {
   if (value === "" || value === null || value === undefined) return null;
@@ -209,6 +210,12 @@ function normalizeStorePayload(body: any) {
     accepts_pickup: Boolean(body.accepts_pickup),
     accepts_national_shipping: Boolean(body.accepts_national_shipping),
     request_customer_id_number: Boolean(body.request_customer_id_number),
+    payment_proof_mode: ["reference", "image"].includes(cleanText(body.payment_proof_mode))
+      ? cleanText(body.payment_proof_mode)
+      : "disabled",
+    payment_proof_required:
+      ["reference", "image"].includes(cleanText(body.payment_proof_mode)) &&
+      Boolean(body.payment_proof_required),
     checkout_note_placeholder: cleanText(body.checkout_note_placeholder).slice(0, 180) || null,
     is_active: Boolean(body.is_active),
     service_fee_payer: body.service_fee_payer === "customer" ? "customer" : "merchant",
@@ -253,6 +260,8 @@ const storeSelect = `
   accepts_pickup,
   accepts_national_shipping,
   request_customer_id_number,
+  payment_proof_mode,
+  payment_proof_required,
   checkout_note_placeholder,
   is_active
   ,service_fee_payer
@@ -342,6 +351,8 @@ export async function GET(request: NextRequest) {
       "exchange_rate_source",
         "exchange_rate_updated_at",
         "request_customer_id_number",
+        "payment_proof_mode",
+        "payment_proof_required",
         "checkout_note_placeholder",
         "accepts_national_shipping",
       ])
@@ -363,6 +374,25 @@ export async function GET(request: NextRequest) {
       ]);
       return { ...store, service_fee_balance: balanceResult.data || null, achievement_features: achievementState.features };
     }));
+    let catalogLayoutAvailable = true;
+    let storesWithLayout = storesWithFees;
+    const storeIds = storesWithFees.map((store: any) => String(store.id)).filter(Boolean);
+    if (storeIds.length) {
+      const layoutResult = await supabase
+        .from("stores")
+        .select("id, catalog_layout")
+        .in("id", storeIds);
+      if (layoutResult.error) {
+        if (isMissingColumnError(layoutResult.error, ["catalog_layout"])) catalogLayoutAvailable = false;
+        else throw layoutResult.error;
+      } else {
+        const layoutByStore = new Map((layoutResult.data || []).map((row: any) => [String(row.id), row.catalog_layout]));
+        storesWithLayout = storesWithFees.map((store: any) => ({
+          ...store,
+          catalog_layout: layoutByStore.get(String(store.id)) === "visual" ? "visual" : "classic",
+        }));
+      }
+    }
 
     const { data: cities, error: citiesError } = await supabase
       .from("service_cities")
@@ -372,9 +402,10 @@ export async function GET(request: NextRequest) {
     if (citiesError) throw citiesError;
 
     return NextResponse.json({
-      stores: storesWithFees,
+      stores: storesWithLayout,
       cities: cities || [],
       paymentDetailsAvailable,
+      catalogLayoutAvailable,
       auth: {
         mode: auth.mode,
         email: auth.email || null,
@@ -466,6 +497,8 @@ export async function PATCH(request: NextRequest) {
         exchange_rate_updated_at: _exchangeRateUpdatedAt,
         accepts_national_shipping: _acceptsNationalShipping,
         request_customer_id_number: _requestCustomerIdNumber,
+        payment_proof_mode: _paymentProofMode,
+        payment_proof_required: _paymentProofRequired,
         checkout_note_placeholder: _checkoutNotePlaceholder,
         ...basePayload
       } = payload;
@@ -490,12 +523,34 @@ export async function PATCH(request: NextRequest) {
       accepts_national_shipping: payload.accepts_national_shipping,
     });
 
+    let catalogLayoutSaved = true;
+    const requestedCatalogLayout = body.catalog_layout === "visual" ? "visual" : "classic";
+    const layoutResult = await supabase
+      .from("stores")
+      .update({ catalog_layout: requestedCatalogLayout })
+      .eq("id", body.id);
+    if (layoutResult.error) {
+      if (isMissingColumnError(layoutResult.error, ["catalog_layout"])) catalogLayoutSaved = false;
+      else throw layoutResult.error;
+    } else if (data) {
+      data = { ...data, catalog_layout: requestedCatalogLayout } as any;
+    }
+
+    const savedSlug = cleanText(data?.slug || body.slug);
+    if (savedSlug) {
+      revalidatePath(`/${savedSlug}`);
+      revalidatePath(`/${savedSlug}/carrito`);
+      revalidatePath(`/${savedSlug}/checkout`);
+    }
+
     return NextResponse.json({
       store: data,
       paymentDetailsSaved,
-      warning: paymentDetailsSaved
-        ? null
-        : "La configuración general se guardó, pero los datos de pago NO quedaron guardados porque falta aplicar la migración de pagos en Supabase.",
+      catalogLayoutSaved,
+      warning: [
+        !paymentDetailsSaved ? "Los datos de pago NO quedaron guardados porque falta aplicar su migración en Supabase." : "",
+        !catalogLayoutSaved ? "La vista elegida quedó solo como prueba porque la migración visual aún no está aplicada." : "",
+      ].filter(Boolean).join(" ") || null,
     });
   } catch (error: any) {
     return panelErrorResponse(error, "Error actualizando configuración.");

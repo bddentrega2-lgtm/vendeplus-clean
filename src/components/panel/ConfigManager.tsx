@@ -67,10 +67,13 @@ type StoreRow = {
   primary_color: string | null;
   accent_color: string | null;
   button_text_color: string | null;
+  catalog_layout?: "classic" | "visual";
   accepts_delivery: boolean;
   accepts_pickup: boolean;
   accepts_national_shipping?: boolean;
   request_customer_id_number?: boolean;
+  payment_proof_mode?: "disabled" | "reference" | "image";
+  payment_proof_required?: boolean;
   checkout_note_placeholder?: string | null;
   is_active: boolean;
   service_fee_payer?: "merchant" | "customer";
@@ -259,10 +262,13 @@ function StoreSettingsCard({
     primary_color: store.primary_color || "#1F464C",
     accent_color: store.accent_color || "#F27533",
     button_text_color: store.button_text_color || "#042332",
+    catalog_layout: store.catalog_layout === "visual" ? "visual" : "classic",
     accepts_delivery: store.accepts_delivery === true,
     accepts_pickup: store.accepts_pickup !== false,
     accepts_national_shipping: store.accepts_national_shipping === true,
     request_customer_id_number: store.request_customer_id_number === true,
+    payment_proof_mode: store.payment_proof_mode || "disabled",
+    payment_proof_required: store.payment_proof_required === true,
     checkout_note_placeholder: store.checkout_note_placeholder || "",
     is_active: store.is_active !== false,
     service_fee_payer: store.service_fee_payer === "customer" ? "customer" : "merchant",
@@ -832,6 +838,33 @@ function StoreSettingsCard({
         </div>
       </section>
 
+      <section className="mt-4 rounded-[28px] bg-[#E8F2EE] p-4 ring-1 ring-[#1F464C]/10">
+        <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[#F27533]">Diseño del catálogo</p>
+            <h3 className="mt-1 text-lg font-black text-[#25262B]">Elige cómo navegan tus clientes</h3>
+            <p className="mt-1 text-sm font-bold text-[#746f69]">Solo cambia la presentación. Carrito, opciones, pagos y pedidos funcionan igual.</p>
+          </div>
+          <a href={`/${store.slug}?vista=${draft.catalog_layout === "visual" ? "visual" : "clasica"}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-4 py-2.5 text-xs font-black text-[#2E3A79] shadow-sm">
+            <ExternalLink size={15} /> Probar esta vista
+          </a>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          {([
+            { value: "classic", title: "Vista clásica", text: "Lista compacta para recorrer rápido muchos productos." },
+            { value: "visual", title: "Vista visual", text: "Tarjetas cuadradas con fotografías más grandes." },
+          ] as const).map((option) => (
+            <button key={option.value} type="button" onClick={() => updateField("catalog_layout", option.value)} className={`rounded-[24px] p-4 text-left ring-2 transition ${draft.catalog_layout === option.value ? "bg-[#1F464C] text-white ring-[#1F464C]" : "bg-white text-[#25262B] ring-transparent"}`}>
+              <span className="block text-base font-black">{option.title}</span>
+              <span className={`mt-1 block text-xs font-bold leading-relaxed ${draft.catalog_layout === option.value ? "text-white/75" : "text-[#746f69]"}`}>{option.text}</span>
+              <span className="mt-3 grid grid-cols-2 gap-2" aria-hidden="true">
+                {[0, 1].map((item) => <span key={item} className={`block ${option.value === "visual" ? "aspect-square" : "h-12"} rounded-xl ${draft.catalog_layout === option.value ? "bg-white/15" : "bg-[#F8F3E8]"}`} />)}
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+
       <section className="mt-4 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
         <div className="grid gap-4 md:grid-cols-[120px_1fr] md:items-center">
           <div className="grid h-28 w-28 place-items-center overflow-hidden rounded-3xl bg-white">
@@ -1067,6 +1100,54 @@ function StoreSettingsCard({
                 Quitar · {method}
               </button>
             ))}
+          </div>
+        ) : null}
+      </section>
+
+      <section className="mt-4 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
+        <h3 className="text-lg font-black text-[#25262B]">Comprobante antes de enviar</h3>
+        <p className="mt-1 text-sm font-bold text-[#746f69]">
+          Aplica a todos los métodos, incluido efectivo. Elige una sola forma de comprobación.
+        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          {([
+            ["disabled", "No solicitar"],
+            ["reference", "Pedir referencia"],
+            ["image", "Pedir captura o foto"],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setDraft((current) => ({
+                ...current,
+                payment_proof_mode: value,
+                payment_proof_required:
+                  value === "disabled" ? false : current.payment_proof_required,
+              }))}
+              className={`rounded-2xl px-4 py-3 text-sm font-black ${draft.payment_proof_mode === value ? "bg-[#2E3A79] text-white" : "bg-white text-[#746f69]"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {draft.payment_proof_mode !== "disabled" ? (
+          <div className="mt-3 grid grid-cols-2 gap-2" aria-label="Requisito del comprobante">
+            <button
+              type="button"
+              onClick={() => updateField("payment_proof_required", false)}
+              aria-pressed={!draft.payment_proof_required}
+              className={`rounded-2xl px-4 py-2 text-xs font-black ${!draft.payment_proof_required ? "bg-emerald-100 text-emerald-800 ring-2 ring-emerald-400" : "bg-white text-[#746f69]"}`}
+            >
+              Opcional
+            </button>
+            <button
+              type="button"
+              onClick={() => updateField("payment_proof_required", true)}
+              aria-pressed={draft.payment_proof_required}
+              className={`rounded-2xl px-4 py-2 text-xs font-black ${draft.payment_proof_required ? "bg-red-100 text-red-700 ring-2 ring-red-300" : "bg-white text-[#746f69]"}`}
+            >
+              Obligatorio
+            </button>
           </div>
         ) : null}
       </section>

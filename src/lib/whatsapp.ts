@@ -39,10 +39,15 @@ export function buildOrderMessage(params: {
             .map((option) => `   ${option.groupName}: ${option.valueName}`)
             .join("\n")}`
         : "";
+      const inventory = item.inventorySelections?.length
+        ? `\n${item.inventorySelections
+            .map((selection) => `   ${selection.quantity}x ${selection.label || "Color y talla seleccionados"}`)
+            .join("\n")}`
+        : "";
 
       return `${index + 1}) ${item.quantity}x ${item.productName}${variant} — ${formatBaseCurrency(
         item.unitPriceUsd * item.quantity
-      , baseCurrency)}${options}${note}`;
+      , baseCurrency)}${inventory}${options}${note}`;
     })
     .join("\n");
 

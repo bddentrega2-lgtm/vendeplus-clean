@@ -162,6 +162,15 @@ export function CartPageClient({ store }: { store: Store }) {
                             ))}
                           </div>
                         ) : null}
+                        {item.inventorySelections?.length ? (
+                          <div className="mt-2 space-y-1">
+                            {item.inventorySelections.map((selection) => (
+                              <p key={selection.skuId} className="text-xs font-bold text-[#746f69]">
+                                {selection.quantity}x {selection.label || "Color y talla seleccionados"}
+                              </p>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
                       <button type="button" onClick={() => remove(index)} className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-red-50 text-red-600">
                         <Trash2 size={16} />
@@ -171,11 +180,15 @@ export function CartPageClient({ store }: { store: Store }) {
                     {item.notes ? <p className="mt-2 rounded-2xl bg-[#FFF8F0] p-2 text-xs font-bold text-[#746f69]">{item.notes}</p> : null}
 
                     <div className="mt-3 flex items-center justify-between gap-2">
-                      <div className="inline-flex items-center rounded-full border border-[#25262B]/10 bg-white p-1">
+                      {item.inventorySelections?.length ? (
+                        <span className="rounded-full bg-[#FFF8F0] px-3 py-2 text-xs font-black text-[#746f69]">
+                          Cantidad {item.quantity}
+                        </span>
+                      ) : <div className="inline-flex items-center rounded-full border border-[#25262B]/10 bg-white p-1">
                         <button type="button" onClick={() => setQuantity(index, item.quantity - 1)} className="grid h-8 w-8 place-items-center rounded-full bg-[#FFF8F0]"><Minus size={14} /></button>
                         <span className="grid min-w-9 place-items-center px-1 text-sm font-black">{item.quantity}</span>
                         <button type="button" onClick={() => setQuantity(index, item.quantity + 1)} className="grid h-8 w-8 place-items-center rounded-full bg-[#FFB547]"><Plus size={14} /></button>
-                      </div>
+                      </div>}
                       <div className="text-right">
                         <p className="text-xs font-bold text-[#746f69]">{formatBaseCurrency(item.unitPriceUsd, baseCurrency)} c/u</p>
                         <p className="text-base font-black text-[#25262B]">{formatBaseCurrency(item.unitPriceUsd * item.quantity, baseCurrency)}</p>

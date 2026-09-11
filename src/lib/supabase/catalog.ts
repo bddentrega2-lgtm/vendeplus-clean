@@ -266,8 +266,93 @@ function mapStore(
     serviceFeePayer: row.service_fee_payer === "customer" ? "customer" : "merchant",
     serviceFeeBillingCycle: "monthly",
     requestCustomerIdNumber: row.request_customer_id_number === true,
+    paymentProofMode: ["reference", "image"].includes(row.payment_proof_mode)
+      ? row.payment_proof_mode
+      : "disabled",
+    paymentProofRequired: row.payment_proof_required === true,
     checkoutNotePlaceholder: normalizePublicBrandText(row.checkout_note_placeholder) || undefined,
+    catalogLayout: row.catalog_layout === "visual" ? "visual" : "classic",
   };
+}
+
+async function attachCatalogLayout(store: Store): Promise<Store> {
+  try {
+    const supabase = createSupabaseAdminClient();
+    const { data, error } = await supabase
+      .from("stores")
+      .select("catalog_layout")
+      .eq("id", store.id)
+      .maybeSingle();
+    if (error) return store;
+    return { ...store, catalogLayout: data?.catalog_layout === "visual" ? "visual" : "classic" };
+  } catch {
+    return store;
+  }
+}
+
+async function attachOptInInventory(store: Store): Promise<Store> {
+  try {
+    const supabase = createSupabaseAdminClient();
+    const settingsResult = await supabase
+      .from("store_inventory_settings")
+      .select("enabled")
+      .eq("store_id", store.id)
+      .maybeSingle();
+
+    if (settingsResult.error || settingsResult.data?.enabled !== true) return store;
+    const productIds = store.products.map((product) => product.id);
+    if (!productIds.length) return { ...store, inventoryEnabled: true };
+
+    const [skusResult, variantsResult] = await Promise.all([
+      supabase
+        .from("product_inventory_skus")
+        .select("id, product_id, code, attributes, stock_on_hand, is_active")
+        .eq("store_id", store.id)
+        .in("product_id", productIds),
+      supabase
+        .from("product_variants")
+        .select("id, product_id, inventory_units")
+        .in("product_id", productIds),
+    ]);
+    if (skusResult.error || variantsResult.error) return store;
+
+    const skusByProduct = new Map<string, AnyRecord[]>();
+    for (const sku of skusResult.data || []) {
+      const productId = String((sku as AnyRecord).product_id || "");
+      skusByProduct.set(productId, [...(skusByProduct.get(productId) || []), sku as AnyRecord]);
+    }
+    const inventoryUnitsByVariant = new Map(
+      (variantsResult.data || []).map((variant: AnyRecord) => [
+        String(variant.id),
+        Math.max(1, toNumber(variant.inventory_units, 1)),
+      ])
+    );
+
+    return {
+      ...store,
+      inventoryEnabled: true,
+      products: store.products.map((product) => {
+        const rows = skusByProduct.get(product.id) || [];
+        return {
+          ...product,
+          inventoryManaged: rows.length > 0,
+          inventorySkus: rows.map((sku) => ({
+            id: String(sku.id),
+            code: String(sku.code || ""),
+            attributes: toRecord(sku.attributes) as Record<string, string>,
+            stock: Math.max(0, toNumber(sku.stock_on_hand, 0)),
+            isAvailable: sku.is_active !== false && toNumber(sku.stock_on_hand, 0) > 0,
+          })),
+          variants: product.variants?.map((variant) => ({
+            ...variant,
+            inventoryUnits: inventoryUnitsByVariant.get(variant.id) || 1,
+          })),
+        };
+      }),
+    };
+  } catch {
+    return store;
+  }
 }
 
 const storeSelect = `
@@ -312,6 +397,8 @@ const storeSelect = `
   accepts_delivery,
   accepts_pickup,
   request_customer_id_number,
+  payment_proof_mode,
+  payment_proof_required,
   checkout_note_placeholder,
   accepts_national_shipping,
   store_delivery_settings (
@@ -412,6 +499,8 @@ const baseStoreSelect = `
   accepts_delivery,
   accepts_pickup,
   request_customer_id_number,
+  payment_proof_mode,
+  payment_proof_required,
   checkout_note_placeholder,
   categories (
     id,
@@ -486,6 +575,8 @@ const storeShellSelect = `
   accepts_delivery,
   accepts_pickup,
   request_customer_id_number,
+  payment_proof_mode,
+  payment_proof_required,
   checkout_note_placeholder,
   accepts_national_shipping,
   store_delivery_settings (
@@ -559,6 +650,8 @@ const storeShellCompatibleSelect = `
   accepts_delivery,
   accepts_pickup,
   request_customer_id_number,
+  payment_proof_mode,
+  payment_proof_required,
   checkout_note_placeholder,
   store_delivery_settings (
     delivery_enabled,
@@ -1273,7 +1366,9 @@ export async function getPublicStoreBySlug(slug: string): Promise<Store | null> 
     }
   }
 
-  return applyTransportDeliverySettings(mapStore(data));
+  return attachOptInInventory(
+    await attachCatalogLayout(await applyTransportDeliverySettings(mapStore(data)))
+  );
 }
 
 export async function getUnavailableStoreContactBySlug(slug: string) {

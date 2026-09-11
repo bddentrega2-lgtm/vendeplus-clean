@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/exchange-rates",
       "schedule": "15 10 * * *"
+    },
+    {
+      "path": "/api/cron/payment-receipts-cleanup",
+      "schedule": "40 10 * * *"
     }
   ]
 }

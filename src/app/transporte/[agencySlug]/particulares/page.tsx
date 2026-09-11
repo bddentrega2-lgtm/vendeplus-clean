@@ -9,13 +9,13 @@ export default async function ParticularDeliveryPage({ params }: { params: Promi
   const supabase = createSupabaseAdminClient();
   const { data: agency } = await supabase
     .from("transport_agencies")
-    .select("id,name,slug,logo_url,whatsapp_phone,contact_phone,city,state,marketplace_primary_color,marketplace_accent_color,particular_payment_methods,particular_payment_details,status,is_active")
+    .select("id,name,slug,logo_url,whatsapp_phone,contact_phone,city,state,marketplace_primary_color,marketplace_accent_color,particular_payment_methods,particular_payment_details,premium_dispatch_enabled,status,is_active")
     .eq("slug", agencySlug)
     .eq("status", "active")
     .eq("is_active", true)
     .maybeSingle();
 
-  if (!agency) notFound();
+  if (!agency || agency.premium_dispatch_enabled !== true) notFound();
 
   return <ParticularDeliveryForm agency={{
     name: agency.name,

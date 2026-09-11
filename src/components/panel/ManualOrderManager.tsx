@@ -36,6 +36,7 @@ type StoreRow = {
   payment_methods: string[] | null;
   accepts_delivery: boolean;
   accepts_pickup: boolean;
+  inventory_enabled?: boolean;
 };
 
 type CategoryRow = {
@@ -58,6 +59,14 @@ type ProductRow = {
     price_usd: number | string;
     is_available: boolean;
     sort_order: number;
+    inventory_units?: number;
+  }>;
+  product_inventory_skus?: Array<{
+    id: string;
+    code: string;
+    attributes: Record<string, string>;
+    stock_on_hand: number;
+    is_active: boolean;
   }>;
 };
 
@@ -68,6 +77,7 @@ type SelectedItem = {
   quantity: number;
   notes: string;
   selectedOptions: SelectedCartOption[];
+  inventorySelections: Array<{ skuId: string; quantity: number; label: string }>;
 };
 
 type FulfillmentType = "delivery" | "pickup" | "table" | "bar";
@@ -92,6 +102,13 @@ const ENABLE_ORDER_INTERPRETER = false;
 
 function getPaymentMethods(store?: StoreRow) {
   return store?.payment_methods?.length ? store.payment_methods : fallbackPaymentMethods;
+}
+
+function inventorySkuLabel(attributes: Record<string, string>, fallback: string) {
+  const labels = ["color", "talla", "detalle"]
+    .map((key) => String(attributes?.[key] || "").trim())
+    .filter(Boolean);
+  return labels.length ? labels.join(" · ") : fallback;
 }
 
 async function panelRequest(pin: string, url: string, options?: RequestInit) {
@@ -218,6 +235,21 @@ export function ManualOrderManager() {
   const missingVariantCustomization = Boolean(
     customizingRow && customizingVariants.length && !customizingRow.variantId
   );
+  const customizingInventorySkus = (customizingRow?.product.product_inventory_skus || [])
+    .filter((sku) => sku.is_active !== false && Number(sku.stock_on_hand || 0) > 0);
+  const requiredInventoryUnits = customizingRow && customizingInventorySkus.length
+    ? customizingRow.quantity * Math.max(
+        1,
+        Number(customizingVariants.find((variant) => variant.id === customizingRow.variantId)?.inventory_units || 1)
+      )
+    : 0;
+  const selectedInventoryUnits = customizingRow
+    ? customizingRow.inventorySelections.reduce((sum, selection) => sum + selection.quantity, 0)
+    : 0;
+  const expandedInventorySkuIds = customizingRow
+    ? customizingRow.inventorySelections.flatMap((selection) => Array(selection.quantity).fill(selection.skuId))
+    : [];
+  const missingInventoryCustomization = requiredInventoryUnits > 0 && selectedInventoryUnits !== requiredInventoryUnits;
   const missingRequiredCustomization = customizingRow
     ? customizingGroups.some((group) => {
         const selectedCount = customizingRow.selectedOptions.filter(
@@ -306,18 +338,24 @@ export function ManualOrderManager() {
       if (existing) {
         return current.map((item) =>
           item.productId === product.id
-            ? { ...item, quantity: item.quantity + 1 }
+            ? {
+                ...item,
+                quantity: item.quantity + 1,
+                inventorySelections: product.product_inventory_skus?.length
+                  ? []
+                  : item.inventorySelections,
+              }
             : item
         );
       }
 
-      return [...current, { productId: product.id, variantId: "", variantName: "", quantity: 1, notes: "", selectedOptions: [] }];
+      return [...current, { productId: product.id, variantId: "", variantName: "", quantity: 1, notes: "", selectedOptions: [], inventorySelections: [] }];
     });
 
     const hasVariants = (product.product_variants || []).some((variant) => variant.is_available !== false);
     const cachedGroups = optionGroupsByProduct[product.id];
     if (cachedGroups) {
-      if (hasVariants || cachedGroups.length) setCustomizingProductId(product.id);
+      if (hasVariants || cachedGroups.length || (product.product_inventory_skus || []).length) setCustomizingProductId(product.id);
       return;
     }
     if (!selectedStore?.slug) return;
@@ -332,7 +370,7 @@ export function ManualOrderManager() {
       const data = await response.json().catch(() => ({}));
       const nextGroups = response.ok && Array.isArray(data.optionGroups) ? data.optionGroups : [];
       setOptionGroupsByProduct((current) => ({ ...current, [product.id]: nextGroups }));
-      if (hasVariants || nextGroups.length) setCustomizingProductId(product.id);
+      if (hasVariants || nextGroups.length || (product.product_inventory_skus || []).length) setCustomizingProductId(product.id);
     } catch {
       setOptionGroupsByProduct((current) => ({ ...current, [product.id]: [] }));
     } finally {
@@ -380,7 +418,13 @@ export function ManualOrderManager() {
       current
         .map((item) =>
           item.productId === productId
-            ? { ...item, quantity: Math.max(1, item.quantity + delta) }
+            ? {
+                ...item,
+                quantity: Math.max(1, item.quantity + delta),
+                inventorySelections: products.find((product) => product.id === productId)?.product_inventory_skus?.length
+                  ? []
+                  : item.inventorySelections,
+              }
             : item
         )
         .filter((item) => item.quantity > 0)
@@ -409,7 +453,7 @@ export function ManualOrderManager() {
           : Number(value?.priceDeltaUsd || 0);
         return { ...option, priceDeltaUsd };
       });
-      return { ...item, variantId: variant.id, variantName: variant.name, selectedOptions };
+      return { ...item, variantId: variant.id, variantName: variant.name, selectedOptions, inventorySelections: [] };
     }));
   }
 
@@ -417,6 +461,33 @@ export function ManualOrderManager() {
     setItems((current) => current.map((item) =>
       item.productId === productId ? { ...item, notes } : item
     ));
+  }
+
+  function selectInventorySku(productId: string, slotIndex: number, skuId: string) {
+    const product = products.find((row) => row.id === productId);
+    const sku = product?.product_inventory_skus?.find((row) => row.id === skuId);
+    setItems((current) => current.map((item) => {
+      if (item.productId !== productId) return item;
+      const expanded = item.inventorySelections.flatMap((selection) =>
+        Array(selection.quantity).fill(selection.skuId)
+      );
+      expanded[slotIndex] = skuId;
+      const totals = expanded.filter(Boolean).reduce<Record<string, number>>((result, id) => {
+        result[id] = (result[id] || 0) + 1;
+        return result;
+      }, {});
+      return {
+        ...item,
+        inventorySelections: Object.entries(totals).map(([id, quantity]) => {
+          const selectedSku = product?.product_inventory_skus?.find((row) => row.id === id);
+          return {
+            skuId: id,
+            quantity,
+            label: inventorySkuLabel(selectedSku?.attributes || {}, selectedSku?.code || "Selección"),
+          };
+        }),
+      };
+    }));
   }
 
   async function interpretMessage() {
@@ -460,6 +531,7 @@ export function ManualOrderManager() {
               quantity: Math.max(1, Math.floor(Number(item.quantity || 1))),
               notes: String(item.notes || ""),
               selectedOptions: [],
+              inventorySelections: [],
             }))
         : [];
 
@@ -554,6 +626,21 @@ export function ManualOrderManager() {
         setError(`Selecciona un tamaño o presentación para ${product?.name || "el producto"}.`);
         setCustomizingProductId(item.productId);
         return;
+      }
+      if (product?.product_inventory_skus?.length) {
+        const inventoryUnits = item.quantity * Math.max(
+          1,
+          Number(availableVariants.find((variant) => variant.id === item.variantId)?.inventory_units || 1)
+        );
+        const selectedUnits = item.inventorySelections.reduce(
+          (sum, selection) => sum + selection.quantity,
+          0
+        );
+        if (selectedUnits !== inventoryUnits) {
+          setError(`Selecciona color y talla para ${product.name}.`);
+          setCustomizingProductId(item.productId);
+          return;
+        }
       }
       for (const group of optionGroupsByProduct[item.productId] || []) {
         const selectedCount = item.selectedOptions.filter((option) => option.groupId === group.id).length;
@@ -942,9 +1029,12 @@ export function ManualOrderManager() {
                     </div>
                     <p className="font-black">{formatUsd(item.totalUsd)}</p>
                   </div>
-                  {item.selectedOptions.length || item.notes ? (
+                  {item.selectedOptions.length || item.inventorySelections.length || item.notes ? (
                     <div className="mt-3 rounded-2xl bg-[#F8F3E8] p-3 text-xs font-bold text-[#746f69]">
                       {item.selectedOptions.map((option) => option.valueName).join(" · ")}
+                      {item.inventorySelections.map((selection) => (
+                        <p key={selection.skuId}>{selection.quantity}x {selection.label}</p>
+                      ))}
                       {item.notes ? <p className="mt-1">Nota: {item.notes}</p> : null}
                     </div>
                   ) : null}
@@ -1108,6 +1198,40 @@ export function ManualOrderManager() {
               </p>
             ) : null}
 
+            {requiredInventoryUnits > 0 ? (
+              <div className="mt-4 rounded-2xl border border-[#25262B]/10 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="font-black">Color y talla</h3>
+                  <span className="rounded-full bg-[#FFF0C9] px-2.5 py-1 text-[10px] font-black uppercase text-amber-800">Obligatorio</span>
+                </div>
+                <p className="mt-2 text-xs font-bold text-[#746f69]">
+                  {requiredInventoryUnits === 1 ? "Elige la combinación disponible." : `Elige cada una de las ${requiredInventoryUnits} piezas.`}
+                </p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {Array.from({ length: requiredInventoryUnits }, (_, index) => {
+                    const selectedSkuId = expandedInventorySkuIds[index] || "";
+                    return (
+                      <label key={index} className="grid gap-1 text-xs font-black text-[#746f69]">
+                        {requiredInventoryUnits > 1 ? `Pieza ${index + 1}` : "Disponible"}
+                        <select
+                          value={selectedSkuId}
+                          onChange={(event) => selectInventorySku(customizingRow.productId, index, event.target.value)}
+                          className="h-12 rounded-2xl border border-[#25262B]/10 bg-white px-3 text-sm font-black text-[#25262B] outline-none focus:border-[#2E3A79]"
+                        >
+                          <option value="">Selecciona</option>
+                          {customizingInventorySkus.map((sku) => {
+                            const selectedCount = expandedInventorySkuIds.filter((id) => id === sku.id).length;
+                            const unavailable = selectedCount >= Number(sku.stock_on_hand) && selectedSkuId !== sku.id;
+                            return <option key={sku.id} value={sku.id} disabled={unavailable}>{inventorySkuLabel(sku.attributes, sku.code)} ({sku.stock_on_hand} disponibles)</option>;
+                          })}
+                        </select>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
             <div className="mt-4 space-y-4">
               {customizingGroups.map((group) => (
                 <div key={group.id} className="rounded-2xl border border-[#25262B]/10 p-4">
@@ -1158,15 +1282,19 @@ export function ManualOrderManager() {
           </div>
 
           <footer className="border-t border-[#25262B]/10 bg-white p-4 sm:rounded-b-[30px]">
-            {missingVariantCustomization || missingRequiredCustomization ? (
+            {missingVariantCustomization || missingRequiredCustomization || missingInventoryCustomization ? (
               <p className="mb-3 text-center text-xs font-black text-amber-700">
-                {missingVariantCustomization ? "Selecciona un tamaño o presentación." : "Completa las opciones obligatorias."}
+                {missingVariantCustomization
+                  ? "Selecciona un tamaño o presentación."
+                  : missingInventoryCustomization
+                    ? "Selecciona color y talla para cada pieza."
+                    : "Completa las opciones obligatorias."}
               </p>
             ) : null}
             <button
               type="button"
               onClick={() => setCustomizingProductId("")}
-              disabled={missingVariantCustomization || missingRequiredCustomization || loadingOptionsFor === customizingRow.productId}
+              disabled={missingVariantCustomization || missingRequiredCustomization || missingInventoryCustomization || loadingOptionsFor === customizingRow.productId}
               className="vp-button-mango w-full"
             >
               Listo · {formatUsd(customizingRow.totalUsd)}

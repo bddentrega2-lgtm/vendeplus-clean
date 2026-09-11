@@ -339,8 +339,8 @@ export function ParticularDeliveryForm({ agency }: { agency: Agency }) {
       setMessage("Esta empresa delivery aun debe configurar sus metodos de pago.");
       return;
     }
-    if (getPaymentDetailsKey(paymentMethod) === "pagoMovil" && !paymentReference.trim()) {
-      setMessage("Escribe la referencia del pago movil.");
+    if (getPaymentDetailsKey(paymentMethod) === "pagoMovil" && paymentReference.replace(/\D/g, "").length < 4) {
+      setMessage("La referencia debe tener al menos 4 digitos.");
       return;
     }
     setLoading(true);

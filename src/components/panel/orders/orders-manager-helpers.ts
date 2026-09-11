@@ -116,6 +116,7 @@ export type OrderRow = {
   order_items?: OrderItem[];
   order_integrations?: OrderIntegration[];
   transport_orders?: TransportOrderSummary[];
+  has_payment_receipt?: boolean;
 };
 
 export const statusOptions = [

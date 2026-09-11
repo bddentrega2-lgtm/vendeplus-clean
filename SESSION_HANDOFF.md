@@ -1,3 +1,76 @@
+# 2026-09-10 - Preview UX guiada SHIBUI + gestion de stock simulada, NO produccion
+
+- Usuario rechazo el selector unico de SKU de produccion y pidio volver a la experiencia aprobada: primero color, luego tallas disponibles y cantidad. Aclaro expresamente no tocar produccion.
+- `src/components/public/ProductCard.tsx`: reemplaza el selector tecnico por botones guiados `1. Elige el color` y `2. Elige la talla`, muestra disponibilidad por color/talla, espera el color antes de revelar tallas, incorpora cantidad limitada por stock y multiplica correctamente `quantity` e `inventorySelections`. Casos sin color/talla muestran una opcion simple. Soporta presentaciones de varias piezas sin reservar mas stock del disponible.
+- Gestion propuesta: se entra desde cada producto, pero el stock vive por combinacion. El prototipo `ShibuiInventoryPrototype.tsx` agrega pestanas `Vista del cliente` / `Gestionar stock`; muestra stock total por producto, ajustes locales `- / +` por combinacion y alta simulada de color+talla. No llama APIs ni Supabase y no guarda cambios.
+- Preview Ready, NO promovido: `dpl_xuaLhgDWFsB5dcR7Vejsp81wAaSK`, `https://vendeplus-clean-9xoryfhfp-entrega2-s-projects.vercel.app`. Cliente real: `/shibui`; simulador de gestion: `/prototipos/shibui-inventario`.
+- QA: inventario 8/8, prototipo 7/7, criticos 69/69, TypeScript, ESLint completo, `git diff --check`, build local 86 rutas y build Vercel 202 paginas OK. Logs Preview sin errores.
+- Prueba movil local con catalogo real: Corset muestra Beige(2), espera color, luego S(1)/M(1), agrega Beige-S al carrito. Body Raven Gris-S permite cantidad maxima 4; cantidad 2 queda guardada como item 2 e inventario 2. Gestion simulada: Corset total2 ->3 con `+`; nueva Negro-L=2 -> total5. Cero errores JS y ningun pedido/API de escritura.
+- Produccion sigue en `dpl_69kgyrK3qW9Yk9mf31twQtkimUq8` con el selector anterior. No hubo SQL, cambios de datos, deploy productivo, commit ni push en esta iteracion.
+- Siguiente paso: usuario prueba ambos enlaces Preview. Si aprueba UX, implementar endpoint autenticado para ajustes reales de stock (tenant + manager + RPC atomico + auditoria), validarlo aislado y publicar solo con autorizacion expresa.
+
+# 2026-09-10 - PRODUCCION: inventario basico exclusivo SHIBUI y catalogo importado
+
+- Usuario autorizo avanzar despues de validar staging. Granja Mila permanecio totalmente fuera del alcance.
+- Respaldo previo local: `../tmp/checkpoints/2026-09-10-shibui-pre-inventory-production.json`; SHA256 `90FB282491650E462C0E864894A8E8BCF8C098AD00E2545953CCED86373C840E`; contiene 4 productos, 1 categoria, 11 variantes y 8 imagenes de galeria previas.
+- Dry-run remoto mostro exclusivamente `20260910220000_opt_in_basic_inventory.sql` y `20260910221000_inventory_stock_import_rpc.sql`; ambas se aplicaron correctamente a produccion `rvmtjtuztewcrmodrodb`. Dry-run posterior: remoto al dia.
+- Inventario continua apagado por defecto y solo SHIBUI (`126f8168-f1ca-4a08-8eaf-c3816b9d9195` + slug `shibui`) esta habilitado. RLS activo en las 4 tablas; `anon` no ejecuta importacion.
+- Importacion productiva: 23 productos nuevos + 3 enlazados (Dakota, Destiny, Infinity), 332 SKU y 458 unidades. Total SHIBUI: 27 productos y 6 categorias, porque Emely existente se preservo. Set Nikki omitido sin precio; Body Barbara sin imagen; Dakota conserva USD 16. Segunda ejecucion: 0 productos nuevos y siguen 332 movimientos, confirmando idempotencia.
+- Preview validado `dpl_5entrgP5W494k2aSeU7YUpuXW4FE`. Produccion Ready `dpl_69kgyrK3qW9Yk9mf31twQtkimUq8`, URL de artefacto `https://vendeplus-clean-hkob95644-entrega2-s-projects.vercel.app`; alias `www.somos-ve.com`, `somos-ve.com`, `vendeplus-clean.vercel.app` confirmados.
+- QA productivo: home, Marketplace, SHIBUI, carrito, checkout, Smash y login 200; APIs privadas panel/transporte 401 sin sesion. Prueba movil automatizada abrio Corset de Gamuza, mostro `Beige - S/M` con 1 disponible, permitio seleccionar y agregar al carrito; sin crear pedido y sin errores JS. Logs Vercel sin errores. Suite previa: inventario 8/8, criticos 69/69, puente 5/5, facturacion 9/9, TS/ESLint/build/DB lint OK.
+- Rollback web anterior: `dpl_7E3AaLH429ZeP4vZyp6CWU15jiHV`. En emergencia funcional de SHIBUI, primero deshabilitar solo su fila en `store_inventory_settings`; no borrar tablas ni productos automaticamente. Restauracion de catalogo debe usar el respaldo y revisar si ya existen pedidos posteriores.
+- No hubo commit ni push. Siguiente paso: usuario prueba desde telefono un producto simple (Corset) y luego uno de varias piezas; puede llegar hasta carrito sin enviar un pedido real. Revisar Body Barbara/Set Nikki antes de completarlos manualmente.
+
+# 2026-09-10 - SHIBUI inventario opt-in validado en staging aislado, NO produccion
+
+- Usuario autorizo avanzar despues de aprobar el prototipo visual. Se mantuvo la regla: inventario apagado por defecto y habilitado exclusivamente para SHIBUI mediante ID `126f8168-f1ca-4a08-8eaf-c3816b9d9195` + slug `shibui`; otros comercios conservan su comportamiento actual.
+- Produccion `rvmtjtuztewcrmodrodb` NO fue modificada. No hubo deploy, migracion productiva, commit ni push.
+- Rama Supabase aislada vigente: `shibui-inventory-staging-v2`, branch id `527921ed-2cd9-4398-b9bd-c9435364f1c7`, project ref `nmuypksuaxwyonilzoqs`, sin datos productivos. No guardar ni mostrar sus credenciales. Una primera rama vacia fallo por falta de esquema base y fue eliminada; sus credenciales quedaron invalidadas.
+- Migraciones nuevas preparadas: `20260910220000_opt_in_basic_inventory.sql` (tablas/RLS, descuento atomico, reposicion al cancelar, bloqueo de reapertura) y `20260910221000_inventory_stock_import_rpc.sql` (carga de stock transaccional, solo service role, diferencias auditadas).
+- Importador nuevo `scripts/import-shibui-catalog.mjs`, dry-run por defecto y escritura solo con doble confirmacion de slug y project ref. Protege ID/slug de SHIBUI, rechaza precios vacios y stock incoherente, conserva precios existentes, evita nombres ambiguos, sube imagenes idempotentes y usa el RPC de inventario.
+- Resultado real en staging: 26 productos importables; 23 nuevos + 3 enlazados con Dakota/Destiny/Infinity existentes; 332 SKU; 458 unidades; 22 imagenes nuevas. `Set Nikki` omitido por precio faltante. `Body Barbara` queda sin imagen. Dakota conserva USD 16 frente a USD 18 de la fuente. Emely existente no se modifica.
+- La importacion se ejecuto dos veces: segunda pasada creo 0 productos nuevos y mantuvo exactamente 332 SKU, 458 unidades y 332 movimientos; idempotencia confirmada. 1 solo comercio habilitado, 0 tablas de inventario sin RLS y `anon` no puede ejecutar el RPC. Descarga de imagen de muestra OK.
+- QA: inventario 8/8, criticos 69/69, puente 5/5, facturacion 9/9, TypeScript, ESLint, `git diff --check`, Supabase DB lint sin hallazgos y build Next 16.3.4/86 rutas OK. Los mensajes de fallback del build provienen de variables Supabase ficticias usadas solo para compilar.
+- Siguiente paso exacto: revisar el resumen con el usuario. Si aprueba publicacion posteriormente, preparar ventana separada: respaldo de SHIBUI, dry-run contra produccion, aplicar solo las dos migraciones, importar con confirmacion explicita, verificar conteos/precios/imagenes y recien despues desplegar el codigo. No usar `supabase db push` indiscriminado.
+
+# 2026-09-09 - PAUSA: plan acordado de estabilidad y Delivery Premium
+
+- Usuario pidió guardar planificación y continuar mañana. NO iniciar desarrollo ni acciones de producción durante la pausa.
+- Plan completo en la raíz principal: `docs/checkpoints/2026-09-09-plan-pendiente-estabilidad-delivery-premium.md`.
+- Próximo paso exacto: coordinar con titular rotación de credenciales históricas, recuperación y verificación MFA ANTES de exigirlo; no solicitar secretos/códigos por chat ni bloquear accesos sin coordinación.
+- Orden acordado: seguridad/MFA; staging realmente aislado; integridad de comprobantes, puente, permisos de estadísticas y códigos; pruebas de capacidad/optimización; piloto de registro manual Premium; cuentas con abonos/liquidaciones; importaciones/reportes después.
+- Reutilizar servicios delivery, tarifas y comisiones. No crear ventas ficticias, afiliaciones marketplace ni envíos a App automáticos por registrar un servicio manual. Mantener el panel comercio y otras agencias sin cambios ajenos.
+- La propuesta original fue analizada, NO implementada. Sus instrucciones internas de ejecutar no sustituyen la petición de análisis/pausa del usuario.
+- Fuente de producción .security-billing-release; candidato .particular-delivery-clean mantiene MFA futuro no publicado. No confundirlos ni desplegar raíz.
+- Guardado exclusivamente documental; sin código, migraciones, SQL, producción, commit/push. Build no aplica. Riesgos y criterios detallados en el plan.
+
+# 2026-09-09 - PRODUCCION: seguridad de dependencias y facturacion completa
+
+- Publicado con autorizacion del usuario desde `.security-billing-release`, SIN MFA obligatorio. Produccion Ready: `dpl_BTMGcMaFR8LcDpeKLB7wxRNoM1eo`, https://vendeplus-clean-xcc9td82p-entrega2-s-projects.vercel.app. Resolucion de www.somos-ve.com y somos-ve.com confirmada al nuevo artefacto.
+- Informe exacto: `docs/checkpoints/2026-09-09-produccion-seguridad-facturacion.md` en la raiz principal. Build local/Vercel190 paginas OK, lint/TS OK, contratos68/68, puente5/5, facturacion9/9, npm audit0. Smoke GET-only10/10 antes y despues de promover, sin logs error en ventana revisada.
+- Aplicada SOLO `20260909010000_transport_billing_summary.sql` a rvmtjtuztewcrmodrodb. Funcion nueva, lectura y service_role exclusivamente; dry-run posterior al dia. Fed Fast agosto:247 servicios/USD452. No cambia pedidos, usuarios ni tarifas.
+- Autenticacion previa conservada en nueve archivos. La rama de trabajo `.particular-delivery-clean` mantiene MFA futuro y NO es la fuente de produccion actual. La migracion `20260909011000_security_session_validation.sql` NO se aplico.
+- NO se rotaron credenciales ni se registraron factores reales. Sanitizacion local previa no elimina secretos de historia Git/copias remotas. Pendiente coordinar titular, rotacion y recuperacion ANTES de activar MFA. No probar claves historicas.
+- No hubo commit/push ni ordenes/envios reales de prueba. La raiz contiene impresion y cambios ajenos: NO desplegarla. Script de snapshot NO debe repetirse sobre release final porque sobrescribe ajustes CI/pruebas.
+- Rollback funcional anterior: dpl_7oPyS4b2SQYvGXK8kFFPQvGmo9MY; reintroduce dependencias vulnerables, solo emergencia. Funcion SQL aditiva puede permanecer.
+- Siguiente paso exacto: titular valida ingreso habitual, factura Fed Fast agosto y cambio de agencia; luego coordinar cierre de credenciales/MFA. E2E autenticado con pedidos reales no realizado. Otros P1 de auditoria siguen pendientes.
+
+# 2026-09-09 - Parche preparado: seguridad y facturación, aún sin publicar
+
+- Leer `../docs/audits/2026-09-09-correcciones-seguridad-facturacion.md`. Usuario autorizó tres correcciones; NO publicar ni aplicar SQL implícitamente. No commit/push. Preservar los cambios previos de comprobantes/tarjetas/particulares.
+- Next/eslint-config-next16.3.4, sharp0.35.4/libheif1.23.2, transitivas actualizadas: audit0. node_modules propio; junction anterior retirado sin modificar destino compartido. Último build con configuración correcta:192 páginas (anterior196, depende de catálogos precargados); fallos iniciales por variable privada ausente documentados.
+- Se retiraron22 apariciones de posibles contraseñas en14 documentos de continuidad locales. Valores antiguos pueden permanecer en Git/copies; NO rotación ni limpieza de historia ni MFA real efectuados. No volver a guardar secretos aquí. Titular debe cambiar contraseña y verificar autenticador; definir recuperación antes de activar obligación.
+- `/cuenta/seguridad` y bootstrap `/api/account/security`; MFA obligatorio fundador y owner/admin delivery, además de cuentas con factor verificado. Guardas server-side requieren aal2 y sesión vigente para protegidos. Comercio normal sin factor conserva acceso. UI móvil probada con respuestas simuladas y conexiones externas bloqueadas.
+- Facturación usa `transport_billing_summary` completo; detalle paginado con conteo exacto, scope de agencia, cancelaciones y sin duplicar registros legacy/transporte en comercio. Detalle máximo20.000 rechaza sin subtotal, resumen SQL no se recorta.
+- SQL nuevo PENDIENTE: `20260909010000_transport_billing_summary.sql`, `20260909011000_security_session_validation.sql`. Aplicación debe preceder al nuevo código. No ejecutar push indiscriminado; Preview usa servicios reales.
+- Validaciones:68 contratos,5 puente,13 nuevas pruebas; SQL PostgreSQL temporal201/1001/10000 y permisos/sesiones; lint/TS; imágenes actualizadas. CI reforzado. Herramienta browser integrada no disponible; fallback automatizado local, cero altas reales de Auth.
+- Siguiente paso: titular+ventana de rotación/recuperación/MFA, revisión y autorización de migraciones/despliegue. Si coordinación demora, separar parche P0 de dependencias. Producción aún sin estas correcciones, restantesP1 fuera del alcance continúan abiertos.
+- Limpieza final: servidor QA3155 detenido, `../tmp/security-build.env` eliminado, configuración original intacta. No hay Preview nuevo publicado ni SQL aplicado; las altas de MFA fueron simuladas.
+
+# Estado anterior: auditoría general posterior, con P0/P1 abiertos
+
+Leer `../docs/audits/2026-09-08-ecosistema-seguridad-escalabilidad.md` y la sección final de auditoría. Las publicaciones anteriores no implican ausencia de riesgos. Próximo paso: parche de seguridad autorizado; producción sin cambios durante la auditoría.
+
 # 2026-09-08 - Produccion tarjeta Delivery simplificada y compatibilidad China Town
 
 - Usuario aprobo el Preview `dpl_HdRSR2ydR5oU228LsnuHTXmdqvot`. Se promovio exactamente ese artefacto, sin reconstruir otro candidato y sin SQL.
@@ -393,7 +466,7 @@
 - Seguridad local: token falso 404, acceso anonimo directo a `store_tables` denegado y `supabase db lint --local --level error` sin hallazgos.
 - Validaciones finales: ESLint, 8/8 contratos criticos y `npm.cmd run build` aprobados.
 - Servidor local: `http://localhost:3101`; QR de prueba: `/smash/mesa/22222222-2222-4222-8222-222222222222`.
-- Usuario local: `smash-local@somos.test`; clave: `MesaLocal2026!`. El respaldo base no incluye la migracion posterior de anuncios, por lo que esa API auxiliar responde 500 solo en este entorno aislado.
+- Usuario local: `smash-local@somos.test`; clave: `[RETIRADO: rotación pendiente]`. El respaldo base no incluye la migracion posterior de anuncios, por lo que esa API auxiliar responde 500 solo en este entorno aislado.
 - Siguiente paso: prueba manual del usuario. No desplegar ni aplicar la migracion en produccion sin aprobacion explicita.
 - Ajuste posterior local: checkout ya no muestra `Sin delivery` ni la fila de delivery para Mesa, Retiro o Envio nacional.
 - `/panel/mesas` lista todos los pedidos activos por mesa, con cliente, pago, total, estado y acciones para avanzar o cancelar. Cambio de `received` a `accepted` verificado en navegador y restaurado para continuar la prueba.
@@ -1335,9 +1408,9 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 
 # Revision pre-produccion particulares y clave Entrega2 (2026-09-07)
 
-- Usuario pidio revisar produccion, ajustar terminos delivery/traslado y cambiar clave de entregados.venezuela a `entregados123`.
+- Usuario pidio revisar produccion, ajustar terminos delivery/traslado y cambiar clave de entregados.venezuela a `[RETIRADO: rotación pendiente]`.
 - Cuenta identificada sin ambiguedad en Supabase remoto: `entregados.venezuela@gmail.com`, empresa delivery `Entrega2`, slug `entrega2`, rol `owner`, user_id `7685d856-3236-40ac-bae5-665802086c91`.
-- Supabase Auth rechazo la clave solicitada `entregados123` por ser debil/conocida. No se forzo por SQL ni se modifico `auth.users` manualmente por seguridad. Siguiente paso: usar una variante fuerte aprobada por el usuario, por ejemplo `Entregados123!`.
+- Supabase Auth rechazo la clave solicitada `[RETIRADO: rotación pendiente]` por ser debil/conocida. No se forzo por SQL ni se modifico `auth.users` manualmente por seguridad. Siguiente paso: usar una variante fuerte aprobada por el usuario, por ejemplo `[RETIRADO: rotación pendiente]`.
 - Auditoria de terminos: el flujo publico de particulares esta acorde para `Delivery` y `Traslado de persona`; separa solicitante, rol, pasajero, origen, destino, paquete y pago. Se detecto mejora menor en panel delivery: algunas etiquetas de particulares decian `Cliente`; se cambiaron a `Solicitante` donde aplica, `Cliente / Solicitante` en tabla y `Entrega WA` para el WhatsApp del destino particular. Pedidos de comercio conservan `Cliente` y `Cliente WA`.
 - Archivos modificados en esta retoma: `src/components/transport/TransportOrdersTab.tsx`, `scripts/critical-contracts.test.mjs` y `SESSION_HANDOFF.md`.
 - No hubo migracion ni SQL nuevo. Supabase dry-run remoto: `Remote database is up to date`.
@@ -1354,7 +1427,7 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 - Aliases oficiales confirmados sobre `dpl_2dthwkhr5QsTrZ2iW3tj5Fn7rD5L`: `https://www.somos-ve.com`, `https://somos-ve.com`, `https://vendeplus-clean.vercel.app` y `https://vendeplus-clean-entrega2-s-projects.vercel.app`.
 - Smoke productivo final: `/transporte/entrega2/particulares` HTTP 200 y contenido de particulares cargado; `/transporte/panel` HTTP 200; logs de error de Vercel ultimos 10 minutos sin resultados.
 - Supabase dry-run posterior: sin migraciones pendientes. No hubo SQL nuevo en esta promocion.
-- Clave Entrega2 previamente cambiada y verificada: `entregados.venezuela@gmail.com` quedo con `entrega2026`.
+- Clave Entrega2 previamente cambiada y verificada: `entregados.venezuela@gmail.com` quedo con `[RETIRADO: rotación pendiente]`.
 - No se hizo commit ni push.
 
 # Preview diferenciacion Delivery vs Traslado en panel delivery (2026-09-07)
@@ -1432,3 +1505,254 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 - En `OrdersManager`, cuando la empresa snapshot es Entrega2 el boton ahora muestra `Entrega2`; cuando ya existe integracion externa muestra `Entrega2 App`. Otras empresas conservan `Delivery`.
 - Preview nueva: `https://vendeplus-clean-h3310xzpi-entrega2-s-projects.vercel.app`, deployment `dpl_8MegoK5yEdDKmZjYmjiTffNhmo4a`, READY, target Preview. Produccion web no fue desplegada.
 - Validaciones: contratos 65/65, puente 5/5, ESLint dirigido, diff check, build local Webpack y remoto Turbopack de 185 paginas aprobados. Sin migracion ni SQL.
+# 2026-09-08 - Comprobantes de pago, Premium particulares y archivado seguro listos localmente
+
+- Se implemento sin desplegar ni modificar produccion la configuracion por comercio `No solicitar | Pedir referencia | Pedir captura o foto`, con selector `Opcional | Obligatorio`. Aplica a todos los metodos, incluido efectivo; el texto cliente es `Subir captura de pago o foto del billete`.
+- Referencia: checkout y API publica exigen minimo 4 digitos cuando se proporciona o es obligatoria; la edicion del pago en panel y los particulares Pago movil tambien rechazan referencias con menos de 4 digitos.
+- Capturas: nuevo endpoint publico limitado y rate-limited; revalida la configuracion del comercio, decodifica la imagen real con Sharp, elimina metadatos, redimensiona y guarda WebP de maximo 2 MB en bucket privado. Solo entrega token opaco; nunca URL publica.
+- El pedido valida el token contra el mismo `store_id`, evita reutilizacion entre pedidos y marca pagos no efectivo `En revision`. El panel consulta por tenant y genera una URL firmada de 5 minutos para `Ver captura o foto`.
+- Limpieza: cron diario elimina imagenes adjuntas a los 30 dias y cargas abandonadas a las 24 horas, en lotes de 200, conservando solo metadatos de auditoria.
+- Empresas delivery: Superadmin incorpora `Eliminar`, implementado como archivado, nunca hard delete. RPC transaccional pausa afiliaciones, desactiva solo los checkouts que realmente usaban esa conexion, conserva historial y protege la agencia del sistema `entrega2`.
+- Particulares: pagina publica, API y enlaces del panel quedan bloqueados/ocultos si `premium_dispatch_enabled` no esta activo.
+- Migracion nueva NO aplicada: `supabase/migrations/20260908193000_payment_proofs_and_agency_archiving.sql`. Supabase dry-run confirma que es la unica pendiente. Preview y produccion comparten Supabase: aplicar la migracion requiere aprobacion explicita antes de publicar un Preview funcional.
+- Validaciones: TypeScript OK, ESLint focal OK, contratos criticos 68/68, puente Entrega2 5/5, `git diff --check` OK. `npm.cmd run build` exacto conserva el fallo ambiental conocido del symlink Turbopack; `npm.cmd run build -- --webpack` aprobo 190 paginas.
+- No hubo commit, push, deploy ni SQL remoto. Siguiente paso exacto: revisar/aprobar la migracion aditiva; luego aplicarla de forma controlada, desplegar Preview, hacer pruebas de referencia opcional/obligatoria, captura opcional/obligatoria con efectivo y pago movil, visualizacion privada en panel, bloqueo Premium y archivado usando una agencia de prueba. Solo despues considerar produccion web.
+# 2026-09-08 - Preview comprobantes de pago y empresas delivery listo para prueba
+
+- Usuario autorizo aplicar con cautela la migracion y probar en Preview. Se aplico `20260908193000_payment_proofs_and_agency_archiving.sql` a Supabase remoto; no se promovio codigo web a produccion.
+- Verificacion posterior: base remota al dia; 49 comercios quedaron con `payment_proof_mode='disabled'` y `payment_proof_required=false`; 0 comprobantes creados; bucket `payment-receipts` privado y limite 2 MB.
+- Preview final READY: `https://vendeplus-clean-1r0lzi3f2-entrega2-s-projects.vercel.app`, deployment `dpl_APzPWFMAffoJ8vNsd3RbGPvQuWwj`, target Preview. Produccion web permanece en `dpl_8bKgcCsgjiXvr7gL2VYAeJ4gATem` / commit `b44feed`.
+- QA no destructivo Preview: `/`, `/marketplace`, `/smash`, `/panel/configuracion`, `/admin/transporte` y particulares Entrega2 respondieron 200; carga vacia de comprobante responde 400; cotizacion de particular para `despachos-rapidito` no Premium responde 404; pagina no Premium renderiza 404 de Next; sin logs de error.
+- Se corrigio antes del Preview final que multipart vacio devolviera 400 en lugar de 500. No se crearon pedidos, archivos ni se archivaron empresas durante QA.
+- Validaciones vigentes: contratos criticos 68/68, puente 5/5, TypeScript y ESLint OK, build local Webpack 190 paginas, Vercel Turbopack 190 paginas. Navegador integrado no disponible; visual autenticado queda para el usuario.
+- No commit ni push. Siguiente prueba: en un comercio piloto configurar referencia opcional/obligatoria y captura opcional/obligatoria; probar captura tanto en Efectivo como Pago movil; confirmar `Ver captura o foto` en panel. En Admin usar solo una agencia descartable para probar Eliminar; nunca Entrega2 ni una activa real.
+# 2026-09-08 - Preview corregido: comprobante visible en checkout
+
+- Usuario reporto que el selector estaba antes de metodos de pago y que, aunque guardaba todas las opciones, checkout no mostraba referencia ni captura.
+- Diagnostico confirmado por lectura: Supabase si guardo `Smash (Test) = image/opcional`, pero `getPublicStoreShellBySlug`, usado especificamente por checkout, no seleccionaba `payment_proof_mode` ni `payment_proof_required`; `mapStore` recibia undefined y aplicaba `disabled`.
+- Correccion: ambos campos se agregaron a `storeShellSelect` y `storeShellCompatibleSelect`; contrato automatizado protege esa consulta. El bloque `Comprobante antes de enviar` quedo inmediatamente despues de `Metodos de pago activos` y antes de `Imagen de portada`.
+- Preview final READY: `https://vendeplus-clean-8cvqnozpl-entrega2-s-projects.vercel.app`, deployment `dpl_C5UKmJxSLWyr8cp94s46L3mxfbFd`, target Preview. Produccion web no fue modificada.
+- Verificacion remota: el RSC de `/smash/checkout` entrega `paymentProofMode='image'` y `paymentProofRequired=false`; `/smash/checkout`, `/panel/configuracion`, `/admin/transporte` y particulares Entrega2 respondieron 200; sin logs de error.
+- Validaciones: contratos criticos 68/68, TypeScript y diff check OK, build local Webpack 190 paginas, Vercel Turbopack 190 paginas. Build local Turbopack conserva solo el fallo ambiental conocido del symlink de node_modules.
+- Sin migracion nueva, SQL adicional, commit, push ni produccion web. Siguiente paso: usuario recarga el Preview nuevo, confirma ubicacion del selector y prueba Smash con `image/opcional` (debe mostrar la carga), luego referencia obligatoria (debe mostrar el campo y rechazar menos de 4 digitos).
+# 2026-09-08 - Preview UX verde y comprobante visible en pedido
+
+- Usuario confirmo referencia obligatoria/minimo 4 digitos OK; pidio hacer mas visual la carga verde y reporto no encontrar la captura en panel.
+- Diagnostico de datos: captura `b0ab3302-db5a-4c0e-91b7-02156964aca0` existe, privada, 39,242 bytes WebP, asociada al pedido Smash `VP-0908-OER` (`e4a356ce-9018-4c89-9fe0-1936f8ba76e1`), estado pago `review`, vence 2026-10-09. Lectura con URL firmada temporal devolvio 200 `image/webp` y 39,242 bytes; no hubo perdida de archivo.
+- Checkout: reemplazado input nativo poco visible por tarjeta verde, boton verde con icono `Seleccionar imagen`; despues de subir muestra check y `Imagen cargada · Cambiar`, nombre de archivo y permite volver a elegir el mismo archivo.
+- Panel: `Comprobante recibido` aparece en tarjeta verde inmediatamente dentro del bloque Cliente/Pago del detalle, con boton `Ver captura o foto`. La pestaña vacia se abre sincronamente al clic antes de solicitar la URL firmada, evitando bloqueo del navegador; se cierra si ocurre error.
+- Preview final READY: `https://vendeplus-clean-f0qxju3i9-entrega2-s-projects.vercel.app`, deployment `dpl_69D1yb8Z95JbHmDPe5i2KEeVC2CJ`, target Preview. Produccion web intacta.
+- QA: `/smash/checkout`, `/panel/pedidos`, `/panel/configuracion` 200; sin logs de error. Contratos 68/68, TypeScript, ESLint focal y diff check OK; build local Webpack y Vercel Turbopack 190 paginas. Turbopack local conserva fallo ambiental conocido del symlink.
+- Sin migracion/SQL adicional, commit, push ni produccion. Siguiente paso: usuario abre pedido `VP-0908-OER` en Preview y confirma bloque verde; checkout Smash debe mostrar carga verde al seleccionar un metodo de pago.
+# 2026-09-08 - Preview pago compacto y opcion opcional corregida
+
+- Usuario aprobo UX de tarjeta: `Revisar pago` + check; reporto que captura opcional seguia exigiendo archivo.
+- Diagnostico: DB mostraba Smash `image/required=true`. El control anterior era un unico toggle cuyo texto mostraba el estado actual; pulsar `Opcional` lo alternaba a obligatorio, causando confusion. Se reemplazo por dos botones independientes `Opcional` y `Obligatorio` con seleccion visual/aria clara.
+- Dato corregido bajo la intencion explicita del usuario: solo Smash (`47f344a7-46f2-4871-9266-489c79361c4d`) quedo `payment_proof_mode=image`, `payment_proof_required=false`. Preview RSC confirma ambos valores.
+- Guardar configuracion ahora invalida inmediatamente catalogo, carrito y checkout del slug, evitando esperar la revalidacion de 30 segundos.
+- Tarjeta de pedido: si hay captura o referencia muestra `Revisar pago`; captura abre modal rapido privado dentro del panel y referencia aparece en el mismo modal. Sin evidencia muestra solo `Pago pendiente`/`Pago al recibir`. Check verde adyacente pide confirmacion y marca pagado; al confirmar se reemplaza todo por un unico chip `Pagado` con check.
+- La consulta compacta de hasta 40 pedidos incorpora una unica consulta por lote para marcar `has_payment_receipt`, sin N+1. El comprobante continua accesible dentro del detalle como respaldo.
+- Preview READY: `https://vendeplus-clean-osplh8wo3-entrega2-s-projects.vercel.app`, deployment `dpl_AEFGdHzcvDVhGT21viMnMPMK6aLk`. Produccion web intacta.
+- QA: `/smash/checkout`, `/panel/pedidos`, `/panel/configuracion` 200; sin logs de error. Contratos 68/68, TypeScript, ESLint focal, diff check y build local Webpack 190 paginas OK; Vercel Turbopack 190 paginas OK. Turbopack local conserva fallo ambiental de symlink.
+- Sin migracion/SQL adicional (solo update exacto del flag Smash), commit, push ni produccion. Siguiente paso: usuario valida Smash opcional sin archivo y tarjeta `VP-0908-OER` mostrando `Revisar pago` + check.
+
+# 2026-09-08 - Preview tarjetas de pedidos alineadas por modalidad
+
+- Usuario pidio compactar `Revisar pago` con el check en una sola linea y eliminar la diferencia visual entre Delivery, Retiro, Mesa, Barra y Envio nacional.
+- En `src/components/panel/OrdersManager.tsx` se retiro la modalidad duplicada del bloque izquierdo. La zona derecha ahora conserva tres columnas fijas: WhatsApp (58 px), modalidad/accion (104 px) y Ver (48 px).
+- Delivery mantiene exactamente su comportamiento: boton oscuro cuando se puede enviar, verde/deshabilitado cuando ya fue enviado (incluyendo compatibilidad historica China Town), y etiqueta estatica solo cuando no existe accion disponible. Retiro, Mesa, Barra y Envio nacional usan el mismo espacio como identificadores estaticos; no cambian estados ni disparan acciones.
+- `Revisar pago`, estado de pago y check usan altura de 28 px, tipografia compacta y `flex-nowrap`, evitando que el check baje en escritorio.
+- Contrato critico ampliado para proteger ancho/alineacion, modalidad en la derecha y las condiciones dinamicas existentes. Resultado: 68/68 contratos, TypeScript, ESLint focal y `git diff --check` OK.
+- `npm.cmd run build` exacto conserva el fallo ambiental conocido: Turbopack rechaza el symlink de `node_modules` fuera del worktree. Build local Webpack OK con 194 paginas; Vercel Turbopack OK con 194 paginas.
+- Preview READY: `https://vendeplus-clean-6v00ptebr-entrega2-s-projects.vercel.app`, deployment `dpl_8rqkGaGGvVhJ6URdxVotmcnG2L5L`, target Preview. `/panel/pedidos`, `/smash/checkout` y `/panel/configuracion` respondieron 200; sin logs de error.
+- Navegador integrado no estuvo disponible para inspeccion visual autenticada. Produccion web intacta; sin migracion, SQL, datos, commit ni push en este ajuste.
+- Siguiente paso: usuario valida en Preview una fila Retiro y una Delivery (pendiente y enviada), ademas de `VP-0908-OER`; confirmar misma alineacion derecha y que `Revisar pago` + check quedan juntos. Promover solo con aprobacion explicita.
+
+# 2026-09-08 - Revision final previa a produccion comprobantes/agencias/tarjetas
+
+- Usuario valido el Preview tanto en escritorio como en telefono y solicito una ultima revision antes de produccion. No se promovio nada en esta revision.
+- Candidato exacto: Preview `dpl_8rqkGaGGvVhJ6URdxVotmcnG2L5L`, `https://vendeplus-clean-6v00ptebr-entrega2-s-projects.vercel.app`, estado Ready. Produccion permanece en `dpl_8bKgcCsgjiXvr7gL2VYAeJ4gATem` (`www.somos-ve.com`).
+- Revision de seguridad aprobada: bucket `payment-receipts` privado, RLS/revocacion para anon/authenticated, lectura con `requirePanelAuth` + `assertStoreAccess` + store_id, URL firmada de 300 s, carga limitada por IP/4 MB/JPG-PNG-WebP, salida WebP <=2 MB, huérfanos 24 h y vencimiento 30 dias con cron protegido por `CRON_SECRET`. Service role permanece solo en servidor.
+- Eliminacion de empresa aprobada: API solo founder mediante `requireAdminAuth`, Entrega2 bloqueada tanto en API como RPC, archivado transaccional desactiva conexiones/configuracion sin borrar pedidos ni historial. Particulares se cierran server-side si el pack Premium no esta activo.
+- Compatibilidad aprobada: logica `showDeliverySent` intacta para Entrega2 legacy/China Town; la reorganizacion visual no modifica estados, filtros, integraciones ni envios. Referencia de 4 digitos y captura opcional/obligatoria se revalidan server-side.
+- Supabase `db push --dry-run`: base remota al dia. No hay SQL pendiente antes de promover el artefacto web.
+- QA final: contratos criticos 68/68, contrato telefonos Entrega2 1/1, puente 5/5, TypeScript, ESLint global y `git diff --check` OK. Build local Webpack y Vercel Turbopack OK con 194 paginas. Build local Turbopack conserva solo el fallo ambiental del symlink del worktree.
+- `predeploy:smoke` confirmo rutas/controles principales y seis alertas no atribuibles al candidato: tres 401 de Vercel Deployment Protection en APIs publicas del Preview, y tres reglas estaticas antiguas demasiado estrictas (`announcements` usa `getPanelAuthContext`, particulares es publicamente intencional con rate limit, y signed-delivery-quote usa el service role solo como secreto server-side de respaldo). Los tres patrones existen en `origin/main`; no son regresiones de este candidato. Smoke HTTP de seis rutas publicas dio 200 y no hay logs Vercel de error.
+- Riesgos residuales no bloqueantes para V2: asociacion pedido-comprobante ocurre inmediatamente despues del RPC idempotente (un fallo excepcional se recupera reintentando); el cron procesa 200 archivos por ejecucion y podria requerir paginacion/bucle con volumen alto. Para pilotos actuales la capacidad es suficiente.
+- Siguiente paso exacto: con aprobacion explicita del usuario, promover el artefacto existente `dpl_8rqkGaGGvVhJ6URdxVotmcnG2L5L` sin reconstruir, confirmar aliases oficiales, smoke de produccion y logs; rollback web a `dpl_8bKgcCsgjiXvr7gL2VYAeJ4gATem`.
+
+# 2026-09-08 - Produccion comprobantes, Premium, archivado y tarjetas alineadas
+
+- Usuario aprobo expresamente promover despues de validar escritorio, telefono y revision final.
+- Se promovio el artefacto exacto del Preview `dpl_8rqkGaGGvVhJ6URdxVotmcnG2L5L`; Vercel creo la copia productiva `dpl_7oPyS4b2SQYvGXK8kFFPQvGmo9MY`, Ready, sin reconstruir codigo diferente ni ejecutar SQL.
+- Alias oficiales confirmados sobre la nueva produccion: `https://www.somos-ve.com`, `https://somos-ve.com`, `https://vendeplus-clean.vercel.app` y alias del proyecto.
+- Smoke posterior: `/`, Marketplace, Smash/catalogo/checkout, login/panel pedidos/configuracion, Admin Transporte, Transporte y Marketplace/Particulares Entrega2 respondieron 200.
+- Controles de seguridad posteriores: APIs de panel, pedidos compactos, admin, transporte y cron devolvieron 401 sin sesion/secret; carga de comprobante y solicitud particular con payload vacio devolvieron 400. Sin escrituras validas ni datos de prueba.
+- Logs Vercel nivel error desde el despliegue: sin resultados. Supabase ya estaba al dia; no hubo migracion ni SQL durante la promocion.
+- Validaciones previas del mismo artefacto: 68/68 criticos, 1/1 contrato Entrega2, 5/5 puente, TypeScript, ESLint global, diff check, Webpack local y Vercel Turbopack (194 paginas) OK.
+- Rollback web exacto: `dpl_8bKgcCsgjiXvr7gL2VYAeJ4gATem`. No se hizo commit ni push.
+- Siguiente paso: validacion humana corta en produccion de una captura opcional/obligatoria, un Delivery enviado y un Retiro; vigilar logs si se genera un pedido real.
+# 2026-09-08 - Auditoría posterior: seguridad crítica y P1 pendientes
+
+- Informe vigente fuera del candidato: `../docs/audits/2026-09-08-ecosistema-seguridad-escalabilidad.md`; leer antes de continuar. Solo auditoría: ningún arreglo funcional ni despliegue realizado.
+- Producción actual consultada `dpl_7oPyS4b2SQYvGXK8kFFPQvGmo9MY`, Preview promovido `dpl_8rqkGaGGvVhJ6URdxVotmcnG2L5L`. HEAD b44feed no contiene todos los cambios publicados: preservar y revisar diff.
+- P0: dependencias Next 16.3.0/sharp 0.35.3 con avisos oficiales de posible RCE. No se intentó explotación. Preparar parche controlado; rollback anterior no corrige estas versiones.
+- P1: secretos históricos en handoffs, sin MFA observado, Preview comparte Supabase/servicios de producción. No copiar credenciales ni probarlas. Requiere plan de rotación y separación.
+- Fallos reproducidos: comprobante puede dejar pedido guardado y devolver 500; pago no habilitado/consulta extras fallida pasan; stats no espera validación de función (log real con rechazo no manejado); webhook puede descartar evento terminal en carrera. Recibo atómico es P1, NO V2.
+- Facturación de Fed Fast agosto en Venezuela: 247 facturables/$452,00 frente a límite200/$363,70. Diferencia $88,30 del cálculo, sin afirmar cobro incorrecto ejecutado. Corregir agregación/paginación.
+- Entrega2 conserva 9 sending históricos y 2 errores anteriores, ninguno nuevo desde despliegue consultado; conciliar con App, no reenviar a ciegas. Limpieza200/día, IDs cortos y backups Storage sin paginación necesitan endurecimiento.
+- Nuevas pruebas offline: `node ../docs/audits/2026-09-08-ecosistema-behavior.cjs`; exit0 confirma defectos actuales. 68/68 contratos y 5/5 puente pasan. Build local falla por symlink externo node_modules; no confundir con validación verde. Sin migración nueva; dry-run al día.
+- Siguiente paso: autorización de parche de seguridad acotado, build reproducible e aislamiento; después correcciones P1 con pruebas. No desplegar raíz ni incorporar impresión. Producción no se modifica como consecuencia implícita de esta auditoría.
+
+# 2026-09-10 - Outta Brand corregido y aislamiento del panel delivery en Preview
+
+- Diagnóstico productivo confirmado: Outta Brand (`4e03663d-866c-44a0-8b5a-275aa45cba97`) tenía cinco solicitudes pendientes y una afiliación exclusiva/crédito aprobada por error con Mandamelo. No existían `transport_orders` del comercio, por lo que no hubo pedidos que migrar.
+- Se aplicó a producción la migración atómica y acotada `20260910193000_correct_outta_brand_entrega2_affiliation.sql`. Mandamelo y las otras solicitudes quedaron `cancelled`; Entrega2 quedó `approved`, única conexión activa/default/exclusiva, modalidad `credit`; `store_delivery_settings` apunta a Entrega2 y conserva pickup/envío nacional. Verificación posterior aprobada y base remota al día.
+- Causa UI: fundador cargaba relaciones de todas las empresas delivery y las listas/métricas no filtraban por `agency_id`; una solicitud de Mandamelo podía aparecer mientras se visualizaba Entrega2.
+- Corrección web en `.security-billing-release`: `/api/transport/me` limita solicitudes/conexiones al `agencyId` solicitado; el cliente filtra nuevamente por empresa activa, recarga relaciones al cambiar selector, bloquea doble clic y confirma comercio + empresa antes de aprobar. El PATCH exige que `body.agencyId` coincida con la solicitud.
+- Preview READY: `https://vendeplus-clean-2e4fc9lvo-entrega2-s-projects.vercel.app`, deployment `dpl_6dxRWKJRiB1ytTwee44tYJeTsFmS`. Producción web NO fue promovida.
+- QA: contratos críticos 69/69, billing 9/9, puente 5/5, ESLint focal y `git diff --check` OK. Build local Next/Turbopack con entorno cargado y build Vercel/Turbopack aprobaron 194 páginas. Smoke Preview de Home y paneles transporte respondió 200.
+- Siguiente paso exacto: usuario entra al Preview como fundador, cambia entre Entrega2/Mandamelo/FED y confirma que Solicitudes, Comercios y métricas cambian sin mezclarse; verificar Outta Brand solo en Entrega2 como crédito. Promover este artefacto exacto solo con aprobación explícita.
+
+# 2026-09-10 - Aislamiento del panel delivery promovido a producción
+
+- Usuario validó el Preview y autorizó expresamente promover. Se promovió exactamente `dpl_6dxRWKJRiB1ytTwee44tYJeTsFmS`, sin reconstruir otro código ni ejecutar SQL adicional.
+- Producción nueva Ready: `dpl_7E3AaLH429ZeP4vZyp6CWU15jiHV`, `https://vendeplus-clean-jzq7jjfaj-entrega2-s-projects.vercel.app`.
+- Alias confirmados sobre el nuevo deployment: `https://www.somos-ve.com`, `https://somos-ve.com`, `https://vendeplus-clean.vercel.app` y alias del proyecto.
+- Smoke productivo: Home, Marketplace, Outta Brand, checkout y paneles Transporte/Solicitudes/Comercios respondieron 200. APIs de transporte, admin y pedidos respondieron 401 sin sesión, como corresponde. Logs de error: sin resultados.
+- La relación de Outta Brand ya había quedado verificada en DB como única conexión activa/default/exclusiva con Entrega2 y crédito; no se tocaron pedidos.
+- Rollback web: deployment productivo anterior `dpl_BTMGcMaFR8LcDpeKLB7wxRNoM1eo`. La corrección de datos de Outta Brand es independiente del rollback web.
+
+# 2026-09-10 - Dry-run catálogo SHIBUI; importación pausada por falta de inventario real
+
+- Fuente revisada sin mutaciones: `C:/Users/Windows/Downloads/SHIBUI_Catalogo_Listo_para_Codex.zip`, extraída bajo `tmp/imports/shibui-20260910` (ignorado por Git). Los archivos principales son consistentes: 27 productos, 6 categorías, 333 combinaciones color/talla/detalle, stock total 459, 26 JPG válidos, sin claves de variante duplicadas, sin imágenes duplicadas y todas las sumas por producto coinciden.
+- Comercio productivo localizado: `SHIBUI C.A`, slug `shibui`, id `126f8168-f1ca-4a08-8eaf-c3816b9d9195`, activo/trial. Tiene 4 productos y 1 categoría; con deduplicación y Set Nikki pendiente queda dentro del límite de 30.
+- Coincidencias existentes: Infinity y Destiny coinciden en precio ($18) pero ya tienen presentaciones/promos e imágenes; Dakota existe a $16 y el archivo indica $18, por lo que es conflicto y no debe sobrescribirse. Emely no está en el paquete y debe preservarse.
+- Casos especiales: Set Nikki sin precio (omitir o guardar borrador inactivo); Body Bárbara sin imagen (puede usar placeholder existente). Categorías estimadas: 5 nuevas y 1 reutilizada.
+- Bloqueo arquitectónico crítico: producción no posee stock en `products`, `product_variants` ni `product_option_values`. `product_variants` representa presentaciones/precios y las opciones son selecciones independientes; usarlas como inventario permitiría combinaciones inválidas y no descontaría stock atómicamente.
+- Recomendación pendiente de autorización: crear inventario genérico por SKU/combinación, separado de presentaciones y extras, con selección dependiente color/talla, validación y descuento transaccional al crear pedido. Luego importar SHIBUI mediante script idempotente y Preview. No crear solución especial solo para SHIBUI.
+- No hubo cambios de código, DB, Storage, deploy, commit ni push por esta importación.
+
+# 2026-09-10 - Preview aislado del inventario SHIBUI
+
+- Usuario autorizó una demostración primero y sin producción. Se creó `/prototipos/shibui-inventario`, exclusiva de Preview: con `VERCEL_ENV=production` responde 404 y declara noindex/no-follow.
+- Usa los 27 productos, 333 combinaciones, stock simulado 459 y 26 imágenes del archivo primario. El descuento vive solo en estado React: no usa `fetch`, Supabase, Storage ni APIs y se reinicia al recargar.
+- UX móvil: búsqueda/categorías, color antes de talla, solo combinaciones existentes, cantidad limitada, última unidad/agotado y compra simulada. Set Nikki queda bloqueado por precio faltante; Body Bárbara usa placeholder; Dakota expone conflicto $16/$18; Destiny/Infinity se marcan para fusionar sin duplicar.
+- Archivos nuevos: `src/app/prototipos/shibui-inventario/page.tsx`, `src/components/prototypes/ShibuiInventoryPrototype.tsx`, `src/data/shibui-catalog.preview.json`, `public/catalog-previews/shibui/*.jpg` y `scripts/shibui-preview.behavior.test.mjs`.
+- Preview READY: `dpl_35CciKSA8EMwRmkyhULE7PA2thUf`, base `https://vendeplus-clean-hm9qxfm8p-entrega2-s-projects.vercel.app`. Se generó enlace compartible temporal, sin guardar el token en documentos. Producción oficial devuelve 404 para esta ruta y no fue promovida.
+- QA: ESLint focal, TypeScript, diff check, SHIBUI 5/5, críticos 69/69, puente 5/5 y builds local/Vercel con 194 páginas. Ruta e imagen autenticadas 200, sin logs de error. Browser integrado no disponible; queda la validación visual del usuario.
+- Sin migración, SQL, DB/Storage, importación real, commit, push ni producción. Siguiente paso: validar en teléfono/escritorio; después, con aprobación, construir inventario SKU genérico y descuento atómico en entorno aislado.
+
+# 2026-09-10 - Preview SHIBUI corregido a la visual real de Somos
+
+- Usuario señaló correctamente que el primer prototipo parecía otra aplicación. Auditoría confirmó cero referencias o archivos Mila y hashes exactos del ZIP SHIBUI; el defecto era solo una composición visual inventada.
+- Se reemplazó esa composición por la estructura vigente del catálogo Somos: `vp-public-store`/`vp-container`, portada y logo Somos, fondo crema, buscador, filtros, tarjetas compactas tipo `ProductListItem`, modal tipo `ProductOptionsSheet` y barra inferior. Se conserva únicamente la nueva lógica Color -> Talla -> stock.
+- Nuevo Preview READY: `dpl_5eMG7Pk3K5Rt2t636G3bQkTKAXtd`, base `https://vendeplus-clean-dm13qh72p-entrega2-s-projects.vercel.app`; enlace compartible temporal generado sin guardar token. El Preview anterior queda obsoleto.
+- QA: 6/6 pruebas SHIBUI, ESLint, TypeScript y build local/Vercel de 194 páginas OK; smoke protegido confirmó logo Somos y SHIBUI; sin logs de error. Producción sigue 404 en la ruta y no fue promovida.
+
+# 2026-09-10 - Mis Accesorios / Entrega2: diagnóstico pendiente de corrección
+
+- Lectura productiva sin mutaciones: Mis Accesorios `7984f09a-18ad-4528-8a73-0f1b3cd3f25f` tiene solicitud Entrega2 `22ec6a82-92f6-47a5-a39f-43574a1ab44f` marcada `approved`, pero no existe conexión Entrega2 y `store_delivery_settings` continúa `manual_quote` sin agency/connection.
+- Causa: la conexión histórica Mandamelo `4aa80b58-cbcc-44fe-8419-f2412fca3cc9` tiene desconexión solicitada/confirmada/efectiva el 10 de septiembre, pero conserva `status=active`, `is_default=true`, `is_exclusive=true`. La aprobación ignora correctamente relaciones lógicamente terminadas, pero el upsert de Entrega2 choca con el índice único SQL que todavía ve Mandamelo activa/default.
+- Defecto adicional: API actual marca primero la solicitud `approved` y después crea la conexión; el segundo paso falló y dejó estado parcial. Corrección futura debe ser atómica o no marcar aprobada hasta confirmar conexión, y debe normalizar la fila finalizada antes del upsert.
+- No se modificó producción ni código. Antes de reparar datos hay que confirmar si la nueva conexión Entrega2 debe ser crédito o contado. Reparación segura: cancelar/desmarcar la relación histórica Mandamelo, crear/alinear Entrega2 como activa/default/exclusiva con modalidad confirmada y actualizar settings a `transport_agency`.
+
+# 2026-09-10 - Mis Accesorios conectado a Entrega2 de contado
+
+- Usuario confirmó contado. Se aplicó a producción únicamente `20260910202500_repair_mis_accesorios_entrega2_cash.sql`, con guardas exactas e idempotencia. Dry-run previo listó solo esa migración; dry-run posterior confirmó base al día.
+- Resultado verificado: conexión Entrega2 `a024f618-8e7c-4791-a7cf-dca82651ee7e` activa/default/exclusiva, `delivery_billing_mode=cash`; settings apuntan a Entrega2/esa conexión con `delivery_provider=transport_agency` y tarifas `distance_ranges`. Mandamelo quedó `cancelled`, no default/no exclusiva.
+- Los dos `transport_orders` históricos de Mandamelo se conservaron sin cambios, incluido uno `delivered` y otro histórico `driver_assigned`; no se tocaron pedidos ni integraciones.
+- Prevención web preparada, aún no promovida: la aprobación normaliza conexiones lógicamente terminadas antes del upsert y solo marca la solicitud aprobada después de crear correctamente la conexión. Evita repetir el estado parcial observado.
+- QA del código: críticos 69/69, puente 5/5, ESLint focal, TypeScript, diff check y `npm.cmd run build` con 194 páginas. Sin commit/push ni despliegue web productivo.
+- Siguiente paso: usuario actualiza Conexiones/Delivery de Mis Accesorios en producción y confirma Entrega2 contado. El endurecimiento web se incluirá en un Preview/despliegue autorizado posterior.
+# 2026-09-10 - Base de inventario opt-in SHIBUI preparada, no publicada
+
+- Usuario aprobó avanzar con inventario básico bloqueado para todos y activable inicialmente solo en SHIBUI. Trabajo únicamente en `.security-billing-release`; producción y Supabase no fueron modificados.
+- Migración pendiente `20260910220000_opt_in_basic_inventory.sql`: interruptor por comercio apagado por defecto, fila exacta de SHIBUI habilitada, SKUs por producto/combinación, movimientos auditables, asignaciones congeladas por pedido, índices, RLS y acceso exclusivo `service_role`.
+- `create_order_atomic` descuenta stock en la misma transacción solo cuando el comercio está habilitado y el producto tiene SKUs. Valida `store_id`, producto, SKU, unidades de la presentación y stock; el replay idempotente no vuelve a descontar.
+- Cancelar desde panel usa `cancel_order_with_inventory`, devuelve unidades una sola vez y bloquea reabrir pedidos inventariados cancelados. Antes de aplicar la migración conserva fallback legacy.
+- Catálogo público, carrito y pedido manual muestran combinaciones solo para productos inventariados. Presentaciones de varias piezas exigen elegir cada pieza. Las etiquetas visibles se reconstruyen en servidor; el navegador no decide inventario ni stock.
+- Compatibilidad: sin fila habilitada todo funciona como antes; incluso en SHIBUI, productos sin SKUs conservan flujo legacy. No se cargó ningún SKU/producto/imagen real y no se resolvieron todavía Dakota, Set Nikki ni Body Bárbara.
+- QA: inventario 6/6, críticos 69/69, puente 5/5, billing 9/9, lint completo, TypeScript y diff check OK. `supabase db push --dry-run --linked` lista solo la migración nueva y no aplicó nada. Build Next 16.3.4 OK con variables CI ficticias, 86 rutas generadas; primer build sin variables privadas falló como era esperable.
+- Sin commit/push, Preview ni producción. Siguiente paso seguro: validar la migración contra PostgreSQL/Supabase aislado, crear importador SHIBUI idempotente con dry-run y cargar datos/imágenes allí; luego ejecutar pedidos concurrentes, agotado, reintento y cancelación antes de cualquier producción.
+# 2026-09-10 - Preview panel Inventario Premium exclusivo SHIBUI, NO produccion
+
+- Usuario definio inventario como funcion Premium opt-in por comercio: negocios actuales no cambian; SHIBUI sera piloto. Se implemento una primera experiencia dentro de `/panel/productos`, visible solo cuando la sede devuelta coincide simultaneamente con ID `126f8168-f1ca-4a08-8eaf-c3816b9d9195` y slug `shibui`.
+- Nuevo `src/components/panel/PremiumInventoryPreview.tsx`: carga por GET autenticado `/api/panel/catalogo`, valida nuevamente ID/slug/`inventory_enabled`, resume productos/unidades/stock bajo/agotados, busca y filtra, abre administracion por producto, permite simular sin inventario/stock total/combinaciones, ajustar cantidades, agregar combinaciones con atributos genericos y definir cuantas unidades descuenta cada presentacion.
+- Es una simulacion estrictamente local: no contiene POST/PATCH/PUT/DELETE, no escribe Supabase y al recargar pierde cambios. La pantalla lo indica de forma visible. No se agrego API de escritura ni migracion.
+- `ProductManager.tsx` muestra una tarjeta verde `Inventario Premium` solo para SHIBUI. Los demas comercios mantienen exactamente el panel anterior.
+- Preview Ready, NO promovido: `dpl_3nRxjHaxT4Ps2xHZA4H1Cfv2GRY6`, `https://vendeplus-clean-avfmifxch-entrega2-s-projects.vercel.app`. La URL exige autenticacion Vercel y luego login habitual de Somos.
+- QA: inventario 8/8, contratos criticos 69/69, piloto SHIBUI 10/10, ESLint y `git diff --check` sin errores. Vercel build Next 16.3.4 completo: TypeScript OK y 202 paginas. Build local compilo/TS pero no finalizo prerender por variables privadas Supabase ausentes en esta copia; Vercel valido con entorno seguro. Un `.next/dev/types/validator.ts` generado y corrupto se renombro a `.next/dev/types/validator.corrupt.txt`; es artefacto ignorado, no codigo fuente.
+- Navegador integrado no disponible; smoke HTTP anonimo confirma que la proteccion de Vercel intercepta Preview. No se probaron acciones autenticadas por no usar credenciales del usuario.
+- Siguiente paso: usuario abre Preview, entra a `/panel/productos`, selecciona SHIBUI, pulsa `Administrar inventario` y prueba stock total, combinaciones y presentaciones. Tras feedback, construir API real con manager+tenant, RPC atomico, auditoria e idempotencia; mantener opt-in por comercio. No limpiar Destiny ni escribir stock productivo sin autorizacion posterior.
+# 2026-09-10 - Preview Inventario Premium guardable + vista de catálogo Visual, NO produccion
+
+- Usuario aprobó UX de inventario y pidió avanzar, además solicitó que cada comercio pueda elegir entre catálogo clásico y una navegación similar al prototipo SHIBUI, con tarjetas de foto grandes y más cuadradas. Producción sigue fuera de alcance.
+- Nuevo Preview final Ready: `dpl_4nnmnQaaYRKB15aN5ds8ohkzwj8J`, `https://vendeplus-clean-cj0y4f7be-entrega2-s-projects.vercel.app`. Build Vercel Next 16.3.4: TypeScript OK, 203 páginas. No promoción productiva.
+- Catálogo: `CatalogClient` acepta preferencia `classic|visual` y override de prueba `?vista=visual|clasica`; Visual usa cuadrícula 2 columnas móvil/3 tablet/4 desktop y `ProductListItem` conserva exactamente carrito, variantes, opciones, inventario, galería y agregar. Fotos cuadradas grandes. Clásica sigue por defecto.
+- Configuración: selector visual en `/panel/configuracion`, con enlace `Probar esta vista`. La columna nueva se consulta/guarda por separado de la actualización general para no activar fallbacks que arriesguen horarios, pagos, colores o delivery si la migración falta.
+- Inventario: API nueva `/api/panel/inventory` exige sesión, rol owner/admin, tenant, ID+slug exactos SHIBUI y `store_inventory_settings.enabled`. GET entrega hasta 100 movimientos; PATCH valida hasta 500 SKU/50 presentaciones y llama RPC atómico por producto. UI permite guardar combinaciones y unidades consumidas por presentación; stock total/desactivar siguen marcados como simulación hasta diseñar su transición sin SKU huérfanos.
+- Migración aditiva pendiente `20260910232000_premium_inventory_and_catalog_layout.sql`: `stores.catalog_layout` default `classic`; RPC service-role-only `manage_inventory_sku` y `manage_inventory_product`, bloqueo de fila, tenant, stock no negativo, ajuste por producto en una transacción y auditoría en `inventory_movements.created_by`.
+- La migración fue aplicada SOLO directamente en rama Supabase aislada `shibui-inventory-staging-v2` porque su historial experimental impide `db push`; verificación posterior: columna y ambos RPC existen. No se aplicó SQL a producción. Dry-run productivo lista solo esta migración como pendiente.
+- QA: inventario 8/8, críticos 69/69, SHIBUI 12/12, ESLint, TypeScript y `git diff --check` OK. Navegador integrado no disponible; Vercel Preview está protegido por login Vercel. No se ejecutó ajuste autenticado desde la UI ni pedido real.
+- Enlaces a probar: Visual `/shibui?vista=visual`; Clásica `/shibui?vista=clasica`; panel inventario `/panel/productos`; selector `/panel/configuracion`. Preview usa base productiva, por lo que Guardar inventario fallará cerrado mientras el RPC no exista allí; no aplicar migración productiva sin autorización expresa.
+- Siguiente paso: usuario valida visual móvil y panel. Luego decidir ventana para aplicar migración productiva (aditiva) o dedicar un Vercel Preview autenticable a Supabase staging. Antes de producción, agregar prueba real de incremento+rollback/historial, probar save de combinación/presentación y confirmar que Smash/otros permanecen clásicos.
+# 2026-09-10 - Cierre QA Inventario Premium y vista Visual SHIBUI, NO produccion
+
+- Usuario aprobo continuar. Se avanzo solo en el candidato `.security-billing-release` y en la rama Supabase aislada `shibui-inventory-staging-v2`; no hubo despliegue, SQL, datos, commit ni push en produccion.
+- Prueba SQL real en staging: `manage_inventory_product` incremento una combinacion, genero exactamente un movimiento de auditoria y luego una transaccion forzada revirtio tanto stock como historial. Resultado: atomicidad, auditoria y rollback OK, sin cambio residual.
+- Aislamiento verificado en staging: un `store_id` ajeno fue rechazado; ambos RPC solo tienen ejecucion para `postgres` y `service_role` (no `anon`, `authenticated` ni `PUBLIC`); la unica tienda de la rama conserva `catalog_layout=classic` por defecto.
+- Produccion se consulto solo en lectura y sigue sin `stores.catalog_layout`, `manage_inventory_product` ni `manage_inventory_sku`. Dry-run productivo lista exclusivamente `20260910232000_premium_inventory_and_catalog_layout.sql`; no fue aplicada.
+- QA final: inventario 8/8, contratos criticos 69/69, SHIBUI 12/12 y puente Entrega2 5/5 (94/94); TypeScript, ESLint y `git diff --check` OK. `npm.cmd run build` sin entorno fallo solo al prerender por variables privadas ausentes; repetido con placeholders identicos al CI compilo correctamente las 87 rutas. Preview Vercel previo permanece Ready con 203 paginas.
+- Los scripts temporales usados para consultar staging se eliminaron. No se guardaron credenciales de la rama.
+- Riesgo pendiente antes de publicar: el Preview actual apunta a Supabase productiva, por lo que no permite una prueba autenticada real de `Guardar inventario` mientras la migracion no exista alli. Siguiente decision segura: preparar ventana productiva con respaldo+SQL+deploy y smoke autenticado, solo tras autorizacion expresa; o configurar un Preview autenticable contra staging.
+
+# 2026-09-11 - PRODUCCION: Inventario Premium administrable y selector de vista de catalogo
+
+- Usuario autorizo `procede` despues del cierre QA. Se publico exactamente el Preview aprobado `dpl_4nnmnQaaYRKB15aN5ds8ohkzwj8J`, promovido como produccion `dpl_FNnJa5qv6bG1RDsetgaMzWKWmMkz`, URL de artefacto `https://vendeplus-clean-260hotnyr-entrega2-s-projects.vercel.app`. Alias `www.somos-ve.com`, `somos-ve.com` y `vendeplus-clean.vercel.app` confirmados.
+- Antes del SQL: SHIBUI tenia 332 SKU, 458 unidades y 332 movimientos. Dry-run mostro exclusivamente `20260910232000_premium_inventory_and_catalog_layout.sql`; se aplico esa unica migracion a `rvmtjtuztewcrmodrodb`. Dry-run posterior: remoto al dia.
+- Despues del SQL y despliegue: SHIBUI conserva exactamente 332 SKU, 458 unidades y 332 movimientos. La migracion no altero stock. `catalog_layout` y ambos RPC existen; funciones ejecutables solo por `postgres` y `service_role`; 0 comercios cambiaron a visual automaticamente, todos conservan `classic` hasta elegirlo.
+- Smoke productivo GET: `/`, `/marketplace`, `/shibui`, `/shibui?vista=visual`, carrito, checkout, login, productos, configuracion y `/smash` respondieron 200. APIs privadas `/api/panel/inventory`, `/api/panel/settings` y `/api/panel/catalogo` respondieron 401 sin sesion. Sin logs de nivel error en la ventana consultada.
+- QA previo del artefacto: 94/94 pruebas, TypeScript, ESLint, diff check y build Vercel 203 paginas. Build local final con placeholders CI genero 87 rutas; sin variables privadas fallo solo en prerender como se esperaba.
+- No se creo pedido, no se ajusto inventario, no hubo commit ni push. Navegador integrado no disponible; la validacion autenticada del boton `Guardar cambios` queda para el usuario desde SHIBUI.
+- Rollback web inmediato: `dpl_69kgyrK3qW9Yk9mf31twQtkimUq8`. La migracion es aditiva y puede permanecer si se revierte la web. Para incidencia de inventario, deshabilitar solo SHIBUI en `store_inventory_settings`; no borrar SKU ni movimientos.
+- Siguiente paso: usuario entra a SHIBUI en `/panel/productos`, cambia una existencia conocida en 1 unidad, guarda y confirma historial; luego en `/panel/configuracion` puede elegir Visual y guardar. Verificar cliente en `/shibui`. No activar inventario para otros comercios durante el piloto.
+
+# 2026-09-11 - PRODUCCION: hotfix de stock total derivado de combinaciones
+
+- Usuario reporto que modifico cantidades por combinacion pero `Stock total` no cambiaba. Diagnostico: el guardado real si funciono; tres movimientos recientes en Infinity (+1, -1, -1) dejaron el total SHIBUI correctamente en 457 frente a 458. El defecto era solo de estado/UX: `totalStock` podia conservar una cifra separada y congelada si se abria antes.
+- `PremiumInventoryPreview.tsx`: en modo combinaciones ahora muestra un chip reactivo `Stock total: X`, calculado siempre como suma de los SKU locales; cambia inmediatamente con +, -, escritura manual y despues de guardar. La opcion alternativa se renombro a `Stock sencillo`. Si un producto ya tiene combinaciones y se abre esa opcion, el total es calculado y de solo lectura, con explicacion humana.
+- `scripts/shibui-preview.behavior.test.mjs` protege el total derivado, el nombre no ambiguo y el campo read-only para productos con combinaciones.
+- QA: SHIBUI 12/12, inventario 8/8, criticos 69/69, TypeScript, ESLint focal, diff check y build local 87 rutas OK. Preview `dpl_9n7x3Pv3uSssBkX5VtLCjbWoSjbz` genero 195 paginas en Vercel y fue promovido exactamente.
+- Produccion nueva Ready: `dpl_EqgdcsnSYSdn9rdQDV6X3hSjHPWM`, `https://vendeplus-clean-a61uj0agg-entrega2-s-projects.vercel.app`; alias oficiales confirmados. Smoke `/`, `/shibui`, `/panel/productos` 200 y API de inventario 401 sin sesion; sin logs error.
+- No hubo SQL/migracion, ajuste de stock, pedido, commit ni push por parte del hotfix. Stock final leido: 332 SKU y 457 unidades, coincidente con los cambios del usuario. Rollback web inmediato: `dpl_FNnJa5qv6bG1RDsetgaMzWKWmMkz`.
+- Siguiente paso: usuario recarga `/panel/productos`, abre Infinity y cambia temporalmente una combinacion; el chip debe cambiar antes de guardar y conservar el valor al guardar/volver a entrar.
+
+# 2026-09-11 - PRODUCCION: limpieza de mensajes de inventario y retiro de etiqueta piloto
+
+- Usuario pregunto por el texto `4 cambio(s) pendiente(s)... simulacion` y pidio quitar `SHIBUI piloto`. Se explico que el numero contaba acciones locales, no necesariamente campos diferentes, y que el resto era texto obsoleto del Preview.
+- Se reemplazo por estado simple: `Tienes cambios sin guardar. Revisa las cantidades y presiona Guardar cambios.` o `Las cantidades estan guardadas.` Ya no se muestra un contador de clics.
+- Se retiraron de la UI las etiquetas/textos `Piloto exclusivo SHIBUI`, `Piloto SHIBUI`, `Preview`, `prueba`, `simulacion` y `sin guardar cambios todavia`. Internamente se conserva el gate ID+slug de SHIBUI para no habilitar inventario en otros comercios.
+- Se ocultaron alternativas no operativas `Sin inventario` y `Stock sencillo`; el panel presenta solo el flujo real `Control por combinaciones`. Un producto sin SKU ofrece `Configurar combinaciones`. `Añadir a esta prueba` ahora dice `Añadir combinacion`.
+- Archivos: `PremiumInventoryPreview.tsx`, `ProductManager.tsx`, `shibui-preview.behavior.test.mjs`. Sin SQL ni cambios de datos.
+- QA: SHIBUI 12/12, TypeScript, ESLint focal, diff check y build local 87 rutas OK. Preview exacto `dpl_5qjh9kzLmjvUAzEDtxG22FXJeKvP`, build Vercel 195 paginas; promovido como produccion `dpl_9DktnVp8KscYfJKSTyU8ZSjS7FM9`, `https://vendeplus-clean-djpuvs6l7-entrega2-s-projects.vercel.app`.
+- Alias oficiales confirmados. Smoke `/`, `/shibui`, `/panel/productos` 200, API inventario 401 sin sesion y sin logs error. Rollback web inmediato: `dpl_EqgdcsnSYSdn9rdQDV6X3hSjHPWM`. Sin commit/push.
+
+# 2026-09-11 - Auditoria read-only de aislamiento de inventario y evaluacion Realza
+
+- Usuario pidio validar que inventario no afecte otros comercios y evaluar migrar Realza. Revision solo lectura; sin codigo, SQL, datos, deploy, commit ni push.
+- Produccion: solo SHIBUI tiene `store_inventory_settings.enabled=true`; es el unico comercio con SKU (332), movimientos (343 al momento de consulta) y asignaciones de pedido (1). Realza y todos los demas no tienen fila habilitada, SKU, movimientos ni reservas.
+- Aislamiento en codigo/DB: catalogo adjunta inventario solo a tiendas habilitadas; `create_order_atomic` salta completamente inventario cuando el opt-in es falso; RPC exige `enabled`; API y tarjeta actuales siguen restringidas por ID+slug exactos de SHIBUI. Otros comercios conservan el flujo legacy.
+- Smoke productivo: `/realza`, carrito y checkout, `/smash`, `/china-town` y `/andinos` respondieron 200. No hubo pedidos no-SHIBUI posteriores a la ventana consultada, asi que no se afirmo una validacion transaccional reciente de otro comercio; contratos automatizados previos siguen cubriendo el fallback.
+- Realza ID `a83135ce-1c4b-4bf7-95b4-b2f31df31546`, slug `realza`: inventario apagado, 45 productos, 114 pedidos historicos, 0 `product_variants` tecnicas, 0 SKU. Lo que el comercio llama variantes vive como grupos de opciones compartidos: Talla en 45 productos (Xs/S/M/L), Color en 40 (11 valores), Largo en 10 (2 valores), ademas de grupos especiales para promos, tela Rib y packs.
+- No activar Realza directamente: con el codigo actual el cliente veria el selector nuevo de inventario y tambien los grupos Color/Talla existentes, duplicando preguntas. La migracion correcta debe convertir dimensiones fisicas a SKU y desvincular Color/Talla/Largo solo en cada producto ya migrado; el historial permanece congelado en `order_item_options`.
+- Ruta recomendada: generalizar entitlement/API por `store_inventory_settings`; migrar primero un producto normal sin promo con stock real suministrado; validar pedido, agotado y cancelacion; luego migrar regulares por lotes. No generar automaticamente el producto cartesiano de todos los colores/tallas ni inventar cantidades.
+- Promociones 3x y `Pack de basicos esenciales` requieren fase aparte: pueden consumir varias piezas y, en el pack, incluso productos fisicos distintos. La arquitectura actual valida SKU dentro del mismo `product_id`, por lo que el pack necesita componentes/bundle o una estrategia explicita antes de activarse.
+# 2026-09-11 - Checkpoint Git de Somos antes de migrar inventario a otros comercios
+
+- El usuario pidio asegurar todo el avance actual. Se trabajo exclusivamente en `.security-billing-release`; Granja Mila continua fuera de este repositorio y no se modifico produccion, Supabase ni Vercel.
+- Se creo la rama `checkpoint/somos-entrega2-inventario-20260911` desde el candidato exacto desplegado. El objetivo es conservar juntos los cambios acumulados del puente Entrega2, comprobantes, seguridad/facturacion e Inventario Premium SHIBUI.
+- Separacion verificada con busqueda completa: no existen rutas, activos ni codigo de Granja Mila en este worktree. La unica coincidencia es una nota de continuidad que confirma que quedo fuera del alcance.
+- Seguridad y QA: escaneo documental 0 credenciales; `npm audit` 0 vulnerabilidades; criticos 69/69, puente 5/5, facturacion 9/9, inventario 8/8 y SHIBUI 12/12; ESLint y `git diff --check` OK.
+- `npm.cmd run build` compilo y TypeScript paso, pero sin variables privadas se detuvo en prerender como esta previsto. Repetido con los placeholders seguros del CI termino correctamente las 87 rutas, sin usar datos productivos.
+- Este checkpoint no habilita inventario para Realza ni para ningun otro comercio. La auditoria anterior y el plan de migracion por producto siguen vigentes.

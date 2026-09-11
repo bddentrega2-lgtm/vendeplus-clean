@@ -37,6 +37,7 @@ export async function GET(request: NextRequest) {
             transport_agency_distance_rates (*)
           `
           )
+          .is("archived_at", null)
           .order("created_at", { ascending: false }),
         supabase
           .from("store_transport_agency_requests")
@@ -99,6 +100,35 @@ export async function GET(request: NextRequest) {
   }
 }
 
+export async function DELETE(request: NextRequest) {
+  try {
+    const auth = await requireAdminAuth(request);
+    const body = await request.json().catch(() => ({}));
+    const agencyId = cleanTransportText(body.agencyId);
+    if (!agencyId) return badRequest("Falta la empresa delivery.");
+
+    const supabase = createSupabaseAdminClient();
+    const { data: agency, error: agencyError } = await supabase
+      .from("transport_agencies")
+      .select("id, slug, name, archived_at")
+      .eq("id", agencyId)
+      .maybeSingle();
+    if (agencyError) throw agencyError;
+    if (!agency) return badRequest("Empresa delivery no encontrada.");
+    if (agency.slug === "entrega2") return badRequest("Entrega2 es una empresa del sistema y no puede eliminarse.");
+    if (agency.archived_at) return NextResponse.json({ ok: true, archived: true });
+
+    const archived = await supabase.rpc("archive_transport_agency", {
+      p_agency_id: agencyId,
+      p_archived_by: auth.userId || null,
+    });
+    if (archived.error) throw archived.error;
+    return NextResponse.json({ ok: true, archived: true, disabledStores: Number(archived.data || 0) });
+  } catch (error) {
+    return adminErrorResponse(error, "No se pudo eliminar la empresa delivery.");
+  }
+}
+
 export async function PATCH(request: NextRequest) {
   try {
     await requireAdminAuth(request);
@@ -121,6 +151,7 @@ export async function PATCH(request: NextRequest) {
           updated_at: new Date().toISOString(),
         })
         .eq("id", agencyId)
+        .is("archived_at", null)
         .select("id, name, status, is_active, premium_dispatch_enabled")
         .single();
 
@@ -143,6 +174,7 @@ export async function PATCH(request: NextRequest) {
         `
         )
         .eq("id", agencyId)
+        .is("archived_at", null)
         .maybeSingle();
       if (readinessError) throw readinessError;
       if (!currentAgency) return badRequest("Empresa delivery no encontrada.");
@@ -166,6 +198,7 @@ export async function PATCH(request: NextRequest) {
         updated_at: new Date().toISOString(),
       })
       .eq("id", agencyId)
+      .is("archived_at", null)
       .select("id, name, status, is_active")
       .single();
 

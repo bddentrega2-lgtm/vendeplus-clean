@@ -38,6 +38,11 @@ export async function PATCH(
       return badRequest("Estado de pago inválido.");
     }
 
+    const paymentReference = cleanText(body.paymentReference, 120);
+    if (paymentReference && paymentReference.replace(/\D/g, "").length < 4) {
+      return badRequest("La referencia debe tener al menos 4 dígitos.");
+    }
+
     const supabase = createSupabaseAdminClient();
     const { data: existingOrder, error: existingError } = await supabase
       .from("orders")
@@ -56,7 +61,7 @@ export async function PATCH(
     const isVerified = paymentStatus === "verified";
     const updatePayload = {
       payment_status: paymentStatus,
-      payment_reference: cleanText(body.paymentReference, 120) || null,
+      payment_reference: paymentReference || null,
       payment_currency: cleanText(body.paymentCurrency, 20).toUpperCase() || null,
       amount_paid: optionalNumber(body.amountPaid),
       payment_bank: cleanText(body.paymentBank, 120) || null,

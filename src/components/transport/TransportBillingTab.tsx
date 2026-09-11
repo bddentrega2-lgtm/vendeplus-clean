@@ -53,6 +53,7 @@ interface TransportDriverPayout {
 }
 
 interface TransportBilling {
+  ordersCount?: number;
   driverPayouts?: TransportDriverPayout[];
   orders?: TransportBillingOrder[];
   range?: { endDate?: string | null; startDate?: string | null } | null;
@@ -136,6 +137,8 @@ export function TransportBillingTab({ agencyId, billing, currency, symbol }: Tra
       const params = new URLSearchParams({
         includeBilling: "true",
         includeRelations: "false",
+        includeConfiguration: "false",
+        agencyId,
         range: overrideRange,
       });
 
@@ -248,7 +251,7 @@ export function TransportBillingTab({ agencyId, billing, currency, symbol }: Tra
       filteredOrders,
       filteredTotal: filteredOrders.reduce((sum, order) => sum + getAmount(order), 0),
       pendingCount: orders.filter((order) => String(order.status || "") !== "delivered").length,
-      totalOrders: orders.length,
+      totalOrders: Number(billingData?.ordersCount ?? orders.length),
       totalUsd: Number(billingData?.totalUsd || 0),
     };
   }, [billingData, driverFilter, statusFilter, storeFilter]);

@@ -44,6 +44,13 @@ export async function PATCH(
     if (!transportRequest) return badRequest("Solicitud no encontrada.");
     assertAgencyManager(auth, transportRequest.agency_id, "Tu rol no permite revisar solicitudes.");
 
+    const selectedAgencyId = cleanTransportText(body.agencyId);
+    if (!selectedAgencyId || selectedAgencyId !== transportRequest.agency_id) {
+      return badRequest(
+        "La solicitud no pertenece a la empresa delivery seleccionada. Actualiza el panel e intenta de nuevo."
+      );
+    }
+
     if (!["approve", "reject"].includes(action)) return badRequest("Accion invalida.");
 
     const nextStatus = action === "approve" ? "approved" : "rejected";
@@ -106,19 +113,24 @@ export async function PATCH(
           "Para aprobar esta afiliacion como exclusiva, primero deben finalizar las otras relaciones activas del comercio."
         );
       }
-    }
 
-    const { error: updateError } = await supabase
-      .from("store_transport_agency_requests")
-      .update({
-        status: nextStatus,
-        response_notes: cleanTransportText(body.responseNotes, 300) || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", requestId);
-    if (updateError) throw updateError;
+      const endedConnectionIds = (existingConnections || [])
+        .filter((connection: any) => isTransportConnectionEnded(connection))
+        .map((connection: any) => connection.id);
 
-    if (action === "approve") {
+      if (endedConnectionIds.length) {
+        const { error: normalizeEndedError } = await supabase
+          .from("store_transport_agency_connections")
+          .update({
+            status: "cancelled",
+            is_default: false,
+            is_exclusive: false,
+            updated_at: new Date().toISOString(),
+          })
+          .in("id", endedConnectionIds);
+        if (normalizeEndedError) throw normalizeEndedError;
+      }
+
       const { data: existingDefault } = await supabase
         .from("store_transport_agency_connections")
         .select("id, disengagement_requested_at, disengagement_confirmed_at, disengagement_effective_at")
@@ -152,6 +164,16 @@ export async function PATCH(
         );
       if (connectionError) throw connectionError;
     }
+
+    const { error: updateError } = await supabase
+      .from("store_transport_agency_requests")
+      .update({
+        status: nextStatus,
+        response_notes: cleanTransportText(body.responseNotes, 300) || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", requestId);
+    if (updateError) throw updateError;
 
     return NextResponse.json({
       ok: true,

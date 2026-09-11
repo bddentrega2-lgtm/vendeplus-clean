@@ -26,6 +26,7 @@ export type BusinessHoursRange = {
 export type BusinessHours = Partial<Record<BusinessDayKey, BusinessHoursRange[]>>;
 
 export type ManualOpenStatus = "auto" | "open" | "closed";
+export type PaymentProofMode = "disabled" | "reference" | "image";
 
 export type StoreOpenState = {
   isOpen: boolean;
@@ -45,6 +46,21 @@ export type ProductVariant = {
   priceDeltaUsd: number;
   originalPriceUsd?: number;
   isAvailable: boolean;
+  inventoryUnits?: number;
+};
+
+export type ProductInventorySku = {
+  id: string;
+  code: string;
+  attributes: Record<string, string>;
+  stock: number;
+  isAvailable: boolean;
+};
+
+export type CartInventorySelection = {
+  skuId: string;
+  quantity: number;
+  label?: string;
 };
 
 export type ProductOptionValue = {
@@ -96,6 +112,8 @@ export type Product = {
   variants?: ProductVariant[];
   optionGroups?: ProductOptionGroup[];
   hasOptionGroups?: boolean;
+  inventoryManaged?: boolean;
+  inventorySkus?: ProductInventorySku[];
 };
 
 export type Store = {
@@ -139,7 +157,11 @@ export type Store = {
   serviceFeePayer?: "merchant" | "customer";
   serviceFeeBillingCycle?: "weekly" | "monthly";
   requestCustomerIdNumber?: boolean;
+  paymentProofMode?: PaymentProofMode;
+  paymentProofRequired?: boolean;
   checkoutNotePlaceholder?: string;
+  inventoryEnabled?: boolean;
+  catalogLayout?: "classic" | "visual";
   monthlyBadges?: string[];
 };
 
@@ -221,6 +243,7 @@ export type CartItem = {
   unitPriceUsd: number;
   notes?: string;
   selectedOptions?: SelectedCartOption[];
+  inventorySelections?: CartInventorySelection[];
 };
 
 export type DeliveryLocation = {
@@ -257,6 +280,7 @@ export type CheckoutFormData = {
   deliveryType: DeliveryType;
   paymentMethod: string;
   paymentReference: string;
+  paymentReceiptToken: string;
   deliveryReference: string;
   deliveryZoneId: string;
   nationalIdNumber: string;

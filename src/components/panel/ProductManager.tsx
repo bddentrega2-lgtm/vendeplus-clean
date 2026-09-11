@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Boxes,
   CheckCircle2,
   Eye,
   EyeOff,
@@ -31,6 +32,7 @@ import {
 import { fetchPanelJson } from "@/lib/panel/client-fetch-cache";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import { compressImageForUpload } from "@/lib/images/client-compress";
+import { PremiumInventoryPreview } from "@/components/panel/PremiumInventoryPreview";
 
 type StoreRow = {
   id: string;
@@ -653,6 +655,7 @@ export function ProductManager() {
   );
   const [error, setError] = useState("");
   const [newProductMessage, setNewProductMessage] = useState("");
+  const [isInventoryPreviewOpen, setIsInventoryPreviewOpen] = useState(false);
   const newProductFileInputRef = useRef<HTMLInputElement>(null);
   const newProductSecondFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -675,6 +678,11 @@ export function ProductManager() {
     () =>
       categories.filter((category) => category.store_id === newProduct.store_id),
     [categories, newProduct.store_id]
+  );
+  const isShibuiInventoryPilot = stores.some(
+    (store) =>
+      store.id === "126f8168-f1ca-4a08-8eaf-c3816b9d9195" &&
+      store.slug === "shibui"
   );
 
   const filteredProducts = useMemo(() => {
@@ -888,6 +896,34 @@ export function ProductManager() {
 
   return (
     <div className="space-y-5">
+      {isShibuiInventoryPilot ? (
+        isInventoryPreviewOpen ? (
+          <PremiumInventoryPreview
+            pin={pin}
+            onClose={() => setIsInventoryPreviewOpen(false)}
+          />
+        ) : (
+          <section className="overflow-hidden rounded-3xl bg-[#1F464C] p-5 text-white shadow-xl shadow-[#1F464C]/10 sm:p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-2xl font-black">Inventario Premium</h2>
+                <p className="mt-1 max-w-2xl text-sm font-bold text-white/75">
+                  Controla las existencias por color, talla u otras combinaciones y define cuánto descuenta cada presentación.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsInventoryPreviewOpen(true)}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
+              >
+                <Boxes size={17} />
+                Administrar inventario
+              </button>
+            </div>
+          </section>
+        )
+      ) : null}
+
       <section className="rounded-2xl bg-white p-4 shadow-lg shadow-[#2E3A79]/[0.05] ring-1 ring-[#25262B]/[0.06]">
         <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
           <div>

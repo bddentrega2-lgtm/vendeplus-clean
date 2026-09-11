@@ -46,7 +46,7 @@ function badRequest(message: string) {
 }
 
 function orderErrorResponse(error: unknown) {
-  const message = error instanceof Error ? error.message : "";
+  const message = typeof (error as any)?.message === "string" ? (error as any).message : "";
   const publicPrefixes = [
     "El producto ",
     "La presentación ",
@@ -56,7 +56,11 @@ function orderErrorResponse(error: unknown) {
     "Una opción ",
   ];
 
-  if (publicPrefixes.some((prefix) => message.startsWith(prefix))) {
+  if (
+    publicPrefixes.some((prefix) => message.startsWith(prefix)) ||
+    message.startsWith("No queda stock ") ||
+    message.startsWith("El inventario ")
+  ) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
@@ -115,6 +119,18 @@ function normalizeItems(value: unknown): CartItem[] {
             priceDeltaUsd: toSafeNumber(option?.priceDeltaUsd, 0),
           }))
         : [],
+      inventorySelections: Array.isArray(item?.inventorySelections)
+        ? item.inventorySelections
+            .map((selection: any) => ({
+              skuId: cleanText(selection?.skuId),
+              label: cleanText(selection?.label, 180) || undefined,
+              quantity: Math.min(
+                MAX_ITEM_QUANTITY,
+                Math.max(1, Math.floor(toSafeNumber(selection?.quantity, 1)))
+              ),
+            }))
+            .filter((selection: any) => isUuid(selection.skuId))
+        : [],
     }))
     .slice(0, MAX_ORDER_ITEMS)
     .filter((item) => item.productId);
@@ -170,6 +186,47 @@ async function loadOptionAssignments(
   }
 
   return byProduct;
+}
+
+function inventoryLabel(attributes: Record<string, unknown>, fallback: string) {
+  const labels = ["color", "talla", "detalle"]
+    .map((key) => cleanText(attributes?.[key], 80))
+    .filter(Boolean);
+  return labels.length ? labels.join(" · ") : fallback;
+}
+
+async function canonicalizeInventorySelections(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  storeId: string,
+  items: CartItem[]
+) {
+  const skuIds = Array.from(new Set(
+    items.flatMap((item) => (item.inventorySelections || []).map((selection) => selection.skuId))
+  ));
+  if (!skuIds.length) return items;
+
+  const { data, error } = await supabase
+    .from("product_inventory_skus")
+    .select("id, product_id, code, attributes")
+    .eq("store_id", storeId)
+    .in("id", skuIds);
+  if (error) throw error;
+  const byId = new Map((data || []).map((sku: any) => [String(sku.id), sku]));
+
+  return items.map((item) => ({
+    ...item,
+    inventorySelections: (item.inventorySelections || []).map((selection) => {
+      const sku: any = byId.get(selection.skuId);
+      if (!sku || String(sku.product_id) !== item.productId) {
+        throw new Error(`El inventario seleccionado para ${item.productName} no es válido.`);
+      }
+      return {
+        skuId: selection.skuId,
+        quantity: selection.quantity,
+        label: inventoryLabel(sku.attributes || {}, cleanText(sku.code, 100) || "Selección"),
+      };
+    }),
+  }));
 }
 
 async function loadStoreDeliverySettings(
@@ -316,7 +373,7 @@ export async function POST(request: NextRequest) {
     const supabase = createSupabaseAdminClient();
     let storeResult = await supabase
       .from("stores")
-      .select("id, slug, name, whatsapp, usd_to_bs, base_currency, is_active, latitude, longitude, opening_hours, business_hours, manual_open_status, manual_open_note, accepts_delivery, accepts_pickup, accepts_national_shipping, request_customer_id_number, payment_methods, table_orders_access_enabled, table_orders_enabled, table_payment_methods, table_order_fulfillment_mode, plan_type, monthly_price_usd, service_fee_payer, service_fee_billing_cycle, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
+      .select("id, slug, name, whatsapp, usd_to_bs, base_currency, is_active, latitude, longitude, opening_hours, business_hours, manual_open_status, manual_open_note, accepts_delivery, accepts_pickup, accepts_national_shipping, request_customer_id_number, payment_proof_mode, payment_proof_required, payment_methods, table_orders_access_enabled, table_orders_enabled, table_payment_methods, table_order_fulfillment_mode, plan_type, monthly_price_usd, service_fee_payer, service_fee_billing_cycle, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
       .eq("id", storeId)
       .single();
 
@@ -329,6 +386,8 @@ export async function POST(request: NextRequest) {
         "base_currency",
         "accepts_national_shipping",
         "request_customer_id_number",
+        "payment_proof_mode",
+        "payment_proof_required",
         "subscription_status",
         "trial_ends_at",
         "subscription_ends_at",
@@ -465,7 +524,7 @@ export async function POST(request: NextRequest) {
       if (hasSelectedOptions) throw error;
     }
 
-    const validatedItems = items.map((item) => {
+    let validatedItems: CartItem[] = items.map((item) => {
       const product: any = productMap.get(item.productId);
       if (product.is_available === false) {
         throw new Error(`El producto ${product.name} no está disponible.`);
@@ -572,8 +631,11 @@ export async function POST(request: NextRequest) {
         unitPriceUsd,
         notes: item.notes,
         selectedOptions: frozenOptions,
+        inventorySelections: item.inventorySelections,
       } satisfies CartItem;
     });
+
+    validatedItems = await canonicalizeInventorySelections(supabase, storeId, validatedItems);
 
     const subtotalUsd = validatedItems.reduce(
       (sum, item) => sum + item.unitPriceUsd * item.quantity,
@@ -685,6 +747,38 @@ export async function POST(request: NextRequest) {
     });
     const orderDbId = randomUUID();
     const paymentReference = cleanText(order.form.paymentReference);
+    const paymentReceiptToken = cleanText(order.form.paymentReceiptToken, 60);
+    const paymentProofMode = ["reference", "image"].includes((store as any).payment_proof_mode)
+      ? (store as any).payment_proof_mode
+      : "disabled";
+    const paymentProofRequired = (store as any).payment_proof_required === true;
+    if (paymentProofMode === "reference") {
+      if (paymentReference && paymentReference.replace(/\D/g, "").length < 4) {
+        return requestBadRequest("La referencia debe tener al menos 4 dígitos.");
+      }
+      if (paymentProofRequired && !paymentReference) {
+        return requestBadRequest("Escribe la referencia de pago.");
+      }
+    }
+    let pendingReceipt: { id: string; order_id: string | null } | null = null;
+    if (paymentProofMode === "image" && paymentReceiptToken) {
+      const receiptResult = await supabase
+        .from("order_payment_receipts")
+        .select("id, order_id")
+        .eq("id", paymentReceiptToken)
+        .eq("store_id", storeId)
+        .is("deleted_at", null)
+        .gt("expires_at", new Date().toISOString())
+        .maybeSingle();
+      if (receiptResult.error) throw receiptResult.error;
+      pendingReceipt = receiptResult.data;
+    }
+    if (paymentProofMode === "image" && paymentReceiptToken && !pendingReceipt) {
+      return requestBadRequest("La captura o foto ya no está disponible. Súbela nuevamente.");
+    }
+    if (paymentProofMode === "image" && paymentProofRequired && !pendingReceipt) {
+      return requestBadRequest("Sube la captura de pago o foto del billete.");
+    }
     const initialPaymentStatus = getInitialPaymentStatus(order.form.paymentMethod);
     const orderPayload = {
       id: orderDbId,
@@ -697,7 +791,7 @@ export async function POST(request: NextRequest) {
       delivery_type: order.form.deliveryType,
       payment_method: cleanText(order.form.paymentMethod),
       payment_status:
-        paymentReference && initialPaymentStatus !== "cash_on_delivery"
+        (paymentReference || pendingReceipt) && initialPaymentStatus !== "cash_on_delivery"
           ? "review"
           : initialPaymentStatus,
       payment_reference: paymentReference || null,
@@ -798,6 +892,11 @@ export async function POST(request: NextRequest) {
       unit_price_usd: item.unitPriceUsd,
       total_usd: item.unitPriceUsd * item.quantity,
       notes: item.notes || null,
+      variant_id: item.variantId || null,
+      inventory: (item.inventorySelections || []).map((selection) => ({
+        sku_id: selection.skuId,
+        quantity: selection.quantity,
+      })),
       options: (item.selectedOptions || []).map((option) => ({
         option_group_name: option.groupName,
         option_name: option.valueName,
@@ -812,6 +911,23 @@ export async function POST(request: NextRequest) {
       items: itemsPayload,
     });
     const persistedOrder = atomicResult.order;
+    if (pendingReceipt?.order_id && pendingReceipt.order_id !== persistedOrder.id) {
+      throw new Error("El comprobante ya fue utilizado por otro pedido.");
+    }
+    if (pendingReceipt && !pendingReceipt.order_id) {
+      const { data: attachedReceipt, error: attachReceiptError } = await supabase
+        .from("order_payment_receipts")
+        .update({ order_id: persistedOrder.id, attached_at: new Date().toISOString() })
+        .eq("id", pendingReceipt.id)
+        .eq("store_id", storeId)
+        .is("order_id", null)
+        .select("id")
+        .maybeSingle();
+      if (attachReceiptError) throw attachReceiptError;
+      if (!attachedReceipt) {
+        throw new Error("No se pudo asociar el comprobante al pedido.");
+      }
+    }
     const cashPaymentNote = isCashPaymentMethod(order.form.paymentMethod)
       ? cleanText(order.form.cashPaymentNote, 500) || null
       : null;

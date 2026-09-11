@@ -83,10 +83,65 @@ export async function GET(request: NextRequest) {
     if (categoriesResult.error) throw categoriesResult.error;
     if (productsResult.error) throw productsResult.error;
 
+    let stores = storesResult.data || [];
+    let products = productsResult.data || [];
+    try {
+      const storeIds = stores.map((store: any) => String(store.id));
+      const settingsResult = storeIds.length
+        ? await supabase
+            .from("store_inventory_settings")
+            .select("store_id, enabled")
+            .in("store_id", storeIds)
+            .eq("enabled", true)
+        : { data: [], error: null };
+      if (!settingsResult.error) {
+        const enabledStoreIds = new Set((settingsResult.data || []).map((row: any) => String(row.store_id)));
+        const managedProductIds = products
+          .filter((product: any) => enabledStoreIds.has(String(product.store_id)))
+          .map((product: any) => String(product.id));
+        if (managedProductIds.length) {
+          const [skusResult, inventoryVariantsResult] = await Promise.all([
+            supabase
+              .from("product_inventory_skus")
+              .select("id, store_id, product_id, code, attributes, stock_on_hand, is_active")
+              .in("product_id", managedProductIds),
+            supabase
+              .from("product_variants")
+              .select("id, product_id, inventory_units")
+              .in("product_id", managedProductIds),
+          ]);
+          if (!skusResult.error && !inventoryVariantsResult.error) {
+            const skusByProduct = new Map<string, any[]>();
+            for (const sku of skusResult.data || []) {
+              const productId = String((sku as any).product_id);
+              skusByProduct.set(productId, [...(skusByProduct.get(productId) || []), sku]);
+            }
+            const unitsByVariant = new Map(
+              (inventoryVariantsResult.data || []).map((variant: any) => [String(variant.id), Number(variant.inventory_units || 1)])
+            );
+            stores = stores.map((store: any) => ({
+              ...store,
+              inventory_enabled: enabledStoreIds.has(String(store.id)),
+            }));
+            products = products.map((product: any) => ({
+              ...product,
+              product_inventory_skus: skusByProduct.get(String(product.id)) || [],
+              product_variants: (product.product_variants || []).map((variant: any) => ({
+                ...variant,
+                inventory_units: unitsByVariant.get(String(variant.id)) || 1,
+              })),
+            }));
+          }
+        }
+      }
+    } catch {
+      // Compatibilidad antes de aplicar la migración: catálogo y pedidos siguen igual.
+    }
+
     return NextResponse.json({
-      stores: storesResult.data || [],
+      stores,
       categories: categoriesResult.data || [],
-      products: productsResult.data || [],
+      products,
       auth: {
         mode: auth.mode,
         email: auth.email || null,

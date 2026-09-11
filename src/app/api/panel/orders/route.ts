@@ -14,6 +14,7 @@ import { safeUpsertCustomerFromOrder } from "@/lib/customers/upsert-customer-fro
 import { getVenezuelaRelativeRange } from "@/lib/time/venezuela";
 import { getStoreServiceFeeUsd } from "@/lib/plans";
 import { createOrderAtomic } from "@/lib/server/create-order-atomic";
+import { cancelOrderWithInventory } from "@/lib/server/cancel-order-with-inventory";
 
 const allowedStatuses = [
   "received",
@@ -253,6 +254,15 @@ function normalizeManualItems(value: unknown) {
     .map((item) => ({
       productId: cleanText(item?.productId),
       variantId: cleanText(item?.variantId),
+      inventorySelections: Array.isArray(item?.inventorySelections)
+        ? item.inventorySelections
+            .map((selection: any) => ({
+              skuId: cleanText(selection?.skuId),
+              label: cleanText(selection?.label),
+              quantity: Math.max(1, Math.floor(toSafeNumber(selection?.quantity, 1))),
+            }))
+            .filter((selection: any) => isUuid(selection.skuId))
+        : [],
       quantity: Math.max(1, Math.floor(toSafeNumber(item?.quantity, 1))),
       notes: cleanText(item?.notes),
       selectedOptions: Array.isArray(item?.selectedOptions)
@@ -332,7 +342,7 @@ function buildManualMessage({
   deliveryReference: string;
   orderDetails: string;
   originalMessage: string;
-  items: Array<{ product_name: string; variant_name?: string | null; quantity: number; total_usd: number; selectedOptions?: Array<{ groupName: string; valueName: string }> }>;
+  items: Array<{ product_name: string; variant_name?: string | null; quantity: number; total_usd: number; selectedOptions?: Array<{ groupName: string; valueName: string }>; inventory?: Array<{ label?: string; quantity: number }> }>;
   subtotalUsd: number;
   deliveryUsd: number;
   totalUsd: number;
@@ -349,7 +359,10 @@ function buildManualMessage({
     "Productos:",
     ...items.map(
       (item) => {
-        const options = (item.selectedOptions || []).map((option) => option.valueName).join(", ");
+        const options = [
+          ...(item.inventory || []).map((selection) => `${selection.quantity}x ${selection.label || "Color y talla"}`),
+          ...(item.selectedOptions || []).map((option) => option.valueName),
+        ].join(", ");
         const customization = [item.variant_name, options].filter(Boolean).join(", ");
         return `- ${item.quantity}x ${item.product_name}${customization ? ` (${customization})` : ""} ($${item.total_usd.toFixed(2)})`;
       }
@@ -457,6 +470,26 @@ async function attachTransportOrders(supabase: any, orders: any[], options: { in
   }
 }
 
+function inventoryLabel(attributes: Record<string, unknown>, fallback: string) {
+  const labels = ["color", "talla", "detalle"]
+    .map((key) => cleanText(attributes?.[key]))
+    .filter(Boolean);
+  return labels.length ? labels.join(" · ") : fallback;
+}
+
+async function attachPaymentReceipts(supabase: any, orders: any[]) {
+  if (!orders.length) return new Set<string>();
+  const orderIds = orders.map((order) => order.id).filter(Boolean);
+  const { data, error } = await supabase
+    .from("order_payment_receipts")
+    .select("order_id")
+    .in("order_id", orderIds)
+    .is("deleted_at", null)
+    .not("storage_path", "is", null);
+  if (error) return new Set<string>();
+  return new Set((data || []).map((entry: any) => String(entry.order_id)));
+}
+
 async function attachOrderRelations(
   supabase: any,
   orders: any[],
@@ -464,9 +497,10 @@ async function attachOrderRelations(
 ) {
   if (!orders.length) return orders;
 
-  const [withIntegrations, withTransport] = await Promise.all([
+  const [withIntegrations, withTransport, receiptOrderIds] = await Promise.all([
     attachOrderIntegrations(supabase, orders),
     attachTransportOrders(supabase, orders, options),
+    attachPaymentReceipts(supabase, orders),
   ]);
   const integrationsByOrder = new Map(
     withIntegrations.map((order: any) => [order.id, order.order_integrations || []])
@@ -475,6 +509,7 @@ async function attachOrderRelations(
   return withTransport.map((order: any) => ({
     ...order,
     order_integrations: integrationsByOrder.get(order.id) || [],
+    has_payment_receipt: receiptOrderIds.has(order.id),
   }));
 }
 
@@ -697,11 +732,19 @@ export async function GET(request: NextRequest) {
     const hasMore = pageRows.length > limit;
     const visibleRows = hasMore ? pageRows.slice(0, limit) : pageRows;
 
-    const ordersWithTransport = compact
-      ? visibleRows.map(withPaymentFallback)
-      : await attachOrderRelations(supabase, visibleRows.map(withPaymentFallback), {
+    let ordersWithTransport;
+    if (compact) {
+      const compactOrders = visibleRows.map(withPaymentFallback);
+      const receiptOrderIds = await attachPaymentReceipts(supabase, compactOrders);
+      ordersWithTransport = compactOrders.map((order: any) => ({
+        ...order,
+        has_payment_receipt: receiptOrderIds.has(order.id),
+      }));
+    } else {
+      ordersWithTransport = await attachOrderRelations(supabase, visibleRows.map(withPaymentFallback), {
           includeEvents: true,
         });
+    }
 
     return NextResponse.json({
       orders: ordersWithTransport,
@@ -793,7 +836,7 @@ export async function POST(request: NextRequest) {
 
     const optionAssignments = await loadManualOptionAssignments(supabase, storeId, productIds);
 
-    const itemsPayload = requestedItems.map((item) => {
+    let itemsPayload = requestedItems.map((item) => {
       const product: any = productMap.get(item.productId);
 
       if (product.is_available === false) {
@@ -879,9 +922,37 @@ export async function POST(request: NextRequest) {
         unit_price_usd: unitPriceUsd,
         total_usd: totalUsd,
         notes: item.notes || null,
+        variant_id: item.variantId || null,
+        inventory: item.inventorySelections,
         selectedOptions: frozenOptions,
       };
     });
+
+    const inventorySkuIds = Array.from(new Set(
+      itemsPayload.flatMap((item) => item.inventory.map((selection: { skuId: string }) => selection.skuId))
+    ));
+    if (inventorySkuIds.length) {
+      const { data: inventorySkus, error: inventoryError } = await supabase
+        .from("product_inventory_skus")
+        .select("id, store_id, product_id, code, attributes")
+        .eq("store_id", storeId)
+        .in("id", inventorySkuIds);
+      if (inventoryError) throw inventoryError;
+      const inventoryById = new Map((inventorySkus || []).map((sku: any) => [String(sku.id), sku]));
+      itemsPayload = itemsPayload.map((item) => ({
+        ...item,
+        inventory: item.inventory.map((selection: { skuId: string; quantity: number; label?: string }) => {
+          const sku: any = inventoryById.get(selection.skuId);
+          if (!sku || String(sku.product_id) !== item.product_id) {
+            throw new Error(`El inventario seleccionado para ${item.product_name} no es válido.`);
+          }
+          return {
+            ...selection,
+            label: inventoryLabel(sku.attributes || {}, cleanText(sku.code) || "Selección"),
+          };
+        }),
+      }));
+    }
 
     const subtotalUsd = itemsPayload.reduce(
       (sum, item) => sum + toSafeNumber(item.total_usd),
@@ -968,6 +1039,11 @@ export async function POST(request: NextRequest) {
         unit_price_usd: item.unit_price_usd,
         total_usd: item.total_usd,
         notes: item.notes,
+        variant_id: item.variant_id,
+        inventory: item.inventory.map((selection: { skuId: string; quantity: number }) => ({
+          sku_id: selection.skuId,
+          quantity: selection.quantity,
+        })),
         options: item.selectedOptions.map((option) => ({
           option_group_name: option.groupName,
           option_name: option.valueName,
@@ -1006,6 +1082,10 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error: any) {
+    const message = typeof error?.message === "string" ? error.message : "";
+    if (message.startsWith("No queda stock ") || message.startsWith("El inventario ")) {
+      return badRequest(message);
+    }
     return panelErrorResponse(error, "Error creando pedido manual.");
   }
 }
@@ -1061,14 +1141,23 @@ export async function PATCH(request: NextRequest) {
       return badRequest("No puedes cancelar un pedido ya entregado por la empresa delivery.");
     }
 
-    const { data, error } = await supabase
-      .from("orders")
-      .update({ status })
-      .eq("id", id)
-      .select()
-      .single();
-
-    if (error) throw error;
+    const data = status === "cancelled"
+      ? await cancelOrderWithInventory({
+          supabase,
+          orderId: id,
+          storeId: existingOrder.store_id,
+        })
+      : await (async () => {
+          const result = await supabase
+            .from("orders")
+            .update({ status })
+            .eq("id", id)
+            .eq("store_id", existingOrder.store_id)
+            .select()
+            .single();
+          if (result.error) throw result.error;
+          return result.data;
+        })();
 
     return NextResponse.json({ order: data });
   } catch (error: any) {

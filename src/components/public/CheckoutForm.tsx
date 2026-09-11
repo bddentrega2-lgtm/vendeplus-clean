@@ -3,7 +3,7 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, MessageCircle, Navigation, ShieldCheck } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Loader2, MessageCircle, Navigation, ShieldCheck, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CheckoutFormData, DeliveryLocation, DeliveryQuote, SavedOrder, Store } from "@/types";
 import { clearCart, getCart, getCartSubtotal } from "@/lib/cart";
@@ -26,6 +26,7 @@ import { buildOrderMessage, buildWhatsAppUrl } from "@/lib/whatsapp";
 import { saveOrderToSupabase } from "@/lib/supabase/orders";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import { useLiveStoreOpenState } from "@/hooks/use-live-store-open-state";
+import { compressImageForUpload } from "@/lib/images/client-compress";
 import {
   getTableOrderContext,
   isPrepaidTablePaymentMethod,
@@ -50,6 +51,7 @@ const initialForm: CheckoutFormData = {
   deliveryType: "delivery",
   paymentMethod: "",
   paymentReference: "",
+  paymentReceiptToken: "",
   deliveryReference: "",
   deliveryZoneId: "",
   nationalIdNumber: "V-",
@@ -147,11 +149,14 @@ export function CheckoutForm({ store }: { store: Store }) {
   const [error, setError] = useState("");
   const [copiedPaymentLine, setCopiedPaymentLine] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
+  const [receiptName, setReceiptName] = useState("");
   const [rememberCustomer, setRememberCustomer] = useState(true);
   const [hasSavedCustomer, setHasSavedCustomer] = useState(false);
   const [customerProfileLoaded, setCustomerProfileLoaded] = useState(false);
   const lastQuoteRequestRef = useRef("");
   const idempotencyKeyRef = useRef(createIdempotencyKey());
+  const receiptInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setItems(getCart(store.slug));
@@ -468,6 +473,17 @@ export function CheckoutForm({ store }: { store: Store }) {
       return "Escribe la cédula del cliente.";
     }
     if (!form.paymentMethod.trim()) return "Selecciona un método de pago.";
+    if (store.paymentProofMode === "reference" && form.paymentReference.trim()) {
+      if (form.paymentReference.replace(/\D/g, "").length < 4) {
+        return "La referencia debe tener al menos 4 dígitos.";
+      }
+    }
+    if (store.paymentProofMode === "reference" && store.paymentProofRequired && !form.paymentReference.trim()) {
+      return "Escribe la referencia de pago.";
+    }
+    if (store.paymentProofMode === "image" && store.paymentProofRequired && !form.paymentReceiptToken) {
+      return "Sube la captura de pago o foto del billete.";
+    }
     if (tableOrder && !availablePaymentMethods.includes(form.paymentMethod)) {
       return "Selecciona un método de pago previo disponible para pedidos en mesa.";
     }
@@ -533,6 +549,28 @@ export function CheckoutForm({ store }: { store: Store }) {
     await navigator.clipboard.writeText(value);
     setCopiedPaymentLine(`${label}-${value}`);
     window.setTimeout(() => setCopiedPaymentLine(""), 1800);
+  }
+
+  async function uploadPaymentReceipt(file?: File) {
+    if (!file) return;
+    setIsUploadingReceipt(true);
+    setError("");
+    try {
+      const upload = await compressImageForUpload(file);
+      const body = new FormData();
+      body.append("file", upload);
+      body.append("storeId", store.id);
+      const response = await fetch("/api/orders/payment-receipt", { method: "POST", body });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "No se pudo subir la imagen.");
+      updateField("paymentReceiptToken", String(data.receiptToken || ""));
+      setReceiptName(file.name);
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "No se pudo subir la imagen.");
+    } finally {
+      setIsUploadingReceipt(false);
+      if (receiptInputRef.current) receiptInputRef.current.value = "";
+    }
   }
 
   async function sendOrder() {
@@ -900,18 +938,56 @@ export function CheckoutForm({ store }: { store: Store }) {
                     </p>
                   ) : null}
 
-                  {!isCashPayment ? (
+                  {store.paymentProofMode === "reference" ? (
                     <label className="mt-4 block">
                       <span className="text-xs font-black uppercase tracking-[0.14em] text-white/70">
-                        Referencia de pago
+                        Referencia de pago {store.paymentProofRequired ? "· obligatoria" : "· opcional"}
                       </span>
                       <input
                         className="mt-1 w-full rounded-2xl border border-white/10 bg-white px-4 py-3 text-sm font-bold text-[#25262B] outline-none"
                         value={form.paymentReference}
-                        onChange={(event) => updateField("paymentReference", event.target.value)}
-                        placeholder="Ej: 123456 o captura enviada por WhatsApp"
+                        onChange={(event) => updateField("paymentReference", event.target.value.slice(0, 120))}
+                        inputMode="numeric"
+                        placeholder="Mínimo 4 dígitos"
                       />
                     </label>
+                  ) : null}
+                  {store.paymentProofMode === "image" ? (
+                    <div className="mt-4 rounded-3xl bg-emerald-50 p-3 ring-2 ring-emerald-300">
+                      <p className="text-xs font-black uppercase tracking-[0.14em] text-emerald-900">
+                        Subir captura de pago o foto del billete {store.paymentProofRequired ? "· obligatorio" : "· opcional"}
+                      </p>
+                      <input
+                        ref={receiptInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        disabled={isUploadingReceipt}
+                        onChange={(event) => uploadPaymentReceipt(event.target.files?.[0])}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => receiptInputRef.current?.click()}
+                        disabled={isUploadingReceipt}
+                        className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-black text-white shadow-lg shadow-emerald-900/20 transition hover:bg-emerald-700 disabled:opacity-60"
+                      >
+                        {isUploadingReceipt ? (
+                          <Loader2 size={18} className="animate-spin" />
+                        ) : form.paymentReceiptToken ? (
+                          <CheckCircle2 size={18} />
+                        ) : (
+                          <Upload size={18} />
+                        )}
+                        {isUploadingReceipt
+                          ? "Subiendo imagen..."
+                          : form.paymentReceiptToken
+                            ? "Imagen cargada · Cambiar"
+                            : "Seleccionar imagen"}
+                      </button>
+                      <p className="mt-2 text-xs font-bold text-emerald-800">
+                        {receiptName ? `Archivo listo: ${receiptName}` : "JPG, PNG o WebP. Máximo 2 MB."}
+                      </p>
+                    </div>
                   ) : null}
                 </div>
               ) : null}

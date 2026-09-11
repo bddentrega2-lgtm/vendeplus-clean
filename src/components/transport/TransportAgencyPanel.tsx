@@ -145,6 +145,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
   const [transportDriversSchemaReady, setTransportDriversSchemaReady] = useState(true);
   const [hasLoadedTransportDrivers, setHasLoadedTransportDrivers] = useState(false);
   const [savingConnectionModeId, setSavingConnectionModeId] = useState<string | null>(null);
+  const [reviewingRequestId, setReviewingRequestId] = useState<string | null>(null);
   const [requestRelationshipModes, setRequestRelationshipModes] = useState<Record<string, "exclusive" | "mixed">>({});
   const [requestBillingModes, setRequestBillingModes] = useState<Record<string, "cash" | "credit">>({});
   const [connectionBillingFilter, setConnectionBillingFilter] = useState<"all" | "credit" | "cash">("all");
@@ -176,6 +177,14 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
   const driverWhatsappDispatchEnabled =
     agency?.driver_whatsapp_dispatch_enabled === true;
   const billingCurrency = agency?.billing_currency === "EUR" ? "EUR" : "USD";
+  const agencyRequests = useMemo(
+    () => requests.filter((entry) => entry.agency_id === agencyId),
+    [requests, agencyId]
+  );
+  const agencyConnections = useMemo(
+    () => connections.filter((entry) => entry.agency_id === agencyId),
+    [connections, agencyId]
+  );
   const billingSymbol = billingCurrency === "EUR" ? "€" : "$";
   const {
     activeConnectionsCount,
@@ -184,9 +193,14 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     pendingRequests,
     rate,
     zones,
-  } = useTransportPanelDerivedData({ agency, requests, connections, nowMs });
+  } = useTransportPanelDerivedData({
+    agency,
+    requests: agencyRequests,
+    connections: agencyConnections,
+    nowMs,
+  });
   const connectionBillingStats = useMemo(() => {
-    const activeConnections = connections.filter(
+    const activeConnections = agencyConnections.filter(
       (entry) => entry.status === "active" && !connectionEnded(entry, nowMs)
     );
     const credit = activeConnections.filter(
@@ -201,15 +215,15 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       credit,
       cash,
     };
-  }, [connections, nowMs]);
+  }, [agencyConnections, nowMs]);
   const visibleConnections = useMemo(() => {
-    if (!canSendParticularToEntrega2 || connectionBillingFilter === "all") return connections;
-    return connections.filter((entry) =>
+    if (!canSendParticularToEntrega2 || connectionBillingFilter === "all") return agencyConnections;
+    return agencyConnections.filter((entry) =>
       connectionBillingFilter === "credit"
         ? entry.delivery_billing_mode === "credit"
         : entry.delivery_billing_mode !== "credit"
     );
-  }, [canSendParticularToEntrega2, connectionBillingFilter, connections]);
+  }, [canSendParticularToEntrega2, connectionBillingFilter, agencyConnections]);
   const distanceFactorUsd = optionalPanelNumber(rate.distance_factor_usd);
   const simulatedDistanceKm = optionalPanelNumber(distanceSimulatorKm);
   const panelDistanceRates = useMemo(
@@ -329,6 +343,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
         includeBilling: String(includeBilling),
         includeConfiguration: String(includeConfiguration),
         includeRelations: String(includeRelations),
+        ...(agencyId ? { agencyId } : {}),
       });
       const response = await fetch(`/api/transport/me?${params.toString()}`, {
         headers: await getPanelAuthHeaders(savedPin),
@@ -463,14 +478,15 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
 
   useEffect(() => {
     if (!hasSession) return;
-    const needsBilling = tab === "facturacion" && !hasLoadedBillingDetail;
+    const needsBilling = (tab === "facturacion" && !hasLoadedBillingDetail)
+      || (["resumen", "facturacion"].includes(tab) && Boolean(agencyId) && billing?.agencyId !== agencyId);
     const needsConfiguration = tab !== "pedidos" && !hasLoadedConfiguration;
     const needsRelations = tab !== "pedidos" && !hasLoadedRelations;
     if (needsBilling || needsConfiguration || needsRelations) {
       void load({
         silent: true,
         includeBilling: needsBilling,
-        includeBillingDetail: needsBilling,
+        includeBillingDetail: needsBilling && tab === "facturacion",
         includeConfiguration: needsConfiguration,
         includeRelations: needsRelations,
       });
@@ -483,6 +499,8 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     hasLoadedBillingDetail,
     hasLoadedConfiguration,
     hasLoadedRelations,
+    agencyId,
+    billing?.agencyId,
   ]);
 
   useEffect(() => {
@@ -493,6 +511,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     setTransportOrdersHasMore(false);
     setHasLoadedTransportDrivers(false);
     setHasLoadedBillingDetail(false);
+    setHasLoadedRelations(false);
     setHasUnsavedChanges(false);
   }, [selectedAgencyId]);
 
@@ -1063,20 +1082,49 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
   }
 
   async function reviewRequest(requestId: string, action: "approve" | "reject") {
-    const relationshipMode = requestRelationshipModes[requestId] || (agency?.modality === "exclusive" ? "exclusive" : "mixed");
-    const deliveryBillingMode = requestBillingModes[requestId] || "cash";
-    const response = await fetch(`/api/transport/requests/${requestId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-      body: JSON.stringify({ action, relationshipMode, deliveryBillingMode }),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      setMessage(data.error || "No se pudo actualizar.");
+    const selectedRequest = agencyRequests.find((entry) => entry.id === requestId);
+    if (!agencyId || !selectedRequest || selectedRequest.agency_id !== agencyId) {
+      setMessage(
+        "La solicitud no pertenece a la empresa delivery seleccionada. Actualiza el panel e intenta de nuevo."
+      );
       return;
     }
-    setMessage(data.message || (action === "approve" ? "Solicitud aprobada." : "Solicitud rechazada."));
-    load();
+
+    const storeName =
+      selectedRequest.store_name_snapshot || selectedRequest.stores?.name || "este comercio";
+    if (
+      action === "approve" &&
+      !window.confirm(
+        `Vas a aprobar a ${storeName} para ${agency?.name || "esta empresa delivery"}. ¿Confirmas?`
+      )
+    ) {
+      return;
+    }
+
+    const relationshipMode = requestRelationshipModes[requestId] || (agency?.modality === "exclusive" ? "exclusive" : "mixed");
+    const deliveryBillingMode = requestBillingModes[requestId] || "cash";
+    setReviewingRequestId(requestId);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/transport/requests/${requestId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({
+          action,
+          agencyId,
+          relationshipMode,
+          deliveryBillingMode,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudo actualizar.");
+      setMessage(data.message || (action === "approve" ? "Solicitud aprobada." : "Solicitud rechazada."));
+      await load();
+    } catch (error: any) {
+      setMessage(error.message || "No se pudo actualizar.");
+    } finally {
+      setReviewingRequestId(null);
+    }
   }
 
   async function updateConnectionMode(
@@ -1290,7 +1338,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
   const totals = useMemo(() => {
     const orders = billing?.orders || [];
     return {
-      orders: orders.length,
+      orders: Number(billing?.ordersCount ?? orders.length),
       usd: Number(billing?.totalUsd || 0),
     };
   }, [billing]);
@@ -1453,23 +1501,31 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
                   <Copy size={16} />
                   {marketplaceCopied ? "Copiado" : "Copiar"}
                 </button>
-                <Link
-                  href={`/transporte/${agency.slug}/particulares`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-[#FFB547] px-4 text-sm font-black text-[#25262B] transition hover:bg-[#ffc66c]"
-                >
-                  <Send size={16} />
-                  Particulares
-                </Link>
-                <button
-                  type="button"
-                  onClick={copyParticularLink}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 text-sm font-black text-white transition hover:bg-white/20"
-                >
-                  <Copy size={16} />
-                  {particularLinkCopied ? "Copiado" : "Copiar"}
-                </button>
+                {premiumDispatchEnabled ? (
+                  <>
+                    <Link
+                      href={`/transporte/${agency.slug}/particulares`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-[#FFB547] px-4 text-sm font-black text-[#25262B] transition hover:bg-[#ffc66c]"
+                    >
+                      <Send size={16} />
+                      Particulares
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={copyParticularLink}
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 text-sm font-black text-white transition hover:bg-white/20"
+                    >
+                      <Copy size={16} />
+                      {particularLinkCopied ? "Copiado" : "Copiar"}
+                    </button>
+                  </>
+                ) : (
+                  <span className="inline-flex h-11 items-center rounded-2xl bg-white/10 px-4 text-sm font-black text-white/70">
+                    Particulares disponible con Premium
+                  </span>
+                )}
               </>
             ) : null}
             <button
@@ -2256,7 +2312,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       {tab === "solicitudes" ? (
         <List
           empty="No hay solicitudes pendientes."
-          items={requests}
+          items={agencyRequests}
           render={(entry) => (
             <div className="flex flex-col justify-between gap-3 rounded-3xl bg-white p-4 md:flex-row md:items-center">
               <div>
@@ -2316,10 +2372,10 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
                     </label>
                   ) : null}
                   <div className="flex gap-2">
-                  <button onClick={() => reviewRequest(entry.id, "approve")} className="rounded-full bg-green-100 px-4 py-2 text-xs font-black text-green-700">
-                    <CheckCircle2 size={15} className="inline" /> Aprobar
+                  <button disabled={reviewingRequestId === entry.id} onClick={() => reviewRequest(entry.id, "approve")} className="rounded-full bg-green-100 px-4 py-2 text-xs font-black text-green-700 disabled:opacity-50">
+                    {reviewingRequestId === entry.id ? <Loader2 size={15} className="inline animate-spin" /> : <CheckCircle2 size={15} className="inline" />} Aprobar
                   </button>
-                  <button onClick={() => reviewRequest(entry.id, "reject")} className="rounded-full bg-red-100 px-4 py-2 text-xs font-black text-red-700">
+                  <button disabled={reviewingRequestId === entry.id} onClick={() => reviewRequest(entry.id, "reject")} className="rounded-full bg-red-100 px-4 py-2 text-xs font-black text-red-700 disabled:opacity-50">
                     <XCircle size={15} className="inline" /> Rechazar
                   </button>
                   </div>

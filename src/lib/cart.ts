@@ -43,14 +43,17 @@ export function getCartSubtotal(items: CartItem[]) {
 export function addToCart(storeSlug: string, item: CartItem) {
   const current = getCart(storeSlug);
   const nextOptionsKey = JSON.stringify(item.selectedOptions || []);
+  const nextInventoryKey = JSON.stringify(item.inventorySelections || []);
   const existingIndex = current.findIndex(
     (cartItem) => {
       const currentOptionsKey = JSON.stringify(cartItem.selectedOptions || []);
+      const currentInventoryKey = JSON.stringify(cartItem.inventorySelections || []);
 
       return (
         cartItem.productId === item.productId &&
         cartItem.variantId === item.variantId &&
         currentOptionsKey === nextOptionsKey &&
+        currentInventoryKey === nextInventoryKey &&
         (cartItem.notes || "") === (item.notes || "")
       );
     },
@@ -60,6 +63,12 @@ export function addToCart(storeSlug: string, item: CartItem) {
     current[existingIndex] = {
       ...current[existingIndex],
       quantity: current[existingIndex].quantity + item.quantity,
+      inventorySelections: item.inventorySelections?.length
+        ? item.inventorySelections.map((selection) => ({
+            ...selection,
+            quantity: selection.quantity * (current[existingIndex].quantity + item.quantity),
+          }))
+        : current[existingIndex].inventorySelections,
     };
     saveCart(storeSlug, current);
     return;
@@ -71,6 +80,7 @@ export function addToCart(storeSlug: string, item: CartItem) {
 export function updateCartItemQuantity(storeSlug: string, index: number, quantity: number) {
   const current = getCart(storeSlug);
   if (!current[index]) return;
+  if (current[index].inventorySelections?.length && quantity > 0) return;
 
   if (quantity <= 0) {
     current.splice(index, 1);

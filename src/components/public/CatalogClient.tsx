@@ -40,6 +40,7 @@ export function CatalogClient({
   const [query, setQuery] = useState("");
   const [cartItems, setCartItems] = useState<ReturnType<typeof getCart>>([]);
   const [shareStatus, setShareStatus] = useState("");
+  const [layoutPreview, setLayoutPreview] = useState<"classic" | "visual" | null>(null);
   const [savedTableOrder, setSavedTableOrder] = useState<TableOrderContext | null>(null);
   const activeTableOrder = tableOrder || savedTableOrder;
 
@@ -71,6 +72,7 @@ export function CatalogClient({
   const whatsappUrl = store.whatsappPhone ? `https://wa.me/${store.whatsappPhone}` : "";
   const openState = useLiveStoreOpenState(store);
   const isStoreOpen = openState.isOpen;
+  const isVisualLayout = (layoutPreview || store.catalogLayout) === "visual";
 
   async function shareCatalog() {
     const url = buildClientPublicUrl(`${window.location.pathname}${window.location.search}`);
@@ -137,6 +139,11 @@ export function CatalogClient({
       return acc;
     }, {});
   }, [cartItems]);
+
+  useEffect(() => {
+    const requestedLayout = new URLSearchParams(window.location.search).get("vista");
+    setLayoutPreview(requestedLayout === "visual" ? "visual" : requestedLayout === "clasica" ? "classic" : null);
+  }, []);
 
   useEffect(() => {
     if (tableOrder) saveTableOrderContext(store.slug, tableOrder);
@@ -244,6 +251,7 @@ export function CatalogClient({
                     showPricesInBs={showPricesInBs}
                     cartQuantity={cartQuantityByProduct[product.id] || 0}
                     isStoreOpen={isStoreOpen}
+                    layout={isVisualLayout ? "visual" : "classic"}
                   />
                 </div>
               ))}
@@ -267,7 +275,7 @@ export function CatalogClient({
                   {section.totalProducts} producto{section.totalProducts === 1 ? "" : "s"}
                 </span>
               </div>
-              <div className="grid gap-2">
+              <div className={isVisualLayout ? "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" : "grid gap-2"}>
                 {(showCategoryPreviews && section.products.length > CATEGORY_PREVIEW_LIMIT
                   ? section.products.slice(0, CATEGORY_PREVIEW_LIMIT)
                   : section.products
@@ -281,6 +289,7 @@ export function CatalogClient({
                     showPricesInBs={showPricesInBs}
                     cartQuantity={cartQuantityByProduct[product.id] || 0}
                     isStoreOpen={isStoreOpen}
+                    layout={isVisualLayout ? "visual" : "classic"}
                   />
                 ))}
               </div>
@@ -297,7 +306,7 @@ export function CatalogClient({
           ))}
         </div>
       ) : (
-        <div className="grid gap-2">
+        <div className={isVisualLayout ? "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" : "grid gap-2"}>
           {menuProducts.map((product) => (
             <ProductListItem
               key={product.id}
@@ -308,6 +317,7 @@ export function CatalogClient({
               showPricesInBs={showPricesInBs}
               cartQuantity={cartQuantityByProduct[product.id] || 0}
               isStoreOpen={isStoreOpen}
+              layout={isVisualLayout ? "visual" : "classic"}
             />
           ))}
         </div>

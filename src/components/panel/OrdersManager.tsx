@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import NextImage from "next/image";
 import {
   CheckCircle2,
   CircleDollarSign,
@@ -18,6 +19,7 @@ import {
   Search,
   Send,
   ShoppingBag,
+  ImageIcon,
   Truck,
   UtensilsCrossed,
   X,
@@ -103,6 +105,7 @@ function OrderDetail({
   const [paymentCopied, setPaymentCopied] = useState(false);
   const [isSavingPayment, setIsSavingPayment] = useState(false);
   const [paymentMessage, setPaymentMessage] = useState("");
+  const [isOpeningReceipt, setIsOpeningReceipt] = useState(false);
   const [paymentDraft, setPaymentDraft] = useState({
     paymentStatus: getOrderPaymentStatus(order),
     paymentReference: order.payment_reference || "",
@@ -182,6 +185,27 @@ function OrderDetail({
       setPaymentMessage(error.message || "No se pudo actualizar el pago.");
     } finally {
       setIsSavingPayment(false);
+    }
+  }
+
+  async function openPaymentReceipt() {
+    const receiptWindow = window.open("about:blank", "_blank");
+    setIsOpeningReceipt(true);
+    setPaymentMessage("");
+    try {
+      const data = await apiRequest(pin, `/api/panel/orders/${order.id}/payment-receipt`);
+      if (receiptWindow) {
+        receiptWindow.location.href = data.url;
+      } else {
+        setPaymentMessage("Permite ventanas emergentes para abrir la captura.");
+      }
+    } catch (receiptError) {
+      receiptWindow?.close();
+      setPaymentMessage(
+        receiptError instanceof Error ? receiptError.message : "No se pudo abrir la imagen."
+      );
+    } finally {
+      setIsOpeningReceipt(false);
     }
   }
 
@@ -294,6 +318,22 @@ function OrderDetail({
                 <p>Pago: {order.payment_method}</p>
                 <p>Modalidad: {getDeliverySummary(order)}</p>
               </div>
+              {order.has_payment_receipt ? (
+                <div className="mt-4 rounded-3xl bg-emerald-50 p-3 ring-1 ring-emerald-200">
+                  <p className="text-xs font-black uppercase tracking-[0.14em] text-emerald-800">
+                    Comprobante recibido
+                  </p>
+                  <button
+                    type="button"
+                    disabled={isOpeningReceipt}
+                    onClick={openPaymentReceipt}
+                    className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-3 text-sm font-black text-white disabled:opacity-60"
+                  >
+                    {isOpeningReceipt ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />}
+                    Ver captura o foto
+                  </button>
+                </div>
+              ) : null}
             </section>
 
             {currentTransportOrder ? (
@@ -538,6 +578,12 @@ export function OrdersManager() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<OrderRow | null>(null);
+  const [paymentReview, setPaymentReview] = useState<{
+    order: OrderRow;
+    imageUrl: string | null;
+    isLoading: boolean;
+    error: string;
+  } | null>(null);
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => shouldShowPanelInitialAccessGate());
   const [isLoading, setIsLoading] = useState(() => hasSavedPanelAuth());
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -702,6 +748,30 @@ export function OrdersManager() {
       setSelectedOrder(order);
     } finally {
       setLoadingDetailOrderId(null);
+    }
+  }, [pin]);
+
+  const openPaymentReview = useCallback(async (order: OrderRow) => {
+    if (!order.has_payment_receipt && !order.payment_reference) return;
+    setPaymentReview({ order, imageUrl: null, isLoading: order.has_payment_receipt === true, error: "" });
+    if (!order.has_payment_receipt) return;
+    try {
+      const data = await apiRequest(pin, `/api/panel/orders/${order.id}/payment-receipt`);
+      setPaymentReview((current) =>
+        current?.order.id === order.id
+          ? { ...current, imageUrl: data.url, isLoading: false }
+          : current
+      );
+    } catch (reviewError) {
+      setPaymentReview((current) =>
+        current?.order.id === order.id
+          ? {
+              ...current,
+              isLoading: false,
+              error: reviewError instanceof Error ? reviewError.message : "No se pudo abrir la captura.",
+            }
+          : current
+      );
     }
   }, [pin]);
 
@@ -1247,12 +1317,6 @@ export function OrdersManager() {
                       Nuevo
                     </p>
                   ) : null}
-                  <span
-                    className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-black ${orderMode.style}`}
-                  >
-                    <orderMode.Icon size={12} aria-hidden="true" />
-                    {orderMode.label}
-                  </span>
                 </div>
 
                 <div className="min-w-0">
@@ -1269,30 +1333,44 @@ export function OrdersManager() {
 
                 <p className="text-sm font-black">{formatUsd(Number(order.total_usd || 0))}</p>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className={[
-                      "rounded-full px-2.5 py-1 text-[11px] font-black",
-                      paymentStatusStyles[paymentStatus] || "bg-[#F8F3E8] text-[#746f69]",
-                    ].join(" ")}
-                  >
-                    {getPaymentStatusLabel(paymentStatus)}
-                  </span>
-                  {paymentStatus !== "verified" ? (
-                    <button
-                      type="button"
-                      onClick={() => markPaymentVerified(order)}
-                      disabled={isSavingPayment}
-                      className="inline-flex h-7 items-center justify-center gap-1 rounded-full bg-green-100 px-2.5 text-[10px] font-black text-green-700 disabled:opacity-60"
-                    >
-                      {isSavingPayment ? (
-                        <Loader2 size={13} className="animate-spin" />
-                      ) : (
-                        <CircleDollarSign size={13} />
-                      )}
+                <div className="flex flex-nowrap items-center gap-1">
+                  {paymentStatus === "verified" ? (
+                    <span className="inline-flex h-7 items-center gap-1 whitespace-nowrap rounded-full bg-emerald-100 px-2 text-[10px] font-black text-emerald-800">
+                      <CheckCircle2 size={12} />
                       Pagado
-                    </button>
-                  ) : null}
+                    </span>
+                  ) : (
+                    <>
+                      {order.has_payment_receipt || order.payment_reference ? (
+                        <button
+                          type="button"
+                          onClick={() => void openPaymentReview(order)}
+                          className="inline-flex h-7 items-center gap-1 whitespace-nowrap rounded-full bg-blue-100 px-2 text-[10px] font-black text-blue-700"
+                        >
+                          <ImageIcon size={12} />
+                          Revisar pago
+                        </button>
+                      ) : (
+                        <span className={`inline-flex h-7 items-center whitespace-nowrap rounded-full px-2 text-[10px] font-black ${paymentStatusStyles[paymentStatus] || "bg-[#F8F3E8] text-[#746f69]"}`}>
+                          {getPaymentStatusLabel(paymentStatus)}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm(`¿Marcar ${order.public_code} como pagado?`)) {
+                            void markPaymentVerified(order);
+                          }
+                        }}
+                        disabled={isSavingPayment}
+                        title="Confirmar pago"
+                        aria-label={`Confirmar pago de ${order.public_code}`}
+                        className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-emerald-600 text-white shadow-sm disabled:opacity-60"
+                      >
+                        {isSavingPayment ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                      </button>
+                    </>
+                  )}
                 </div>
 
                 <div className="rounded-2xl bg-[#F8F3E8] p-2">
@@ -1320,76 +1398,64 @@ export function OrdersManager() {
                   )}
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                <div className="grid w-fit grid-cols-[58px_104px_48px] items-center gap-2 lg:justify-self-end">
 
                   {whatsappUrl && (
                     <a
                       href={whatsappUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-green-100 px-2.5 text-[11px] font-black text-green-700"
+                      className="inline-flex h-8 w-[58px] items-center justify-center gap-1.5 rounded-full bg-green-100 text-[11px] font-black text-green-700"
                       aria-label="Abrir WhatsApp"
                     >
                       <Send size={14} />
                       WA
                     </a>
                   )}
+                  {!whatsappUrl ? <span className="h-8 w-[58px]" aria-hidden="true" /> : null}
 
-                  {order.delivery_type === "delivery" && (
-                    <>
-                      {showEntrega2Button && (
-                        <button
-                          type="button"
-                          onClick={() => sendOrderToDelivery(order.id)}
-                          disabled={isSendingDelivery}
-                          title="Enviar a la empresa delivery"
-                          aria-label="Enviar a la empresa delivery"
-                          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-[#2E3A79] px-2.5 text-[11px] font-black text-white disabled:opacity-60"
-                        >
-                          {isSendingDelivery ? (
-                            <Loader2 size={16} className="animate-spin" />
-                          ) : (
-                            <Motorbike size={16} />
-                          )}
-                          Delivery
-                        </button>
+                  {order.delivery_type === "delivery" &&
+                  (showEntrega2Button || showTransportAgencyButton) ? (
+                    <button
+                      type="button"
+                      onClick={() => sendOrderToDelivery(order.id)}
+                      disabled={isSendingDelivery}
+                      title="Enviar a la empresa delivery"
+                      aria-label="Enviar a la empresa delivery"
+                      className="inline-flex h-8 w-[104px] items-center justify-center gap-1.5 rounded-full bg-[#2E3A79] text-[11px] font-black text-white disabled:opacity-60"
+                    >
+                      {isSendingDelivery ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        <Motorbike size={16} />
                       )}
-
-                      {showDeliverySent ? (
-                        <button
-                          type="button"
-                          disabled
-                          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-green-100 px-2.5 text-[11px] font-black text-green-700 ring-1 ring-green-200"
-                          title="Pedido ya solicitado a la empresa delivery"
-                        >
-                          <Motorbike size={16} />
-                          Delivery
-                        </button>
-                      ) : null}
-
-                      {showTransportAgencyButton && (
-                        <button
-                          type="button"
-                          onClick={() => sendOrderToDelivery(order.id)}
-                          disabled={isSendingDelivery}
-                          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full bg-[#2E3A79] px-2.5 text-[11px] font-black text-white disabled:opacity-60"
-                        >
-                          {isSendingDelivery ? (
-                            <Loader2 size={16} className="animate-spin" />
-                          ) : (
-                            <Motorbike size={16} />
-                          )}
-                          Delivery
-                        </button>
-                      )}
-                    </>
+                      Delivery
+                    </button>
+                  ) : order.delivery_type === "delivery" && showDeliverySent ? (
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex h-8 w-[104px] items-center justify-center gap-1.5 rounded-full bg-green-100 text-[11px] font-black text-green-700 ring-1 ring-green-200"
+                      title="Pedido ya solicitado a la empresa delivery"
+                    >
+                      <Motorbike size={16} />
+                      Delivery
+                    </button>
+                  ) : (
+                    <span
+                      className={`inline-flex h-8 w-[104px] items-center justify-center gap-1.5 whitespace-nowrap rounded-full text-[11px] font-black ${orderMode.style}`}
+                      title={orderMode.label}
+                    >
+                      <orderMode.Icon size={14} aria-hidden="true" />
+                      {orderMode.label}
+                    </span>
                   )}
 
                   <button
                     type="button"
                     onClick={() => void openOrderDetail(order)}
                     disabled={isLoadingDetail}
-                    className="rounded-full bg-[#FFB547] px-3 py-1.5 text-[11px] font-black text-[#25262B]"
+                    className="h-8 w-12 rounded-full bg-[#FFB547] text-[11px] font-black text-[#25262B]"
                   >
                     {isLoadingDetail ? "..." : "Ver"}
                   </button>
@@ -1425,6 +1491,50 @@ export function OrdersManager() {
           }}
         />
       )}
+
+      {paymentReview ? (
+        <div className="fixed inset-0 z-[70] grid place-items-center bg-[#25262B]/70 p-4 backdrop-blur-sm">
+          <section className="w-full max-w-lg rounded-[32px] bg-white p-4 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Revisar pago</p>
+                <h2 className="mt-1 text-xl font-black">{paymentReview.order.public_code}</h2>
+                <p className="text-sm font-bold text-[#746f69]">{paymentReview.order.payment_method}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPaymentReview(null)}
+                className="grid h-10 w-10 place-items-center rounded-full bg-[#F8F3E8]"
+                aria-label="Cerrar revisión de pago"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            {paymentReview.order.payment_reference ? (
+              <p className="mt-4 rounded-2xl bg-blue-50 p-3 text-sm font-black text-blue-800">
+                Referencia: {paymentReview.order.payment_reference}
+              </p>
+            ) : null}
+            {paymentReview.isLoading ? (
+              <div className="mt-4 grid h-64 place-items-center rounded-3xl bg-[#F8F3E8]">
+                <Loader2 className="animate-spin text-[#2E3A79]" size={28} />
+              </div>
+            ) : paymentReview.imageUrl ? (
+              <div className="relative mt-4 h-[min(60vh,520px)] overflow-hidden rounded-3xl bg-[#F8F3E8]">
+                <NextImage
+                  src={paymentReview.imageUrl}
+                  alt={`Comprobante del pedido ${paymentReview.order.public_code}`}
+                  fill
+                  unoptimized
+                  className="object-contain"
+                />
+              </div>
+            ) : paymentReview.error ? (
+              <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700">{paymentReview.error}</p>
+            ) : null}
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

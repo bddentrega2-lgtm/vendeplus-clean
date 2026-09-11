@@ -1,0 +1,2697 @@
+{
+  "catalog": "SHIBUI",
+  "source": "Telegram export",
+  "import_rules": {
+    "ignore_locations": true,
+    "stock_source": "latest publication per product",
+    "duplicate_handling": "group historical publications by product name; import only latest publication as current catalog state",
+    "do_not_invent_missing_data": true,
+    "currency": "USD"
+  },
+  "products": [
+    {
+      "product_id": "SHB-001",
+      "nombre": "Corset de Gamuza",
+      "categoria": "Corsets",
+      "precio_usd": 10.0,
+      "stock_total": 2,
+      "imagen": "imagenes/SHB-001.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-001",
+      "telegram_message_id": "91"
+    },
+    {
+      "product_id": "SHB-002",
+      "nombre": "Dress Madison",
+      "categoria": "Vestidos",
+      "precio_usd": 25.0,
+      "stock_total": 4,
+      "imagen": "imagenes/SHB-002.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-002",
+      "telegram_message_id": "94"
+    },
+    {
+      "product_id": "SHB-003",
+      "nombre": "Body Raven",
+      "categoria": "Bodies",
+      "precio_usd": 18.0,
+      "stock_total": 35,
+      "imagen": "imagenes/SHB-003.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-003",
+      "telegram_message_id": "95"
+    },
+    {
+      "product_id": "SHB-004",
+      "nombre": "Body Lauren",
+      "categoria": "Bodies",
+      "precio_usd": 17.0,
+      "stock_total": 26,
+      "imagen": "imagenes/SHB-004.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-004",
+      "telegram_message_id": "96"
+    },
+    {
+      "product_id": "SHB-005",
+      "nombre": "Body Rave Lunar",
+      "categoria": "Bodies",
+      "precio_usd": 18.0,
+      "stock_total": 2,
+      "imagen": "imagenes/SHB-005.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-005",
+      "telegram_message_id": "97"
+    },
+    {
+      "product_id": "SHB-006",
+      "nombre": "Traje de Baño Triangulo Tornasol",
+      "categoria": "Trajes de baño",
+      "precio_usd": 16.0,
+      "stock_total": 1,
+      "imagen": "imagenes/SHB-006.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-006",
+      "telegram_message_id": "98"
+    },
+    {
+      "product_id": "SHB-007",
+      "nombre": "Traje de Baño Dakota",
+      "categoria": "Trajes de baño",
+      "precio_usd": 18.0,
+      "stock_total": 1,
+      "imagen": "imagenes/SHB-007.jpg",
+      "notas": "Amarre",
+      "estado_importacion": "LISTO",
+      "observaciones": "Se usó la publicación más reciente de 4 publicaciones históricas.",
+      "fuente_publicacion": "PUB-028",
+      "telegram_message_id": "125"
+    },
+    {
+      "product_id": "SHB-008",
+      "nombre": "Traje de Baño Destiny",
+      "categoria": "Trajes de baño",
+      "precio_usd": 18.0,
+      "stock_total": 7,
+      "imagen": "imagenes/SHB-008.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-008",
+      "telegram_message_id": "101"
+    },
+    {
+      "product_id": "SHB-009",
+      "nombre": "Dress Nyx Corto",
+      "categoria": "Vestidos",
+      "precio_usd": 20.0,
+      "stock_total": 12,
+      "imagen": "imagenes/SHB-009.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-009",
+      "telegram_message_id": "102"
+    },
+    {
+      "product_id": "SHB-010",
+      "nombre": "Dress Nyx Largo",
+      "categoria": "Vestidos",
+      "precio_usd": 22.0,
+      "stock_total": 3,
+      "imagen": "imagenes/SHB-010.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-010",
+      "telegram_message_id": "103"
+    },
+    {
+      "product_id": "SHB-011",
+      "nombre": "Body Raven II",
+      "categoria": "Bodies",
+      "precio_usd": 20.0,
+      "stock_total": 45,
+      "imagen": "imagenes/SHB-011.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-012",
+      "telegram_message_id": "105"
+    },
+    {
+      "product_id": "SHB-012",
+      "nombre": "Traje de Baño Infinity",
+      "categoria": "Trajes de baño",
+      "precio_usd": 18.0,
+      "stock_total": 9,
+      "imagen": "imagenes/SHB-012.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-013",
+      "telegram_message_id": "107"
+    },
+    {
+      "product_id": "SHB-013",
+      "nombre": "Traje de Baño Gaby",
+      "categoria": "Trajes de baño",
+      "precio_usd": 18.0,
+      "stock_total": 6,
+      "imagen": "imagenes/SHB-013.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-014",
+      "telegram_message_id": "109"
+    },
+    {
+      "product_id": "SHB-014",
+      "nombre": "Top Nazz",
+      "categoria": "Tops",
+      "precio_usd": 14.0,
+      "stock_total": 24,
+      "imagen": "imagenes/SHB-014.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-015",
+      "telegram_message_id": "110"
+    },
+    {
+      "product_id": "SHB-015",
+      "nombre": "Traje de Baño Verú",
+      "categoria": "Trajes de baño",
+      "precio_usd": 18.0,
+      "stock_total": 3,
+      "imagen": "imagenes/SHB-015.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-016",
+      "telegram_message_id": "111"
+    },
+    {
+      "product_id": "SHB-016",
+      "nombre": "Traje de Baño Peik",
+      "categoria": "Trajes de baño",
+      "precio_usd": 16.0,
+      "stock_total": 3,
+      "imagen": "imagenes/SHB-016.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-017",
+      "telegram_message_id": "113"
+    },
+    {
+      "product_id": "SHB-017",
+      "nombre": "Body Bárbara",
+      "categoria": "Bodies",
+      "precio_usd": 17.0,
+      "stock_total": 44,
+      "imagen": "",
+      "notas": "",
+      "estado_importacion": "REVISAR",
+      "observaciones": "La publicación usa video y el medio no fue exportado; cargar sin imagen o completar manualmente.",
+      "fuente_publicacion": "PUB-019",
+      "telegram_message_id": "115"
+    },
+    {
+      "product_id": "SHB-018",
+      "nombre": "Body Aisha II",
+      "categoria": "Bodies",
+      "precio_usd": 17.0,
+      "stock_total": 29,
+      "imagen": "imagenes/SHB-018.jpg",
+      "notas": "Mga Corta",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-020",
+      "telegram_message_id": "116"
+    },
+    {
+      "product_id": "SHB-019",
+      "nombre": "Set Nikki",
+      "categoria": "Sets",
+      "precio_usd": "",
+      "stock_total": 1,
+      "imagen": "imagenes/SHB-019.jpg",
+      "notas": "",
+      "estado_importacion": "REVISAR",
+      "observaciones": "Precio no disponible en Telegram; no inventar.",
+      "fuente_publicacion": "PUB-021",
+      "telegram_message_id": "117"
+    },
+    {
+      "product_id": "SHB-020",
+      "nombre": "Body Bárb. Cuerina",
+      "categoria": "Bodies",
+      "precio_usd": 19.0,
+      "stock_total": 8,
+      "imagen": "imagenes/SHB-020.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-022",
+      "telegram_message_id": "119"
+    },
+    {
+      "product_id": "SHB-021",
+      "nombre": "Body Gia Manga Corta",
+      "categoria": "Bodies",
+      "precio_usd": 17.0,
+      "stock_total": 38,
+      "imagen": "imagenes/SHB-021.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-023",
+      "telegram_message_id": "120"
+    },
+    {
+      "product_id": "SHB-022",
+      "nombre": "Set Savanah",
+      "categoria": "Sets",
+      "precio_usd": 25.0,
+      "stock_total": 12,
+      "imagen": "imagenes/SHB-022.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-024",
+      "telegram_message_id": "121"
+    },
+    {
+      "product_id": "SHB-023",
+      "nombre": "Top Gigi",
+      "categoria": "Tops",
+      "precio_usd": 11.0,
+      "stock_total": 26,
+      "imagen": "imagenes/SHB-023.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-025",
+      "telegram_message_id": "122"
+    },
+    {
+      "product_id": "SHB-024",
+      "nombre": "Traje de Baño Vzla",
+      "categoria": "Trajes de baño",
+      "precio_usd": 23.0,
+      "stock_total": 14,
+      "imagen": "imagenes/SHB-024.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-026",
+      "telegram_message_id": "123"
+    },
+    {
+      "product_id": "SHB-025",
+      "nombre": "Top Vixen",
+      "categoria": "Tops",
+      "precio_usd": 15.0,
+      "stock_total": 42,
+      "imagen": "imagenes/SHB-025.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-027",
+      "telegram_message_id": "124"
+    },
+    {
+      "product_id": "SHB-026",
+      "nombre": "Body Rave III",
+      "categoria": "Bodies",
+      "precio_usd": 23.0,
+      "stock_total": 28,
+      "imagen": "imagenes/SHB-026.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-029",
+      "telegram_message_id": "126"
+    },
+    {
+      "product_id": "SHB-027",
+      "nombre": "Top Scarlett",
+      "categoria": "Tops",
+      "precio_usd": 14.0,
+      "stock_total": 34,
+      "imagen": "imagenes/SHB-027.jpg",
+      "notas": "",
+      "estado_importacion": "LISTO",
+      "observaciones": "",
+      "fuente_publicacion": "PUB-030",
+      "telegram_message_id": "127"
+    }
+  ],
+  "variants": [
+    {
+      "product_id": "SHB-001",
+      "color": "Beige",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-001",
+      "color": "Beige",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-002",
+      "color": "Beige",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-002",
+      "color": "Blanco",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-002",
+      "color": "Marrón",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-002",
+      "color": "Rojo",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-003",
+      "color": "Aguamar",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-003",
+      "color": "Amarillo",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-003",
+      "color": "Azul Os",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-003",
+      "color": "Beige",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-003",
+      "color": "Beige",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-003",
+      "color": "Beige",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-003",
+      "color": "Beige",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-003",
+      "color": "Blanco",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-003",
+      "color": "Blanco",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-003",
+      "color": "Blanco",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-003",
+      "color": "Blanco",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-003",
+      "color": "Gris",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-003",
+      "color": "Gris",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 3
+    },
+    {
+      "product_id": "SHB-003",
+      "color": "Gris",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 4
+    },
+    {
+      "product_id": "SHB-003",
+      "color": "Gris",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-003",
+      "color": "Marrón",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-003",
+      "color": "Negro",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-003",
+      "color": "Negro",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-003",
+      "color": "Rojo",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-004",
+      "color": "Aguamar",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 3
+    },
+    {
+      "product_id": "SHB-004",
+      "color": "Aguamar",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-004",
+      "color": "Aguamar",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 3
+    },
+    {
+      "product_id": "SHB-004",
+      "color": "Azul Os",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-004",
+      "color": "Azul Os",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-004",
+      "color": "Beige",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-004",
+      "color": "Blanco",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-004",
+      "color": "Blanco",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-004",
+      "color": "Gris",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-004",
+      "color": "Marrón",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-004",
+      "color": "Marrón",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-004",
+      "color": "Marrón",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-004",
+      "color": "Rojo",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 3
+    },
+    {
+      "product_id": "SHB-004",
+      "color": "Rojo",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 3
+    },
+    {
+      "product_id": "SHB-004",
+      "color": "Vino",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-005",
+      "color": "Negro punto blanco",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-006",
+      "color": "",
+      "talla": "",
+      "detalle": "No especificado",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-007",
+      "color": "Dorado",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-008",
+      "color": "AmariBB",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 3
+    },
+    {
+      "product_id": "SHB-008",
+      "color": "Marrón",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-008",
+      "color": "Marrón",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-009",
+      "color": "Azul O",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-009",
+      "color": "Azul Os",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-009",
+      "color": "Beige",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-009",
+      "color": "Beige",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-009",
+      "color": "Blanco",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-009",
+      "color": "Blanco",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-009",
+      "color": "Marrón",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-009",
+      "color": "Rojo",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-009",
+      "color": "Rojo",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-009",
+      "color": "Vino",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-009",
+      "color": "Vino",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-010",
+      "color": "Beige",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-010",
+      "color": "Blanco",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-010",
+      "color": "Rojo",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Aguamarina",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Aguamarina",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Azul Os",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Azul Os",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Azul Os",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Beige",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Beige",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Beige",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Beige Cre",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 3
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Beige Cre",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Beige Cre",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Blanco",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Blanco",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Blanco",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Blanco",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Gris",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 3
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Gris",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Gris",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 4
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Gris",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 3
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Marrón",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Marrón",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Rojo",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Rojo",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Rosita",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Vino",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Vino",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-011",
+      "color": "Vino",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-012",
+      "color": "Blanco",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-012",
+      "color": "Negro",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-012",
+      "color": "Negro",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 3
+    },
+    {
+      "product_id": "SHB-012",
+      "color": "Vino",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 3
+    },
+    {
+      "product_id": "SHB-013",
+      "color": "AguMar+Naran",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-013",
+      "color": "Negr+blan",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-013",
+      "color": "Rojo+rosi",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-013",
+      "color": "Rosi+amari",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-014",
+      "color": "Beige",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-014",
+      "color": "Beige",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-014",
+      "color": "Beige",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-014",
+      "color": "Beige Cre",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-014",
+      "color": "Blanco",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-014",
+      "color": "Blanco",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-014",
+      "color": "Blanco",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-014",
+      "color": "Gris",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-014",
+      "color": "Gris",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-014",
+      "color": "Gris",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-014",
+      "color": "Marrón",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-014",
+      "color": "Marrón",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-014",
+      "color": "Marrón",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-014",
+      "color": "Negro",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-014",
+      "color": "Negro",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-014",
+      "color": "Negro",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-014",
+      "color": "Rojo",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-014",
+      "color": "Rojo",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-014",
+      "color": "Rojo",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-014",
+      "color": "Vino",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-014",
+      "color": "Vino",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-014",
+      "color": "Vino",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-015",
+      "color": "Aguamarina",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-015",
+      "color": "Rojo",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-015",
+      "color": "Rosita",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-016",
+      "color": "Morad+plata",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-016",
+      "color": "Morad+plata",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Aguamar",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Aguamar",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Aguamar",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Aguamar",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Azul Os",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Azul Os",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Azul Os",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Beige",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Beige",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Beige",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Beige",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Beige Cre",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Beige Cre",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Beige Cre",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Blanco",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Blanco",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Blanco",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Blanco",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Gris",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Gris",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 3
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Gris",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Marrón",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Marrón",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Marrón",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Negro",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Negro",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Rojo",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Rojo",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Rojo",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Rosita",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Rosita",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-017",
+      "color": "Vino",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Aguamar",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Aguamar",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Aguamar",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Azul Os",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Azul Os",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Beige",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Beige",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Beige",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Blanco",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Blanco",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Gris",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Gris",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Gris",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Marrón",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Marrón",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Negro",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Negro",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Negro",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Rojo",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Rojo",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Rojo",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Rosa Vieja",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Vino",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Vino",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-018",
+      "color": "Vino",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-019",
+      "color": "Negro",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-020",
+      "color": "Gris",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-020",
+      "color": "Gris",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-020",
+      "color": "Marrón",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-020",
+      "color": "Negro",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-020",
+      "color": "Negro",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-020",
+      "color": "Rosa",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-020",
+      "color": "Rosa",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Aguamar",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Aguamar",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Aguamar",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Azul Os",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Azul Os",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Beige",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Beige",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Beige",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Blanco",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 3
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Blanco",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 3
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Blanco",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 3
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Gris",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Gris",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Gris",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Marrón",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Marrón",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Marrón",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Negro",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 3
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Negro",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Negro",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Rojo",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Rojo",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Rojo",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Rosita",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Vino",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Vino",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-021",
+      "color": "Vino",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-022",
+      "color": "Azul Os",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-022",
+      "color": "Azul Os",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-022",
+      "color": "Azul Rey",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-022",
+      "color": "Marron",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-022",
+      "color": "Marrón",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-022",
+      "color": "Marrón",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-022",
+      "color": "Vino",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-022",
+      "color": "Vino",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Aguamar",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Aguamar",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Azul Os",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Azul Os",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Azul Os",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Beige",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Beige",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Beige",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Blanco",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Blanco",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Blanco",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Gris",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Gris",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Marrón",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Marrón",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Marrón",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Marrón",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Negro",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Negro",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Negro",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Rojo",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Vino",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-023",
+      "color": "Vino",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-024",
+      "color": "Vino+azul Os",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 3
+    },
+    {
+      "product_id": "SHB-024",
+      "color": "Vino+azul Os",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 3
+    },
+    {
+      "product_id": "SHB-024",
+      "color": "Vino+azul Os",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-024",
+      "color": "Vino+Azul Os",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 6
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Azul Cobalto",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Azul cobalto",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Azul Cobalto",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Azul rey",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Azul rey",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Marrón",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Marrón",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Marrón",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Marrón Claro",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Marrón claro",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Marrón Claro",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Negro",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Negro",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Negro",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Rojo",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Rojo",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Rojo",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Rosita",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Rosita",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Rosita",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Verde Oliva",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Verde Oliva",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Verde Oliva",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Vino",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-025",
+      "color": "Vino",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Azul Os",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Azul Os",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Azul Os",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Azul Os",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Beige",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Beige",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Beige",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Beige",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Blanco",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Blanco",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Blanco",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Gris",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Gris",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Gris",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Gris",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Marrón",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Marrón",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Negro",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Negro",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Negro",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Negro",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Rojo",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Rojo",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Rojo",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Vino",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Vino",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Vino",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-026",
+      "color": "Vino",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Aguamar",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Aguamar",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Aguamar",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Azul Os",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Azul Os",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Azul Os",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Beige",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Beige",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Beige",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Blanco",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Blanco",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Blanco",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Blanco",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Gris",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Gris",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Gris",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Gris",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Marrón",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Marrón",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Marrón",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Negro",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Negro",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Negro",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Negro",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Rojo",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Rojo",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 2
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Rojo",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Vino",
+      "talla": "L",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Vino",
+      "talla": "M",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Vino",
+      "talla": "S",
+      "detalle": "",
+      "cantidad": 1
+    },
+    {
+      "product_id": "SHB-027",
+      "color": "Vino",
+      "talla": "XS",
+      "detalle": "",
+      "cantidad": 1
+    }
+  ]
+}
