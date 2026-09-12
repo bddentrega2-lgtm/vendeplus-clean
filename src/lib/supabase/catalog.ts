@@ -191,7 +191,7 @@ function mapStore(
         categoryId: product.category_id ? String(product.category_id) : categories[0]?.id || "general",
         name: product.name || "Producto",
         slug: `${slugify(product.name || "producto")}-${String(product.id).slice(0, 6)}`,
-        description: product.description || "Producto disponible para pedir desde Somos.",
+        description: String(product.description || "").trim(),
         priceUsd,
         originalPriceUsd,
         discountPercent,

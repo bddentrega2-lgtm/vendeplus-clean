@@ -1036,6 +1036,13 @@ test("catalogo compacta acciones instala Somos y oculta el horario predeterminad
   assert.match(install, /if \(tile\)[\s\S]*href="\/"[\s\S]*somos-isotipo-preview\.png/);
 });
 
+test("productos sin descripcion publica quedan en blanco", () => {
+  const mapper = readFileSync(new URL("../src/lib/supabase/catalog.ts", import.meta.url), "utf8");
+
+  assert.match(mapper, /description: String\(product\.description \|\| ""\)\.trim\(\)/);
+  assert.doesNotMatch(mapper, /Producto disponible para pedir desde Somos/);
+});
+
 test("La Cremita comparte cuenta y ofrece selector seguro de sedes", () => {
   const migration = readFileSync(
     new URL("../supabase/migrations/20260821213759_clone_la_cremita_las_ballenas.sql", import.meta.url),

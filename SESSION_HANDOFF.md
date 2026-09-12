@@ -1,3 +1,37 @@
+# 2026-09-12 - Produccion: productos sin descripcion quedan en blanco
+
+- Usuario reporto que SHIBUI seguia mostrando `Producto disponible para pedir desde Somos.` en productos sin descripcion.
+- Diagnostico: los productos afectados (`Traje de Bano Triangulo Tornasol`, `Traje de Bano Gaby`, `Traje de Bano Veru`) tienen `description = null` en Supabase; el texto venia del fallback de codigo en `.security-billing-release`, no de la base de datos.
+- Cambio: `src/lib/supabase/catalog.ts` ahora mapea `description: String(product.description || "").trim()` y deja blanco real cuando no hay descripcion. Se agrego contrato en `scripts/critical-contracts.test.mjs` para impedir que vuelva el texto generico.
+- Validaciones locales en `.security-billing-release`: busqueda `rg` sin el texto en codigo funcional; contrato focal OK; `npm.cmd run build` OK, Next 16.3.4, 203 paginas.
+- Despliegue productivo directo Vercel Ready: `dpl_5DcTea3P3kweNxDSECjabrEsKThp`, URL `https://vendeplus-clean-l2xk2jjby-entrega2-s-projects.vercel.app`; alias `https://www.somos-ve.com`, `https://somos-ve.com`, `https://vendeplus-clean.vercel.app` y alias de proyecto confirmados.
+- Smoke productivo: `https://www.somos-ve.com/shibui` HTTP 200, contiene productos SHIBUI revisados y ya no contiene `Producto disponible para pedir desde Somos.`. Logs error del deployment: sin resultados.
+- No hubo migracion ni SQL. No hubo commit/push.
+
+# 2026-09-12 - SAM Venezuela: catalogo importado y verificado
+
+- Retomado desde el handoff anterior. El estado remoto ya mostraba la importacion aplicada: `sam-maracay` tiene 17 categorias y 152 productos.
+- Decision aplicada para el conflicto pendiente: se conserva el producto existente `Kit de Sushi con Surimi` a USD 30 y se omite `SAM-121 Kit para sushi` usando `--skip-conflicts`; no se duplico ni se cambio el precio del existente.
+- Verificacion remota: 133 productos activos y 19 inactivos. Los productos sin precio `BEBIDA` y `Sesamo blanco 125gr` existen con precio 0 e inactivos; tampoco aparecen en el HTML publico.
+- Storage verificado: 104 objetos bajo `product-images/78f9a439-223a-4f97-ab48-7c2234b38da6/sam-import`, sin error de listado.
+- Catalogo publico verificado: `https://www.somos-ve.com/sam-maracay` responde 200, contiene `Sam Venezuela` y productos importados como `Caja Sorpresa`; no contiene `BEBIDA` ni `Sesamo blanco 125gr`.
+- No hubo cambios de codigo adicionales, migraciones, SQL manual, despliegue web, commit ni push. El importador y archivos fuente quedan en el worktree como soporte de auditoria/idempotencia.
+- Validaciones finales en `.security-billing-release`: `node --check scripts/import-sam-catalog.mjs` OK; `npx.cmd eslint scripts/import-sam-catalog.mjs` OK; `npm.cmd run test:critical` OK, 69/69; `npm.cmd run build` OK con variables cargadas solo en el proceso, Next 16.3.4, 203 paginas.
+- Siguiente paso: revisar visualmente SAM en telefono con el cliente/comercio y completar manualmente precios si SAM decide vender `BEBIDA` o `Sesamo blanco 125gr`; no hace falta desplegar web para esta carga.
+
+# 2026-09-11 - SAM Venezuela: importador y dry-run listos, NO aplicado
+
+- Usuario pidió primero dry-run y confirmó: conservar cualquier duplicado ya cargado, usar la alternativa sencilla sin migración y crear `BEBIDA`/`Sesamo blanco 125gr` inactivos para que no se muestren.
+- Trabajar exclusivamente desde `.security-billing-release`; la raíz principal tiene muchos cambios ajenos. Producción no fue modificada.
+- Comercio real verificado por lectura: `Sam Venezuela`, slug `sam-maracay`, id `78f9a439-223a-4f97-ab48-7c2234b38da6`, activo; estado remoto intacto: 7 categorías y 28 productos.
+- ZIP: 138 filas, 14 categorías, 138 URLs distintas y 20 grupos de nombres repetidos. El CSV/JSON no incluían descripciones; se consultaron las 138 páginas públicas. Se conservaron 71 descripciones específicas y se descartó como ausente el texto SEO genérico repetido en 67 fichas.
+- Python no está instalado. Se aplicó el fallback previsto con Node: 138/138 imágenes 800 px descargadas, WebP válidos, cero vacías/corruptas/fallidas; 114 binarios únicos. Temporales ignorados en `tmp/imports/sam-20260911`.
+- Agregados `scripts/import-sam-catalog.mjs`, `scripts/catalogs/sam/productos.csv` y `scripts/catalogs/sam/descriptions.json`. El importador es dry-run por defecto, restringe el store por id+slug, usa UUID deterministas por URL para lo nuevo, rutas Storage por hash, no sobrescribe existentes y exige tres confirmaciones para escribir remoto. Sin migración.
+- Dry-run: 10 categorías nuevas, 4 reutilizadas; 124 productos nuevos propuestos; 13 filas fuente se preservan como productos/opciones existentes; 1 conflicto pendiente (`SAM-121 Kit para sushi` $25 frente a `Kit de Sushi con Surimi` $30); 2 nuevos sin precio quedarían a 0 e inactivos; 104 imágenes únicas necesarias para los productos nuevos; no hay stock cuantitativo en la fuente.
+- Se probó `--apply` sin confirmaciones: bloqueo correcto antes de escribir. Lectura posterior: 7 categorías, 28 productos y 0 objetos en `product-images/<store>/sam-import`.
+- Validaciones: sintaxis Node OK, ESLint focal OK y dry-run remoto OK. Primer `npm.cmd run build` compiló/TypeScript pero falló en prerender por ausencia intencional de env en el worktree; repetido como `npm.cmd run build` hijo con variables solo en proceso: Next 16.3.4, 195 páginas, OK.
+- Siguiente paso exacto: usuario revisa/aprueba el dry-run y decide si `SAM-121` debe omitirse conservando el kit actual o importarse como producto distinto. Solo después ejecutar la carga remota; luego verificar DB/Storage y catálogo móvil. No desplegar web: el importador no requiere cambios de aplicación.
+
 # 2026-09-10 - Preview UX guiada SHIBUI + gestion de stock simulada, NO produccion
 
 - Usuario rechazo el selector unico de SKU de produccion y pidio volver a la experiencia aprobada: primero color, luego tallas disponibles y cantidad. Aclaro expresamente no tocar produccion.
