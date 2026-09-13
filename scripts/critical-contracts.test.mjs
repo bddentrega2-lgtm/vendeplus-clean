@@ -14,6 +14,7 @@ import {
   signDeliveryQuote,
   verifyDeliveryQuote,
 } from "../src/lib/server/signed-delivery-quote.ts";
+import { auditApiGuards } from "./api-guard-contracts.mjs";
 
 function read(relativePath) {
   return readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
@@ -1662,4 +1663,11 @@ test("paneles privados tienen proxy con cookie HttpOnly firmada", () => {
   assert.match(login, /await syncPanelServerSession\(accessToken\)/);
   assert.match(transportPanel, /await syncPanelServerSession\(accessToken\)/);
   assert.match(logout, /await clearPanelServerSession\(\)/);
+});
+
+test("rutas con service_role declaran guardia o contrato publico", () => {
+  const result = auditApiGuards();
+  assert.deepEqual(result.findings, []);
+  assert.ok(result.checkedRoutes >= 70);
+  assert.ok(result.publicServiceRoleRoutes >= 10);
 });
