@@ -22,10 +22,12 @@ import {
 } from "lucide-react";
 import {
   clearPanelAuthStorage,
+  clearPanelServerSession,
   getPanelAccessToken,
   getPanelAuthHeaders,
   getSavedPanelPin,
   savePanelToken,
+  syncPanelServerSession,
 } from "@/lib/panel/client-auth";
 import { buildClientPublicUrl } from "@/lib/public-url";
 import {
@@ -785,6 +787,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       }
 
       savePanelToken(accessToken);
+      await syncPanelServerSession(accessToken);
       setHasSession(true);
       await load();
     } catch (error: any) {
@@ -799,6 +802,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     const supabase = createSupabaseBrowserClient();
     await supabase?.auth.signOut();
     clearPanelAuthStorage();
+    await clearPanelServerSession();
     setAgencies([]);
     setRequests([]);
     setConnections([]);

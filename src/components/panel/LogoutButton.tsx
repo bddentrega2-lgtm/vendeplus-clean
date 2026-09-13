@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
-import { clearBrowserAuthStorage } from "@/lib/panel/client-auth";
+import { clearBrowserAuthStorage, clearPanelServerSession } from "@/lib/panel/client-auth";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export function LogoutButton() {
@@ -19,6 +19,7 @@ export function LogoutButton() {
     }
 
     clearBrowserAuthStorage();
+    await clearPanelServerSession();
     clearSession();
 
     if (typeof window !== "undefined") {

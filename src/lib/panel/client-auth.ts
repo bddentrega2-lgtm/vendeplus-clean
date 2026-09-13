@@ -49,6 +49,24 @@ export function savePanelToken(accessToken: string) {
   sessionStorage.removeItem(PANEL_PIN_KEY);
 }
 
+export async function syncPanelServerSession(accessToken: string) {
+  if (!accessToken) return;
+
+  await fetch("/api/auth/panel-session", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ accessToken }),
+  });
+}
+
+export async function clearPanelServerSession() {
+  await fetch("/api/auth/panel-session", {
+    method: "DELETE",
+    credentials: "same-origin",
+  }).catch(() => {});
+}
+
 export function savePanelPin(pin: string) {
   if (typeof window === "undefined") return;
   sessionStorage.removeItem(PANEL_PIN_KEY);
@@ -145,12 +163,6 @@ export async function getPanelAuthHeaders(
 ): Promise<Record<string, string>> {
   void pin;
 
-  const accessToken = await getPanelAccessToken();
-  if (!accessToken) return {};
-
   const selectedStoreId = getSelectedPanelStoreId();
-  return {
-    Authorization: `Bearer ${accessToken}`,
-    ...(selectedStoreId ? { "X-Panel-Store-Id": selectedStoreId } : {}),
-  };
+  return selectedStoreId ? { "X-Panel-Store-Id": selectedStoreId } : {};
 }

@@ -1,10 +1,11 @@
-﻿import { NextRequest } from "next/server";
+import { NextRequest } from "next/server";
+import { PANEL_SESSION_COOKIE, readPanelSessionCookie } from "@/lib/server/panel-session-cookie";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export type PanelAuthContext = {
   isAuthorized: boolean;
   mode: "user" | "none";
-  method: "auth" | "none";
+  method: "auth" | "cookie" | "none";
   isFounderMode: boolean;
   userId?: string;
   email?: string;
@@ -84,8 +85,11 @@ export async function getPanelAuthContext(
 ): Promise<PanelAuthContext> {
   const authorization = request.headers.get("authorization");
   const token = authorization?.replace("Bearer ", "").trim();
+  const cookieSession = token
+    ? null
+    : readPanelSessionCookie(request.cookies.get(PANEL_SESSION_COOKIE)?.value);
 
-  if (!token) {
+  if (!token && !cookieSession) {
     return {
       isAuthorized: false,
       mode: "none",
@@ -98,12 +102,32 @@ export async function getPanelAuthContext(
 
   try {
     const supabase = createSupabaseAdminClient();
+    let userId = cookieSession?.sub || "";
+    let userEmail = normalizeAuthEmail(cookieSession?.email || "");
 
-    const { data: claimsResult, error: claimsError } =
-      await supabase.auth.getClaims(token);
-    const claims = claimsResult?.claims;
+    if (token) {
+      const { data: claimsResult, error: claimsError } =
+        await supabase.auth.getClaims(token);
+      const claims = claimsResult?.claims;
 
-    if (claimsError || !claims?.sub) {
+      if (claimsError || !claims?.sub) {
+        return {
+          isAuthorized: false,
+          mode: "none",
+          method: "none",
+          isFounderMode: false,
+          storeIds: [],
+          error: "Sesión inválida.",
+        };
+      }
+
+      userId = String(claims.sub);
+      userEmail = normalizeAuthEmail(
+        typeof claims.email === "string" ? claims.email : ""
+      );
+    }
+
+    if (!userId || !userEmail) {
       return {
         isAuthorized: false,
         mode: "none",
@@ -114,11 +138,6 @@ export async function getPanelAuthContext(
       };
     }
 
-    const userId = String(claims.sub);
-    const userEmail = normalizeAuthEmail(
-      typeof claims.email === "string" ? claims.email : ""
-    );
-
     if (isFounderEmail(userEmail)) {
       const selectedStoreId = String(
         request.headers.get("x-panel-store-id") || ""
@@ -126,7 +145,7 @@ export async function getPanelAuthContext(
       return {
         isAuthorized: true,
         mode: "user",
-        method: "auth",
+        method: token ? "auth" : "cookie",
         isFounderMode: true,
         userId,
         email: userEmail,
@@ -169,7 +188,7 @@ export async function getPanelAuthContext(
     return {
       isAuthorized: true,
       mode: "user",
-      method: "auth",
+      method: token ? "auth" : "cookie",
       isFounderMode: false,
       userId,
       email: userEmail,

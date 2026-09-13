@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { PANEL_SESSION_COOKIE, readPanelSessionCookie } from "@/lib/server/panel-session-cookie";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   getSupabaseUserEmail,
@@ -39,20 +40,31 @@ export async function requireTransportAgencyAuth(
 ): Promise<TransportAuthContext> {
   const authorization = request.headers.get("authorization");
   const token = authorization?.replace("Bearer ", "").trim();
+  const cookieSession = token
+    ? null
+    : readPanelSessionCookie(request.cookies.get(PANEL_SESSION_COOKIE)?.value);
 
-  if (!token) throw new TransportAccessError("No autorizado.", 401);
+  if (!token && !cookieSession) throw new TransportAccessError("No autorizado.", 401);
 
   const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase.auth.getUser(token);
+  let userId = cookieSession?.sub || "";
+  let email = normalizeAuthEmail(cookieSession?.email || "");
 
-  if (error || !data.user) throw new TransportAccessError("Sesion invalida.", 401);
+  if (token) {
+    const { data, error } = await supabase.auth.getUser(token);
 
-  const email = getSupabaseUserEmail(data.user);
+    if (error || !data.user) throw new TransportAccessError("Sesion invalida.", 401);
+
+    userId = data.user.id;
+    email = getSupabaseUserEmail(data.user);
+  }
+
+  if (!userId || !email) throw new TransportAccessError("Sesion invalida.", 401);
 
   if (isFounderEmail(email)) {
     return {
       isFounderMode: true,
-      userId: data.user.id,
+      userId,
       email,
       agencyIds: null,
       role: "owner",
@@ -67,7 +79,7 @@ export async function requireTransportAgencyAuth(
     supabase
       .from("transport_agency_users")
       .select("agency_id, role")
-      .eq("user_id", data.user.id),
+      .eq("user_id", userId),
     normalizedEmail
       ? supabase
           .from("transport_agency_users")
@@ -98,7 +110,7 @@ export async function requireTransportAgencyAuth(
 
   return {
     isFounderMode: false,
-    userId: data.user.id,
+    userId,
     email: normalizedEmail,
     agencyIds: rows.map((row: any) => row.agency_id).filter(Boolean),
     agencyRoles,

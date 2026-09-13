@@ -1631,3 +1631,35 @@ test("eliminar empresa delivery archiva sin borrar historial", () => {
   assert.doesNotMatch(route, /\.from\("transport_agencies"\)\s*\.delete\(/);
   assert.match(migration, /if v_slug = 'entrega2'/);
 });
+
+test("paneles privados tienen proxy con cookie HttpOnly firmada", () => {
+  const proxy = read("src/proxy.ts");
+  const sessionRoute = read("src/app/api/auth/panel-session/route.ts");
+  const cookieHelper = read("src/lib/server/panel-session-cookie.ts");
+  const panelAuth = read("src/lib/panel/auth.ts");
+  const clientAuth = read("src/lib/panel/client-auth.ts");
+  const transportAuth = read("src/lib/transport/access.ts");
+  const adminAuthCheck = read("src/app/api/admin/auth-check/route.ts");
+  const login = read("src/components/panel/LoginForm.tsx");
+  const transportPanel = read("src/components/transport/TransportAgencyPanel.tsx");
+  const logout = read("src/components/panel/LogoutButton.tsx");
+
+  assert.match(proxy, /matcher:\s*\["\/admin\/:path\*", "\/panel\/:path\*", "\/transporte\/panel\/:path\*"\]/);
+  assert.match(proxy, /readPanelSessionCookie/);
+  assert.match(proxy, /pathname\.startsWith\("\/admin"\) && !session\.founder/);
+  assert.match(sessionRoute, /supabase\.auth\.getUser\(token\)/);
+  assert.match(sessionRoute, /httpOnly:\s*true/);
+  assert.match(cookieHelper, /createHmac\("sha256"/);
+  assert.match(cookieHelper, /timingSafeEqual/);
+  assert.match(panelAuth, /readPanelSessionCookie\(request\.cookies\.get\(PANEL_SESSION_COOKIE\)\?\.value\)/);
+  assert.match(panelAuth, /method:\s*token \? "auth" : "cookie"/);
+  assert.match(transportAuth, /readPanelSessionCookie\(request\.cookies\.get\(PANEL_SESSION_COOKIE\)\?\.value\)/);
+  assert.match(transportAuth, /if \(!token && !cookieSession\)/);
+  assert.match(adminAuthCheck, /getPanelAuthContext\(request\)/);
+  assert.doesNotMatch(adminAuthCheck, /get\("authorization"\)/);
+  assert.match(clientAuth, /credentials:\s*"same-origin"/);
+  assert.doesNotMatch(clientAuth, /Authorization:\s*`Bearer/);
+  assert.match(login, /await syncPanelServerSession\(accessToken\)/);
+  assert.match(transportPanel, /await syncPanelServerSession\(accessToken\)/);
+  assert.match(logout, /await clearPanelServerSession\(\)/);
+});

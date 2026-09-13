@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Loader2, Lock } from "lucide-react";
 import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
-import { savePanelToken } from "@/lib/panel/client-auth";
+import { savePanelToken, syncPanelServerSession } from "@/lib/panel/client-auth";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export function LoginForm() {
@@ -46,8 +46,13 @@ export function LoginForm() {
       }
 
       savePanelToken(accessToken);
+      await syncPanelServerSession(accessToken);
       await refreshSession();
-      router.push("/panel");
+      const nextPath =
+        typeof window === "undefined"
+          ? "/panel"
+          : new URLSearchParams(window.location.search).get("next") || "/panel";
+      router.push(nextPath.startsWith("/") && !nextPath.startsWith("//") ? nextPath : "/panel");
     } catch (error: any) {
       const message = String(error?.message || error || "");
 
