@@ -10,6 +10,7 @@ import { formatBaseCurrency, formatBs } from "@/lib/currency";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import { useLiveStoreOpenState } from "@/hooks/use-live-store-open-state";
 import { getTableOrderContext, type TableOrderContext } from "@/lib/table-orders";
+import { CartSuggestions } from "@/components/public/CartSuggestions";
 
 function formatSelectedOptions(item: CartItem, baseCurrency: "USD" | "EUR" | string) {
   const groups = new Map<string, string[]>();
@@ -203,6 +204,10 @@ export function CartPageClient({ store }: { store: Store }) {
             ))
           )}
         </section>
+
+        {items.length > 0 ? (
+          <CartSuggestions store={store} items={items} isStoreOpen={isStoreOpen} />
+        ) : null}
 
         {isStoreOpen && items.length > 0 ? (
           <section className="sticky bottom-4 z-20 mt-5 rounded-[32px] bg-[#25262B] p-3 text-white shadow-2xl shadow-[#25262B]/25">

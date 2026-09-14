@@ -201,6 +201,7 @@ function mapStore(
         imageEmoji: "?",
         isAvailable: product.is_available !== false,
         isFeatured: Boolean(product.is_featured),
+        isCartSuggestion: Boolean(product.is_cart_suggestion),
         tags: [
           ...(discountPercent > 0 ? [`-${discountPercent}%`] : []),
           ...(product.is_featured ? ["Recomendado"] : []),
@@ -450,6 +451,7 @@ const storeSelect = `
     image_url,
     is_available,
     is_featured,
+    is_cart_suggestion,
     sort_order,
     product_variants (
       id,

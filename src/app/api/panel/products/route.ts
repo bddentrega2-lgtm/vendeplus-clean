@@ -20,6 +20,7 @@ const productsSelect = `
   image_url,
   is_available,
   is_featured,
+  is_cart_suggestion,
   sort_order,
   stores(name),
   categories(name),
@@ -65,6 +66,16 @@ type NormalizedVariant = {
 
 type ProductImageInput = { image_url: string; alt_text: string | null; sort_order: number };
 const maxProductImages = 2;
+
+function isMissingCartSuggestionColumn(error: any) {
+  const message = String(error?.message || "").toLowerCase();
+  return error?.code === "42703" || message.includes("is_cart_suggestion");
+}
+
+function withoutCartSuggestion(payload: ReturnType<typeof normalizeProductPayload>) {
+  const { is_cart_suggestion: _isCartSuggestion, ...legacyPayload } = payload;
+  return legacyPayload;
+}
 
 async function recordPromotionActivation(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
@@ -154,6 +165,7 @@ function normalizeProductPayload(body: any) {
     image_url: body.image_url ? String(body.image_url).trim() : null,
     is_available: Boolean(body.is_available),
     is_featured: Boolean(body.is_featured),
+    is_cart_suggestion: Boolean(body.is_cart_suggestion),
     sort_order: Number(body.sort_order || 0),
   };
 }
@@ -398,11 +410,21 @@ export async function POST(request: NextRequest) {
       return badRequest(`Puedes publicar hasta ${productLimit} productos. Guarda este producto como inactivo o completa el logro para ampliar el límite.`);
     }
 
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("products")
       .insert(payload)
       .select()
       .single();
+
+    if (error && isMissingCartSuggestionColumn(error)) {
+      const legacyInsert = await supabase
+        .from("products")
+        .insert(withoutCartSuggestion(payload))
+        .select()
+        .single();
+      data = legacyInsert.data;
+      error = legacyInsert.error;
+    }
 
     if (error) throw error;
 
@@ -473,12 +495,23 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("products")
       .update(payload)
       .eq("id", body.id)
       .select()
       .single();
+
+    if (error && isMissingCartSuggestionColumn(error)) {
+      const legacyUpdate = await supabase
+        .from("products")
+        .update(withoutCartSuggestion(payload))
+        .eq("id", body.id)
+        .select()
+        .single();
+      data = legacyUpdate.data;
+      error = legacyUpdate.error;
+    }
 
     if (error) throw error;
 

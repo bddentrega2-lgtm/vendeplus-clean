@@ -1,6 +1,6 @@
-﻿import { notFound } from "next/navigation";
+import { notFound } from "next/navigation";
 import { CartPageClient } from "@/components/public/CartPageClient";
-import { getPublicStoreShellBySlug } from "@/lib/supabase/catalog";
+import { getPublicStoreBySlug } from "@/lib/supabase/catalog";
 
 export const revalidate = 30;
 
@@ -10,7 +10,7 @@ export default async function CartPage({
   params: Promise<{ storeSlug: string }>;
 }) {
   const { storeSlug } = await params;
-  const store = await getPublicStoreShellBySlug(storeSlug);
+  const store = await getPublicStoreBySlug(storeSlug);
 
   if (!store) notFound();
 

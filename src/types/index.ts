@@ -108,6 +108,7 @@ export type Product = {
   imageEmoji?: string;
   isAvailable: boolean;
   isFeatured?: boolean;
+  isCartSuggestion?: boolean;
   tags?: string[];
   variants?: ProductVariant[];
   optionGroups?: ProductOptionGroup[];

@@ -329,6 +329,8 @@ export async function GET(request: NextRequest) {
         });
       }
 
+      await fullStatsAccessPromise;
+
       return NextResponse.json({
         ...responseBase,
         topCustomers: aggregate.top_customers || [],

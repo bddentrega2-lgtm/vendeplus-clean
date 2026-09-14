@@ -67,6 +67,20 @@ function getVariantPlaceholder(product: Product) {
   return variantNames.some((name) => name.includes("oz")) ? "Elige tamaño" : "Elige";
 }
 
+function getProductStartingPrice(product: Product) {
+  const variantPrices = (product.variants || [])
+    .filter((variant) => variant.isAvailable !== false)
+    .map((variant) => product.priceUsd + Number(variant.priceDeltaUsd || 0));
+
+  if (!variantPrices.length) {
+    return { price: product.priceUsd, hasRange: false };
+  }
+
+  const minPrice = Math.min(...variantPrices);
+  const maxPrice = Math.max(...variantPrices);
+  return { price: minPrice, hasRange: Math.abs(maxPrice - minPrice) > 0.009 };
+}
+
 function ProductOptionsSheet({
   product,
   storeSlug,
@@ -542,6 +556,227 @@ function ProductOptionsSheet({
         </div>
       </section>
     </div>
+  );
+}
+
+export function ProductSuggestionCard({
+  product,
+  storeSlug,
+  usdToBs = 600,
+  baseCurrency = "USD",
+  showPricesInBs = true,
+  isStoreOpen = true,
+  onUnavailable,
+}: {
+  product: Product;
+  storeSlug: string;
+  usdToBs?: number;
+  baseCurrency?: "USD" | "EUR" | string;
+  showPricesInBs?: boolean;
+  isStoreOpen?: boolean;
+  onUnavailable?: () => void;
+}) {
+  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
+  const [isChoosingVariant, setIsChoosingVariant] = useState(false);
+  const [isCustomizing, setIsCustomizing] = useState(false);
+  const [loadedOptionGroups, setLoadedOptionGroups] = useState<ProductOptionGroup[] | null>(
+    product.optionGroups?.length ? product.optionGroups : null
+  );
+  const optionGroupsRequestRef = useRef<Promise<ProductOptionGroup[]> | null>(null);
+  const [isLoadingOptions, setIsLoadingOptions] = useState(false);
+  const [message, setMessage] = useState("");
+  const [added, setAdded] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+  const hasVariants = Boolean(product.variants?.length);
+  const hasOptionGroups = Boolean(loadedOptionGroups?.length || product.hasOptionGroups);
+  const hasInventory = product.inventoryManaged === true;
+  const inventoryAvailable = !hasInventory || (product.inventorySkus || []).some((sku) => sku.isAvailable && sku.stock > 0);
+  const availableVariants = (product.variants || []).filter((variant) => variant.isAvailable !== false);
+  const startingPrice = getProductStartingPrice(product);
+  const unitPrice = product.priceUsd + Number(selectedVariant?.priceDeltaUsd || 0);
+  const productForOptions = useMemo(
+    () => ({ ...product, optionGroups: loadedOptionGroups || product.optionGroups || [] }),
+    [loadedOptionGroups, product]
+  );
+
+  async function loadOptionGroups() {
+    if (loadedOptionGroups) return loadedOptionGroups;
+    if (optionGroupsRequestRef.current) return optionGroupsRequestRef.current;
+
+    setIsLoadingOptions(true);
+    setMessage("");
+
+    const request = (async () => {
+      const params = new URLSearchParams({ storeSlug, productId: product.id });
+      const response = await fetch(`/api/catalog/product-options?${params.toString()}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudieron cargar los extras.");
+      const optionGroups = Array.isArray(data.optionGroups) ? data.optionGroups : [];
+      setLoadedOptionGroups(optionGroups);
+      return optionGroups as ProductOptionGroup[];
+    })();
+
+    optionGroupsRequestRef.current = request;
+
+    try {
+      return await request;
+    } finally {
+      optionGroupsRequestRef.current = null;
+      setIsLoadingOptions(false);
+    }
+  }
+
+  function markAdded() {
+    setAdded(true);
+    window.setTimeout(() => setAdded(false), 1200);
+  }
+
+  async function addSimpleProduct(variant: ProductVariant | null) {
+    setIsAdding(true);
+    addToCart(storeSlug, {
+      productId: product.id,
+      productName: product.name,
+      productSlug: product.slug,
+      productImageUrl: product.imageUrl,
+      variantId: variant?.id,
+      variantName: variant?.name,
+      quantity: 1,
+      unitPriceUsd: product.priceUsd + Number(variant?.priceDeltaUsd || 0),
+    });
+    markAdded();
+    window.setTimeout(() => setIsAdding(false), 450);
+  }
+
+  async function addOrCustomize(variant: ProductVariant | null) {
+    setSelectedVariant(variant);
+    if (hasOptionGroups || hasInventory) {
+      try {
+        const optionGroups = hasOptionGroups ? await loadOptionGroups() : [];
+        if (hasInventory || optionGroups.length) {
+          setIsCustomizing(true);
+          return;
+        }
+      } catch (error: any) {
+        setMessage(error.message || "No se pudieron cargar los extras.");
+        return;
+      }
+    }
+    await addSimpleProduct(variant);
+  }
+
+  async function handleAdd() {
+    if (isAdding || isLoadingOptions) return;
+    setMessage("");
+
+    if (!isStoreOpen || product.isAvailable === false || !inventoryAvailable) {
+      setMessage("Este producto ya no esta disponible.");
+      onUnavailable?.();
+      return;
+    }
+
+    if (hasVariants && !selectedVariant) {
+      setIsChoosingVariant(true);
+      return;
+    }
+
+    await addOrCustomize(selectedVariant);
+  }
+
+  return (
+    <article className="w-[156px] shrink-0 snap-start">
+      <div className="relative aspect-square overflow-hidden rounded-[22px] bg-[#F8F3E8] shadow-sm ring-1 ring-[#25262B]/[0.06]">
+        <OptimizedImage
+          src={product.imageUrl}
+          alt={product.imageAlt}
+          width={220}
+          height={220}
+          sizes="156px"
+          className="h-full w-full object-cover"
+          fallback={
+            <div className="grid h-full w-full place-items-center text-3xl font-black text-[#2E3A79]">
+              {product.name.slice(0, 1).toUpperCase()}
+            </div>
+          }
+        />
+        <button
+          type="button"
+          onClick={handleAdd}
+          disabled={isAdding || isLoadingOptions || !isStoreOpen || !inventoryAvailable}
+          className={[
+            "absolute bottom-2 right-2 grid h-11 w-11 place-items-center rounded-full bg-white text-[#25262B] shadow-lg ring-1 ring-[#25262B]/10 transition",
+            added ? "bg-[#6FA64F] text-white" : "",
+            isAdding || isLoadingOptions || !isStoreOpen || !inventoryAvailable ? "opacity-70" : "active:scale-95",
+          ].join(" ")}
+          aria-label={`Agregar ${product.name}`}
+        >
+          {added ? <Check size={19} /> : <Plus size={21} />}
+        </button>
+      </div>
+      <div className="mt-2 min-h-[76px]">
+        <h3 className="line-clamp-2 text-sm font-black leading-tight text-[#25262B]">{product.name}</h3>
+        <p className="mt-1 text-base font-black leading-tight text-[#25262B]">
+          {startingPrice.hasRange || hasVariants ? "Desde " : ""}
+          {formatBaseCurrency(startingPrice.price, baseCurrency)}
+        </p>
+        {showPricesInBs ? <p className="text-[11px] font-black text-[#746f69]">{formatBs(startingPrice.price * usdToBs)}</p> : null}
+        {message ? <p className="mt-1 text-[11px] font-black text-red-600">{message}</p> : null}
+      </div>
+
+      {isChoosingVariant ? (
+        <div className="fixed inset-0 z-[70] flex items-end bg-[#25262B]/45 p-3 backdrop-blur-sm sm:items-center sm:justify-center">
+          <section role="dialog" aria-modal="true" aria-label={`Presentaciones de ${product.name}`} className="w-full rounded-[28px] bg-white p-4 shadow-2xl sm:max-w-md">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Elige presentacion</p>
+                <h2 className="mt-1 text-xl font-black text-[#25262B]">{product.name}</h2>
+              </div>
+              <button type="button" onClick={() => setIsChoosingVariant(false)} className="grid h-10 w-10 place-items-center rounded-full bg-[#F8F3E8] text-[#2E3A79]" aria-label="Cerrar">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="mt-4 grid gap-2">
+              {availableVariants.map((variant) => (
+                <button
+                  key={variant.id}
+                  type="button"
+                  onClick={() => {
+                    setIsChoosingVariant(false);
+                    void addOrCustomize(variant);
+                  }}
+                  className="flex items-center justify-between gap-3 rounded-2xl bg-[#FFF8F0] px-4 py-3 text-left text-sm font-black text-[#25262B] ring-1 ring-[#25262B]/[0.06]"
+                >
+                  <span>{variant.name}</span>
+                  <span>{formatBaseCurrency(product.priceUsd + Number(variant.priceDeltaUsd || 0), baseCurrency)}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {isCustomizing ? (
+        <ProductOptionsSheet
+          product={productForOptions}
+          storeSlug={storeSlug}
+          usdToBs={usdToBs}
+          baseCurrency={baseCurrency}
+          showPricesInBs={showPricesInBs}
+          quantity={1}
+          selectedVariant={selectedVariant}
+          baseUnitPrice={unitPrice}
+          isLoadingOptions={isLoadingOptions}
+          optionsMessage={message}
+          onRetryLoadOptions={() => {
+            void loadOptionGroups().catch((error: any) => {
+              setMessage(error.message || "No se pudieron cargar los extras.");
+            });
+          }}
+          onClose={() => setIsCustomizing(false)}
+          onAdded={markAdded}
+          isStoreOpen={isStoreOpen}
+        />
+      ) : null}
+    </article>
   );
 }
 

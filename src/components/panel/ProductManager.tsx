@@ -9,6 +9,7 @@ import {
   EyeOff,
   Grid2X2,
   ImageIcon,
+  Layers,
   LayoutList,
   Loader2,
   Lock,
@@ -77,6 +78,7 @@ type ProductRow = {
   image_url: string | null;
   is_available: boolean;
   is_featured: boolean;
+  is_cart_suggestion?: boolean;
   sort_order: number;
   stores?: { name?: string } | null;
   categories?: { name?: string } | null;
@@ -270,6 +272,7 @@ function ProductEditor({
     product_images: (product.product_images || []).filter((image) => image.sort_order === 1).map((image) => image.image_url).slice(0, 1),
     is_available: product.is_available,
     is_featured: product.is_featured,
+    is_cart_suggestion: Boolean(product.is_cart_suggestion),
     sort_order: product.sort_order ? String(product.sort_order) : "",
     variants: getVariantDrafts(product),
   });
@@ -598,6 +601,25 @@ function ProductEditor({
                 <Sparkles size={14} />
                 {draft.is_featured ? "Destacado" : "Normal"}
               </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setDraft((current) => ({
+                    ...current,
+                    is_cart_suggestion: !current.is_cart_suggestion,
+                  }))
+                }
+                className={[
+                  "inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-black",
+                  draft.is_cart_suggestion
+                    ? "bg-[#2E3A79] text-white"
+                    : "bg-[#F8F3E8] text-[#746f69]",
+                ].join(" ")}
+              >
+                <Layers size={14} />
+                {draft.is_cart_suggestion ? "Complemento" : "No complemento"}
+              </button>
             </div>
 
             <button
@@ -670,6 +692,7 @@ export function ProductManager() {
     product_images: [] as string[],
     is_available: true,
     is_featured: false,
+    is_cart_suggestion: false,
     sort_order: "",
     variants: [] as ProductVariantDraft[],
   });
@@ -766,6 +789,7 @@ export function ProductManager() {
         product_images: [],
         is_available: true,
         is_featured: false,
+        is_cart_suggestion: false,
         variants: [],
       }));
       setNewProductMessage("");
@@ -1052,6 +1076,46 @@ export function ProductManager() {
           />
         </div>
 
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() =>
+              setNewProduct((current) => ({
+                ...current,
+                is_featured: !current.is_featured,
+              }))
+            }
+            className={[
+              "inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-black",
+              newProduct.is_featured
+                ? "bg-[#FFB547] text-[#25262B]"
+                : "bg-[#F8F3E8] text-[#746f69]",
+            ].join(" ")}
+          >
+            <Sparkles size={14} />
+            {newProduct.is_featured ? "Destacado" : "Normal"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              setNewProduct((current) => ({
+                ...current,
+                is_cart_suggestion: !current.is_cart_suggestion,
+              }))
+            }
+            className={[
+              "inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-black",
+              newProduct.is_cart_suggestion
+                ? "bg-[#2E3A79] text-white"
+                : "bg-[#F8F3E8] text-[#746f69]",
+            ].join(" ")}
+          >
+            <Layers size={14} />
+            {newProduct.is_cart_suggestion ? "Complemento" : "No complemento"}
+          </button>
+        </div>
+
         <div className="mt-3 rounded-2xl bg-[#F8F3E8] p-3 ring-1 ring-[#25262B]/[0.06]">
           <div className="grid gap-4 md:grid-cols-[144px_1fr] md:items-center">
             <div className="aspect-square w-36 overflow-hidden rounded-2xl bg-white">
@@ -1262,6 +1326,11 @@ export function ProductManager() {
                       {Number(product.discount_percent || 0) > 0 ? (
                         <p className="mt-1 inline-flex rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-black text-red-700">
                           Promo {Number(product.discount_percent || 0)}%
+                        </p>
+                      ) : null}
+                      {product.is_cart_suggestion ? (
+                        <p className="ml-1 mt-1 inline-flex rounded-full bg-[#2E3A79]/10 px-2 py-0.5 text-[11px] font-black text-[#2E3A79]">
+                          Complemento
                         </p>
                       ) : null}
                     </div>

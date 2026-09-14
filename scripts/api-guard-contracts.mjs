@@ -7,6 +7,11 @@ const API_ROOT = join(process.cwd(), "src", "app", "api");
 const PUBLIC_SERVICE_ROLE_ROUTES = {
   "src/app/api/auth/panel-session/route.ts": [/supabase\.auth\.getUser\(token\)/],
   "src/app/api/cities/route.ts": [/export async function GET/, /\.select\(/],
+  "src/app/api/catalog/cart-suggestions/route.ts": [
+    /\.eq\("slug", storeSlug\)/,
+    /\.eq\("is_active", true\)/,
+    /\.eq\("is_available", true\)/,
+  ],
   "src/app/api/cron/exchange-rates/route.ts": [/CRON_SECRET/],
   "src/app/api/cron/payment-receipts-cleanup/route.ts": [/CRON_SECRET/],
   "src/app/api/delivery/quote/route.ts": [

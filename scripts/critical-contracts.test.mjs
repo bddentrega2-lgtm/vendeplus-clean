@@ -1134,6 +1134,7 @@ test("estadisticas agregan en Postgres sin limite y conservan aislamiento", () =
   assert.match(route, /p_store_id: selectedStoreId/);
   assert.match(route, /aggregate\?\.summary\?\.aggregationVersion === 2/);
   assert.match(route, /capped: false/);
+  assert.match(route, /await fullStatsAccessPromise;[\s\S]*topCustomers: aggregate\.top_customers/);
   assert.match(migration, /'aggregationVersion', 2/);
   assert.match(migration, /sum\(merchant_revenue_usd\)/);
   assert.match(migration, /'deliveryFeesUsd'/);
@@ -1146,6 +1147,33 @@ test("estadisticas agregan en Postgres sin limite y conservan aislamiento", () =
     migration,
     /grant execute on function public\.panel_store_stats\([\s\S]*to service_role/,
   );
+});
+
+test("carrito sugiere complementos configurados sin bloquear el pago", () => {
+  const cart = read("src/components/public/CartPageClient.tsx");
+  const suggestions = read("src/components/public/CartSuggestions.tsx");
+  const productCard = read("src/components/public/ProductCard.tsx");
+  const productManager = read("src/components/panel/ProductManager.tsx");
+  const route = read("src/app/api/catalog/cart-suggestions/route.ts");
+  const migration = read("supabase/migrations/20260913180000_cart_purchase_suggestions.sql");
+
+  assert.match(cart, /<CartSuggestions store=\{store\} items=\{items\} isStoreOpen=\{isStoreOpen\} \/>[\s\S]*<section className="sticky bottom-4/);
+  assert.match(suggestions, /¿Te provoca algo más\?/);
+  assert.match(suggestions, /overflow-x-auto/);
+  assert.match(suggestions, /filter\(productHasStock\)/);
+  assert.match(suggestions, /cartProductIds\.has\(product\.id\)/);
+  assert.match(productCard, /export function ProductSuggestionCard/);
+  assert.match(productCard, /addToCart\(storeSlug/);
+  assert.match(productCard, /ProductOptionsSheet/);
+  assert.match(productCard, /Desde /);
+  assert.match(productManager, /is_cart_suggestion/);
+  assert.match(productManager, /Complemento/);
+  assert.match(route, /\.eq\("store_id", storeId\)/);
+  assert.match(route, /\.eq\("is_available", true\)/);
+  assert.match(route, /\.eq\("is_cart_suggestion", true\)/);
+  assert.match(route, /catch \(error\) \{[\s\S]*productIds: \[\]/);
+  assert.match(migration, /add column if not exists is_cart_suggestion boolean not null default false/);
+  assert.match(migration, /products_cart_suggestions_idx/);
 });
 
 test("Pizza Mia carga promociones idempotentes con ingrediente incluido", () => {
