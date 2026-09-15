@@ -8,9 +8,10 @@ type Props = {
   shareTitle: string;
   shareText: string;
   whatsappMessage?: string;
+  className?: string;
 };
 
-export function PublicShareActions({ shareTitle, shareText, whatsappMessage }: Props) {
+export function PublicShareActions({ shareTitle, shareText, whatsappMessage, className = "" }: Props) {
   const [copied, setCopied] = useState(false);
 
   async function sharePage() {
@@ -29,26 +30,24 @@ export function PublicShareActions({ shareTitle, shareText, whatsappMessage }: P
   }
 
   return (
-    <section className="bg-white py-5">
-      <div className="vp-container flex flex-wrap items-center justify-center gap-2">
+      <div className={`flex flex-wrap gap-2 ${className}`}>
         <button
           type="button"
           onClick={sharePage}
-          className="inline-flex h-10 items-center gap-2 rounded-full bg-[#E8F6F1] px-4 text-xs font-black text-[#0F6B63] ring-1 ring-[#0F6B63]/10 transition hover:-translate-y-0.5"
+          className="inline-flex h-8 items-center gap-1.5 rounded-full bg-white/10 px-3 text-[11px] font-black text-white ring-1 ring-white/15 transition hover:-translate-y-0.5 hover:bg-white/15"
         >
-          <Share2 size={15} />
+          <Share2 size={13} />
           {copied ? "Link copiado" : "Compartir"}
         </button>
         <a
           href={buildSomosWhatsAppUrl(whatsappMessage || "Hola Somos, necesito informacion sobre la plataforma.")}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex h-10 items-center gap-2 rounded-full bg-[#25D366] px-4 text-xs font-black text-white shadow-sm shadow-[#25D366]/20 transition hover:-translate-y-0.5"
+          className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[#25D366] px-3 text-[11px] font-black text-white shadow-sm shadow-[#25D366]/20 transition hover:-translate-y-0.5"
         >
-          <MessageCircle size={15} />
+          <MessageCircle size={13} />
           WhatsApp
         </a>
       </div>
-    </section>
   );
 }

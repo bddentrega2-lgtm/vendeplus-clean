@@ -7,7 +7,6 @@ import { ArrowRight, Clock3, Compass, Home, MapPin, Percent, Search, ShoppingBag
 import type { Store } from "@/types";
 import { PublicFooter } from "@/components/public/PublicFooter";
 import { PublicHeader } from "@/components/public/PublicHeader";
-import { PublicShareActions } from "@/components/public/PublicShareActions";
 import { BrandLogo } from "@/components/public/BrandLogo";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import { PwaInstallButton } from "@/components/pwa/PwaInstallButton";
@@ -136,12 +135,12 @@ export function MarketplaceClient({ stores, featuredProducts = [], discovery = {
     <ProductRail title="Los favoritos de la semana" products={filteredBestSellers} badge="Mas vendido" />
     <ProductRail title="Recién llegados" products={filteredNewProducts} badge="Nuevo" />
     <section id="todos-los-comercios" className="vp-container scroll-mt-40 py-2 sm:py-4"><div className="rounded-[26px] bg-[#EDF7F4] p-4 shadow-sm ring-1 ring-[#0F6B63]/10 sm:p-5"><div className="flex items-end justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#0F6B63]">{storesEyebrow}</p><h2 className="mt-0.5 text-xl font-black sm:text-2xl">{storesTitle}</h2></div><p className="rounded-full bg-white px-2.5 py-1 text-xs font-black text-[#0F6B63]">{filteredStores.length} resultado{filteredStores.length === 1 ? "" : "s"}</p></div>{filteredStores.length ? <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{filteredStores.map(({ store, distance }) => <StoreCard key={store.id} store={store} distance={distance} />)}</div> : <div className="mt-5 rounded-[22px] bg-white/70 p-6 text-center"><div className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-[#FF7133] text-white"><StoreIcon size={22} /></div><h3 className="mt-3 text-xl font-black">{emptyTitle}</h3><p className="mt-2 text-sm font-bold text-[#746f69]">{emptyText}</p><button type="button" onClick={() => { setQuery(""); setActiveFilter("Todos"); }} className="mt-4 rounded-full bg-[#143D42] px-5 py-3 text-sm font-black text-white">Limpiar filtros</button></div>}</div></section>
-    <PublicShareActions
+    <PublicFooter
+      text={footerText}
       shareTitle={partnerName ? `Marketplace de ${partnerName}` : "Marketplace Somos"}
       shareText={partnerName ? `Explora comercios aliados de ${partnerName} en Somos.` : "Explora comercios activos en el Marketplace Somos."}
       whatsappMessage={partnerName ? `Hola Somos, necesito informacion sobre el marketplace de ${partnerName}.` : "Hola Somos, necesito informacion sobre el Marketplace."}
     />
-    <PublicFooter text={footerText} />
     <nav aria-label="Navegación del Marketplace" className="fixed inset-x-0 bottom-0 z-50 border-t border-[#143D42]/[0.08] bg-white/95 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(20,61,66,0.08)] backdrop-blur-xl sm:hidden"><div className="mx-auto grid max-w-md grid-cols-4"><Link href="#inicio" className="flex flex-col items-center gap-1 text-[10px] font-black text-[#55706E]"><span className="grid h-7 w-7 place-items-center rounded-full bg-[#FFF0E8] text-[#FF7133]"><Home size={16} /></span>Inicio</Link><button type="button" onClick={requestLocation} disabled={locationStatus === "loading"} className="flex flex-col items-center gap-1 text-[10px] font-black text-[#55706E] disabled:opacity-60"><span className="grid h-7 w-7 place-items-center rounded-full bg-[#E8F6F1] text-[#0F6B63]"><Compass size={16} className={locationStatus === "loading" ? "animate-pulse" : ""} /></span>Cerca</button><Link href="#ofertas" className="flex flex-col items-center gap-1 text-[10px] font-black text-[#55706E]"><span className="grid h-7 w-7 place-items-center rounded-full bg-[#FFF7D9] text-[#946300]"><Percent size={16} /></span>Ofertas</Link><Link href="#todos-los-comercios" className="flex flex-col items-center gap-1 text-[10px] font-black text-[#143D42]"><span className="grid h-7 w-7 place-items-center rounded-full bg-[#143D42] text-white"><StoreIcon size={16} /></span>Comercios</Link></div></nav>
   </main>;
 }
