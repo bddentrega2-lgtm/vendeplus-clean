@@ -32,11 +32,13 @@ export function PwaInstallButton({
   compact = false,
   tile = false,
   subtle = false,
+  footer = false,
   label = "Instalar Somos",
 }: {
   compact?: boolean;
   tile?: boolean;
   subtle?: boolean;
+  footer?: boolean;
   label?: string;
 }) {
   const [installPrompt, setInstallPrompt] =
@@ -135,7 +137,7 @@ export function PwaInstallButton({
       );
     }
 
-    return compact || subtle ? null : (
+    return compact || subtle || footer ? null : (
       <div className="rounded-3xl bg-green-50 px-4 py-3 text-sm font-black text-green-700">
         App instalada en este dispositivo
       </div>
@@ -143,7 +145,7 @@ export function PwaInstallButton({
   }
 
   return (
-    <div className={tile ? "relative h-14" : compact || subtle ? "space-y-2" : "rounded-3xl bg-white/10 p-3"}>
+    <div className={tile ? "relative h-14" : compact || subtle || footer ? "space-y-2" : "rounded-3xl bg-white/10 p-3"}>
       <button
         type="button"
         onClick={installApp}
@@ -152,6 +154,8 @@ export function PwaInstallButton({
           "inline-flex w-full items-center justify-center font-[inherit] font-black disabled:cursor-wait disabled:opacity-60",
           tile
             ? "h-14 rounded-xl bg-[#FFF8F0] px-1 text-center text-[10px] leading-tight text-[#2E3A79] ring-1 ring-[#25262B]/[0.06] sm:rounded-2xl sm:text-xs"
+            : footer
+            ? "h-8 gap-1.5 rounded-full bg-white/10 px-3 text-[11px] text-white ring-1 ring-white/15 hover:bg-white/15"
             : subtle
             ? "gap-1.5 rounded-full bg-[#FFF0E8] px-2.5 py-2 text-[11px] text-[#C44D1B] ring-1 ring-[#FF7133]/15"
             : compact
@@ -171,7 +175,7 @@ export function PwaInstallButton({
             "relative mt-2 rounded-2xl p-3 text-xs font-bold leading-relaxed",
             tile
               ? "absolute right-0 top-full z-30 w-[min(280px,calc(100vw-3rem))] bg-white text-[#746f69] shadow-xl ring-1 ring-[#25262B]/10"
-            : compact || subtle
+            : compact || subtle || footer
               ? "fixed inset-x-4 top-20 z-[80] mx-auto max-w-sm bg-white text-[#746f69] shadow-2xl ring-1 ring-[#25262B]/10"
               : "bg-white/10 text-white/80",
           ].join(" ")}

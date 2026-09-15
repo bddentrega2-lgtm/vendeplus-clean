@@ -10,7 +10,6 @@ import { PublicFooter } from "@/components/public/PublicFooter";
 import { PublicHeader } from "@/components/public/PublicHeader";
 import { SectionHeading } from "@/components/public/SectionHeading";
 import { SurfaceCard } from "@/components/public/SurfaceCard";
-import { PwaInstallButton } from "@/components/pwa/PwaInstallButton";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import { WelcomeChoice } from "@/components/public/WelcomeChoice";
 import { buildSomosWhatsAppUrl } from "@/lib/whatsapp";
@@ -145,7 +144,6 @@ export function HomeClient({ stores = [], transportAgencies = [] }: { stores?: S
 
     <section className="bg-[var(--somos-orange)] py-14 sm:py-16"><div className="vp-container flex flex-col justify-between gap-7 lg:flex-row lg:items-center"><div><h2 className="max-w-2xl text-3xl font-bold leading-tight tracking-tight text-[var(--somos-navy)] sm:text-4xl">Empieza a ordenar tu operación con Somos</h2><p className="mt-3 text-base font-medium text-[var(--somos-navy)]/70">Elige el camino que corresponde a tu operación.</p></div><div className="flex flex-col gap-3 sm:flex-row"><ButtonLink href="/registro" variant="light">Configurar comercio</ButtonLink><ButtonLink href="/transporte/registro" variant="secondary" className="bg-[var(--somos-navy)] text-white">Registrar empresa delivery</ButtonLink></div></div></section>
 
-    <section className="bg-white py-7"><div className="vp-container flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center"><div><p className="text-sm font-semibold text-[var(--somos-navy)]">Acceso rápido en tu dispositivo</p><p className="somos-muted mt-1 text-sm font-medium">Puedes instalar Somos para abrirlo directamente desde tu pantalla de inicio.</p></div><PwaInstallButton /></div></section>
     <PublicFooter
       shareTitle="Somos"
       shareText="Conoce Somos: catalogos, pedidos, pagos y delivery para comercios."

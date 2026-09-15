@@ -2,6 +2,7 @@
 
 import { MessageCircle, Share2 } from "lucide-react";
 import { useState } from "react";
+import { PwaInstallButton } from "@/components/pwa/PwaInstallButton";
 import { buildSomosWhatsAppUrl } from "@/lib/whatsapp";
 
 type Props = {
@@ -31,6 +32,7 @@ export function PublicShareActions({ shareTitle, shareText, whatsappMessage, cla
 
   return (
       <div className={`flex flex-wrap gap-2 ${className}`}>
+        <PwaInstallButton footer label="Instalar" />
         <button
           type="button"
           onClick={sharePage}
