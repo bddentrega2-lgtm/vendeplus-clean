@@ -1176,6 +1176,25 @@ test("carrito sugiere complementos configurados sin bloquear el pago", () => {
   assert.match(migration, /products_cart_suggestions_idx/);
 });
 
+test("inventario SHIBUI permite color/talla por defecto y eliminar combinaciones", () => {
+  const inventoryPanel = read("src/components/panel/PremiumInventoryPreview.tsx");
+  const migration = read("supabase/migrations/20260914154500_inventory_remove_missing_skus.sql");
+  assert.match(inventoryPanel, /return names\.length \? names : \["color", "talla"\]/);
+  assert.match(inventoryPanel, /Trash2/);
+  assert.match(inventoryPanel, /removeCombination/);
+  assert.match(inventoryPanel, /Producto simple/);
+  assert.match(inventoryPanel, /Con combinaciones/);
+  assert.match(inventoryPanel, /persistedCombinationSkus/);
+  assert.match(inventoryPanel, /disabled=\{hasPersistedCombinations && mode !== "simple"\}/);
+  assert.match(inventoryPanel, /evitar borrar stock por accidente/);
+  assert.match(inventoryPanel, /Agrega al menos una combinación antes de guardar/);
+  assert.match(inventoryPanel, /mode !== "combinations" \|\| hasCombinationRows/);
+  assert.match(inventoryPanel, /modes\[activeProduct\.id\] === "none"/);
+  assert.match(migration, /not \(id = any\(v_saved_ids\)\)/);
+  assert.match(migration, /set stock_on_hand = 0, is_active = false/);
+  assert.match(migration, /Combinación eliminada desde panel de inventario/);
+});
+
 test("Pizza Mia carga promociones idempotentes con ingrediente incluido", () => {
   const migration = readFileSync(
     new URL("../supabase/migrations/20260826014000_load_pizza_mia_promotions.sql", import.meta.url),

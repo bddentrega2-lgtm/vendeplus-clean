@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Minus,
   Loader2,
+  Trash2,
   PackagePlus,
   Plus,
   Save,
@@ -50,7 +51,7 @@ type CatalogResponse = {
   products?: InventoryProduct[];
 };
 
-type InventoryMode = "none" | "combinations";
+type InventoryMode = "none" | "simple" | "combinations";
 
 function cleanLabel(value: unknown) {
   return String(value || "").trim();
@@ -69,8 +70,33 @@ function combinationLabel(sku: InventorySku) {
   return values.length ? values.join(" · ") : sku.code;
 }
 
+function isSimpleSku(sku: InventorySku) {
+  return cleanLabel(sku.attributes?.detalle).toLocaleLowerCase("es") === "producto simple";
+}
+
+function isTemporarySku(sku: InventorySku) {
+  return sku.id.startsWith("preview-");
+}
+
+function persistedCombinationSkus(product: InventoryProduct) {
+  return (product.product_inventory_skus || []).filter(
+    (sku) => sku.is_active !== false && !isSimpleSku(sku) && !isTemporarySku(sku),
+  );
+}
+
+function inventoryAttributeNames(skus: InventorySku[]) {
+  const names = Array.from(
+    new Set(
+      skus
+        .flatMap((sku) => Object.keys(sku.attributes || {}))
+        .filter((key) => key !== "referencia_interna"),
+    ),
+  );
+  return names.length ? names : ["color", "talla"];
+}
+
 function productStock(product: InventoryProduct, stock: Record<string, number>) {
-  return (product.product_inventory_skus || []).reduce(
+  return (product.product_inventory_skus || []).filter((sku) => sku.is_active !== false).reduce(
     (total, sku) => total + Math.max(0, Number(stock[sku.id] ?? sku.stock_on_hand ?? 0)),
     0,
   );
@@ -121,7 +147,9 @@ export function PremiumInventoryPreview({
         setStock(
           Object.fromEntries(
             nextProducts.flatMap((product) =>
-              (product.product_inventory_skus || []).map((sku) => [sku.id, Number(sku.stock_on_hand || 0)]),
+              (product.product_inventory_skus || [])
+                .filter((sku) => sku.is_active !== false)
+                .map((sku) => [sku.id, Number(sku.stock_on_hand || 0)]),
             ),
           ),
         );
@@ -129,7 +157,11 @@ export function PremiumInventoryPreview({
           Object.fromEntries(
             nextProducts.map((product) => [
               product.id,
-              product.product_inventory_skus?.length ? "combinations" : "none",
+              product.product_inventory_skus?.some((sku) => sku.is_active !== false)
+                ? product.product_inventory_skus.filter((sku) => sku.is_active !== false).every(isSimpleSku)
+                  ? "simple"
+                  : "combinations"
+                : "none",
             ]),
           ),
         );
@@ -159,14 +191,12 @@ export function PremiumInventoryPreview({
 
   const activeProduct = products.find((product) => product.id === activeProductId) || null;
   const activeSkus = useMemo(
-    () => activeProduct?.product_inventory_skus || [],
+    () => (activeProduct?.product_inventory_skus || []).filter((sku) => sku.is_active !== false),
     [activeProduct],
   );
   const attributeNames = useMemo(
     () =>
-      Array.from(
-        new Set(activeSkus.flatMap((sku) => Object.keys(sku.attributes || {}))),
-      ),
+      inventoryAttributeNames(activeSkus),
     [activeSkus],
   );
 
@@ -205,8 +235,43 @@ export function PremiumInventoryPreview({
     markChange();
   }
 
+  function makeTemporarySimpleSku(stockValue = 0): InventorySku {
+    return {
+      id: `preview-simple-${Date.now()}`,
+      code: "PRODUCTO-SIMPLE",
+      attributes: { detalle: "Producto simple" },
+      stock_on_hand: Math.max(0, Math.floor(stockValue || 0)),
+      is_active: true,
+    };
+  }
+
   function changeMode(productId: string, mode: InventoryMode) {
+    const product = products.find((item) => item.id === productId);
+    if (mode === "simple" && product && persistedCombinationSkus(product).length) {
+      setSaveMessage("Este producto ya tiene combinaciones guardadas. El cambio a producto simple queda bloqueado para evitar borrar stock por accidente.");
+      return;
+    }
     setModes((current) => ({ ...current, [productId]: mode }));
+    setSaveMessage("");
+    if (mode === "simple") {
+      setProducts((current) =>
+        current.map((product) => {
+          if (product.id !== productId) return product;
+          const active = (product.product_inventory_skus || []).filter((sku) => sku.is_active !== false);
+          const simpleSku = active.find(isSimpleSku) || makeTemporarySimpleSku(productStock(product, stock));
+          return { ...product, product_inventory_skus: [simpleSku] };
+        }),
+      );
+    }
+    if (mode === "combinations") {
+      setProducts((current) =>
+        current.map((product) =>
+          product.id === productId
+            ? { ...product, product_inventory_skus: (product.product_inventory_skus || []).filter((sku) => !isSimpleSku(sku)) }
+            : product,
+        ),
+      );
+    }
     markChange();
   }
 
@@ -220,7 +285,7 @@ export function PremiumInventoryPreview({
     if (extraAttributeName.trim() && extraAttributeValue.trim()) {
       attributes[extraAttributeName.trim().toLocaleLowerCase("es")] = extraAttributeValue.trim();
     }
-    if (!Object.keys(attributes).length) return;
+    if (!Object.keys(attributes).length || Object.keys(attributes).some((key) => key === "detalle" && attributes[key] === "Producto simple")) return;
     const duplicate = activeSkus.some(
       (sku) => JSON.stringify(sku.attributes) === JSON.stringify(attributes),
     );
@@ -252,8 +317,31 @@ export function PremiumInventoryPreview({
     markChange();
   }
 
+  function removeCombination(skuId: string) {
+    setProducts((current) =>
+      current.map((product) =>
+        product.id === activeProduct?.id
+          ? {
+              ...product,
+              product_inventory_skus: (product.product_inventory_skus || []).filter((sku) => sku.id !== skuId),
+            }
+          : product,
+      ),
+    );
+    setStock((current) => {
+      const next = { ...current };
+      delete next[skuId];
+      return next;
+    });
+    markChange();
+  }
+
   async function saveProductInventory() {
-    if (!activeProduct || modes[activeProduct.id] !== "combinations" || !dirtyChanges) return;
+    if (!activeProduct || modes[activeProduct.id] === "none" || !dirtyChanges) return;
+    if (modes[activeProduct.id] === "combinations" && !activeSkus.filter((sku) => !isSimpleSku(sku)).length) {
+      setSaveMessage("Agrega al menos una combinación antes de guardar este tipo de control.");
+      return;
+    }
     setIsSaving(true);
     setSaveMessage("");
     try {
@@ -321,6 +409,11 @@ export function PremiumInventoryPreview({
     const mode = modes[activeProduct.id] || "none";
     const combinationStockTotal = productStock(activeProduct, stock);
     const presentations = (activeProduct.product_variants || []).filter((variant) => variant.is_available !== false);
+    const simpleSku = activeSkus.find(isSimpleSku) || null;
+    const simpleStock = simpleSku ? Math.max(0, Number(stock[simpleSku.id] ?? simpleSku.stock_on_hand ?? 0)) : 0;
+    const hasPersistedCombinations = persistedCombinationSkus(activeProduct).length > 0;
+    const hasCombinationRows = activeSkus.some((sku) => !isSimpleSku(sku));
+    const canSave = dirtyChanges && mode !== "none" && !isSaving && (mode !== "combinations" || hasCombinationRows);
     return (
       <section className="rounded-3xl bg-white p-4 shadow-xl ring-1 ring-[#25262B]/[0.06] sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -333,10 +426,26 @@ export function PremiumInventoryPreview({
         </div>
 
         <div className="mt-5 rounded-2xl bg-[#F8F3E8] p-4">
-          <p className="text-sm font-black">Control por combinaciones</p>
-          <p className="mt-1 text-xs font-bold text-[#746f69]">La existencia total se calcula automáticamente sumando cada color, talla u opción.</p>
-          {mode !== "combinations" ? <button type="button" onClick={() => changeMode(activeProduct.id, "combinations")} className="mt-3 rounded-full bg-[#2E3A79] px-4 py-2.5 text-xs font-black text-white">Configurar combinaciones</button> : null}
+          <p className="text-sm font-black">Tipo de control</p>
+          <p className="mt-1 text-xs font-bold text-[#746f69]">Usa producto simple cuando solo necesitas una existencia total. Usa combinaciones cuando el stock depende de atributos como color, talla, sabor, tamaño o presentación.</p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <button type="button" onClick={() => changeMode(activeProduct.id, "simple")} disabled={hasPersistedCombinations && mode !== "simple"} title={hasPersistedCombinations && mode !== "simple" ? "Este producto ya tiene combinaciones guardadas." : undefined} className={`rounded-2xl px-4 py-3 text-left text-sm font-black ring-1 disabled:cursor-not-allowed disabled:opacity-50 ${mode === "simple" ? "bg-[#1F464C] text-white ring-[#1F464C]" : "bg-white text-[#1F464C] ring-[#25262B]/10"}`}>Producto simple</button>
+            <button type="button" onClick={() => changeMode(activeProduct.id, "combinations")} className={`rounded-2xl px-4 py-3 text-left text-sm font-black ring-1 ${mode === "combinations" ? "bg-[#1F464C] text-white ring-[#1F464C]" : "bg-white text-[#1F464C] ring-[#25262B]/10"}`}>Con combinaciones</button>
+          </div>
+          {hasPersistedCombinations && mode !== "simple" ? <p className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-bold text-[#746f69]">Este producto ya tiene combinaciones guardadas. Para proteger el stock, no se puede convertir a producto simple desde esta pantalla.</p> : null}
         </div>
+
+        {mode === "simple" ? (
+          <div className="mt-4 rounded-2xl border border-[#25262B]/10 bg-[#FFF8F0] p-4">
+            <p className="text-sm font-black">Existencia del producto</p>
+            <p className="mt-1 text-xs font-bold text-[#746f69]">Este producto descuenta una sola existencia, sin pedir color, talla u otra característica.</p>
+            <div className="mt-3 flex w-fit items-center overflow-hidden rounded-xl bg-white ring-1 ring-[#25262B]/10">
+              <button type="button" aria-label="Restar stock" onClick={() => simpleSku ? updateSkuStock(simpleSku.id, simpleStock - 1) : null} disabled={!simpleSku || simpleStock === 0} className="p-3 disabled:opacity-30"><Minus size={16} /></button>
+              <input type="number" min="0" value={simpleStock} onChange={(event) => simpleSku ? updateSkuStock(simpleSku.id, Number(event.target.value || 0)) : null} aria-label="Stock del producto" className="w-16 bg-transparent text-center text-sm font-black outline-none" />
+              <button type="button" aria-label="Sumar stock" onClick={() => simpleSku ? updateSkuStock(simpleSku.id, simpleStock + 1) : null} disabled={!simpleSku} className="p-3 disabled:opacity-30"><Plus size={16} /></button>
+            </div>
+          </div>
+        ) : null}
 
         {mode === "combinations" ? (
           <div className="mt-4">
@@ -360,10 +469,13 @@ export function PremiumInventoryPreview({
                       <p className="text-sm font-black">{combinationLabel(sku)}</p>
                       <p className={`mt-1 text-xs font-bold ${currentStock === 0 ? "text-red-600" : currentStock <= 1 ? "text-amber-700" : "text-[#746f69]"}`}>{currentStock === 0 ? "Agotado" : currentStock === 1 ? "Última unidad" : `${currentStock} disponibles`}</p>
                     </div>
-                    <div className="flex items-center self-start overflow-hidden rounded-xl bg-white ring-1 ring-[#25262B]/10 sm:self-auto">
-                      <button type="button" aria-label={`Restar stock de ${combinationLabel(sku)}`} onClick={() => updateSkuStock(sku.id, currentStock - 1)} disabled={currentStock === 0} className="p-3 disabled:opacity-30"><Minus size={16} /></button>
-                      <input type="number" min="0" value={currentStock} onChange={(event) => updateSkuStock(sku.id, Number(event.target.value || 0))} aria-label={`Stock de ${combinationLabel(sku)}`} className="w-12 bg-transparent text-center text-sm font-black outline-none" />
-                      <button type="button" aria-label={`Sumar stock de ${combinationLabel(sku)}`} onClick={() => updateSkuStock(sku.id, currentStock + 1)} className="p-3"><Plus size={16} /></button>
+                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                      <div className="flex items-center overflow-hidden rounded-xl bg-white ring-1 ring-[#25262B]/10">
+                        <button type="button" aria-label={`Restar stock de ${combinationLabel(sku)}`} onClick={() => updateSkuStock(sku.id, currentStock - 1)} disabled={currentStock === 0} className="p-3 disabled:opacity-30"><Minus size={16} /></button>
+                        <input type="number" min="0" value={currentStock} onChange={(event) => updateSkuStock(sku.id, Number(event.target.value || 0))} aria-label={`Stock de ${combinationLabel(sku)}`} className="w-12 bg-transparent text-center text-sm font-black outline-none" />
+                        <button type="button" aria-label={`Sumar stock de ${combinationLabel(sku)}`} onClick={() => updateSkuStock(sku.id, currentStock + 1)} className="p-3"><Plus size={16} /></button>
+                      </div>
+                      <button type="button" onClick={() => removeCombination(sku.id)} aria-label={`Eliminar combinación ${combinationLabel(sku)}`} className="inline-flex items-center gap-2 rounded-xl bg-red-50 px-3 py-3 text-xs font-black text-red-700 ring-1 ring-red-100"><Trash2 size={16} /> Eliminar</button>
                     </div>
                   </div>
                 );
@@ -402,7 +514,7 @@ export function PremiumInventoryPreview({
 
         <div className="mt-5 flex flex-col gap-3 rounded-2xl bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs font-bold text-amber-900">{dirtyChanges ? <><strong>Tienes cambios sin guardar.</strong> Revisa las cantidades y presiona Guardar cambios.</> : "Las cantidades están guardadas."}</p>
-          <button type="button" disabled={!dirtyChanges || mode !== "combinations" || isSaving} onClick={saveProductInventory} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-4 py-2 text-xs font-black text-white disabled:opacity-40">{isSaving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Guardar cambios</button>
+          <button type="button" disabled={!canSave} onClick={saveProductInventory} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-4 py-2 text-xs font-black text-white disabled:opacity-40">{isSaving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Guardar cambios</button>
         </div>
         {saveMessage ? <p className={`mt-3 text-sm font-black ${saveMessage.includes("correctamente") ? "text-emerald-700" : "text-red-600"}`}>{saveMessage}</p> : null}
       </section>
@@ -430,7 +542,7 @@ export function PremiumInventoryPreview({
           const mode = modes[product.id] || "none";
           const units = productStock(product, stock);
           return <button key={product.id} type="button" onClick={() => setActiveProductId(product.id)} className="grid w-full grid-cols-[1fr_auto] items-center gap-3 rounded-2xl border border-[#25262B]/[0.07] p-3 text-left transition hover:border-[#2E3A79]/30 sm:grid-cols-[1fr_150px_auto]">
-            <div className="min-w-0"><p className="truncate text-sm font-black">{product.name}</p><p className="mt-1 truncate text-xs font-bold text-[#746f69]">{product.categories?.name || "Sin categoría"} · {mode === "combinations" ? `${product.product_inventory_skus?.length || 0} combinaciones` : "Sin control"}</p></div>
+            <div className="min-w-0"><p className="truncate text-sm font-black">{product.name}</p><p className="mt-1 truncate text-xs font-bold text-[#746f69]">{product.categories?.name || "Sin categoría"} · {mode === "combinations" ? `${(product.product_inventory_skus || []).filter((sku) => sku.is_active !== false && !isSimpleSku(sku)).length} combinaciones` : mode === "simple" ? "Producto simple" : "Sin control"}</p></div>
             <div className="hidden sm:block"><p className={`text-sm font-black ${units === 0 ? "text-red-600" : units <= 3 ? "text-amber-700" : "text-[#1F464C]"}`}>{units} unidades</p>{mode !== "none" ? <p className="text-[11px] font-bold text-[#746f69]">{units === 0 ? "Agotado" : units <= 3 ? "Reponer pronto" : "Disponible"}</p> : null}</div>
             <span className="inline-flex items-center gap-1 rounded-full bg-[#E8F2EE] px-3 py-2 text-xs font-black text-[#1F464C]">Administrar <ChevronRight size={14} /></span>
           </button>;
