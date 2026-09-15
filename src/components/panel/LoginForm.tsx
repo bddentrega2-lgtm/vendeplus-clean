@@ -1,11 +1,16 @@
 ﻿"use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Eye, EyeOff, Loader2, Lock } from "lucide-react";
 import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
-import { savePanelToken, syncPanelServerSession } from "@/lib/panel/client-auth";
+import {
+  completePanelOAuthSession,
+  savePanelToken,
+  signInPanelWithGoogle,
+  syncPanelServerSession,
+} from "@/lib/panel/client-auth";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export function LoginForm() {
@@ -16,6 +21,36 @@ export function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function completeOAuthLogin() {
+      if (typeof window === "undefined") return;
+      if (!new URLSearchParams(window.location.search).has("code")) return;
+
+      setIsLoading(true);
+      setError("");
+
+      try {
+        const accessToken = await completePanelOAuthSession();
+        if (!accessToken || !isMounted) return;
+
+        await refreshSession();
+        const nextPath = new URLSearchParams(window.location.search).get("next") || "/panel";
+        router.push(nextPath.startsWith("/") && !nextPath.startsWith("//") ? nextPath : "/panel");
+      } catch (error: any) {
+        if (isMounted) setError(error.message || "No se pudo completar el inicio con Google.");
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+
+    completeOAuthLogin();
+    return () => {
+      isMounted = false;
+    };
+  }, [refreshSession, router]);
 
   async function login() {
     setIsLoading(true);
@@ -70,6 +105,18 @@ export function LoginForm() {
 
       setError(message || "No se pudo iniciar sesión.");
     } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function loginWithGoogle() {
+    setIsLoading(true);
+    setError("");
+
+    try {
+      await signInPanelWithGoogle("/panel/login");
+    } catch (error: any) {
+      setError(error.message || "No se pudo iniciar con Google.");
       setIsLoading(false);
     }
   }
@@ -139,6 +186,24 @@ export function LoginForm() {
             <CheckCircle2 size={18} />
           )}
           Entrar al panel
+        </button>
+
+        <div className="my-4 flex items-center gap-3">
+          <span className="h-px flex-1 bg-[#25262B]/10" />
+          <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">o</span>
+          <span className="h-px flex-1 bg-[#25262B]/10" />
+        </div>
+
+        <button
+          type="button"
+          onClick={loginWithGoogle}
+          disabled={isLoading}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-[#25262B]/10 bg-white px-5 py-4 text-sm font-black text-[#25262B] shadow-sm disabled:opacity-60"
+        >
+          <span className="grid h-5 w-5 place-items-center rounded-full bg-[#F8F3E8] text-sm font-black text-[#2E3A79]">
+            G
+          </span>
+          Continuar con Google
         </button>
 
         {error && <p className="mt-3 text-sm font-black text-red-600">{error}</p>}

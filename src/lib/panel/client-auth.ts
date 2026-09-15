@@ -64,6 +64,67 @@ export async function syncPanelServerSession(accessToken: string) {
   }
 }
 
+export async function signInPanelWithGoogle(redirectPath: string) {
+  const supabase = createSupabaseBrowserClient();
+
+  if (!supabase || typeof window === "undefined") {
+    throw new Error("El inicio con Google no esta disponible en este momento.");
+  }
+
+  const redirectTo = new URL(redirectPath, window.location.origin);
+  const next = new URLSearchParams(window.location.search).get("next");
+
+  if (next && next.startsWith("/") && !next.startsWith("//")) {
+    redirectTo.searchParams.set("next", next);
+  }
+
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: redirectTo.toString(),
+      queryParams: {
+        access_type: "offline",
+        prompt: "select_account",
+      },
+    },
+  });
+
+  if (error) throw error;
+}
+
+export async function completePanelOAuthSession() {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase || typeof window === "undefined") return "";
+
+  const url = new URL(window.location.href);
+  const code = url.searchParams.get("code");
+
+  if (code) {
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error) throw error;
+
+    url.searchParams.delete("code");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+
+    const accessToken = data.session?.access_token || "";
+    if (accessToken) {
+      savePanelToken(accessToken);
+      await syncPanelServerSession(accessToken);
+    }
+    return accessToken;
+  }
+
+  const { data } = await supabase.auth.getSession();
+  const accessToken = data.session?.access_token || "";
+
+  if (accessToken) {
+    savePanelToken(accessToken);
+    await syncPanelServerSession(accessToken);
+  }
+
+  return accessToken;
+}
+
 export async function clearPanelServerSession() {
   await fetch("/api/auth/panel-session", {
     method: "DELETE",

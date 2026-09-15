@@ -23,10 +23,12 @@ import {
 import {
   clearPanelAuthStorage,
   clearPanelServerSession,
+  completePanelOAuthSession,
   getPanelAccessToken,
   getPanelAuthHeaders,
   getSavedPanelPin,
   savePanelToken,
+  signInPanelWithGoogle,
   syncPanelServerSession,
 } from "@/lib/panel/client-auth";
 import { buildClientPublicUrl } from "@/lib/public-url";
@@ -330,7 +332,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     if (!options.silent) setMessage("");
     try {
       const savedPin = getSavedPanelPin();
-      const token = await getPanelAccessToken();
+      const token = options.accessToken || await getPanelAccessToken();
       setHasSession(Boolean(token));
       setPin(savedPin);
       if (!savedPin && !token) {
@@ -471,13 +473,34 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
 
   useEffect(() => {
     setNowMs(Date.now());
-    load({
-      silent: Boolean(transportPanelCache),
-      includeBilling: ["resumen", "facturacion"].includes(initialTab),
-      includeBillingDetail: initialTab === "facturacion",
-      includeConfiguration: initialTab !== "pedidos",
-      includeRelations: initialTab !== "pedidos",
-    });
+    let isMounted = true;
+
+    async function bootPanel() {
+      let accessToken = "";
+
+      try {
+        if (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("code")) {
+          accessToken = await completePanelOAuthSession();
+        }
+      } catch (error: any) {
+        if (isMounted) setMessage(error.message || "No se pudo completar el inicio con Google.");
+      }
+
+      if (!isMounted) return;
+      await load({
+        silent: Boolean(transportPanelCache),
+        includeBilling: ["resumen", "facturacion"].includes(initialTab),
+        includeBillingDetail: initialTab === "facturacion",
+        includeConfiguration: initialTab !== "pedidos",
+        includeRelations: initialTab !== "pedidos",
+        accessToken,
+      });
+    }
+
+    void bootPanel();
+    return () => {
+      isMounted = false;
+    };
     // Initial boot only; later section loads are handled by the dependency-aware effect below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -797,6 +820,18 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     } catch (error: any) {
       setMessage(error.message || "No se pudo iniciar sesion.");
     } finally {
+      setIsLoggingIn(false);
+    }
+  }
+
+  async function loginWithGoogle() {
+    setIsLoggingIn(true);
+    setMessage("");
+
+    try {
+      await signInPanelWithGoogle("/transporte/panel");
+    } catch (error: any) {
+      setMessage(error.message || "No se pudo iniciar con Google.");
       setIsLoggingIn(false);
     }
   }
@@ -1417,6 +1452,24 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
             >
               {isLoggingIn ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
               Entrar como empresa delivery
+            </button>
+
+            <div className="flex items-center gap-3">
+              <span className="h-px flex-1 bg-[#25262B]/10" />
+              <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">o</span>
+              <span className="h-px flex-1 bg-[#25262B]/10" />
+            </div>
+
+            <button
+              type="button"
+              onClick={loginWithGoogle}
+              disabled={isLoggingIn}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-[#25262B]/10 bg-white px-5 py-4 text-sm font-black text-[#25262B] shadow-sm disabled:opacity-60"
+            >
+              <span className="grid h-5 w-5 place-items-center rounded-full bg-[#F8F3E8] text-sm font-black text-[#2E3A79]">
+                G
+              </span>
+              Continuar con Google
             </button>
           </form>
         ) : null}

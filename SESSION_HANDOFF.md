@@ -1,3 +1,15 @@
+# 2026-09-15 - Google OAuth adelantado para paneles
+
+- Se preparo el acceso con Google para cuentas ya existentes/vinculadas en panel comercio y panel empresa delivery, sin reemplazar correo/clave.
+- Archivos tocados: `src/lib/panel/client-auth.ts`, `src/components/panel/LoginForm.tsx`, `src/components/transport/TransportAgencyPanel.tsx`.
+- `client-auth` ahora inicia OAuth con Google y completa el retorno con `exchangeCodeForSession`, guarda token Supabase y sincroniza cookie privada `/api/auth/panel-session`.
+- Panel comercio: boton `Continuar con Google` en `/panel/login`; al volver desde Google respeta `next` seguro.
+- Panel delivery: boton `Continuar con Google` en `/transporte/panel`; al volver desde Google carga la empresa vinculada al email aprobado. Tambien se corrigio que `load()` use `accessToken` explicito cuando se acaba de obtener.
+- Validaciones locales: `npm.cmd run test:critical` OK 75/75, `git diff --check` OK, `npm.cmd run build` OK 218 paginas.
+- Sin migracion ni SQL. No se desplego ni se hizo commit/push en esta retoma.
+- Pendiente para que funcione realmente: habilitar Google Provider en Supabase y configurar OAuth en Google Cloud. Redirects de app que deben estar permitidos: `https://www.somos-ve.com/panel/login` y `https://www.somos-ve.com/transporte/panel` (mas preview/local si se va a probar antes). Callback Google hacia Supabase: `https://<SUPABASE_PROJECT_REF>.supabase.co/auth/v1/callback`.
+- Registro con Google queda para fase 2: adaptar `/api/signup` y `/api/transport/agencies/apply` para aceptar un usuario OAuth ya autenticado sin duplicar emails ni saltarse aprobacion/tenant.
+
 # 2026-09-15 - Asegurados ajustes de particulares delivery, comprobantes e inventario SHIBUI
 
 - Trabajo actual en `vendeplus-login-stability-fix`. No hubo commit ni push.
