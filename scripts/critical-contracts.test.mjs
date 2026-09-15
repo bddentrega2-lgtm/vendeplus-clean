@@ -184,7 +184,8 @@ test("mapa permite mosaicos seguros y seleccion directa sin boton confuso", () =
 
   assert.match(nextConfig, /https:\/\/\*\.tile\.openstreetmap\.org/);
   assert.match(locationPicker, /void loadLeaflet\(\)/);
-  assert.match(locationPicker, /Toca el mapa para elegir el punto/);
+  assert.match(locationPicker, /Elegir en el mapa/);
+  assert.match(locationPicker, /Punto guardado\. Ajusta el pin/);
   assert.doesNotMatch(locationPicker, /Marcar centro del mapa/);
   assert.doesNotMatch(locationPicker, /selectMapCenter/);
 });
@@ -1193,6 +1194,18 @@ test("inventario SHIBUI permite color/talla por defecto y eliminar combinaciones
   assert.match(migration, /not \(id = any\(v_saved_ids\)\)/);
   assert.match(migration, /set stock_on_hand = 0, is_active = false/);
   assert.match(migration, /Combinación eliminada desde panel de inventario/);
+});
+
+test("estadisticas y clientes usan rangos y resumenes completos", () => {
+  const statsRoute = read("src/app/api/panel/stats/route.ts");
+  const customersRoute = read("src/app/api/panel/customers/route.ts");
+
+  assert.match(statsRoute, /range === "last_30_days"/);
+  assert.match(statsRoute, /getVenezuelaRelativeRange\("last_30_days", now\)/);
+  assert.match(customersRoute, /select\("id", \{ count: "exact", head: true \}\)/);
+  assert.match(customersRoute, /summaryResults/);
+  assert.match(customersRoute, /total: globalSummary\.total \|\| 0/);
+  assert.match(customersRoute, /pendingPayment: enriched\.filter/);
 });
 
 test("Pizza Mia carga promociones idempotentes con ingrediente incluido", () => {

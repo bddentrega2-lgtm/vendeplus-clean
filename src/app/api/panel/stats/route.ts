@@ -106,6 +106,10 @@ function getDateRange(request: NextRequest) {
     return { ...getVenezuelaRelativeRange("last_7_days", now), range };
   }
 
+  if (range === "last_30_days") {
+    return { ...getVenezuelaRelativeRange("last_30_days", now), range };
+  }
+
   if (range === "this_month") {
     const [year, month] = getVenezuelaDateKey(now).split("-").map(Number);
     const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();

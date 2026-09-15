@@ -47,6 +47,12 @@ const PUBLIC_SERVICE_ROLE_ROUTES = {
     /checkDistributedRateLimit/,
     /premium_dispatch_enabled === true/,
   ],
+  "src/app/api/transport/particulares/[agencySlug]/payment-receipt/route.ts": [
+    /checkDistributedRateLimit/,
+    /MAX_INPUT_BYTES/,
+    /sharp\(input\)/,
+    /particular_payment_proof_mode !== "image"/,
+  ],
 };
 
 const GUARD_PATTERNS = {

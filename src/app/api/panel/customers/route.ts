@@ -35,6 +35,17 @@ function matchesSegment(customer: any, segment: string) {
   return true;
 }
 
+function applyCustomerScope(query: any, storeIds: string[] | null) {
+  return storeIds === null ? query : query.in("store_id", storeIds);
+}
+
+function applyCustomerSearch(query: any, search: string) {
+  if (!search) return query;
+  return query.or(
+    `name.ilike.%${search}%,phone.ilike.%${search}%,phone_normalized.ilike.%${search}%`
+  );
+}
+
 function getLastOrderSummary(order: any) {
   if (!order) return null;
 
@@ -144,16 +155,10 @@ export async function GET(request: NextRequest) {
       .select("id, name, slug")
       .order("name", { ascending: true });
 
-    if (scopedStoreIds !== null) {
-      customersQuery = customersQuery.in("store_id", scopedStoreIds);
-      storesQuery = storesQuery.in("id", scopedStoreIds);
-    }
+    customersQuery = applyCustomerScope(customersQuery, scopedStoreIds);
+    if (scopedStoreIds !== null) storesQuery = storesQuery.in("id", scopedStoreIds);
 
-    if (safeSearch) {
-      customersQuery = customersQuery.or(
-        `name.ilike.%${safeSearch}%,phone.ilike.%${safeSearch}%,phone_normalized.ilike.%${safeSearch}%`
-      );
-    }
+    customersQuery = applyCustomerSearch(customersQuery, safeSearch);
 
     if (segment === "new") {
       customersQuery = customersQuery.lte("orders_count", 1);
@@ -174,10 +179,24 @@ export async function GET(request: NextRequest) {
 
     customersQuery = customersQuery.range(offset, to);
 
-    const [customersResult, storesResult, customerDetailsResult] = await Promise.all([
+    const summaryPromises = [
+      { key: "total", query: supabase.from("customers").select("id", { count: "exact", head: true }) },
+      { key: "newCustomers", query: supabase.from("customers").select("id", { count: "exact", head: true }).lte("orders_count", 1) },
+      { key: "frequent", query: supabase.from("customers").select("id", { count: "exact", head: true }).gte("orders_count", 3) },
+      { key: "vip", query: supabase.from("customers").select("id", { count: "exact", head: true }).or("orders_count.gte.5,total_spent_usd.gte.100") },
+      { key: "contact", query: supabase.from("customers").select("id", { count: "exact", head: true }).gte("orders_count", 2).lte("last_order_at", new Date(Date.now() - 21 * 86400000).toISOString()) },
+    ].map(({ key, query }) =>
+      applyCustomerSearch(applyCustomerScope(query, scopedStoreIds), safeSearch).then((result: any) => ({
+        key,
+        count: result.error ? 0 : result.count || 0,
+      }))
+    );
+
+    const [customersResult, storesResult, customerDetailsResult, summaryResults] = await Promise.all([
       customersQuery,
       storesQuery,
       customerDetailsPromise,
+      Promise.all(summaryPromises),
     ]);
 
     if (customerDetailsResult.error) throw customerDetailsResult.error;
@@ -333,15 +352,15 @@ export async function GET(request: NextRequest) {
       .filter((customer) => includesSearch(customer, search))
       .filter((customer) => matchesSegment(customer, segment));
 
+    const globalSummary = Object.fromEntries(
+      summaryResults.map((result: { key: string; count: number }) => [result.key, result.count])
+    );
     const summary = {
-      total: enriched.length,
-      newCustomers: enriched.filter((customer) => toNumber(customer.orders_count) <= 1).length,
-      frequent: enriched.filter((customer) => toNumber(customer.orders_count) >= 3).length,
-      vip: enriched.filter(
-        (customer) =>
-          toNumber(customer.orders_count) >= 5 || toNumber(customer.total_spent_usd) >= 100
-      ).length,
-      contact: enriched.filter(shouldContactCustomer).length,
+      total: globalSummary.total || 0,
+      newCustomers: globalSummary.newCustomers || 0,
+      frequent: globalSummary.frequent || 0,
+      vip: globalSummary.vip || 0,
+      contact: globalSummary.contact || 0,
       pendingPayment: enriched.filter(
         (customer) => toNumber(customer.pending_payments_count) > 0
       ).length,
