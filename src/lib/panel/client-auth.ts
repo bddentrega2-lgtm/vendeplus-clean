@@ -92,6 +92,19 @@ export async function signInPanelWithGoogle(redirectPath: string) {
   if (error) throw error;
 }
 
+export function hasPanelOAuthReturn() {
+  if (typeof window === "undefined") return false;
+
+  const url = new URL(window.location.href);
+  const hashParams = new URLSearchParams(url.hash.replace(/^#/, ""));
+  return (
+    url.searchParams.has("code") ||
+    url.searchParams.has("error") ||
+    hashParams.has("access_token") ||
+    hashParams.has("error")
+  );
+}
+
 export async function completePanelOAuthSession() {
   const supabase = createSupabaseBrowserClient();
   if (!supabase || typeof window === "undefined") return "";
@@ -104,7 +117,7 @@ export async function completePanelOAuthSession() {
     if (error) throw error;
 
     url.searchParams.delete("code");
-    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    window.history.replaceState({}, "", `${url.pathname}${url.search}`);
 
     const accessToken = data.session?.access_token || "";
     if (accessToken) {
@@ -120,6 +133,9 @@ export async function completePanelOAuthSession() {
   if (accessToken) {
     savePanelToken(accessToken);
     await syncPanelServerSession(accessToken);
+    if (url.hash) {
+      window.history.replaceState({}, "", `${url.pathname}${url.search}`);
+    }
   }
 
   return accessToken;

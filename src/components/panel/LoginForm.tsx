@@ -7,6 +7,7 @@ import { CheckCircle2, Eye, EyeOff, Loader2, Lock } from "lucide-react";
 import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
 import {
   completePanelOAuthSession,
+  hasPanelOAuthReturn,
   savePanelToken,
   signInPanelWithGoogle,
   syncPanelServerSession,
@@ -27,7 +28,7 @@ export function LoginForm() {
 
     async function completeOAuthLogin() {
       if (typeof window === "undefined") return;
-      if (!new URLSearchParams(window.location.search).has("code")) return;
+      if (!hasPanelOAuthReturn()) return;
 
       setIsLoading(true);
       setError("");

@@ -27,6 +27,7 @@ import {
   getPanelAccessToken,
   getPanelAuthHeaders,
   getSavedPanelPin,
+  hasPanelOAuthReturn,
   savePanelToken,
   signInPanelWithGoogle,
   syncPanelServerSession,
@@ -479,7 +480,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       let accessToken = "";
 
       try {
-        if (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("code")) {
+        if (hasPanelOAuthReturn()) {
           accessToken = await completePanelOAuthSession();
         }
       } catch (error: any) {
