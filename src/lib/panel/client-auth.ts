@@ -5,6 +5,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 const PANEL_TOKEN_KEY = "vendeplus_panel_token";
 const PANEL_PIN_KEY = "vendeplus_panel_pin";
 const PANEL_STORE_KEY = "vendeplus_panel_store_id";
+const PANEL_OAUTH_REDIRECT_KEY = "vendeplus_panel_oauth_redirect";
 
 let memoryPanelToken = "";
 let panelSessionBootstrapped = false;
@@ -78,6 +79,8 @@ export async function signInPanelWithGoogle(redirectPath: string) {
     redirectTo.searchParams.set("next", next);
   }
 
+  sessionStorage.setItem(PANEL_OAUTH_REDIRECT_KEY, `${redirectTo.pathname}${redirectTo.search}`);
+
   const { error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
@@ -90,6 +93,17 @@ export async function signInPanelWithGoogle(redirectPath: string) {
   });
 
   if (error) throw error;
+}
+
+export function getPendingPanelOAuthRedirect() {
+  if (typeof window === "undefined") return "";
+  const redirectPath = sessionStorage.getItem(PANEL_OAUTH_REDIRECT_KEY) || "";
+  return redirectPath.startsWith("/") && !redirectPath.startsWith("//") ? redirectPath : "";
+}
+
+export function clearPendingPanelOAuthRedirect() {
+  if (typeof window === "undefined") return;
+  sessionStorage.removeItem(PANEL_OAUTH_REDIRECT_KEY);
 }
 
 export function hasPanelOAuthReturn() {
@@ -123,6 +137,7 @@ export async function completePanelOAuthSession() {
     if (accessToken) {
       savePanelToken(accessToken);
       await syncPanelServerSession(accessToken);
+      clearPendingPanelOAuthRedirect();
     }
     return accessToken;
   }
@@ -133,6 +148,7 @@ export async function completePanelOAuthSession() {
   if (accessToken) {
     savePanelToken(accessToken);
     await syncPanelServerSession(accessToken);
+    clearPendingPanelOAuthRedirect();
     if (url.hash) {
       window.history.replaceState({}, "", `${url.pathname}${url.search}`);
     }

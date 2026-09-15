@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowRight, Check, ClipboardList, MessageCircle, Motorbike, PackageCheck, QrCode, Settings2, ShoppingBag, Store as StoreIcon, UtensilsCrossed } from "lucide-react";
 import type { Store } from "@/types";
 import type { PublicTransportAgencyLogo } from "@/lib/transport";
@@ -12,6 +14,11 @@ import { SectionHeading } from "@/components/public/SectionHeading";
 import { SurfaceCard } from "@/components/public/SurfaceCard";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import { WelcomeChoice } from "@/components/public/WelcomeChoice";
+import {
+  completePanelOAuthSession,
+  getPendingPanelOAuthRedirect,
+  hasPanelOAuthReturn,
+} from "@/lib/panel/client-auth";
 import { buildSomosWhatsAppUrl } from "@/lib/whatsapp";
 
 const commerceFeatures = ["Catálogo público por comercio", "Productos, precios, imágenes y variantes", "Carrito y finalización de pedido", "Solicitud de pedido por WhatsApp", "Delivery o retiro según configuración"];
@@ -29,12 +36,29 @@ function FeatureList({ items, light = false }: { items: string[]; light?: boolea
 }
 
 export function HomeClient({ stores = [], transportAgencies = [] }: { stores?: Store[]; transportAgencies?: PublicTransportAgencyLogo[] }) {
+  const router = useRouter();
   const affiliatedStores = stores.filter((store) => store.name && store.slug && (store.logoUrl || store.coverImageUrl || store.heroImageUrl)).map((store) => ({
     name: store.name,
     category: store.category || "Comercio",
     slug: store.slug,
     imageUrl: store.logoUrl || store.coverImageUrl || store.heroImageUrl || "",
   }));
+
+  useEffect(() => {
+    if (!hasPanelOAuthReturn()) return;
+
+    async function completeOAuthReturn() {
+      const redirectPath = getPendingPanelOAuthRedirect() || "/panel";
+      try {
+        const accessToken = await completePanelOAuthSession();
+        if (accessToken) router.replace(redirectPath);
+      } catch {
+        router.replace("/panel/login");
+      }
+    }
+
+    void completeOAuthReturn();
+  }, [router]);
 
   return <main className="somos-page">
     <WelcomeChoice />
