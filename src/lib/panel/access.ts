@@ -91,6 +91,17 @@ export function panelErrorResponse(error: unknown, fallbackMessage: string) {
     );
   }
 
-  const message = error instanceof Error && error.message ? error.message : fallbackMessage;
+  const message =
+    error instanceof Error && error.message
+      ? error.message
+      : typeof error === "string" && error.trim()
+        ? error.trim()
+        : error &&
+            typeof error === "object" &&
+            "message" in error &&
+            typeof error.message === "string" &&
+            error.message.trim()
+          ? error.message.trim()
+          : fallbackMessage;
   return NextResponse.json({ error: message }, { status: 500 });
 }

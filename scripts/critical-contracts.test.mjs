@@ -1180,6 +1180,7 @@ test("carrito sugiere complementos configurados sin bloquear el pago", () => {
 test("inventario SHIBUI permite color/talla por defecto y eliminar combinaciones", () => {
   const inventoryPanel = read("src/components/panel/PremiumInventoryPreview.tsx");
   const migration = read("supabase/migrations/20260914154500_inventory_remove_missing_skus.sql");
+  const reactivationMigration = read("supabase/migrations/20260915183000_reactivate_inventory_skus_by_attributes.sql");
   assert.match(inventoryPanel, /return names\.length \? names : \["color", "talla"\]/);
   assert.match(inventoryPanel, /Trash2/);
   assert.match(inventoryPanel, /removeCombination/);
@@ -1194,6 +1195,9 @@ test("inventario SHIBUI permite color/talla por defecto y eliminar combinaciones
   assert.match(migration, /not \(id = any\(v_saved_ids\)\)/);
   assert.match(migration, /set stock_on_hand = 0, is_active = false/);
   assert.match(migration, /Combinación eliminada desde panel de inventario/);
+  assert.match(reactivationMigration, /and attributes = p_attributes/);
+  assert.match(reactivationMigration, /set stock_on_hand = p_stock_on_hand, is_active = true/);
+  assert.match(reactivationMigration, /reactiva una combinacion por atributos/);
 });
 
 test("estadisticas y clientes usan rangos y resumenes completos", () => {
