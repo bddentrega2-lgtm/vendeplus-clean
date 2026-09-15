@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Bike, Check, Copy, MapPin, Package, Send, ShieldCheck, UserRound, UsersRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bike, Check, Copy, MapPin, Package, Send, ShieldCheck, Upload, UserRound, UsersRound } from "lucide-react";
 import { LocationPicker } from "@/components/public/LocationPicker";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import {
@@ -10,6 +10,7 @@ import {
   saveCustomerBrowserProfile,
 } from "@/lib/customer-browser-profile";
 import { getPaymentDetailsKey } from "@/lib/payments";
+import { compressImageForUpload } from "@/lib/images/client-compress";
 import type { DeliveryLocation } from "@/types";
 
 type PaymentDetails = Record<string, Record<string, string>>;
@@ -22,17 +23,109 @@ type Agency = {
   accentColor: string;
   paymentMethods: string[];
   paymentDetails: PaymentDetails;
+  paymentProofMode: "disabled" | "reference" | "image";
+  paymentProofRequired: boolean;
 };
-type Point = { name: string; phone: string; address: string; location: DeliveryLocation | null };
+type Point = { name: string; phone: string; address: string; reference: string; location: DeliveryLocation | null };
 type ServiceType = "delivery" | "person" | "";
 type DeliveryRole = "sender" | "receiver" | "";
 type TravelerMode = "self" | "other" | "";
+type VenezuelanPhonePrefix = "58412" | "58414" | "58416" | "58422" | "58424" | "58426";
+type PhonePrefix = VenezuelanPhonePrefix | "manual";
 
 const inputClass =
   "mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base font-semibold outline-none focus:border-[var(--agency-accent)]";
 
 function emptyPoint(): Point {
-  return { name: "", phone: "", address: "", location: null };
+  return { name: "", phone: "", address: "", reference: "", location: null };
+}
+
+function splitPhone(value: string): { prefix: PhonePrefix; manualPrefix: string; rest: string } {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return { prefix: "58424", manualPrefix: "", rest: "" };
+  const venezuelanPrefixes: VenezuelanPhonePrefix[] = ["58424", "58412", "58422", "58416", "58426", "58414"];
+  for (const prefix of venezuelanPrefixes) {
+    const localPrefix = `0${prefix.slice(2)}`;
+    const shortPrefix = prefix.slice(2);
+    if (digits.startsWith(prefix)) return { prefix, manualPrefix: "", rest: digits.slice(5, 12) };
+    if (digits.startsWith(localPrefix)) return { prefix, manualPrefix: "", rest: digits.slice(4, 11) };
+    if (digits.startsWith(shortPrefix)) return { prefix, manualPrefix: "", rest: digits.slice(3, 10) };
+  }
+  return { prefix: "manual", manualPrefix: digits.slice(0, 5), rest: digits.slice(5, 15) };
+}
+
+function buildPhone(prefix: PhonePrefix, manualPrefix: string, rest: string) {
+  const cleanRest = rest.replace(/\D/g, "").slice(0, 10);
+  const cleanPrefix = prefix === "manual" ? manualPrefix.replace(/\D/g, "").slice(0, 5) : prefix;
+  return cleanPrefix ? `${cleanPrefix}${cleanRest}` : cleanRest;
+}
+
+function PhoneInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const parts = splitPhone(value);
+  const [prefix, setPrefix] = useState<PhonePrefix>(parts.prefix);
+  const [manualPrefix, setManualPrefix] = useState(parts.manualPrefix);
+  const [rest, setRest] = useState(parts.rest);
+
+  useEffect(() => {
+    const next = splitPhone(value);
+    setPrefix(next.prefix);
+    setManualPrefix(next.manualPrefix);
+    setRest(next.rest);
+  }, [value]);
+
+  function update(nextPrefix: PhonePrefix, nextManualPrefix: string, nextRest: string) {
+    setPrefix(nextPrefix);
+    setManualPrefix(nextManualPrefix);
+    setRest(nextRest);
+    onChange(buildPhone(nextPrefix, nextManualPrefix, nextRest));
+  }
+
+  return (
+    <label className="block text-sm font-black">
+      {label}
+      <div className="mt-1 flex overflow-hidden rounded-2xl border border-slate-200 bg-white focus-within:border-[var(--agency-accent)]">
+        <select
+          aria-label={`Prefijo de ${label.toLowerCase()}`}
+          value={prefix}
+          onChange={(event) => update(event.target.value as PhonePrefix, manualPrefix, rest)}
+          className="w-[106px] border-r border-slate-200 bg-slate-50 px-2 text-sm font-black outline-none"
+        >
+          <option value="58424">+58 424</option>
+          <option value="58412">+58 412</option>
+          <option value="58422">+58 422</option>
+          <option value="58416">+58 416</option>
+          <option value="58426">+58 426</option>
+          <option value="58414">+58 414</option>
+          <option value="manual">Otro</option>
+        </select>
+        {prefix === "manual" ? (
+          <input
+            aria-label="Codigo internacional"
+            className="w-[82px] border-r border-slate-200 px-2 text-sm font-bold outline-none"
+            inputMode="numeric"
+            value={manualPrefix}
+            onChange={(event) => update(prefix, event.target.value, rest)}
+            placeholder="Cod."
+          />
+        ) : null}
+        <input
+          className="min-w-0 flex-1 px-4 py-3 text-base font-semibold outline-none"
+          inputMode="numeric"
+          value={rest}
+          onChange={(event) => update(prefix, manualPrefix, event.target.value)}
+          placeholder="Resto del numero"
+        />
+      </div>
+    </label>
+  );
 }
 
 function serviceTitle(serviceType: ServiceType) {
@@ -43,6 +136,7 @@ function serviceTitle(serviceType: ServiceType) {
 
 function PointFields({
   agencyName,
+  searchArea,
   allowCurrentLocation,
   mode,
   name,
@@ -55,6 +149,7 @@ function PointFields({
   value,
 }: {
   agencyName: string;
+  searchArea?: string;
   allowCurrentLocation: boolean;
   mode: "store" | "delivery";
   name: string;
@@ -79,39 +174,34 @@ function PointFields({
         </label>
       ) : null}
       {phoneLabel ? (
-        <label className="block text-sm font-black">
-          {phoneLabel}
-          <input
-            className={inputClass}
-            type="tel"
-            value={value.phone}
-            onChange={(event) => setValue((point) => ({ ...point, phone: event.target.value }))}
-          />
-        </label>
+        <PhoneInput label={phoneLabel} value={value.phone} onChange={(phone) => setValue((point) => ({ ...point, phone }))} />
       ) : null}
-      <label className="block text-sm font-black">
-        {noteLabel} <span className="font-semibold text-slate-400">(opcional)</span>
-        <textarea
-          className={inputClass}
-          rows={2}
-          value={value.address}
-          onChange={(event) => setValue((point) => ({ ...point, address: event.target.value }))}
-          placeholder="Ej: Av. Bolivar, casa verde con porton negro"
-        />
-      </label>
       <LocationPicker
         key={`${mode}-${name}-${allowCurrentLocation ? "current" : "map"}`}
         storeLatitude={10.2468}
         storeLongitude={-67.5958}
         storeName={agencyName}
+        searchArea={searchArea || agencyName}
         mode={mode}
         pointName={name}
         referenceMarkerLabel={referenceMarkerLabel}
         referencePopupLabel={referencePopupLabel}
         allowCurrentLocation={allowCurrentLocation}
         value={value.location}
-        onChange={(location) => setValue((point) => ({ ...point, location }))}
+        onChange={(location) => setValue((point) => ({ ...point, address: location.label, location }))}
       />
+      {value.location ? (
+        <label className="block text-sm font-black">
+          {noteLabel} <span className="font-semibold text-slate-400">(opcional)</span>
+          <textarea
+            className={inputClass}
+            rows={2}
+            value={value.reference}
+            onChange={(event) => setValue((point) => ({ ...point, reference: event.target.value }))}
+            placeholder="Edificio, piso, local, color de fachada o referencia para llegar"
+          />
+        </label>
+      ) : null}
     </div>
   );
 }
@@ -143,11 +233,15 @@ export function ParticularDeliveryForm({ agency }: { agency: Agency }) {
   const [packageDescription, setPackageDescription] = useState("");
   const [paymentMethod, setPaymentMethod] = useState(agency.paymentMethods[0] || "");
   const [paymentReference, setPaymentReference] = useState("");
+  const [paymentReceiptToken, setPaymentReceiptToken] = useState("");
+  const [receiptName, setReceiptName] = useState("");
   const [quote, setQuote] = useState<{ distanceKm: number | null; feeUsd: number | null; label: string } | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
   const [copied, setCopied] = useState("");
   const requestKeyRef = useRef("");
+  const receiptInputRef = useRef<HTMLInputElement>(null);
   const theme = useMemo(
     () => ({ "--agency-primary": agency.primaryColor, "--agency-accent": agency.accentColor }) as React.CSSProperties,
     [agency]
@@ -211,12 +305,19 @@ export function ParticularDeliveryForm({ agency }: { agency: Agency }) {
   }
 
   function selectDeliveryRole(role: Exclude<DeliveryRole, "">) {
+    const previousRole = deliveryRole;
     setDeliveryRole(role);
     setQuote(null);
+    if (previousRole && previousRole !== role) {
+      setPickup((point) => ({ ...point, location: null, address: "", reference: "" }));
+      setDelivery((point) => ({ ...point, location: null, address: "", reference: "" }));
+    }
     if (role === "sender") {
       setPickup((point) => ({ ...point, name: requesterName, phone: requesterPhone }));
+      setDelivery((point) => ({ ...point, name: "", phone: "" }));
     } else {
       setDelivery((point) => ({ ...point, name: requesterName, phone: requesterPhone }));
+      setPickup((point) => ({ ...point, name: "", phone: "" }));
     }
   }
 
@@ -299,6 +400,7 @@ export function ParticularDeliveryForm({ agency }: { agency: Agency }) {
         name: pickupName,
         phone: pickupPhone,
         address: pickup.address,
+        reference: pickup.reference,
         latitude: pickup.location?.latitude,
         longitude: pickup.location?.longitude,
       },
@@ -306,12 +408,14 @@ export function ParticularDeliveryForm({ agency }: { agency: Agency }) {
         name: deliveryName,
         phone: deliveryPhone,
         address: delivery.address,
+        reference: delivery.reference,
         latitude: delivery.location?.latitude,
         longitude: delivery.location?.longitude,
       },
       packageDescription: detail,
       paymentMethod,
       paymentReference,
+      paymentReceiptToken,
     };
   }
 
@@ -339,8 +443,23 @@ export function ParticularDeliveryForm({ agency }: { agency: Agency }) {
       setMessage("Esta empresa delivery aun debe configurar sus metodos de pago.");
       return;
     }
-    if (getPaymentDetailsKey(paymentMethod) === "pagoMovil" && paymentReference.replace(/\D/g, "").length < 4) {
-      setMessage("La referencia debe tener al menos 4 digitos.");
+    if (getPaymentDetailsKey(paymentMethod) === "pagoMovil" && agency.paymentProofMode === "reference") {
+      if (paymentReference.trim() && paymentReference.replace(/\D/g, "").length < 4) {
+        setMessage("La referencia debe tener al menos 4 digitos.");
+        return;
+      }
+      if (agency.paymentProofRequired && !paymentReference.trim()) {
+        setMessage("Indica la referencia del pago.");
+        return;
+      }
+    }
+    if (
+      getPaymentDetailsKey(paymentMethod) === "pagoMovil" &&
+      agency.paymentProofMode === "image" &&
+      agency.paymentProofRequired &&
+      !paymentReceiptToken
+    ) {
+      setMessage("Sube la captura del pago.");
       return;
     }
     setLoading(true);
@@ -366,6 +485,30 @@ export function ParticularDeliveryForm({ agency }: { agency: Agency }) {
       setMessage(error instanceof Error ? error.message : "No pudimos registrar la solicitud.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function uploadPaymentReceipt(file?: File) {
+    if (!file) return;
+    setIsUploadingReceipt(true);
+    setMessage("");
+    try {
+      const upload = await compressImageForUpload(file);
+      const body = new FormData();
+      body.append("file", upload);
+      const response = await fetch(`/api/transport/particulares/${agency.slug}/payment-receipt`, {
+        method: "POST",
+        body,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "No se pudo subir la imagen.");
+      setPaymentReceiptToken(String(data.receiptToken || ""));
+      setReceiptName(file.name);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo subir la imagen.");
+    } finally {
+      setIsUploadingReceipt(false);
+      if (receiptInputRef.current) receiptInputRef.current.value = "";
     }
   }
 
@@ -450,10 +593,7 @@ export function ParticularDeliveryForm({ agency }: { agency: Agency }) {
                     Nombre
                     <input className={inputClass} value={requesterName} onChange={(event) => setRequesterName(event.target.value)} />
                   </label>
-                  <label className="block text-sm font-black">
-                    Telefono
-                    <input className={inputClass} type="tel" value={requesterPhone} onChange={(event) => setRequesterPhone(event.target.value)} />
-                  </label>
+                  <PhoneInput label="Telefono" value={requesterPhone} onChange={setRequesterPhone} />
                   {customerProfileLoaded ? (
                     <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
                       <label className="flex cursor-pointer items-start gap-3">
@@ -522,10 +662,7 @@ export function ParticularDeliveryForm({ agency }: { agency: Agency }) {
                         Nombre del pasajero
                         <input className={inputClass} value={travelerName} onChange={(event) => setTravelerName(event.target.value)} />
                       </label>
-                      <label className="block text-sm font-black">
-                        Telefono del pasajero
-                        <input className={inputClass} type="tel" value={travelerPhone} onChange={(event) => setTravelerPhone(event.target.value)} />
-                      </label>
+                      <PhoneInput label="Telefono del pasajero" value={travelerPhone} onChange={setTravelerPhone} />
                     </div>
                   ) : null}
                 </div>
@@ -546,7 +683,8 @@ export function ParticularDeliveryForm({ agency }: { agency: Agency }) {
                 name={pickupPointLabel}
                 mode="store"
                 agencyName={agency.name}
-                noteLabel={`Direccion, referencia o nota de ${pickupPointLabel.toLowerCase()}`}
+                searchArea={agency.location || agency.name}
+                noteLabel={`Indicaciones para el repartidor en ${pickupPointLabel.toLowerCase()}`}
                 nameLabel={pickupNameLabel}
                 phoneLabel={pickupPhoneLabel}
                 allowCurrentLocation={allowPickupCurrent}
@@ -567,7 +705,8 @@ export function ParticularDeliveryForm({ agency }: { agency: Agency }) {
                 name={deliveryPointLabel}
                 mode="delivery"
                 agencyName={agency.name}
-                noteLabel={`Direccion, referencia o nota de ${deliveryPointLabel.toLowerCase()}`}
+                searchArea={agency.location || agency.name}
+                noteLabel={`Indicaciones para el repartidor en ${deliveryPointLabel.toLowerCase()}`}
                 nameLabel={deliveryNameLabel}
                 phoneLabel={deliveryPhoneLabel}
                 referenceMarkerLabel={serviceType === "person" ? "Origen" : undefined}
@@ -593,7 +732,9 @@ export function ParticularDeliveryForm({ agency }: { agency: Agency }) {
                 <p><b>Servicio:</b> {serviceTitle(serviceType)}</p>
                 {serviceType === "person" ? <p className="mt-2"><b>Pasajero:</b> {currentTravelerName}</p> : null}
                 <p className="mt-2"><b>{pickupPointLabel}:</b> {pickup.address || "Ubicacion marcada en el mapa"}</p>
+                {pickup.reference ? <p className="mt-2"><b>Indicaciones {pickupPointLabel.toLowerCase()}:</b> {pickup.reference}</p> : null}
                 <p className="mt-2"><b>{deliveryPointLabel}:</b> {delivery.address || "Ubicacion marcada en el mapa"}</p>
+                {delivery.reference ? <p className="mt-2"><b>Indicaciones {deliveryPointLabel.toLowerCase()}:</b> {delivery.reference}</p> : null}
                 {serviceType === "delivery" ? <p className="mt-2"><b>Paquete:</b> {packageDescription}</p> : null}
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -614,10 +755,14 @@ export function ParticularDeliveryForm({ agency }: { agency: Agency }) {
                       <button
                         type="button"
                         key={payment}
-                        onClick={() => {
-                          setPaymentMethod(payment);
-                          if (payment === "Efectivo") setPaymentReference("");
-                        }}
+                          onClick={() => {
+                            setPaymentMethod(payment);
+                            if (payment === "Efectivo") setPaymentReference("");
+                            if (payment === "Efectivo") {
+                              setPaymentReceiptToken("");
+                              setReceiptName("");
+                            }
+                          }}
                         className={`rounded-2xl border p-3 text-center text-sm font-black transition ${paymentMethod === payment ? "text-white shadow-md" : "bg-white text-slate-700"}`}
                         style={paymentMethod === payment ? { backgroundColor: agency.primaryColor } : undefined}
                       >
@@ -644,11 +789,41 @@ export function ParticularDeliveryForm({ agency }: { agency: Agency }) {
                   </div>
                 </div>
               ) : null}
-              {getPaymentDetailsKey(paymentMethod) === "pagoMovil" ? (
+              {getPaymentDetailsKey(paymentMethod) === "pagoMovil" && agency.paymentProofMode === "reference" ? (
                 <label className="block text-sm font-black">
-                  Referencia del pago movil
+                  Referencia del pago movil{" "}
+                  {!agency.paymentProofRequired ? <span className="font-semibold text-slate-400">(opcional)</span> : null}
                   <input className={inputClass} inputMode="numeric" maxLength={40} value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} placeholder="Ej: 123456" />
                 </label>
+              ) : null}
+              {getPaymentDetailsKey(paymentMethod) === "pagoMovil" && agency.paymentProofMode === "image" ? (
+                <div className="space-y-3">
+                  <div className="rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200">
+                    <p className="text-sm font-black">
+                      Captura del pago{" "}
+                      {!agency.paymentProofRequired ? <span className="font-semibold text-slate-400">(opcional)</span> : null}
+                    </p>
+                    <input
+                      ref={receiptInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={(event) => uploadPaymentReceipt(event.target.files?.[0])}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => receiptInputRef.current?.click()}
+                      disabled={isUploadingReceipt}
+                      className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-black text-slate-700 ring-1 ring-slate-200 disabled:opacity-60"
+                    >
+                      <Upload size={17} />
+                      {isUploadingReceipt ? "Subiendo..." : receiptName ? "Cambiar captura" : "Subir captura"}
+                    </button>
+                    <p className="mt-2 text-xs font-bold text-slate-500">
+                      {receiptName ? `Archivo listo: ${receiptName}` : "JPG, PNG o WebP. Maximo 2 MB."}
+                    </p>
+                  </div>
+                </div>
               ) : null}
             </>
           ) : null}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Eye, Loader2, MessageCircle, RefreshCcw, Send, X } from "lucide-react";
+import { Eye, Loader2, MessageCircle, ReceiptText, RefreshCcw, Send, X } from "lucide-react";
 import { transportStatusLabels } from "@/components/transport/transport-panel-helpers";
 
 type LoadOrders = (overrides?: Record<string, string>) => Promise<void>;
@@ -217,6 +217,23 @@ export function TransportOrdersTab({
     setSelectedOrderId(entry.id);
     if (!entry.__detailsLoaded) {
       await onLoadOrderDetail(entry.id);
+    }
+  }
+
+  async function openParticularPaymentReceipt(entry: any) {
+    const receiptWindow = window.open("about:blank", "_blank");
+    try {
+      const response = await fetch(`/api/transport/panel/orders/${entry.id}/payment-receipt`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "No se pudo abrir el comprobante.");
+      if (receiptWindow) {
+        receiptWindow.location.href = data.url;
+      } else {
+        window.open(data.url, "_blank", "noopener,noreferrer");
+      }
+    } catch (error) {
+      receiptWindow?.close();
+      window.alert(error instanceof Error ? error.message : "No se pudo abrir el comprobante.");
     }
   }
 
@@ -472,6 +489,7 @@ export function TransportOrdersTab({
           canShowEntrega2Button={canShowEntrega2Button}
           entrega2Integration={entrega2Integration}
           onSendParticularToEntrega2={onSendParticularToEntrega2}
+          onOpenParticularPaymentReceipt={openParticularPaymentReceipt}
           sendingEntrega2OrderId={sendingEntrega2OrderId}
         />
       ) : null}
@@ -494,6 +512,7 @@ function OrderDetailModal({
   canShowEntrega2Button,
   entrega2Integration,
   onSendParticularToEntrega2,
+  onOpenParticularPaymentReceipt,
   sendingEntrega2OrderId,
 }: {
   billingSymbol: string;
@@ -510,6 +529,7 @@ function OrderDetailModal({
   canShowEntrega2Button: (entry: any) => boolean;
   entrega2Integration: (entry: any) => any;
   onSendParticularToEntrega2: (orderId: string) => Promise<void>;
+  onOpenParticularPaymentReceipt: (entry: any) => Promise<void>;
   sendingEntrega2OrderId: string | null;
 }) {
   const rawRequest = entry.transport_particular_requests;
@@ -586,6 +606,16 @@ function OrderDetailModal({
                     </p>
                     <p>Pago: {paymentMethod}</p>
                     {request?.payment_reference ? <p>Referencia de pago: {request.payment_reference}</p> : null}
+                    {entry.has_particular_payment_receipt ? (
+                      <button
+                        type="button"
+                        onClick={() => void onOpenParticularPaymentReceipt(entry)}
+                        className="inline-flex w-fit items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-700"
+                      >
+                        <ReceiptText size={14} />
+                        Ver captura de pago
+                      </button>
+                    ) : null}
                     <p>
                       Dirección:{" "}
                       {request?.delivery_address || entry.delivery_address || request?.delivery_reference || entry.delivery_reference || "Ver punto GPS"}

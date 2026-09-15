@@ -87,10 +87,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const pickupName = text(body?.pickup?.name, 100), pickupPhone = text(body?.pickup?.phone, 24);
   const deliveryName = text(body?.delivery?.name, 100), deliveryPhone = text(body?.delivery?.phone, 24);
   const pickupAddress = text(body?.pickup?.address), deliveryAddress = text(body?.delivery?.address);
+  const pickupReference = text(body?.pickup?.reference);
+  const deliveryReference = text(body?.delivery?.reference);
   const serviceType = body?.serviceType === "person" ? "person" : "delivery";
   const travelerName = text(body?.travelerName, 100);
   const travelerPhone = text(body?.travelerPhone, 24);
   const rawPackageDescription = text(body?.packageDescription, 300), paymentMethod = text(body?.paymentMethod, 40);
+  const paymentReceiptToken = text(body?.paymentReceiptToken, 36);
   const serviceLabel = serviceType === "person" ? "Traslado de persona" : "Delivery";
   const serviceDetail = serviceType === "person"
     ? [`Pasajero: ${travelerName || requesterName}`, travelerPhone ? `Telefono pasajero: ${travelerPhone}` : null].filter(Boolean).join(" | ")
@@ -105,32 +108,57 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     ? loaded.configuration.agency.particular_payment_methods.map((method: unknown) => text(method, 40)).filter(Boolean)
     : [];
   if (!["Pago móvil", "Efectivo"].includes(paymentMethod) || !availablePaymentMethods.includes(paymentMethod)) return badRequest("Selecciona un metodo de pago disponible.");
-  if (paymentMethod === "Pago móvil" && paymentReference.replace(/\D/g, "").length < 4) return badRequest("La referencia debe tener al menos 4 digitos.");
+  const paymentProofMode = ["reference", "image"].includes(loaded.configuration.agency.particular_payment_proof_mode)
+    ? loaded.configuration.agency.particular_payment_proof_mode
+    : "disabled";
+  const paymentProofRequired = loaded.configuration.agency.particular_payment_proof_required === true;
+  const effectivePaymentReference = paymentMethod === "Pago móvil" && paymentProofMode === "reference" ? paymentReference : "";
+  const effectivePaymentReceiptToken = paymentMethod === "Pago móvil" && paymentProofMode === "image" ? paymentReceiptToken : "";
+  if (paymentMethod === "Pago móvil" && paymentProofMode === "reference") {
+    if (effectivePaymentReference && effectivePaymentReference.replace(/\D/g, "").length < 4) return badRequest("La referencia debe tener al menos 4 digitos.");
+    if (paymentProofRequired && !effectivePaymentReference) return badRequest("Indica la referencia del pago.");
+  }
+  if (paymentMethod === "Pago móvil" && paymentProofMode === "image" && paymentProofRequired && !effectivePaymentReceiptToken) return badRequest("Sube la captura del pago.");
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestKey)) return badRequest("Actualiza la pagina e intenta nuevamente.");
 
   let code = publicCode();
+  let requestId = "";
   const { data: created, error } = await loaded.supabase.from("transport_particular_requests").insert({
     public_code: code, agency_id: loaded.configuration.agency.id,
     idempotency_key: requestKey,
     requester_name: requesterName, requester_phone: requesterPhone, requester_role: requesterRole,
-    pickup_name: pickupName, pickup_phone: pickupPhone, pickup_address: pickupAddress, pickup_reference: text(body?.pickup?.reference) || null, pickup_lat: pickupLat, pickup_lng: pickupLng,
-    delivery_name: deliveryName, delivery_phone: deliveryPhone, delivery_address: deliveryAddress, delivery_reference: text(body?.delivery?.reference) || null, delivery_lat: deliveryLat, delivery_lng: deliveryLng,
-    package_description: packageDescription, payment_method: paymentMethod, payment_reference: paymentReference || null,
+    pickup_name: pickupName, pickup_phone: pickupPhone, pickup_address: pickupAddress, pickup_reference: pickupReference || null, pickup_lat: pickupLat, pickup_lng: pickupLng,
+    delivery_name: deliveryName, delivery_phone: deliveryPhone, delivery_address: deliveryAddress, delivery_reference: deliveryReference || null, delivery_lat: deliveryLat, delivery_lng: deliveryLng,
+    package_description: packageDescription, payment_method: paymentMethod, payment_reference: effectivePaymentReference || null,
     distance_km: quotePayload.distanceKm, delivery_fee_usd: quotePayload.feeUsd, pricing_type: quotePayload.pricingType, quote_source: quotePayload.source,
-  }).select("public_code").single();
+  }).select("id, public_code").single();
   if (error?.code === "23505") {
     const { data: existing, error: existingError } = await loaded.supabase
       .from("transport_particular_requests")
-      .select("public_code")
+      .select("id, public_code")
       .eq("agency_id", loaded.configuration.agency.id)
       .eq("idempotency_key", requestKey)
       .maybeSingle();
     if (existingError || !existing) return NextResponse.json({ error: "No pudimos confirmar la solicitud." }, { status: 500 });
     code = existing.public_code;
+    requestId = existing.id;
   } else if (error) {
     return NextResponse.json({ error: "No pudimos registrar la solicitud." }, { status: 500 });
   } else if (created?.public_code) {
     code = created.public_code;
+    requestId = created.id;
+  }
+
+  if (effectivePaymentReceiptToken && requestId) {
+    const { error: receiptError } = await loaded.supabase
+      .from("transport_particular_payment_receipts")
+      .update({ particular_request_id: requestId, attached_at: new Date().toISOString() })
+      .eq("id", effectivePaymentReceiptToken)
+      .eq("agency_id", loaded.configuration.agency.id)
+      .is("particular_request_id", null);
+    if (receiptError) {
+      return NextResponse.json({ error: "No pudimos asociar la captura del pago." }, { status: 500 });
+    }
   }
 
   const phone = String(loaded.configuration.agency.whatsapp_phone || loaded.configuration.agency.contact_phone || "").replace(/\D/g, "");
@@ -157,13 +185,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     "",
     pickupTitle,
     serviceType === "delivery" ? `Nombre: ${pickupName}` : null,
-    pickupAddress || "Referencia escrita no indicada",
+    pickupAddress || "Punto marcado en el mapa",
+    pickupReference ? `Indicaciones: ${pickupReference}` : null,
     serviceType === "delivery" ? `Telefono: ${pickupPhone}` : null,
     `Mapa: https://www.google.com/maps?q=${pickupLat},${pickupLng}`,
     "",
     deliveryTitle,
     serviceType === "delivery" ? `Nombre: ${deliveryName}` : null,
-    deliveryAddress || "Referencia escrita no indicada",
+    deliveryAddress || "Punto marcado en el mapa",
+    deliveryReference ? `Indicaciones: ${deliveryReference}` : null,
     serviceType === "delivery" ? `Telefono: ${deliveryPhone}` : null,
     `Mapa: https://www.google.com/maps?q=${deliveryLat},${deliveryLng}`,
     "",
@@ -172,7 +202,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     `Tarifa: ${amount}`,
     bridgeResult.fallback ? "Cotizacion: respaldo de Entrega2 Somos" : null,
     `Pago: ${paymentMethod}`,
-    paymentReference ? `Referencia de pago: ${paymentReference}` : null,
+    effectivePaymentReference ? `Referencia de pago: ${effectivePaymentReference}` : null,
+    effectivePaymentReceiptToken ? "Comprobante: captura cargada para revision en el panel" : null,
   ].filter((line) => line !== null).join("\n");
   return NextResponse.json({ ok: true, code, quote: quotePayload, whatsappUrl: phone ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}` : null, ...(bridgeResult.fallback ? { fallback: bridgeResult.fallback } : {}) });
 }

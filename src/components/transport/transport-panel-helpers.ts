@@ -31,6 +31,8 @@ export type Agency = {
   additional_conditions?: string;
   particular_payment_methods?: string[];
   particular_payment_details?: Record<string, Record<string, string>>;
+  particular_payment_proof_mode?: "disabled" | "reference" | "image" | string | null;
+  particular_payment_proof_required?: boolean | null;
   premium_dispatch_enabled?: boolean | null;
   driver_whatsapp_dispatch_enabled?: boolean | null;
   transport_agency_rates?: any[] | any;

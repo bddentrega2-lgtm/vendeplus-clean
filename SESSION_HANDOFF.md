@@ -1,3 +1,32 @@
+# 2026-09-15 - Asegurados ajustes de particulares delivery, comprobantes e inventario SHIBUI
+
+- Trabajo actual en `vendeplus-login-stability-fix`. No hubo commit ni push.
+- Supabase produccion `rvmtjtuztewcrmodrodb`: aplicadas previamente por SQL manual y ahora registradas en historial remoto con `supabase migration repair --linked --status applied`:
+  - `20260914154500_inventory_remove_missing_skus`
+  - `20260915120000_transport_particular_payment_receipts`
+- `supabase migration list` queda alineado: ambas versiones aparecen local y remoto.
+- SHIBUI: el guardado de inventario fue validado por el usuario y funciona. Se ajusto `panelErrorResponse` para que futuros errores de panel muestren el mensaje real en vez de ocultarse detras del fallback generico.
+- Delivery particulares Entrega2: matriz QA previa OK para `Yo envio`, `Yo recibo`, `Viajo yo`, `Viaja otro`, captura/referencia opcional u obligatoria. Se limpio la data QA y se dejo Entrega2 con captura obligatoria.
+- Build local final: `npm.cmd run build` OK, 214 paginas.
+- Preview Vercel READY:
+  - Deployment: `dpl_CwMQVgHGB95eXMiwHEo4ji45LbEK`
+  - URL: `https://vendeplus-clean-3h0fsifrx-entrega2-s-projects.vercel.app`
+  - Inspector: `https://vercel.com/entrega2-s-projects/vendeplus-clean/CwMQVgHGB95eXMiwHEo4ji45LbEK`
+- Smoke preview:
+  - `GET /`, `/shibui`, `/panel/productos`, `/transporte/entrega2/particulares`, `/transporte/panel`: 200
+  - `POST /api/transport/particulares/entrega2` sin payload valido: 401, no crea solicitud
+  - APIs privadas GET sin sesion devuelven 302 por proxy hacia login, comportamiento actual del proyecto.
+- Pendiente si el usuario autoriza produccion: promover/desplegar este artefacto o ejecutar `vercel deploy --prod` desde este worktree y repetir smoke productivo. No promover automaticamente sin confirmacion.
+- Usuario autorizo produccion. Deployment productivo READY:
+  - `dpl_DqoKov7mYEBe9g3i45hnrVm8LZ4k`
+  - Artefacto: `https://vendeplus-clean-6ctj61mcs-entrega2-s-projects.vercel.app`
+  - Alias aplicado: `https://www.somos-ve.com`
+- Smoke productivo:
+  - `www.somos-ve.com`: `/`, `/shibui`, `/panel/productos`, `/transporte/entrega2/particulares`, `/transporte/panel` OK.
+  - APIs privadas sin sesion: 401 esperado en dominio oficial.
+  - POST vacio a `/api/transport/particulares/entrega2`: 400 esperado, sin crear solicitud.
+  - Logs Vercel ultimos 10 min: sin errores; solo info. El 400 observado corresponde al POST vacio de smoke.
+
 # 2026-09-12 - Produccion: productos sin descripcion quedan en blanco
 
 - Usuario reporto que SHIBUI seguia mostrando `Producto disponible para pedir desde Somos.` en productos sin descripcion.

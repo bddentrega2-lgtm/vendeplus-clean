@@ -173,15 +173,35 @@ export async function GET(request: NextRequest) {
     if (error) throw error;
     const hasMore = (rawData?.length || 0) > limit;
     const data = (rawData || []).slice(0, limit);
+    const particularRequestIds = data
+      .map((order: any) => order.particular_request_id)
+      .filter(Boolean);
+    let receiptRequestIds = new Set<string>();
+    if (particularRequestIds.length) {
+      const { data: receipts, error: receiptsError } = await supabase
+        .from("transport_particular_payment_receipts")
+        .select("particular_request_id")
+        .in("particular_request_id", particularRequestIds)
+        .not("storage_path", "is", null)
+        .is("deleted_at", null);
+      if (receiptsError) throw receiptsError;
+      receiptRequestIds = new Set((receipts || []).map((receipt: any) => receipt.particular_request_id));
+    }
+    const orders = data.map((order: any) => ({
+      ...order,
+      has_particular_payment_receipt: order.particular_request_id
+        ? receiptRequestIds.has(order.particular_request_id)
+        : false,
+    }));
 
     const storeMap = new Map<string, any>();
-    for (const order of (data || []) as any[]) {
+    for (const order of orders as any[]) {
       if (order.stores?.id) storeMap.set(order.stores.id, order.stores);
       if (order.particular_request_id) storeMap.set("particular", { id: "particular", name: "Particulares" });
     }
 
     return NextResponse.json({
-      orders: data || [],
+      orders,
       stores: Array.from(storeMap.values()).sort((a, b) =>
         String(a.name || "").localeCompare(String(b.name || ""))
       ),

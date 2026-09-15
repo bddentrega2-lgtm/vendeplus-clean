@@ -1,5 +1,5 @@
 export type DeliveryType = "delivery" | "pickup" | "national_shipping" | "table";
-export type DeliverySource = "none" | "current" | "map";
+export type DeliverySource = "none" | "current" | "map" | "search";
 export type DeliveryProvider =
   | "own_delivery"
   | "entrega2"

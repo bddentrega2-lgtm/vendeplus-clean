@@ -16,6 +16,10 @@ function redirectToLogin(request: NextRequest, loginPath: string) {
 export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
+  if (pathname.startsWith("/transporte/panel")) {
+    return NextResponse.next();
+  }
+
   if (PUBLIC_PANEL_PATHS.has(pathname)) {
     return NextResponse.next();
   }

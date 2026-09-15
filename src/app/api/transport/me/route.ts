@@ -42,6 +42,8 @@ const agencySelect = `
   additional_conditions,
   particular_payment_methods,
   particular_payment_details,
+  particular_payment_proof_mode,
+  particular_payment_proof_required,
   premium_dispatch_enabled,
   driver_whatsapp_dispatch_enabled,
   created_at,
@@ -78,10 +80,19 @@ const agencySelectWithoutBanner = agencySelect.replace("banner_image_url,", "");
 const agencySelectWithoutPremium = agencySelect
   .replace("premium_dispatch_enabled,", "")
   .replace("driver_whatsapp_dispatch_enabled,", "");
+const agencySelectWithoutParticularProof = agencySelect
+  .replace("particular_payment_proof_mode,", "")
+  .replace("particular_payment_proof_required,", "");
+const agencySelectWithoutPremiumAndParticularProof = agencySelectWithoutPremium
+  .replace("particular_payment_proof_mode,", "")
+  .replace("particular_payment_proof_required,", "");
 const agencySelectWithoutBannerAndPremium = agencySelectWithoutBanner.replace(
   "premium_dispatch_enabled,",
   ""
 ).replace("driver_whatsapp_dispatch_enabled,", "");
+const agencySelectWithoutBannerPremiumAndParticularProof = agencySelectWithoutBannerAndPremium
+  .replace("particular_payment_proof_mode,", "")
+  .replace("particular_payment_proof_required,", "");
 
 const compactAgencySelect = `
   id,
@@ -263,20 +274,30 @@ export async function GET(request: NextRequest) {
     if (
       agenciesError &&
       (/banner_image_url/i.test(agenciesError.message || "") ||
+        /particular_payment_proof/i.test(agenciesError.message || "") ||
         isPremiumDispatchSchemaMissing(agenciesError))
     ) {
+      const missingBanner = /banner_image_url/i.test(agenciesError.message || "");
+      const missingParticularProof = /particular_payment_proof/i.test(agenciesError.message || "");
+      const missingPremium = isPremiumDispatchSchemaMissing(agenciesError);
       const fallbackSelect = includeConfiguration
-        ? /banner_image_url/i.test(agenciesError.message || "")
-          ? isPremiumDispatchSchemaMissing(agenciesError)
-            ? agencySelectWithoutBannerAndPremium
-            : agencySelectWithoutBanner
-          : agencySelectWithoutPremium
+        ? missingBanner && (missingPremium || missingParticularProof)
+          ? agencySelectWithoutBannerPremiumAndParticularProof
+          : missingPremium && missingParticularProof
+            ? agencySelectWithoutPremiumAndParticularProof
+            : missingBanner
+            ? agencySelectWithoutBanner
+            : missingPremium
+              ? agencySelectWithoutPremium
+              : agencySelectWithoutParticularProof
         : compactAgencySelectWithoutPremium;
       const fallback = await buildAgencyQuery(fallbackSelect);
       agencies = (fallback.data || []).map((agency: any) => ({
         ...agency,
         banner_image_url: agency.banner_image_url || null,
         premium_dispatch_enabled: Boolean(agency.premium_dispatch_enabled),
+        particular_payment_proof_mode: agency.particular_payment_proof_mode || "disabled",
+        particular_payment_proof_required: agency.particular_payment_proof_required === true,
       }));
       agenciesError = fallback.error;
     }

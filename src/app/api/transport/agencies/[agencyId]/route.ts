@@ -43,6 +43,11 @@ function normalizeParticularPaymentDetails(value: unknown) {
   };
 }
 
+function normalizePaymentProofMode(value: unknown) {
+  const mode = cleanTransportText(value, 20);
+  return ["disabled", "reference", "image"].includes(mode) ? mode : "disabled";
+}
+
 export async function PATCH(
   request: NextRequest,
   context: { params: Promise<{ agencyId: string }> }
@@ -72,6 +77,7 @@ export async function PATCH(
       const baseCity = (validCities || []).find((city: any) => city.id === baseCityId);
       const paymentMethods = normalizeParticularPaymentMethods(body.particularPaymentMethods);
       const paymentDetails = normalizeParticularPaymentDetails(body.particularPaymentDetails);
+      const paymentProofMode = normalizePaymentProofMode(body.particularPaymentProofMode);
       if (paymentMethods.includes("Pago móvil")) {
         const pagoMovil = paymentDetails.pagoMovil;
         const phoneDigits = pagoMovil.phone.replace(/\D/g, "");
@@ -112,6 +118,9 @@ export async function PATCH(
         marketplace_accent_color: colorHex(body.marketplaceAccentColor, "#FF7133"),
         particular_payment_methods: paymentMethods,
         particular_payment_details: paymentDetails,
+        particular_payment_proof_mode: paymentProofMode,
+        particular_payment_proof_required:
+          paymentProofMode !== "disabled" && Boolean(body.particularPaymentProofRequired),
         pricing_type: ["flat", "zones", "distance_ranges", "manual"].includes(
           cleanTransportText(body.pricingType)
         )

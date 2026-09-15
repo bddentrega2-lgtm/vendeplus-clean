@@ -52,12 +52,16 @@ export function savePanelToken(accessToken: string) {
 export async function syncPanelServerSession(accessToken: string) {
   if (!accessToken) return;
 
-  await fetch("/api/auth/panel-session", {
+  const response = await fetch("/api/auth/panel-session", {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ accessToken }),
   });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || "No se pudo abrir la sesion del panel.");
+  }
 }
 
 export async function clearPanelServerSession() {

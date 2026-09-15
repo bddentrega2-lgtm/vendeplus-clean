@@ -284,9 +284,12 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     lastFiniteDistanceRate?.maxKm !== undefined &&
     simulatedDistanceKm > lastFiniteDistanceRate.maxKm;
 
-  async function authHeaders() {
+  async function authHeaders(accessTokenOverride = "") {
     const savedPin = pin || getSavedPanelPin();
-    return getPanelAuthHeaders(savedPin);
+    const headers = await getPanelAuthHeaders(savedPin);
+    return accessTokenOverride
+      ? { ...headers, Authorization: `Bearer ${accessTokenOverride}` }
+      : headers;
   }
 
   async function copyMarketplaceLink() {
@@ -321,6 +324,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     includeBillingDetail?: boolean;
     includeConfiguration?: boolean;
     includeRelations?: boolean;
+    accessToken?: string;
   } = {}) {
     if (!options.silent && !transportPanelCache) setIsLoading(true);
     if (!options.silent) setMessage("");
@@ -348,7 +352,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
         ...(agencyId ? { agencyId } : {}),
       });
       const response = await fetch(`/api/transport/me?${params.toString()}`, {
-        headers: await getPanelAuthHeaders(savedPin),
+        headers: await authHeaders(options.accessToken),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -789,7 +793,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       savePanelToken(accessToken);
       await syncPanelServerSession(accessToken);
       setHasSession(true);
-      await load();
+      await load({ accessToken, includeConfiguration: true, includeRelations: true, includeBilling: false });
     } catch (error: any) {
       setMessage(error.message || "No se pudo iniciar sesion.");
     } finally {
@@ -1004,6 +1008,8 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
             pagoMovil: { bank: form.get("particularPagoMovilBank"), phone: form.get("particularPagoMovilPhone"), idNumber: form.get("particularPagoMovilId") },
             efectivo: { note: form.get("particularCashNote") },
           },
+          particularPaymentProofMode: form.get("particularPaymentProofMode"),
+          particularPaymentProofRequired: form.get("particularPaymentProofRequired") === "on",
         }),
       });
       const data = await response.json();
@@ -2150,6 +2156,38 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
                 <div className="mt-4"><Input name="particularCashNote" label="Indicación para el cliente" defaultValue={agency.particular_payment_details?.efectivo?.note} /></div>
               </section>
             </div>
+
+            <section className="mt-4 rounded-[24px] border border-[#25262B]/10 bg-white p-4">
+              <h3 className="text-base font-black text-[#162033]">Comprobante para pago movil</h3>
+              <p className="mt-1 text-xs font-bold text-[#746f69]">
+                Elige una sola forma de comprobante para particulares.
+              </p>
+              <div className="mt-3 grid gap-3 md:grid-cols-[1fr_220px]">
+                <label className="space-y-1">
+                  <span className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
+                    Tipo de comprobante
+                  </span>
+                  <select
+                    name="particularPaymentProofMode"
+                    defaultValue={agency.particular_payment_proof_mode || "disabled"}
+                    className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-black outline-none focus:border-[#2E3A79]"
+                  >
+                    <option value="disabled">No solicitar</option>
+                    <option value="reference">Referencia</option>
+                    <option value="image">Captura o foto</option>
+                  </select>
+                </label>
+                <label className="flex items-center gap-3 rounded-2xl bg-[#F8F3E8] px-4 py-3 text-sm font-black text-[#162033]">
+                  <input
+                    type="checkbox"
+                    name="particularPaymentProofRequired"
+                    defaultChecked={agency.particular_payment_proof_required === true}
+                    className="h-5 w-5 accent-[#2E3A79]"
+                  />
+                  Obligatorio
+                </label>
+              </div>
+            </section>
 
             <h2 className="mt-6 text-xl font-black">Capacidad y condiciones</h2>
             <p className="mt-1 text-sm font-bold text-[#746f69]">

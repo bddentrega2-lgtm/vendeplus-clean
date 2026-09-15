@@ -91,5 +91,6 @@ export function panelErrorResponse(error: unknown, fallbackMessage: string) {
     );
   }
 
-  return NextResponse.json({ error: fallbackMessage }, { status: 500 });
+  const message = error instanceof Error && error.message ? error.message : fallbackMessage;
+  return NextResponse.json({ error: message }, { status: 500 });
 }

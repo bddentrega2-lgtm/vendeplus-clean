@@ -153,8 +153,27 @@ export async function GET(
       "Tu rol no permite ver este pedido."
     );
 
+    let hasParticularPaymentReceipt = false;
+    const particularRequestId = (data as any).particular_request_id;
+    if (particularRequestId) {
+      const { data: receipt, error: receiptError } = await supabase
+        .from("transport_particular_payment_receipts")
+        .select("id")
+        .eq("agency_id", (data as any).agency_id)
+        .eq("particular_request_id", particularRequestId)
+        .not("storage_path", "is", null)
+        .is("deleted_at", null)
+        .maybeSingle();
+      if (receiptError) throw receiptError;
+      hasParticularPaymentReceipt = Boolean(receipt);
+    }
+
     return NextResponse.json({
-      order: { ...(data as Record<string, any>), __detailsLoaded: true },
+      order: {
+        ...(data as Record<string, any>),
+        has_particular_payment_receipt: hasParticularPaymentReceipt,
+        __detailsLoaded: true,
+      },
     });
   } catch (error) {
     return transportErrorResponse(error, "Error cargando detalle del pedido delivery.");
