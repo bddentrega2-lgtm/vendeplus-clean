@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createPanelSessionCookie, getPanelSessionCookieMaxAge, PANEL_SESSION_COOKIE } from "@/lib/server/panel-session-cookie";
+import {
+  createPanelSessionCookie,
+  getPanelSessionCookieMaxAge,
+  PANEL_SESSION_COOKIE,
+  readPanelSessionCookieFromStore,
+} from "@/lib/server/panel-session-cookie";
 import { createPanelServerSession, revokePanelServerSession } from "@/lib/server/panel-session-store";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSupabaseUserEmail, isFounderEmail, normalizeAuthEmail } from "@/lib/panel/auth";
-import { readPanelSessionCookie } from "@/lib/server/panel-session-cookie";
 
 function clearSessionResponse() {
   const response = NextResponse.json({ ok: true });
@@ -91,9 +95,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const cookieSession = readPanelSessionCookie(
-    request.cookies.get(PANEL_SESSION_COOKIE)?.value
-  );
+  const cookieSession = readPanelSessionCookieFromStore(request.cookies);
 
   if (cookieSession) {
     try {

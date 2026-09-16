@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { PANEL_SESSION_COOKIE, readPanelSessionCookie } from "@/lib/server/panel-session-cookie";
+import { readPanelSessionCookieFromStore } from "@/lib/server/panel-session-cookie";
 
 const PUBLIC_PANEL_PATHS = new Set([
   "/panel/login",
@@ -24,7 +24,7 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const session = readPanelSessionCookie(request.cookies.get(PANEL_SESSION_COOKIE)?.value);
+  const session = readPanelSessionCookieFromStore(request.cookies);
 
   if (!session) {
     return redirectToLogin(request, "/panel/login");

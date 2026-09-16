@@ -97,3 +97,20 @@ export function readPanelSessionCookie(value?: string | null) {
     return null;
   }
 }
+
+export function readPanelSessionCookieFromStore(cookies: {
+  get?: (name: string) => { value?: string | null } | undefined;
+  getAll?: (name: string) => Array<{ value?: string | null }>;
+}) {
+  const values =
+    typeof cookies.getAll === "function"
+      ? cookies.getAll(PANEL_SESSION_COOKIE).map((cookie) => cookie.value)
+      : [cookies.get?.(PANEL_SESSION_COOKIE)?.value];
+
+  for (const value of values) {
+    const session = readPanelSessionCookie(value);
+    if (session?.sid && session.secret) return session;
+  }
+
+  return null;
+}

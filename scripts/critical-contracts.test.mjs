@@ -1753,6 +1753,8 @@ test("paneles privados tienen proxy con cookie HttpOnly firmada", () => {
   assert.match(cookieHelper, /timingSafeEqual/);
   assert.match(cookieHelper, /sid:\s*string/);
   assert.match(cookieHelper, /secret:\s*string/);
+  assert.match(cookieHelper, /readPanelSessionCookieFromStore/);
+  assert.match(cookieHelper, /cookies\.getAll\(PANEL_SESSION_COOKIE\)/);
   assert.match(sessionStore, /rpc\("create_panel_session"/);
   assert.match(sessionStore, /rpc\("get_panel_session"/);
   assert.match(sessionStore, /rpc\("revoke_panel_session"/);
@@ -1760,15 +1762,16 @@ test("paneles privados tienen proxy con cookie HttpOnly firmada", () => {
   assert.match(sessionMigration, /revoked_at timestamptz/);
   assert.match(sessionMigration, /alter table private\.panel_sessions enable row level security/);
   assert.match(sessionMigration, /grant execute on function public\.get_panel_session\(uuid, text\) to service_role/);
-  assert.match(panelAuth, /readPanelSessionCookie\(request\.cookies\.get\(PANEL_SESSION_COOKIE\)\?\.value\)/);
+  assert.match(panelAuth, /readPanelSessionCookieFromStore\(request\.cookies\)/);
   assert.match(panelAuth, /getActivePanelServerSession/);
   assert.match(panelAuth, /method:\s*token \? "auth" : "cookie"/);
-  assert.match(transportAuth, /readPanelSessionCookie\(request\.cookies\.get\(PANEL_SESSION_COOKIE\)\?\.value\)/);
+  assert.match(transportAuth, /readPanelSessionCookieFromStore\(request\.cookies\)/);
   assert.match(transportAuth, /if \(!token && !cookieSession\)/);
   assert.match(transportAuth, /getActivePanelServerSession/);
   assert.match(adminAuthCheck, /getPanelAuthContext\(request\)/);
   assert.doesNotMatch(adminAuthCheck, /get\("authorization"\)/);
   assert.match(clientAuth, /credentials:\s*"same-origin"/);
+  assert.match(clientAuth, /window\.location\.assign\(data\.url\)/);
   assert.doesNotMatch(clientAuth, /Authorization:\s*`Bearer/);
   assert.match(login, /await syncPanelServerSession\(accessToken\)/);
   assert.match(transportPanel, /await syncPanelServerSession\(accessToken\)/);

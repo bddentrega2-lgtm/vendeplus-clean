@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { PANEL_SESSION_COOKIE, readPanelSessionCookie } from "@/lib/server/panel-session-cookie";
+import { readPanelSessionCookieFromStore } from "@/lib/server/panel-session-cookie";
 import { getActivePanelServerSession } from "@/lib/server/panel-session-store";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -88,7 +88,7 @@ export async function getPanelAuthContext(
   const token = authorization?.replace("Bearer ", "").trim();
   const cookieSession = token
     ? null
-    : readPanelSessionCookie(request.cookies.get(PANEL_SESSION_COOKIE)?.value);
+    : readPanelSessionCookieFromStore(request.cookies);
 
   if (!token && !cookieSession) {
     return {

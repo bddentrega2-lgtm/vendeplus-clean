@@ -82,7 +82,7 @@ export async function signInPanelWithGoogle(redirectPath: string) {
 
   sessionStorage.setItem(PANEL_OAUTH_REDIRECT_KEY, `${redirectTo.pathname}${redirectTo.search}`);
 
-  const { error } = await supabase.auth.signInWithOAuth({
+  const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
       redirectTo: redirectTo.toString(),
@@ -94,6 +94,10 @@ export async function signInPanelWithGoogle(redirectPath: string) {
   });
 
   if (error) throw error;
+
+  if (data?.url) {
+    window.location.assign(data.url);
+  }
 }
 
 export function getPendingPanelOAuthRedirect() {

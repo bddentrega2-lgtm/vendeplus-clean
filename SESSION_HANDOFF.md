@@ -20,7 +20,11 @@
 - Usuario reporto login admin fallando con `column reference "expires_at" is ambiguous`; se corrigio `get_panel_session` usando `return query update private.panel_sessions as ps ... returning ps.*` y se aplico la funcion remota con `supabase.cmd db query --linked --file`.
 - Smoke SQL remoto de `create_panel_session` + `get_panel_session` + `revoke_panel_session` OK.
 - Preview corregido READY: `https://vendeplus-clean-r6yz3l1fh-entrega2-s-projects.vercel.app`, deployment `dpl_Hh5AKpJMa8RXazJDbApHNGPHdtBm`, inspector `https://vercel.com/entrega2-s-projects/vendeplus-clean/Hh5AKpJMa8RXazJDbApHNGPHdtBm`.
-- Sigue pendiente antes de produccion: smoke autenticado de panel comercio/admin/transporte, Google login/registro y cambio de clave; luego commit/push/deploy prod si el usuario aprueba. No hubo commit, push ni deploy productivo.
+- Cambios asegurados en GitHub: commit `5f605d2` (`Fortalece sesiones y registros del panel`) en `checkpoint/ajustes-delivery-shibui-20260915`.
+- Usuario reporto que Google login en produccion quedaba cargando; produccion seguia en deployment previo `dpl_EZhyWMMGfptR4ZoyxExFHBC5nSi5`.
+- Usuario autorizo pasar preview asegurado a produccion. Deployment productivo READY: `dpl_75frXYoTv2mSuyRNJbFS8uuPpWhF`, artefacto `https://vendeplus-clean-rcwxn5met-entrega2-s-projects.vercel.app`, alias `https://www.somos-ve.com`.
+- Smoke productivo anonimo post deploy: `/`, `/panel/login`, `/registro`, `/transporte/panel`, `/transporte/registro` => 200; `/api/admin/summary`, `/api/panel/stats`, `/api/transport/me` => 401. Logs Vercel ultimos 10 min sin errores, solo smoke esperado.
+- Pendiente: usuario prueba login Google admin en produccion, login delivery, logout y registro con Google. Si OK, no queda trabajo inmediato salvo monitoreo.
 
 # 2026-09-16 - Auditoria de seguridad actual
 
