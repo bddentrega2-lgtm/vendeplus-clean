@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Eye, EyeOff, Loader2, Lock } from "lucide-react";
 import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
+import { GoogleLogo } from "@/components/shared/GoogleLogo";
 import {
   completePanelOAuthSession,
   hasPanelOAuthReturn,
@@ -201,9 +202,7 @@ export function LoginForm() {
           disabled={isLoading}
           className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-[#25262B]/10 bg-white px-5 py-4 text-sm font-black text-[#25262B] shadow-sm disabled:opacity-60"
         >
-          <span className="grid h-5 w-5 place-items-center rounded-full bg-[#F8F3E8] text-sm font-black text-[#2E3A79]">
-            G
-          </span>
+          <GoogleLogo />
           Continuar con Google
         </button>
 

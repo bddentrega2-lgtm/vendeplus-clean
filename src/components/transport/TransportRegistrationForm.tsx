@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, Eye, EyeOff, Loader2, MessageCircle, Send } from "lucide-react";
 import { AuthCaptcha } from "@/components/shared/AuthCaptcha";
+import { GoogleLogo } from "@/components/shared/GoogleLogo";
 import {
   completePanelOAuthSession,
   hasPanelOAuthReturn,
@@ -200,7 +201,7 @@ export function TransportRegistrationForm() {
         disabled={isSaving || isGoogleLoading}
         className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full border border-[#25262B]/10 bg-white px-5 py-4 text-sm font-black text-[#25262B] shadow-sm disabled:opacity-60 sm:w-auto"
       >
-        {isGoogleLoading ? <Loader2 size={17} className="animate-spin" /> : <span className="grid h-5 w-5 place-items-center rounded-full bg-[#F8F3E8] text-sm font-black text-[#2E3A79]">G</span>}
+        {isGoogleLoading ? <Loader2 size={17} className="animate-spin" /> : <GoogleLogo />}
         {oauthAccessToken ? "Google conectado" : "Registrarme con Google"}
       </button>
 

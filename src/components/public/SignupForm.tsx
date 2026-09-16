@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowRight, Check, Eye, EyeOff, ImageUp, Loader2, Lock, MessageCircle, Store } from "lucide-react";
 import { AuthCaptcha } from "@/components/shared/AuthCaptcha";
+import { GoogleLogo } from "@/components/shared/GoogleLogo";
 import { BUSINESS_TYPES, businessTypeLabel } from "@/lib/business-types";
 import {
   completePanelOAuthSession,
@@ -458,7 +459,7 @@ export function SignupForm() {
             disabled={isSaving || isGoogleLoading}
             className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full border border-[#25262B]/10 bg-white px-5 py-4 text-sm font-black text-[#25262B] shadow-sm disabled:opacity-60"
           >
-            {isGoogleLoading ? <Loader2 size={18} className="animate-spin" /> : <span className="grid h-5 w-5 place-items-center rounded-full bg-[#F8F3E8] text-sm font-black text-[#2E3A79]">G</span>}
+            {isGoogleLoading ? <Loader2 size={18} className="animate-spin" /> : <GoogleLogo />}
             {oauthAccessToken ? "Google conectado" : "Registrarme con Google"}
           </button>
 
