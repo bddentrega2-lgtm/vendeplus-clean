@@ -31,6 +31,16 @@ function getJwtExpiry(token: string) {
   }
 }
 
+function getJwtAal(token: string) {
+  try {
+    const encodedPayload = token.split(".")[1] || "";
+    const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8"));
+    return payload.aal === "aal2" ? "aal2" : "aal1";
+  } catch {
+    return "aal1";
+  }
+}
+
 function getClientIp(request: NextRequest) {
   const forwardedFor = request.headers.get("x-forwarded-for");
   const realIp = request.headers.get("x-real-ip");
@@ -56,6 +66,7 @@ export async function POST(request: NextRequest) {
 
   const email = normalizeAuthEmail(getSupabaseUserEmail(data.user));
   const exp = getJwtExpiry(token);
+  const aal = getJwtAal(token);
   const maxAge = getPanelSessionCookieMaxAge(exp);
 
   if (!email || maxAge <= 0) {
@@ -66,6 +77,7 @@ export async function POST(request: NextRequest) {
     userId: data.user.id,
     email,
     founder: isFounderEmail(email),
+    aal,
     expiresAt: new Date(Date.now() + maxAge * 1000),
     userAgent: request.headers.get("user-agent"),
     ip: getClientIp(request),

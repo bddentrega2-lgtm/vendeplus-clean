@@ -23,7 +23,13 @@ export async function GET(request: NextRequest) {
       founderEmailsConfigured: founderEmails.length > 0,
       founderEmailCount: founderEmails.length,
       matchesFounderEmail: true,
-      reason: "Sesion founder validada.",
+      aal: auth.aal,
+      mfaVerified: auth.aal === "aal2",
+      mfaRequired: true,
+      reason:
+        auth.aal === "aal2"
+          ? "Sesion founder validada con segundo factor."
+          : "Sesion founder valida, falta verificar segundo factor.",
     });
   } catch {
     return hiddenAuthCheckResponse();

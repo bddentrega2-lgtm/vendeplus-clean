@@ -1779,6 +1779,32 @@ test("paneles privados tienen proxy con cookie HttpOnly firmada", () => {
   assert.match(updatePassword, /await clearPanelServerSession\(\)/);
 });
 
+test("admin founder exige segundo factor verificado", () => {
+  const adminAccess = read("src/lib/admin/access.ts");
+  const panelAuth = read("src/lib/panel/auth.ts");
+  const sessionRoute = read("src/app/api/auth/panel-session/route.ts");
+  const sessionStore = read("src/lib/server/panel-session-store.ts");
+  const migration = read("supabase/migrations/20260916193000_admin_mfa_aal.sql");
+  const shell = read("src/components/admin/AdminShell.tsx");
+  const page = read("src/app/admin/seguridad/page.tsx");
+  const manager = read("src/components/admin/AdminMfaManager.tsx");
+  const authCheck = read("src/app/api/admin/auth-check/route.ts");
+
+  assert.match(panelAuth, /aal:\s*"aal1" \| "aal2"/);
+  assert.match(panelAuth, /claims\.aal === "aal2"/);
+  assert.match(sessionRoute, /getJwtAal\(token\)/);
+  assert.match(sessionStore, /\.schema\("private"\)[\s\S]*\.from\("panel_sessions"\)/);
+  assert.match(migration, /add column if not exists aal text not null default 'aal1'/);
+  assert.match(adminAccess, /auth\.aal !== "aal2"/);
+  assert.match(adminAccess, /Verificacion de dos pasos requerida/);
+  assert.match(shell, /\/admin\/seguridad/);
+  assert.match(page, /AdminMfaManager/);
+  assert.match(manager, /supabase\.auth\.mfa\.enroll/);
+  assert.match(manager, /supabase\.auth\.mfa\.verify/);
+  assert.match(manager, /syncPanelServerSession\(accessToken\)/);
+  assert.match(authCheck, /mfaVerified/);
+});
+
 test("rutas con service_role declaran guardia o contrato publico", () => {
   const result = auditApiGuards();
   assert.deepEqual(result.findings, []);

@@ -107,6 +107,9 @@ type AuthCheck = {
   founderEmailsConfigured: boolean;
   founderEmailCount: number;
   matchesFounderEmail: boolean;
+  aal?: "aal1" | "aal2";
+  mfaVerified?: boolean;
+  mfaRequired?: boolean;
   reason: string;
 };
 
@@ -244,7 +247,7 @@ function AccessBox({
       </div>
       <h2 className="mt-5 text-3xl font-black">Acceso fundador</h2>
       <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
-        Inicia sesion con un email incluido en FOUNDER_EMAILS para entrar al admin.
+        Inicia sesion con un email fundador y verifica el segundo factor para entrar al admin.
       </p>
 
       <button
@@ -259,6 +262,9 @@ function AccessBox({
 
       <Link href="/panel/login" className="mt-3 inline-flex text-sm font-black text-[#2E3A79]">
         Iniciar sesion con email
+      </Link>
+      <Link href="/admin/seguridad" className="ml-3 mt-3 inline-flex text-sm font-black text-[#2E3A79]">
+        Seguridad admin
       </Link>
 
       {error && <p className="mt-3 text-sm font-black text-red-600">{error}</p>}
@@ -275,6 +281,7 @@ function AccessBox({
               : "no configurado en produccion"}
           </p>
           <p>Coincide: {authCheck.matchesFounderEmail ? "si" : "no"}</p>
+          <p>Segundo factor: {authCheck.mfaVerified ? "verificado" : "pendiente"}</p>
           <p className="mt-2 text-[#746f69]">{authCheck.reason}</p>
         </div>
       )}

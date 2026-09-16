@@ -1,3 +1,13 @@
+# 2026-09-16 - Admin protegido con MFA TOTP
+
+- Usuario pidio mejorar seguridad de acceso a admin para que no dependa solo de clave.
+- Se implemento MFA TOTP para founder usando Supabase Auth. Las APIs `/api/admin/*` ahora exigen correo founder + sesion panel valida + `aal2`; si falta segundo factor devuelven `Verificacion de dos pasos requerida`.
+- Nueva pantalla `/admin/seguridad` para configurar/verificar autenticador: genera QR TOTP, pide codigo de 6 digitos y resincroniza `/api/auth/panel-session` para guardar `aal2` en la cookie HttpOnly del panel.
+- Migracion aplicada en Supabase remoto: `20260916193000_admin_mfa_aal.sql`; agrega `private.panel_sessions.aal` con check `aal1/aal2`.
+- Archivos principales: `src/lib/admin/access.ts`, `src/lib/panel/auth.ts`, `src/lib/server/panel-session-store.ts`, `src/app/api/auth/panel-session/route.ts`, `src/components/admin/AdminMfaManager.tsx`, `src/app/admin/seguridad/page.tsx`, `src/components/admin/AdminShell.tsx`, `scripts/critical-contracts.test.mjs`.
+- Validaciones: `npm.cmd run test:critical` OK 78/78, `git diff --check` OK, `npm.cmd run build` OK con 220 paginas, `supabase db push --linked --dry-run` listo y luego migracion aplicada.
+- Pendiente inmediato: commit/push, deploy productivo y smoke. Tras deploy, el fundador debe entrar a `/admin/seguridad`, configurar/verificar autenticador y luego volver a `/admin`.
+
 # 2026-09-16 - Hotfix OAuth: callback dedicado para Google
 
 - Usuario reporto que aun quedaba cargando y sospecho que faltaba URL en Supabase.

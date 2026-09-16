@@ -11,6 +11,13 @@ export async function requireAdminAuth(
     throw new PanelAccessError("Solo el fundador puede acceder al admin.", 403);
   }
 
+  if (auth.aal !== "aal2") {
+    throw new PanelAccessError(
+      "Verificacion de dos pasos requerida. Entra a Seguridad admin para continuar.",
+      403
+    );
+  }
+
   return auth;
 }
 

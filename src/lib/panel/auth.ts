@@ -8,6 +8,7 @@ export type PanelAuthContext = {
   mode: "user" | "none";
   method: "auth" | "cookie" | "none";
   isFounderMode: boolean;
+  aal: "aal1" | "aal2";
   userId?: string;
   email?: string;
   storeIds: string[] | null;
@@ -96,6 +97,7 @@ export async function getPanelAuthContext(
       mode: "none",
       method: "none",
       isFounderMode: false,
+      aal: "aal1",
       storeIds: [],
       error: "No autorizado.",
     };
@@ -105,6 +107,7 @@ export async function getPanelAuthContext(
     const supabase = createSupabaseAdminClient();
     let userId = cookieSession?.sub || "";
     let userEmail = normalizeAuthEmail(cookieSession?.email || "");
+    let aal: "aal1" | "aal2" = "aal1";
 
     if (token) {
       const { data: claimsResult, error: claimsError } =
@@ -117,8 +120,9 @@ export async function getPanelAuthContext(
           mode: "none",
           method: "none",
           isFounderMode: false,
+          aal: "aal1",
           storeIds: [],
-          error: "Sesión inválida.",
+          error: "Sesion invalida.",
         };
       }
 
@@ -126,6 +130,7 @@ export async function getPanelAuthContext(
       userEmail = normalizeAuthEmail(
         typeof claims.email === "string" ? claims.email : ""
       );
+      aal = claims.aal === "aal2" ? "aal2" : "aal1";
     } else if (cookieSession) {
       const serverSession = await getActivePanelServerSession(
         supabase,
@@ -138,6 +143,7 @@ export async function getPanelAuthContext(
           mode: "none",
           method: "none",
           isFounderMode: false,
+          aal: "aal1",
           storeIds: [],
           error: "Sesion invalida.",
         };
@@ -145,6 +151,7 @@ export async function getPanelAuthContext(
 
       userId = serverSession.userId;
       userEmail = normalizeAuthEmail(serverSession.email);
+      aal = serverSession.aal;
     }
 
     if (!userId || !userEmail) {
@@ -153,8 +160,9 @@ export async function getPanelAuthContext(
         mode: "none",
         method: "none",
         isFounderMode: false,
+        aal: "aal1",
         storeIds: [],
-        error: "Sesión inválida.",
+        error: "Sesion invalida.",
       };
     }
 
@@ -167,6 +175,7 @@ export async function getPanelAuthContext(
         mode: "user",
         method: token ? "auth" : "cookie",
         isFounderMode: true,
+        aal,
         userId,
         email: userEmail,
         storeIds: selectedStoreId ? [selectedStoreId] : [],
@@ -192,10 +201,11 @@ export async function getPanelAuthContext(
         mode: "user",
         method: "auth",
         isFounderMode: false,
+        aal,
         userId,
         email: userEmail,
         storeIds: [],
-        error: "Tu usuario aún no tiene un negocio vinculado.",
+        error: "Tu usuario aun no tiene un negocio vinculado.",
       };
     }
 
@@ -210,6 +220,7 @@ export async function getPanelAuthContext(
       mode: "user",
       method: token ? "auth" : "cookie",
       isFounderMode: false,
+      aal,
       userId,
       email: userEmail,
       storeIds: storeUsers.map((row) => row.store_id),
@@ -222,8 +233,9 @@ export async function getPanelAuthContext(
       mode: "none",
       method: "none",
       isFounderMode: false,
+      aal: "aal1",
       storeIds: [],
-      error: error.message || "Error validando sesión.",
+      error: error.message || "Error validando sesion.",
     };
   }
 }
