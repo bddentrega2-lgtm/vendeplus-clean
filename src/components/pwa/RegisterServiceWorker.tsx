@@ -73,31 +73,14 @@ export function RegisterServiceWorker() {
         });
     }
 
-    let reloadedForController = false;
-    function handleControllerChange() {
-      if (reloadedForController || !isPrivateAppPath(window.location.pathname)) return;
-      reloadedForController = true;
-      window.location.reload();
-    }
-
-    navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange);
-
     if (document.readyState === "complete") {
       register();
-      return () =>
-        navigator.serviceWorker.removeEventListener(
-          "controllerchange",
-          handleControllerChange
-        );
+      return;
     }
 
     window.addEventListener("load", register, { once: true });
     return () => {
       window.removeEventListener("load", register);
-      navigator.serviceWorker.removeEventListener(
-        "controllerchange",
-        handleControllerChange
-      );
     };
   }, []);
 
