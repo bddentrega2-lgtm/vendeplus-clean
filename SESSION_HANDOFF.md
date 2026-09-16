@@ -1,3 +1,11 @@
+# 2026-09-16 - Hotfix OAuth: login Google espera sesion de panel
+
+- Usuario reporto que Google en produccion seguia quedando cargando y solo entraba al actualizar manualmente.
+- Diagnostico por logs y comportamiento: `/api/auth/panel-session` y `/api/panel/context` ya respondian 200, por lo que la sesion se creaba; el problema era de timing/navegacion cliente en `/panel/login`.
+- `LoginForm` ahora, al volver de Google, completa la sesion Supabase/servidor y espera con polling corto a que `/api/panel/context` confirme la cookie HttpOnly antes de redirigir al panel. Tambien evita cache en esa comprobacion.
+- Validaciones locales: `npm.cmd run test:critical` OK 77/77, `git diff --check` OK y `npm.cmd run build` OK con 218 paginas.
+- Pendiente inmediato: commit, push, despliegue productivo y smoke publico. Prueba del usuario: iniciar sesion con Google desde `/panel/login`; ya no debe quedarse cargando ni requerir actualizar.
+
 # 2026-09-16 - Remediacion P1 sesiones panel revocables
 
 - Se avanzo la prioridad alta de seguridad: la cookie HttpOnly del panel ya no autoriza por si sola en APIs de panel/transporte.

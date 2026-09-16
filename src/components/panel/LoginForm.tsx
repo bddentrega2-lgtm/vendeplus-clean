@@ -33,17 +33,27 @@ export function LoginForm() {
       if (hasPanelOAuthReturn()) return;
 
       try {
-        const response = await fetch("/api/panel/context", {
-          credentials: "same-origin",
-        });
-
-        if (!response.ok || !isMounted) return;
+        if (!isMounted || !(await waitForPanelContext(1))) return;
 
         const nextPath = new URLSearchParams(window.location.search).get("next") || "/panel";
         window.location.replace(safeInternalPanelPath(nextPath));
       } catch {
         // Si no hay sesión válida, permanece en login.
       }
+    }
+
+    async function waitForPanelContext(attempts = 8) {
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        const response = await fetch("/api/panel/context", {
+          credentials: "same-origin",
+          cache: "no-store",
+        }).catch(() => null);
+
+        if (response?.ok) return true;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+
+      return false;
     }
 
     async function completeOAuthLogin() {
@@ -54,8 +64,8 @@ export function LoginForm() {
       setError("");
 
       try {
-        const accessToken = await completePanelOAuthSession();
-        if (!accessToken || !isMounted) {
+        await completePanelOAuthSession();
+        if (!isMounted || !(await waitForPanelContext())) {
           throw new Error("No se pudo completar la sesion con Google.");
         }
 
