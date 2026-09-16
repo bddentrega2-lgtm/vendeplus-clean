@@ -28,6 +28,24 @@ export function LoginForm() {
   useEffect(() => {
     let isMounted = true;
 
+    async function redirectIfSessionExists() {
+      if (typeof window === "undefined") return;
+      if (hasPanelOAuthReturn()) return;
+
+      try {
+        const response = await fetch("/api/panel/context", {
+          credentials: "same-origin",
+        });
+
+        if (!response.ok || !isMounted) return;
+
+        const nextPath = new URLSearchParams(window.location.search).get("next") || "/panel";
+        window.location.replace(safeInternalPanelPath(nextPath));
+      } catch {
+        // Si no hay sesión válida, permanece en login.
+      }
+    }
+
     async function completeOAuthLogin() {
       if (typeof window === "undefined") return;
       if (!hasPanelOAuthReturn()) return;
@@ -50,6 +68,7 @@ export function LoginForm() {
       }
     }
 
+    void redirectIfSessionExists();
     completeOAuthLogin();
     return () => {
       isMounted = false;
