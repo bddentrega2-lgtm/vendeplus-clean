@@ -1,4 +1,4 @@
-const CACHE_VERSION = "somos-pwa-v4";
+const CACHE_VERSION = "somos-pwa-v5";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE_URLS = [
   "/manifest.webmanifest",
@@ -52,7 +52,9 @@ self.addEventListener("fetch", (event) => {
   const isPrivateRoute =
     pathname.startsWith("/api/") ||
     pathname.startsWith("/panel") ||
-    pathname.startsWith("/admin");
+    pathname.startsWith("/admin") ||
+    pathname.startsWith("/auth/panel-callback") ||
+    pathname.startsWith("/transporte/panel");
 
   if (isPrivateRoute) return;
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { PanelShell } from "@/components/panel/PanelShell";
@@ -126,9 +127,16 @@ function LockedFeatureBlock({ achievementTitle }: { achievementTitle: string }) 
 
 export function PanelFrame({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { isBootstrapping, selectedStoreId, selectedStore, achievementFeatures, achievements } = usePanelAuth();
+  const { hasSession, isBootstrapping, selectedStoreId, selectedStore, achievementFeatures, achievements } = usePanelAuth();
 
   const meta = panelRouteMeta[pathname] || panelRouteMeta["/panel"];
+
+  useEffect(() => {
+    if (isBootstrapping || hasSession || pathname === "/panel/update-password") return;
+    if (routesWithoutPanelShell.has(pathname)) return;
+    const next = `${pathname}${typeof window !== "undefined" ? window.location.search : ""}`;
+    window.location.replace(`/panel/login?next=${encodeURIComponent(next)}`);
+  }, [hasSession, isBootstrapping, pathname]);
 
   if (routesWithoutPanelShell.has(pathname)) {
     return <>{children}</>;

@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-const AUTH_COMPAT_VERSION = "2026-09-16-panel-session-v2";
+const AUTH_COMPAT_VERSION = "2026-09-16-panel-session-v3";
 const AUTH_COMPAT_KEY = "somos_auth_compat_version";
 
 function isPrivateAppPath(pathname: string) {

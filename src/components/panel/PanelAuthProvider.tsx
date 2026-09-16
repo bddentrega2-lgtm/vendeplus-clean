@@ -2,11 +2,13 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import {
+  clearPanelAuthStorage,
   getPanelAuthHeaders,
   getSavedPanelToken,
   getSelectedPanelStoreId,
   primePanelAuthSession,
   saveSelectedPanelStoreId,
+  syncPanelServerSession,
 } from "@/lib/panel/client-auth";
 
 export type PanelStoreOption = {
@@ -53,11 +55,35 @@ export function PanelAuthProvider({ children }: { children: React.ReactNode }) {
   const [achievementFeatures, setAchievementFeatures] = useState<Record<string, boolean>>({});
   const [achievements, setAchievements] = useState<PanelAchievement[]>([]);
 
-  async function loadPanelContext() {
-    const response = await fetch("/api/panel/context", {
+  async function fetchPanelContext() {
+    return fetch("/api/panel/context", {
       headers: await getPanelAuthHeaders(),
+      cache: "no-store",
     });
-    if (!response.ok) return;
+  }
+
+  async function loadPanelContext() {
+    let response = await fetchPanelContext();
+
+    if (response.status === 401) {
+      const savedToken = getSavedPanelToken();
+      if (savedToken) {
+        await syncPanelServerSession(savedToken).catch(() => undefined);
+        response = await fetchPanelContext();
+      }
+    }
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        clearPanelAuthStorage();
+        setHasSession(false);
+        setStores([]);
+        setSelectedStoreId("");
+        setIsFounderMode(false);
+      }
+      return false;
+    }
+
     const data = await response.json();
     const availableStores = Array.isArray(data.stores) ? data.stores : [];
     const savedStoreId = getSelectedPanelStoreId();
@@ -71,13 +97,17 @@ export function PanelAuthProvider({ children }: { children: React.ReactNode }) {
     setIsFounderMode(Boolean(data.isFounderMode));
     setAchievementFeatures(data.achievementFeatures || {});
     setAchievements(Array.isArray(data.achievements) ? data.achievements : []);
+    return true;
   }
 
   async function refreshSession() {
     setIsBootstrapping(true);
     await primePanelAuthSession();
     setHasSession(Boolean(getSavedPanelToken()));
-    if (getSavedPanelToken()) await loadPanelContext();
+    if (getSavedPanelToken()) {
+      const loaded = await loadPanelContext();
+      setHasSession(loaded && Boolean(getSavedPanelToken()));
+    }
     setIsBootstrapping(false);
   }
 
@@ -102,7 +132,11 @@ export function PanelAuthProvider({ children }: { children: React.ReactNode }) {
       await primePanelAuthSession();
       if (!active) return;
       setHasSession(Boolean(getSavedPanelToken()));
-      if (getSavedPanelToken()) await loadPanelContext();
+      if (getSavedPanelToken()) {
+        const loaded = await loadPanelContext();
+        if (!active) return;
+        setHasSession(loaded && Boolean(getSavedPanelToken()));
+      }
       if (!active) return;
       setIsBootstrapping(false);
     }
