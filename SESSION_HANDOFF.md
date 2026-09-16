@@ -4,7 +4,10 @@
 - Diagnostico por logs y comportamiento: `/api/auth/panel-session` y `/api/panel/context` ya respondian 200, por lo que la sesion se creaba; el problema era de timing/navegacion cliente en `/panel/login`.
 - `LoginForm` ahora, al volver de Google, completa la sesion Supabase/servidor y espera con polling corto a que `/api/panel/context` confirme la cookie HttpOnly antes de redirigir al panel. Tambien evita cache en esa comprobacion.
 - Validaciones locales: `npm.cmd run test:critical` OK 77/77, `git diff --check` OK y `npm.cmd run build` OK con 218 paginas.
-- Pendiente inmediato: commit, push, despliegue productivo y smoke publico. Prueba del usuario: iniciar sesion con Google desde `/panel/login`; ya no debe quedarse cargando ni requerir actualizar.
+- Commit/push funcional: `33eca35 Espera contexto valido tras OAuth`.
+- Produccion Ready: `dpl_9i4UgwojgzgcjZctJJYX6W5x4Yzv`, `https://vendeplus-clean-kpgz5b5hf-entrega2-s-projects.vercel.app`; alias `https://www.somos-ve.com` actualizado.
+- Smoke anonimo productivo OK: `/`, `/panel/login`, `/registro` y `/marketplace` respondieron 200; `/api/admin/summary`, `/api/panel/stats` y `/api/transport/me` respondieron 401.
+- Prueba pendiente del usuario: iniciar sesion con Google desde `/panel/login`; ya no debe quedarse cargando ni requerir actualizar.
 
 # 2026-09-16 - Remediacion P1 sesiones panel revocables
 
