@@ -1328,10 +1328,30 @@ test("registro preserva la clave y no confunde rechazo de seguridad con longitud
     new URL("../src/app/api/signup/route.ts", import.meta.url),
     "utf8",
   );
+  const transportSignup = readFileSync(
+    new URL("../src/app/api/transport/agencies/apply/route.ts", import.meta.url),
+    "utf8",
+  );
 
   assert.match(signup, /const password = String\(body\.get\("password"\) \|\| ""\)/);
   assert.match(signup, /Por seguridad, no podemos aceptar esa combinacion/);
   assert.doesNotMatch(signup, /const password = cleanText/);
+  assert.match(signup, /if \(!oauthUser \|\| existingUser\.id !== oauthUser\.id\)/);
+  assert.match(signup, /Date\.now\(\) - createdAtMs < 60_000/);
+  assert.match(transportSignup, /if \(!oauthUser \|\| existingUser\.id !== oauthUser\.id\)/);
+});
+
+test("login solo navega a rutas internas saneadas", () => {
+  const login = readFileSync(new URL("../src/components/panel/LoginForm.tsx", import.meta.url), "utf8");
+  const clientAuth = readFileSync(new URL("../src/lib/panel/client-auth.ts", import.meta.url), "utf8");
+  const redirect = readFileSync(new URL("../src/lib/panel/safe-redirect.ts", import.meta.url), "utf8");
+
+  assert.match(login, /safeInternalPanelPath\(nextPath\)/);
+  assert.match(clientAuth, /safeInternalPanelPath\(next\)/);
+  assert.match(clientAuth, /safeInternalPanelPath\(redirectPath, ""\)/);
+  assert.match(redirect, /candidate\.includes\("\\\\"\)/);
+  assert.match(redirect, /parsed\.origin !== origin/);
+  assert.doesNotMatch(login, /nextPath\.startsWith\("\/"\) && !nextPath\.startsWith\("\/\/"\)/);
 });
 
 test("cuentas pueden cambiar contraseña desde ambos paneles", () => {
@@ -1349,6 +1369,16 @@ test("cuentas pueden cambiar contraseña desde ambos paneles", () => {
   assert.match(transportPanel, /href="\/transporte\/panel\/seguridad"/);
   assert.match(transportPanel, /aria-label="Cambiar contraseña"/);
   assert.match(transportPage, /loginHref="\/transporte\/panel"/);
+});
+
+test("panel no devuelve mensajes internos de errores no controlados", () => {
+  const access = readFileSync(new URL("../src/lib/panel/access.ts", import.meta.url), "utf8");
+
+  assert.match(access, /SAFE_PANEL_ERROR_PREFIXES/);
+  assert.match(access, /getSafePanelErrorMessage/);
+  assert.match(access, /getSafePanelErrorMessage\(error\) \|\| fallbackMessage/);
+  assert.doesNotMatch(access, /"message" in error/);
+  assert.doesNotMatch(access, /typeof error === "object"[\s\S]*error\.message\.trim\(\)/);
 });
 
 test("empresa delivery personaliza colores de su Marketplace con validacion server-side", () => {
@@ -1701,6 +1731,8 @@ test("paneles privados tienen proxy con cookie HttpOnly firmada", () => {
   const proxy = read("src/proxy.ts");
   const sessionRoute = read("src/app/api/auth/panel-session/route.ts");
   const cookieHelper = read("src/lib/server/panel-session-cookie.ts");
+  const sessionStore = read("src/lib/server/panel-session-store.ts");
+  const sessionMigration = read("supabase/migrations/20260916170000_panel_server_sessions.sql");
   const panelAuth = read("src/lib/panel/auth.ts");
   const clientAuth = read("src/lib/panel/client-auth.ts");
   const transportAuth = read("src/lib/transport/access.ts");
@@ -1708,18 +1740,32 @@ test("paneles privados tienen proxy con cookie HttpOnly firmada", () => {
   const login = read("src/components/panel/LoginForm.tsx");
   const transportPanel = read("src/components/transport/TransportAgencyPanel.tsx");
   const logout = read("src/components/panel/LogoutButton.tsx");
+  const updatePassword = read("src/components/panel/UpdatePasswordForm.tsx");
 
   assert.match(proxy, /matcher:\s*\["\/admin\/:path\*", "\/panel\/:path\*", "\/transporte\/panel\/:path\*"\]/);
   assert.match(proxy, /readPanelSessionCookie/);
   assert.match(proxy, /pathname\.startsWith\("\/admin"\) && !session\.founder/);
   assert.match(sessionRoute, /supabase\.auth\.getUser\(token\)/);
+  assert.match(sessionRoute, /createPanelServerSession/);
+  assert.match(sessionRoute, /revokePanelServerSession/);
   assert.match(sessionRoute, /httpOnly:\s*true/);
   assert.match(cookieHelper, /createHmac\("sha256"/);
   assert.match(cookieHelper, /timingSafeEqual/);
+  assert.match(cookieHelper, /sid:\s*string/);
+  assert.match(cookieHelper, /secret:\s*string/);
+  assert.match(sessionStore, /rpc\("create_panel_session"/);
+  assert.match(sessionStore, /rpc\("get_panel_session"/);
+  assert.match(sessionStore, /rpc\("revoke_panel_session"/);
+  assert.match(sessionMigration, /create table if not exists private\.panel_sessions/);
+  assert.match(sessionMigration, /revoked_at timestamptz/);
+  assert.match(sessionMigration, /alter table private\.panel_sessions enable row level security/);
+  assert.match(sessionMigration, /grant execute on function public\.get_panel_session\(uuid, text\) to service_role/);
   assert.match(panelAuth, /readPanelSessionCookie\(request\.cookies\.get\(PANEL_SESSION_COOKIE\)\?\.value\)/);
+  assert.match(panelAuth, /getActivePanelServerSession/);
   assert.match(panelAuth, /method:\s*token \? "auth" : "cookie"/);
   assert.match(transportAuth, /readPanelSessionCookie\(request\.cookies\.get\(PANEL_SESSION_COOKIE\)\?\.value\)/);
   assert.match(transportAuth, /if \(!token && !cookieSession\)/);
+  assert.match(transportAuth, /getActivePanelServerSession/);
   assert.match(adminAuthCheck, /getPanelAuthContext\(request\)/);
   assert.doesNotMatch(adminAuthCheck, /get\("authorization"\)/);
   assert.match(clientAuth, /credentials:\s*"same-origin"/);
@@ -1727,6 +1773,7 @@ test("paneles privados tienen proxy con cookie HttpOnly firmada", () => {
   assert.match(login, /await syncPanelServerSession\(accessToken\)/);
   assert.match(transportPanel, /await syncPanelServerSession\(accessToken\)/);
   assert.match(logout, /await clearPanelServerSession\(\)/);
+  assert.match(updatePassword, /await clearPanelServerSession\(\)/);
 });
 
 test("rutas con service_role declaran guardia o contrato publico", () => {

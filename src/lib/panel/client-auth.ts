@@ -1,6 +1,7 @@
 "use client";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { safeInternalPanelPath } from "@/lib/panel/safe-redirect";
 
 const PANEL_TOKEN_KEY = "vendeplus_panel_token";
 const PANEL_PIN_KEY = "vendeplus_panel_pin";
@@ -75,8 +76,8 @@ export async function signInPanelWithGoogle(redirectPath: string) {
   const redirectTo = new URL(redirectPath, window.location.origin);
   const next = new URLSearchParams(window.location.search).get("next");
 
-  if (next && next.startsWith("/") && !next.startsWith("//")) {
-    redirectTo.searchParams.set("next", next);
+  if (next) {
+    redirectTo.searchParams.set("next", safeInternalPanelPath(next));
   }
 
   sessionStorage.setItem(PANEL_OAUTH_REDIRECT_KEY, `${redirectTo.pathname}${redirectTo.search}`);
@@ -98,7 +99,7 @@ export async function signInPanelWithGoogle(redirectPath: string) {
 export function getPendingPanelOAuthRedirect() {
   if (typeof window === "undefined") return "";
   const redirectPath = sessionStorage.getItem(PANEL_OAUTH_REDIRECT_KEY) || "";
-  return redirectPath.startsWith("/") && !redirectPath.startsWith("//") ? redirectPath : "";
+  return safeInternalPanelPath(redirectPath, "");
 }
 
 export function clearPendingPanelOAuthRedirect() {

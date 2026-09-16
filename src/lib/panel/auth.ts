@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { PANEL_SESSION_COOKIE, readPanelSessionCookie } from "@/lib/server/panel-session-cookie";
+import { getActivePanelServerSession } from "@/lib/server/panel-session-store";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export type PanelAuthContext = {
@@ -125,6 +126,25 @@ export async function getPanelAuthContext(
       userEmail = normalizeAuthEmail(
         typeof claims.email === "string" ? claims.email : ""
       );
+    } else if (cookieSession) {
+      const serverSession = await getActivePanelServerSession(
+        supabase,
+        cookieSession
+      );
+
+      if (!serverSession) {
+        return {
+          isAuthorized: false,
+          mode: "none",
+          method: "none",
+          isFounderMode: false,
+          storeIds: [],
+          error: "Sesion invalida.",
+        };
+      }
+
+      userId = serverSession.userId;
+      userEmail = normalizeAuthEmail(serverSession.email);
     }
 
     if (!userId || !userEmail) {

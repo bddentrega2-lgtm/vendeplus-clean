@@ -3,6 +3,8 @@ import { createHmac, timingSafeEqual } from "crypto";
 export const PANEL_SESSION_COOKIE = "somos_panel_session";
 
 export type PanelSessionCookiePayload = {
+  sid: string;
+  secret: string;
   sub: string;
   email: string;
   exp: number;
@@ -42,13 +44,21 @@ export function getPanelSessionCookieMaxAge(exp: number) {
 
 export function createPanelSessionCookie(payload: PanelSessionCookiePayload) {
   const normalizedPayload: PanelSessionCookiePayload = {
+    sid: String(payload.sid || ""),
+    secret: String(payload.secret || ""),
     sub: String(payload.sub || ""),
     email: String(payload.email || "").toLowerCase(),
     exp: Number(payload.exp || 0),
     founder: Boolean(payload.founder),
   };
 
-  if (!normalizedPayload.sub || !normalizedPayload.email || !normalizedPayload.exp) {
+  if (
+    !normalizedPayload.sid ||
+    !normalizedPayload.secret ||
+    !normalizedPayload.sub ||
+    !normalizedPayload.email ||
+    !normalizedPayload.exp
+  ) {
     return "";
   }
 
@@ -80,7 +90,7 @@ export function readPanelSessionCookie(value?: string | null) {
 
   try {
     const payload = JSON.parse(base64UrlDecode(encodedPayload)) as PanelSessionCookiePayload;
-    if (!payload.sub || !payload.email || !payload.exp) return null;
+    if (!payload.sid || !payload.secret || !payload.sub || !payload.email || !payload.exp) return null;
     if (payload.exp <= Math.floor(Date.now() / 1000)) return null;
     return payload;
   } catch {

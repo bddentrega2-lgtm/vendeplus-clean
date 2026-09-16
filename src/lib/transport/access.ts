@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PANEL_SESSION_COOKIE, readPanelSessionCookie } from "@/lib/server/panel-session-cookie";
+import { getActivePanelServerSession } from "@/lib/server/panel-session-store";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   getSupabaseUserEmail,
@@ -57,6 +58,16 @@ export async function requireTransportAgencyAuth(
 
     userId = data.user.id;
     email = getSupabaseUserEmail(data.user);
+  } else if (cookieSession) {
+    const serverSession = await getActivePanelServerSession(
+      supabase,
+      cookieSession
+    );
+
+    if (!serverSession) throw new TransportAccessError("Sesion invalida.", 401);
+
+    userId = serverSession.userId;
+    email = serverSession.email;
   }
 
   if (!userId || !email) throw new TransportAccessError("Sesion invalida.", 401);

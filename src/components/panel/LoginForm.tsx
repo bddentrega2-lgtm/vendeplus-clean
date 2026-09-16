@@ -13,6 +13,7 @@ import {
   signInPanelWithGoogle,
   syncPanelServerSession,
 } from "@/lib/panel/client-auth";
+import { safeInternalPanelPath } from "@/lib/panel/safe-redirect";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export function LoginForm() {
@@ -40,7 +41,7 @@ export function LoginForm() {
 
         await refreshSession();
         const nextPath = new URLSearchParams(window.location.search).get("next") || "/panel";
-        router.push(nextPath.startsWith("/") && !nextPath.startsWith("//") ? nextPath : "/panel");
+        router.push(safeInternalPanelPath(nextPath));
       } catch (error: any) {
         if (isMounted) setError(error.message || "No se pudo completar el inicio con Google.");
       } finally {
@@ -90,7 +91,7 @@ export function LoginForm() {
         typeof window === "undefined"
           ? "/panel"
           : new URLSearchParams(window.location.search).get("next") || "/panel";
-      router.push(nextPath.startsWith("/") && !nextPath.startsWith("//") ? nextPath : "/panel");
+      router.push(safeInternalPanelPath(nextPath));
     } catch (error: any) {
       const message = String(error?.message || error || "");
 

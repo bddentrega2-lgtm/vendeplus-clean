@@ -293,7 +293,7 @@ export async function POST(request: NextRequest) {
     const existingUser = await findUserByEmail(supabase, email);
 
     if (existingUser) {
-      if (oauthUser && existingUser.id !== oauthUser.id) {
+      if (!oauthUser || existingUser.id !== oauthUser.id) {
         return observed(conflict("Ya existe una cuenta con ese email. Inicia sesion o usa otro correo."));
       }
 
@@ -349,15 +349,21 @@ export async function POST(request: NextRequest) {
         const recoveredUser = await findUserAfterSignup(supabase, email);
 
         if (recoveredUser) {
+          const createdAtMs = Date.parse(String(recoveredUser.created_at || ""));
+          const wasJustCreated = Number.isFinite(createdAtMs)
+            && Date.now() - createdAtMs < 60_000;
+
+          if (!wasJustCreated) {
+            return observed(conflict("Ya existe una cuenta con ese email. Inicia sesion o usa otro correo."));
+          }
+
           const canRecover = await canRecoverOrphanCommerceUser(supabase, recoveredUser);
           if (!canRecover) {
             return observed(conflict("Ya existe una cuenta con ese email. Inicia sesion o usa otro correo."));
           }
 
           createdUserId = recoveredUser.id;
-          const createdAtMs = Date.parse(String(recoveredUser.created_at || ""));
-          shouldDeleteAuthUserOnFailure = Number.isFinite(createdAtMs)
-            && Date.now() - createdAtMs < 60_000;
+          shouldDeleteAuthUserOnFailure = true;
 
           logApiEvent(apiContext, "signup_user_recovered_same_request", {
             userId: createdUserId,

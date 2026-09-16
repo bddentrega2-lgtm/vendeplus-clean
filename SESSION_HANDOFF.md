@@ -1,3 +1,36 @@
+# 2026-09-16 - Remediacion P1 sesiones panel revocables
+
+- Se avanzo la prioridad alta de seguridad: la cookie HttpOnly del panel ya no autoriza por si sola en APIs de panel/transporte.
+- Cambios locales sin despliegue: `src/lib/server/panel-session-cookie.ts`, `src/lib/server/panel-session-store.ts`, `src/app/api/auth/panel-session/route.ts`, `src/lib/panel/auth.ts`, `src/lib/transport/access.ts`, `src/components/panel/UpdatePasswordForm.tsx`, `scripts/critical-contracts.test.mjs`, `docs/audits/2026-09-16-security.md`, `docs/audits/2026-09-16-security-reproduction.cjs`.
+- Migracion nueva pendiente de aplicar antes de publicar: `supabase/migrations/20260916170000_panel_server_sessions.sql`.
+- La migracion crea `private.panel_sessions` con RLS y RPCs `create_panel_session`, `get_panel_session`, `revoke_panel_session` solo para `service_role`.
+- Al iniciar sesion se crea registro revocable y la cookie guarda `sid + secret`; al usar cookie, panel/transporte consultan `get_panel_session`; al cerrar sesion o cambiar clave se revoca el registro y se borra la cookie.
+- Validaciones realizadas: `npm.cmd run test:critical` OK 75/75; `npm.cmd run build` OK, TypeScript y 218 paginas; `node docs/audits/2026-09-16-security-reproduction.cjs` marca `REMEDIATED session` y mantiene confirmados los P2 pendientes.
+- Pendiente: ejecutar/aplicar migracion en Supabase del entorno objetivo antes del deploy web; luego desplegar y hacer smoke de login/logout/cambio de clave en comercio y transporte. No hubo commit, push ni despliegue en esta remediacion.
+
+# 2026-09-16 - Remediacion P2/P3 auditoria seguridad
+
+- Se corrigio recuperacion de cuentas huerfanas en registro comercio y transporte: si el correo ya existe, se exige OAuth validado y que `existingUser.id === oauthUser.id`; sin prueba de identidad devuelve conflicto. El fallback de comercio tras `signUp` solo recupera usuarios creados en la misma ventana breve de solicitud.
+- Se corrigio redireccion externa post-login/OAuth: nuevo `src/lib/panel/safe-redirect.ts`; `LoginForm` y `client-auth` ya usan `safeInternalPanelPath`.
+- Se corrigio exposicion de errores internos en panel: `panelErrorResponse` solo devuelve `PanelAccessError` o mensajes de negocio permitidos; errores desconocidos usan fallback generico.
+- Validaciones finales tras P2/P3: `node docs/audits/2026-09-16-security-reproduction.cjs` OK con cuatro `REMEDIATED`; `npm.cmd run test:critical` OK 77/77; `npm.cmd run build` OK, TypeScript y 218 paginas.
+- Migracion `20260916170000_panel_server_sessions.sql` aplicada en Supabase remoto con `supabase.cmd db push --include-all` y verificada en `supabase.cmd migration list`.
+- Preview READY: `https://vendeplus-clean-1rt6p6171-entrega2-s-projects.vercel.app`, deployment `dpl_79kR1FuCa13tXnrcP9cBoPA6zY2G`, inspector `https://vercel.com/entrega2-s-projects/vendeplus-clean/79kR1FuCa13tXnrcP9cBoPA6zY2G`.
+- Smoke anonimo por fetch devuelve 302 a Vercel SSO en todas las rutas, por proteccion del preview; probar desde navegador con acceso Vercel o usar produccion cuando se promueva.
+- Usuario reporto login admin fallando con `column reference "expires_at" is ambiguous`; se corrigio `get_panel_session` usando `return query update private.panel_sessions as ps ... returning ps.*` y se aplico la funcion remota con `supabase.cmd db query --linked --file`.
+- Smoke SQL remoto de `create_panel_session` + `get_panel_session` + `revoke_panel_session` OK.
+- Preview corregido READY: `https://vendeplus-clean-r6yz3l1fh-entrega2-s-projects.vercel.app`, deployment `dpl_Hh5AKpJMa8RXazJDbApHNGPHdtBm`, inspector `https://vercel.com/entrega2-s-projects/vendeplus-clean/Hh5AKpJMa8RXazJDbApHNGPHdtBm`.
+- Sigue pendiente antes de produccion: smoke autenticado de panel comercio/admin/transporte, Google login/registro y cambio de clave; luego commit/push/deploy prod si el usuario aprueba. No hubo commit, push ni deploy productivo.
+
+# 2026-09-16 - Auditoria de seguridad actual
+
+- Base 5395625, worktree vendeplus-login-stability-fix. Solo auditoria, sin cambios a producto, datos, SQL, despliegue, commit o push.
+- Informe: docs/audits/2026-09-16-security.md. Reproducciones offline: node docs/audits/2026-09-16-security-reproduction.cjs.
+- Hallazgos: P1 cookie sin revocacion individual y no borrada al cambiar clave; P2 recuperacion de cuentas huerfanas sin autenticar en ambos registros; P2 next permite redireccion externa con barra invertida; P3 errores internos expuestos en panelErrorResponse.
+- npm audit: 0; escaneo documental: 0; criticos: 75/75; cinco APIs privadas de produccion devuelven 401 sin sesion. No se verificaron grants/configuracion efectiva de Supabase ni rotacion del secreto OAuth expuesto previamente.
+- Build final OK, TypeScript y 218 paginas. Reproducciones offline de ambos registros, cookie y redireccion confirmadas.
+- Siguiente paso: corregir hallazgos con pruebas aisladas, empezando por ciclo de sesion y recuperacion de cuentas; verificar configuracion remota mediante acceso administrativo de lectura. No asumir que la auditoria implica correccion o despliegue.
+
 # 2026-09-15 - Google OAuth adelantado para paneles
 
 - Se preparo el acceso con Google para cuentas ya existentes/vinculadas en panel comercio y panel empresa delivery, sin reemplazar correo/clave.

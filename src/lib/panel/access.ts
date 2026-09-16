@@ -83,6 +83,34 @@ export function badRequest(message = "Solicitud invalida.") {
   return NextResponse.json({ error: message }, { status: 400 });
 }
 
+const SAFE_PANEL_ERROR_PREFIXES = [
+  "El inventario ",
+  "El producto ",
+  "Hay una combinación",
+  "Inventario Premium ",
+  "La presentación ",
+  "No queda stock ",
+  "Selecciona ",
+  "Seleccionaste ",
+  "Solo puedes ",
+  "Una opción ",
+];
+
+function getSafePanelErrorMessage(error: unknown) {
+  const message =
+    error instanceof Error && error.message
+      ? error.message.trim()
+      : typeof error === "string" && error.trim()
+        ? error.trim()
+        : "";
+
+  if (!message) return "";
+
+  return SAFE_PANEL_ERROR_PREFIXES.some((prefix) => message.startsWith(prefix))
+    ? message
+    : "";
+}
+
 export function panelErrorResponse(error: unknown, fallbackMessage: string) {
   if (error instanceof PanelAccessError) {
     return NextResponse.json(
@@ -91,17 +119,6 @@ export function panelErrorResponse(error: unknown, fallbackMessage: string) {
     );
   }
 
-  const message =
-    error instanceof Error && error.message
-      ? error.message
-      : typeof error === "string" && error.trim()
-        ? error.trim()
-        : error &&
-            typeof error === "object" &&
-            "message" in error &&
-            typeof error.message === "string" &&
-            error.message.trim()
-          ? error.message.trim()
-          : fallbackMessage;
+  const message = getSafePanelErrorMessage(error) || fallbackMessage;
   return NextResponse.json({ error: message }, { status: 500 });
 }

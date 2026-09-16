@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
     const existingUser = await findUserByEmail(supabase, contactEmail);
 
     if (existingUser) {
-      if (oauthUser && existingUser.id !== oauthUser.id) {
+      if (!oauthUser || existingUser.id !== oauthUser.id) {
         return observed(
           conflict("Ese correo ya tiene una cuenta. Usa otro correo o pide recuperar la clave.")
         );

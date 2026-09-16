@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPanelSessionCookie, getPanelSessionCookieMaxAge, PANEL_SESSION_COOKIE } from "@/lib/server/panel-session-cookie";
+import { createPanelServerSession, revokePanelServerSession } from "@/lib/server/panel-session-store";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSupabaseUserEmail, isFounderEmail, normalizeAuthEmail } from "@/lib/panel/auth";
+import { readPanelSessionCookie } from "@/lib/server/panel-session-cookie";
 
 function clearSessionResponse() {
   const response = NextResponse.json({ ok: true });
@@ -25,6 +27,14 @@ function getJwtExpiry(token: string) {
   }
 }
 
+function getClientIp(request: NextRequest) {
+  const forwardedFor = request.headers.get("x-forwarded-for");
+  const realIp = request.headers.get("x-real-ip");
+  return (forwardedFor?.split(",")[0]?.trim() || realIp || "")
+    .replace(/[^a-zA-Z0-9:._-]/g, "")
+    .slice(0, 80);
+}
+
 export async function POST(request: NextRequest) {
   const { accessToken } = await request.json().catch(() => ({ accessToken: "" }));
   const token = String(accessToken || "").trim();
@@ -42,13 +52,28 @@ export async function POST(request: NextRequest) {
 
   const email = normalizeAuthEmail(getSupabaseUserEmail(data.user));
   const exp = getJwtExpiry(token);
+  const maxAge = getPanelSessionCookieMaxAge(exp);
+
+  if (!email || maxAge <= 0) {
+    return NextResponse.json({ error: "Sesion invalida." }, { status: 401 });
+  }
+
+  const serverSession = await createPanelServerSession(supabase, {
+    userId: data.user.id,
+    email,
+    founder: isFounderEmail(email),
+    expiresAt: new Date(Date.now() + maxAge * 1000),
+    userAgent: request.headers.get("user-agent"),
+    ip: getClientIp(request),
+  });
   const cookieValue = createPanelSessionCookie({
+    sid: serverSession.sid,
+    secret: serverSession.secret,
     sub: data.user.id,
     email,
     exp,
     founder: isFounderEmail(email),
   });
-  const maxAge = getPanelSessionCookieMaxAge(exp);
 
   if (!cookieValue || maxAge <= 0) {
     return NextResponse.json({ error: "Sesion invalida." }, { status: 401 });
@@ -65,6 +90,18 @@ export async function POST(request: NextRequest) {
   return response;
 }
 
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
+  const cookieSession = readPanelSessionCookie(
+    request.cookies.get(PANEL_SESSION_COOKIE)?.value
+  );
+
+  if (cookieSession) {
+    try {
+      await revokePanelServerSession(createSupabaseAdminClient(), cookieSession);
+    } catch {
+      // Igual limpiamos la cookie del navegador aunque Supabase no responda.
+    }
+  }
+
   return clearSessionResponse();
 }
