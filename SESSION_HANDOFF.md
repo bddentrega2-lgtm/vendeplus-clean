@@ -1,3 +1,15 @@
+# 2026-09-16 - Revision final pre-produccion MFA
+
+- Usuario valido en Preview login de comercio, empresa delivery y admin con Google; MFA TOTP en `/admin/seguridad` mostro `Segundo factor verificado. Ya puedes entrar al admin.`
+- Revision de riesgo antes de produccion: arbol limpio y sincronizado con GitHub; HEAD funcional `1f1d9c1 Corrige MFA sin tocar sesiones productivas`.
+- Busqueda de codigo confirmo que la app ya no usa `.schema("private").from("panel_sessions")`; solo las migraciones/funciones SQL tocan `private.panel_sessions`.
+- RPC v2 probadas contra Supabase remoto con sesion audit temporal: `create_panel_session_v2` guardo `aal2`, `get_panel_session_v2` devolvio `founder=true/aal2`, y se invoco revocacion. Sin usuarios reales.
+- Permisos remotos verificados: `anon` y `authenticated` NO pueden ejecutar `create_panel_session_v2` ni `get_panel_session_v2`; `service_role` si.
+- Validaciones finales: `npm.cmd run test:critical` OK 78/78; `npm.cmd audit --audit-level=moderate` OK 0 vulnerabilidades; `npm.cmd run check:document-secrets` OK 0 hallazgos; `npm.cmd run build` OK con 220 paginas.
+- Smoke anonimo: produccion estable sigue OK sin MFA publicado (`/`, `/panel/login`, `/auth/panel-callback`, `/transporte/panel` 200; admin redirige a login; APIs privadas 401). Preview bajo alias fijo responde por Vercel SSO, esperado.
+- Logs del Preview `dpl_B7yWh1ECfb3hooxF2LCtcVZgHYyo`: sin errores; durante pruebas aparece `/api/auth/panel-session` 200 y `/api/transport/me` 200 autenticado.
+- Criterio: listo para promover el Preview validado solo con autorizacion explicita del usuario. Rollback inmediato sigue siendo `dpl_5pGq7FNG9Pa7AoHD8ChrNWtoZgRy`.
+
 # 2026-09-16 - Preview MFA retomado sin promover produccion
 
 - Produccion fue devuelta previamente al deployment estable sin MFA `dpl_5pGq7FNG9Pa7AoHD8ChrNWtoZgRy`; login comercio/delivery volvio a funcionar.
