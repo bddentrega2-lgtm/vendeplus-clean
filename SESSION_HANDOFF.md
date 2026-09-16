@@ -1,3 +1,13 @@
+# 2026-09-16 - Produccion MFA admin publicada
+
+- Usuario autorizo `procede` tras validar Preview y revision final. Se promovio el Preview validado `dpl_B7yWh1ECfb3hooxF2LCtcVZgHYyo`.
+- Produccion nueva Ready: `dpl_5FUXmPs51iQ7LxVdd6MbsJYtkgCU`, artefacto `https://vendeplus-clean-evlcyp9cm-entrega2-s-projects.vercel.app`.
+- Alias confirmados apuntando al nuevo deployment: `https://www.somos-ve.com`, `https://somos-ve.com`, `https://vendeplus-clean.vercel.app`, `https://vendeplus-clean-entrega2-s-projects.vercel.app`.
+- Smoke productivo anonimo posterior: `/`, `/panel/login`, `/auth/panel-callback`, `/transporte/panel` 200; `/admin` y `/admin/seguridad` redirigen a login con `next`; `/api/admin/summary`, `/api/panel/stats`, `/api/transport/me` 401 sin sesion.
+- Logs del deployment nuevo revisados tras publicacion: sin errores; trafico normal 200 en catalogo/carrito Queje Olga.
+- Rollback inmediato funcional si hiciera falta: `dpl_5pGq7FNG9Pa7AoHD8ChrNWtoZgRy`.
+- Pendiente operativo: founder en produccion debe entrar con Google/clave, ir a `/admin/seguridad`, verificar TOTP si la sesion aparece `aal1`, y luego confirmar acceso a `/admin`. Comercios y empresas delivery ya fueron validados en Preview.
+
 # 2026-09-16 - Revision final pre-produccion MFA
 
 - Usuario valido en Preview login de comercio, empresa delivery y admin con Google; MFA TOTP en `/admin/seguridad` mostro `Segundo factor verificado. Ya puedes entrar al admin.`
