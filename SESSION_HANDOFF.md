@@ -1,3 +1,12 @@
+# 2026-09-16 - Hotfix OAuth: callback dedicado para Google
+
+- Usuario reporto que aun quedaba cargando y sospecho que faltaba URL en Supabase.
+- Se agrego callback dedicado `/auth/panel-callback` para el login Google del panel. El boton de `/panel/login` ya no vuelve directo a `/panel/login`; vuelve a esa ruta estable, completa la sesion, espera `/api/panel/context` y redirige al panel.
+- El home tambien queda como rescate si Supabase devuelve al `Site URL` raiz: completa la sesion, espera contexto y usa `window.location.replace` para evitar requerir refresh.
+- Validaciones locales: `npm.cmd run test:critical` OK 77/77, `git diff --check` OK, `npm.cmd run build` OK con 219 paginas.
+- Requisito de configuracion Supabase: agregar en Authentication > URL Configuration > Redirect URLs `https://www.somos-ve.com/auth/panel-callback`. Mantener tambien `/panel/login`, `/registro`, `/transporte/registro` y `/transporte/panel` si se usan.
+- Pendiente inmediato: commit, push, deploy productivo y smoke.
+
 # 2026-09-16 - Hotfix OAuth: login Google espera sesion de panel
 
 - Usuario reporto que Google en produccion seguia quedando cargando y solo entraba al actualizar manualmente.

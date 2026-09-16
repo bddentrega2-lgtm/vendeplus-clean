@@ -66,21 +66,41 @@ export async function syncPanelServerSession(accessToken: string) {
   }
 }
 
-export async function signInPanelWithGoogle(redirectPath: string) {
+export async function waitForPanelContext(attempts = 8) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const response = await fetch("/api/panel/context", {
+      credentials: "same-origin",
+      cache: "no-store",
+    }).catch(() => null);
+
+    if (response?.ok) return true;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  return false;
+}
+
+export async function signInPanelWithGoogle(
+  redirectPath: string,
+  options: { usePanelCallback?: boolean } = {}
+) {
   const supabase = createSupabaseBrowserClient();
 
   if (!supabase || typeof window === "undefined") {
     throw new Error("El inicio con Google no esta disponible en este momento.");
   }
 
-  const redirectTo = new URL(redirectPath, window.location.origin);
+  const redirectTo = new URL(
+    options.usePanelCallback ? "/auth/panel-callback" : redirectPath,
+    window.location.origin
+  );
   const next = new URLSearchParams(window.location.search).get("next");
+  const safeNext = next ? safeInternalPanelPath(next) : "";
+  const finalPath = safeNext || safeInternalPanelPath(redirectPath);
 
-  if (next) {
-    redirectTo.searchParams.set("next", safeInternalPanelPath(next));
-  }
+  redirectTo.searchParams.set("next", finalPath);
 
-  sessionStorage.setItem(PANEL_OAUTH_REDIRECT_KEY, `${redirectTo.pathname}${redirectTo.search}`);
+  sessionStorage.setItem(PANEL_OAUTH_REDIRECT_KEY, finalPath);
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",

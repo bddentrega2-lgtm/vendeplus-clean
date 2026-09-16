@@ -12,6 +12,7 @@ import {
   savePanelToken,
   signInPanelWithGoogle,
   syncPanelServerSession,
+  waitForPanelContext,
 } from "@/lib/panel/client-auth";
 import { safeInternalPanelPath } from "@/lib/panel/safe-redirect";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -40,20 +41,6 @@ export function LoginForm() {
       } catch {
         // Si no hay sesión válida, permanece en login.
       }
-    }
-
-    async function waitForPanelContext(attempts = 8) {
-      for (let attempt = 0; attempt < attempts; attempt += 1) {
-        const response = await fetch("/api/panel/context", {
-          credentials: "same-origin",
-          cache: "no-store",
-        }).catch(() => null);
-
-        if (response?.ok) return true;
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      }
-
-      return false;
     }
 
     async function completeOAuthLogin() {
@@ -147,7 +134,7 @@ export function LoginForm() {
     setError("");
 
     try {
-      await signInPanelWithGoogle("/panel/login");
+      await signInPanelWithGoogle("/panel", { usePanelCallback: true });
     } catch (error: any) {
       setError(error.message || "No se pudo iniciar con Google.");
       setIsLoading(false);
