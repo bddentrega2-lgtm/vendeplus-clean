@@ -138,7 +138,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const name = cleanTransportText(body.name, 140);
     const contactName = cleanTransportText(body.contactName, 120);
-    const contactEmail = normalizeAccessEmail(body.contactEmail);
+    const oauthAccessToken = cleanTransportText(body.oauthAccessToken, 4000);
+    let contactEmail = normalizeAccessEmail(body.contactEmail);
     const contactPhone = cleanTransportText(body.contactPhone, 40);
     const password = cleanTransportText(body.password, 120);
     const confirmPassword = cleanTransportText(body.confirmPassword, 120);
@@ -147,21 +148,38 @@ export async function POST(request: NextRequest) {
 
     if (!name) return observed(badRequest("Escribe el nombre de la empresa delivery."));
     if (!contactName) return observed(badRequest("Escribe el nombre del responsable."));
+    const supabase = createSupabaseAdminClient();
+    let oauthUser: any = null;
+
+    if (oauthAccessToken) {
+      const { data: oauthData, error: oauthError } = await supabase.auth.getUser(oauthAccessToken);
+      if (oauthError || !oauthData.user?.id) {
+        return observed(badRequest("No se pudo validar tu cuenta Google. Intenta iniciar con Google de nuevo."));
+      }
+      oauthUser = oauthData.user;
+      contactEmail = normalizeAccessEmail(oauthUser.email);
+    }
+
     if (!contactEmail || !contactEmail.includes("@")) {
       return observed(badRequest("Correo invalido."));
     }
     if (!contactPhone) return observed(badRequest("Escribe un telefono de contacto."));
-    if (password.length < 8) {
+    if (!oauthUser && password.length < 8) {
       return observed(badRequest("La clave debe tener al menos 8 caracteres."));
     }
-    if (confirmPassword && password !== confirmPassword) {
+    if (!oauthUser && confirmPassword && password !== confirmPassword) {
       return observed(badRequest("Las claves no coinciden."));
     }
 
-    const supabase = createSupabaseAdminClient();
     const existingUser = await findUserByEmail(supabase, contactEmail);
 
     if (existingUser) {
+      if (oauthUser && existingUser.id !== oauthUser.id) {
+        return observed(
+          conflict("Ese correo ya tiene una cuenta. Usa otro correo o pide recuperar la clave.")
+        );
+      }
+
       const canRecover = await canRecoverOrphanTransportUser(supabase, existingUser);
 
       if (!canRecover) {
@@ -227,6 +245,11 @@ export async function POST(request: NextRequest) {
     };
 
     let requiresEmailConfirmation = false;
+
+    if (oauthUser && !createdUserId) {
+      createdUserId = oauthUser.id;
+      requiresEmailConfirmation = false;
+    }
 
     if (!createdUserId) {
       const publicAuth = createSupabasePublicClient();

@@ -233,7 +233,8 @@ export async function POST(request: NextRequest) {
     const representativeName = cleanText(body.get("representativeName"));
     const representativeIdNumber = normalizeRepresentativeId(body.get("representativeIdNumber"));
     const logo = body.get("logo");
-    const email = normalizeAccessEmail(body.get("email"));
+    const oauthAccessToken = cleanText(body.get("oauthAccessToken"));
+    let email = normalizeAccessEmail(body.get("email"));
     const password = String(body.get("password") || "");
     const confirmPassword = String(body.get("confirmPassword") || "");
     const whatsapp = cleanText(body.get("whatsapp")).replace(/[^0-9]/g, "");
@@ -256,18 +257,29 @@ export async function POST(request: NextRequest) {
     if (logo.size <= 0 || logo.size > MAX_LOGO_BYTES) {
       return observed(badRequest("El logo no debe pesar mas de 2 MB."));
     }
+    const supabase = createSupabaseAdminClient();
+    let oauthUser: any = null;
+
+    if (oauthAccessToken) {
+      const { data: oauthData, error: oauthError } = await supabase.auth.getUser(oauthAccessToken);
+      if (oauthError || !oauthData.user?.id) {
+        return observed(badRequest("No se pudo validar tu cuenta Google. Intenta iniciar con Google de nuevo."));
+      }
+      oauthUser = oauthData.user;
+      email = normalizeAccessEmail(oauthUser.email);
+    }
+
     if (!email || !email.includes("@")) return observed(badRequest("Ingresa un email valido."));
-    if (password.length < 8) {
+    if (!oauthUser && password.length < 8) {
       return observed(badRequest("La contrasena debe tener al menos 8 caracteres."));
     }
-    if (confirmPassword && password !== confirmPassword) {
+    if (!oauthUser && confirmPassword && password !== confirmPassword) {
       return observed(badRequest("Las contrasenas no coinciden."));
     }
     if (!whatsapp || whatsapp.length < 10) {
       return observed(badRequest("Ingresa un WhatsApp valido."));
     }
 
-    const supabase = createSupabaseAdminClient();
     if (!cityId) return observed(badRequest("Selecciona la ciudad donde opera el comercio."));
     const { data: city, error: cityError } = await supabase
       .from("service_cities").select("id").eq("id", cityId).eq("is_active", true).maybeSingle();
@@ -281,6 +293,10 @@ export async function POST(request: NextRequest) {
     const existingUser = await findUserByEmail(supabase, email);
 
     if (existingUser) {
+      if (oauthUser && existingUser.id !== oauthUser.id) {
+        return observed(conflict("Ya existe una cuenta con ese email. Inicia sesion o usa otro correo."));
+      }
+
       const canRecover = await canRecoverOrphanCommerceUser(supabase, existingUser);
 
       if (!canRecover) {
@@ -300,6 +316,11 @@ export async function POST(request: NextRequest) {
     }
 
     let requiresEmailConfirmation = true;
+
+    if (oauthUser && !createdUserId) {
+      createdUserId = oauthUser.id;
+      requiresEmailConfirmation = false;
+    }
 
     if (!createdUserId) {
       const userResult = await publicAuth.auth.signUp({

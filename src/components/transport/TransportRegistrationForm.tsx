@@ -1,9 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CheckCircle2, Eye, EyeOff, Loader2, MessageCircle, Send } from "lucide-react";
 import { AuthCaptcha } from "@/components/shared/AuthCaptcha";
+import {
+  completePanelOAuthSession,
+  hasPanelOAuthReturn,
+  signInPanelWithGoogle,
+} from "@/lib/panel/client-auth";
 import { buildSomosWhatsAppUrl } from "@/lib/whatsapp";
+
+function emailFromAccessToken(accessToken: string) {
+  try {
+    const encodedPayload = accessToken.split(".")[1] || "";
+    const base64Payload = encodedPayload
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+      .padEnd(Math.ceil(encodedPayload.length / 4) * 4, "=");
+    const payload = JSON.parse(atob(base64Payload));
+    return String(payload.email || "");
+  } catch {
+    return "";
+  }
+}
 
 export function TransportRegistrationForm() {
   const [form, setForm] = useState({
@@ -18,7 +37,9 @@ export function TransportRegistrationForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [oauthAccessToken, setOauthAccessToken] = useState("");
   const [captchaToken, setCaptchaToken] = useState("");
   const [saved, setSaved] = useState(false);
   const [officialWhatsappUrl, setOfficialWhatsappUrl] = useState("");
@@ -27,12 +48,39 @@ export function TransportRegistrationForm() {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
+  useEffect(() => {
+    if (!hasPanelOAuthReturn()) return;
+
+    async function completeGoogleSignup() {
+      setIsGoogleLoading(true);
+      setMessage("");
+      try {
+        const accessToken = await completePanelOAuthSession();
+        const googleEmail = emailFromAccessToken(accessToken);
+        if (!accessToken || !googleEmail) throw new Error("No se pudo leer el correo de Google.");
+        setOauthAccessToken(accessToken);
+        setForm((current) => ({
+          ...current,
+          contactEmail: googleEmail,
+          password: "",
+          confirmPassword: "",
+        }));
+      } catch (error: any) {
+        setMessage(error.message || "No se pudo completar el registro con Google.");
+      } finally {
+        setIsGoogleLoading(false);
+      }
+    }
+
+    void completeGoogleSignup();
+  }, []);
+
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsSaving(true);
     setMessage("");
 
-    if (form.password !== form.confirmPassword) {
+    if (!oauthAccessToken && form.password !== form.confirmPassword) {
       setMessage("Las claves no coinciden.");
       setIsSaving(false);
       return;
@@ -42,7 +90,7 @@ export function TransportRegistrationForm() {
       const response = await fetch("/api/transport/agencies/apply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, captchaToken }),
+        body: JSON.stringify({ ...form, captchaToken, oauthAccessToken }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "No se pudo registrar.");
@@ -63,6 +111,17 @@ export function TransportRegistrationForm() {
       setMessage(error.message || "No se pudo registrar.");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function startGoogleSignup() {
+    setIsGoogleLoading(true);
+    setMessage("");
+    try {
+      await signInPanelWithGoogle("/transporte/registro");
+    } catch (error: any) {
+      setMessage(error.message || "No se pudo iniciar con Google.");
+      setIsGoogleLoading(false);
     }
   }
 
@@ -100,8 +159,8 @@ export function TransportRegistrationForm() {
         <Input label="RIF opcional" value={form.rif} onChange={(value) => update("rif", value)} />
         <Input label="Telefono" value={form.contactPhone} onChange={(value) => update("contactPhone", value)} required />
         <Input label="Responsable" value={form.contactName} onChange={(value) => update("contactName", value)} required />
-        <Input label="Correo" type="email" value={form.contactEmail} onChange={(value) => update("contactEmail", value)} required />
-        <Input
+        <Input label={oauthAccessToken ? "Correo conectado con Google" : "Correo"} type="email" value={form.contactEmail} onChange={(value) => update("contactEmail", value)} required readOnly={Boolean(oauthAccessToken)} />
+        {!oauthAccessToken ? <Input
           label="Clave de ingreso"
           type={showPassword ? "text" : "password"}
           value={form.password}
@@ -114,8 +173,8 @@ export function TransportRegistrationForm() {
               onClick={() => setShowPassword((current) => !current)}
             />
           }
-        />
-        <Input
+        /> : null}
+        {!oauthAccessToken ? <Input
           label="Confirmar clave"
           type={showConfirmPassword ? "text" : "password"}
           value={form.confirmPassword}
@@ -128,12 +187,22 @@ export function TransportRegistrationForm() {
               onClick={() => setShowConfirmPassword((current) => !current)}
             />
           }
-        />
+        /> : null}
       </div>
 
       <p className="mt-2 text-xs font-bold text-[#746f69]">
         Usa 8 caracteres o más. Combinar varias palabras suele ser fácil de recordar y más seguro.
       </p>
+
+      <button
+        type="button"
+        onClick={startGoogleSignup}
+        disabled={isSaving || isGoogleLoading}
+        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full border border-[#25262B]/10 bg-white px-5 py-4 text-sm font-black text-[#25262B] shadow-sm disabled:opacity-60 sm:w-auto"
+      >
+        {isGoogleLoading ? <Loader2 size={17} className="animate-spin" /> : <span className="grid h-5 w-5 place-items-center rounded-full bg-[#F8F3E8] text-sm font-black text-[#2E3A79]">G</span>}
+        {oauthAccessToken ? "Google conectado" : "Registrarme con Google"}
+      </button>
 
       <AuthCaptcha action="transport_agency_apply" onToken={setCaptchaToken} />
 
@@ -162,6 +231,7 @@ function Input({
   type = "text",
   required = false,
   minLength,
+  readOnly = false,
   trailingButton,
 }: {
   label: string;
@@ -170,6 +240,7 @@ function Input({
   type?: string;
   required?: boolean;
   minLength?: number;
+  readOnly?: boolean;
   trailingButton?: React.ReactNode;
 }) {
   return (
@@ -182,8 +253,10 @@ function Input({
           onChange={(event) => onChange(event.target.value)}
           required={required}
           minLength={minLength}
+          readOnly={readOnly}
           className={[
             "w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]",
+            readOnly ? "bg-[#F8F3E8]" : "",
             trailingButton ? "pr-12" : "",
           ].join(" ")}
         />

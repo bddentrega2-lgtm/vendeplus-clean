@@ -5,8 +5,26 @@ import { useEffect, useState } from "react";
 import { ArrowRight, Check, Eye, EyeOff, ImageUp, Loader2, Lock, MessageCircle, Store } from "lucide-react";
 import { AuthCaptcha } from "@/components/shared/AuthCaptcha";
 import { BUSINESS_TYPES, businessTypeLabel } from "@/lib/business-types";
+import {
+  completePanelOAuthSession,
+  hasPanelOAuthReturn,
+  signInPanelWithGoogle,
+} from "@/lib/panel/client-auth";
 import { buildSomosWhatsAppUrl } from "@/lib/whatsapp";
 
+function emailFromAccessToken(accessToken: string) {
+  try {
+    const encodedPayload = accessToken.split(".")[1] || "";
+    const base64Payload = encodedPayload
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+      .padEnd(Math.ceil(encodedPayload.length / 4) * 4, "=");
+    const payload = JSON.parse(atob(base64Payload));
+    return String(payload.email || "");
+  } catch {
+    return "";
+  }
+}
 
 export function SignupForm() {
   const [storeName, setStoreName] = useState("");
@@ -24,7 +42,9 @@ export function SignupForm() {
   const [cities, setCities] = useState<Array<{ id: string; name: string; state_name: string }>>([]);
   const [referralCode, setReferralCode] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [error, setError] = useState("");
+  const [oauthAccessToken, setOauthAccessToken] = useState("");
   const [captchaToken, setCaptchaToken] = useState("");
   const [success, setSuccess] = useState<{
     slug: string;
@@ -37,6 +57,30 @@ export function SignupForm() {
   useEffect(() => {
     const referral = new URLSearchParams(window.location.search).get("ref");
     if (referral) setReferralCode(referral);
+  }, []);
+
+  useEffect(() => {
+    if (!hasPanelOAuthReturn()) return;
+
+    async function completeGoogleSignup() {
+      setIsGoogleLoading(true);
+      setError("");
+      try {
+        const accessToken = await completePanelOAuthSession();
+        const googleEmail = emailFromAccessToken(accessToken);
+        if (!accessToken || !googleEmail) throw new Error("No se pudo leer el correo de Google.");
+        setOauthAccessToken(accessToken);
+        setEmail(googleEmail);
+        setPassword("");
+        setConfirmPassword("");
+      } catch (error: any) {
+        setError(error.message || "No se pudo completar el registro con Google.");
+      } finally {
+        setIsGoogleLoading(false);
+      }
+    }
+
+    void completeGoogleSignup();
   }, []);
 
   useEffect(() => {
@@ -72,12 +116,12 @@ export function SignupForm() {
       return;
     }
 
-    if (password.length < 8) {
+    if (!oauthAccessToken && password.length < 8) {
       setError("La contraseña debe tener al menos 8 caracteres.");
       setIsSaving(false);
       return;
     }
-    if (password !== confirmPassword) {
+    if (!oauthAccessToken && password !== confirmPassword) {
       setError("Las contraseñas no coinciden.");
       setIsSaving(false);
       return;
@@ -96,6 +140,7 @@ export function SignupForm() {
       formData.set("email", email);
       formData.set("password", password);
       formData.set("confirmPassword", confirmPassword);
+      formData.set("oauthAccessToken", oauthAccessToken);
       formData.set("whatsapp", whatsapp);
       formData.set("businessType", businessType);
       formData.set("cityId", cityId);
@@ -132,12 +177,24 @@ export function SignupForm() {
       });
       setPassword("");
       setConfirmPassword("");
+      setOauthAccessToken("");
       setCaptchaToken("");
       window.location.assign(officialWhatsappUrl);
     } catch (error: any) {
       setError(error.message || "No se pudo crear la cuenta.");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function startGoogleSignup() {
+    setIsGoogleLoading(true);
+    setError("");
+    try {
+      await signInPanelWithGoogle("/registro");
+    } catch (error: any) {
+      setError(error.message || "No se pudo iniciar con Google.");
+      setIsGoogleLoading(false);
     }
   }
 
@@ -342,18 +399,19 @@ export function SignupForm() {
 
             <label className="space-y-1">
               <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-                Email
+                {oauthAccessToken ? "Correo conectado con Google" : "Email"}
               </span>
               <input
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 type="email"
+                readOnly={Boolean(oauthAccessToken)}
                 placeholder="tu@email.com"
-                className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
+                className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79] read-only:bg-[#F8F3E8]"
               />
             </label>
 
-            <label className="relative space-y-1">
+            {!oauthAccessToken ? <label className="relative space-y-1">
               <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
                 Contraseña
               </span>
@@ -369,9 +427,9 @@ export function SignupForm() {
                 isVisible={showPassword}
                 onClick={() => setShowPassword((current) => !current)}
               />
-            </label>
+            </label> : null}
 
-            <label className="relative space-y-1">
+            {!oauthAccessToken ? <label className="relative space-y-1">
               <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
                 Confirmar clave
               </span>
@@ -387,12 +445,22 @@ export function SignupForm() {
                 isVisible={showConfirmPassword}
                 onClick={() => setShowConfirmPassword((current) => !current)}
               />
-            </label>
+            </label> : null}
           </div>
 
           <p className="mt-2 text-xs font-bold text-[#746f69]">
             Usa 8 caracteres o más. Combinar varias palabras suele ser fácil de recordar y más seguro.
           </p>
+
+          <button
+            type="button"
+            onClick={startGoogleSignup}
+            disabled={isSaving || isGoogleLoading}
+            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full border border-[#25262B]/10 bg-white px-5 py-4 text-sm font-black text-[#25262B] shadow-sm disabled:opacity-60"
+          >
+            {isGoogleLoading ? <Loader2 size={18} className="animate-spin" /> : <span className="grid h-5 w-5 place-items-center rounded-full bg-[#F8F3E8] text-sm font-black text-[#2E3A79]">G</span>}
+            {oauthAccessToken ? "Google conectado" : "Registrarme con Google"}
+          </button>
 
           {error ? (
             <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm font-black text-red-700 ring-1 ring-red-100">
