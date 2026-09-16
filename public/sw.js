@@ -1,4 +1,4 @@
-const CACHE_VERSION = "somos-pwa-v3";
+const CACHE_VERSION = "somos-pwa-v4";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE_URLS = [
   "/manifest.webmanifest",
@@ -26,13 +26,18 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => key.startsWith("vendeplus-") && !key.startsWith(CACHE_VERSION))
-            .concat(keys.filter((key) => key.startsWith("somos-") && !key.startsWith(CACHE_VERSION)))
+            .filter((key) => key !== STATIC_CACHE)
             .map((key) => caches.delete(key))
         )
       )
       .then(() => self.clients.claim())
   );
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener("fetch", (event) => {

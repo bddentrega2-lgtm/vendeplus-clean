@@ -1755,8 +1755,8 @@ test("paneles privados tienen proxy con cookie HttpOnly firmada", () => {
   assert.match(cookieHelper, /secret:\s*string/);
   assert.match(cookieHelper, /readPanelSessionCookieFromStore/);
   assert.match(cookieHelper, /cookies\.getAll\(PANEL_SESSION_COOKIE\)/);
-  assert.match(sessionStore, /rpc\("create_panel_session"/);
-  assert.match(sessionStore, /rpc\("get_panel_session"/);
+  assert.match(sessionStore, /rpc\("create_panel_session_v2"/);
+  assert.match(sessionStore, /rpc\("get_panel_session_v2"/);
   assert.match(sessionStore, /rpc\("revoke_panel_session"/);
   assert.match(sessionMigration, /create table if not exists private\.panel_sessions/);
   assert.match(sessionMigration, /revoked_at timestamptz/);
@@ -1785,6 +1785,7 @@ test("admin founder exige segundo factor verificado", () => {
   const sessionRoute = read("src/app/api/auth/panel-session/route.ts");
   const sessionStore = read("src/lib/server/panel-session-store.ts");
   const migration = read("supabase/migrations/20260916193000_admin_mfa_aal.sql");
+  const rpcMigration = read("supabase/migrations/20260916203000_panel_session_aal_rpc_v2.sql");
   const shell = read("src/components/admin/AdminShell.tsx");
   const page = read("src/app/admin/seguridad/page.tsx");
   const manager = read("src/components/admin/AdminMfaManager.tsx");
@@ -1793,8 +1794,11 @@ test("admin founder exige segundo factor verificado", () => {
   assert.match(panelAuth, /aal:\s*"aal1" \| "aal2"/);
   assert.match(panelAuth, /claims\.aal === "aal2"/);
   assert.match(sessionRoute, /getJwtAal\(token\)/);
-  assert.match(sessionStore, /\.schema\("private"\)[\s\S]*\.from\("panel_sessions"\)/);
+  assert.doesNotMatch(sessionStore, /\.schema\("private"\)[\s\S]*\.from\("panel_sessions"\)/);
   assert.match(migration, /add column if not exists aal text not null default 'aal1'/);
+  assert.match(rpcMigration, /create_panel_session_v2/);
+  assert.match(rpcMigration, /get_panel_session_v2/);
+  assert.match(rpcMigration, /returning ps\.user_id, ps\.email, ps\.founder, ps\.aal, ps\.expires_at/);
   assert.match(adminAccess, /auth\.aal !== "aal2"/);
   assert.match(adminAccess, /Verificacion de dos pasos requerida/);
   assert.match(shell, /\/admin\/seguridad/);

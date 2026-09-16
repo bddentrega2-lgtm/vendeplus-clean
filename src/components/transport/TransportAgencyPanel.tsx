@@ -21,6 +21,7 @@ import {
   XCircle,
 } from "lucide-react";
 import {
+  clearBrowserAuthStorage,
   clearPanelAuthStorage,
   clearPanelServerSession,
   completePanelOAuthSession,
@@ -787,6 +788,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     setMessage("");
 
     try {
+      clearBrowserAuthStorage();
       const supabase = createSupabaseBrowserClient();
 
       if (!supabase) {
@@ -831,6 +833,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     setMessage("");
 
     try {
+      clearBrowserAuthStorage();
       await signInPanelWithGoogle("/transporte/panel");
     } catch (error: any) {
       setMessage(error.message || "No se pudo iniciar con Google.");

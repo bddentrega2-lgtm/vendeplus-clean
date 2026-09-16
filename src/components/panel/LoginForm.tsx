@@ -7,6 +7,7 @@ import { CheckCircle2, Eye, EyeOff, Loader2, Lock } from "lucide-react";
 import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
 import { GoogleLogo } from "@/components/shared/GoogleLogo";
 import {
+  clearBrowserAuthStorage,
   completePanelOAuthSession,
   hasPanelOAuthReturn,
   savePanelToken,
@@ -77,6 +78,7 @@ export function LoginForm() {
     setError("");
 
     try {
+      clearBrowserAuthStorage();
       const supabase = createSupabaseBrowserClient();
 
       if (!supabase) {
@@ -134,6 +136,7 @@ export function LoginForm() {
     setError("");
 
     try {
+      clearBrowserAuthStorage();
       await signInPanelWithGoogle("/panel", { usePanelCallback: true });
     } catch (error: any) {
       setError(error.message || "No se pudo iniciar con Google.");

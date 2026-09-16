@@ -33,12 +33,13 @@ export async function createPanelServerSession(
   options: CreatePanelSessionOptions
 ): Promise<Pick<PanelSessionCookiePayload, "sid" | "secret">> {
   const secret = randomBytes(32).toString("base64url");
-  const { data, error } = await supabase.rpc("create_panel_session", {
+  const { data, error } = await supabase.rpc("create_panel_session_v2", {
     p_user_id: options.userId,
     p_email: options.email,
     p_secret_hash: hashPanelSessionSecret(secret),
     p_expires_at: options.expiresAt.toISOString(),
     p_founder: options.founder,
+    p_aal: normalizeAal(options.aal),
     p_user_agent: options.userAgent || null,
     p_ip: options.ip || null,
   });
@@ -47,26 +48,14 @@ export async function createPanelServerSession(
     throw error || new Error("No se pudo crear la sesion del panel.");
   }
 
-  const sid = String(data);
-  const aal = normalizeAal(options.aal);
-
-  await supabase
-    .schema("private")
-    .from("panel_sessions")
-    .update({ aal })
-    .eq("id", sid)
-    .then(({ error }) => {
-      if (error && !String(error.message || "").includes("aal")) throw error;
-    });
-
-  return { sid, secret };
+  return { sid: String(data), secret };
 }
 
 export async function getActivePanelServerSession(
   supabase: SupabaseClient,
   cookieSession: PanelSessionCookiePayload
 ): Promise<ActivePanelServerSession | null> {
-  const { data, error } = await supabase.rpc("get_panel_session", {
+  const { data, error } = await supabase.rpc("get_panel_session_v2", {
     p_session_id: cookieSession.sid,
     p_secret_hash: hashPanelSessionSecret(cookieSession.secret),
   });
@@ -81,18 +70,11 @@ export async function getActivePanelServerSession(
     return null;
   }
 
-  const { data: sessionRow } = await supabase
-    .schema("private")
-    .from("panel_sessions")
-    .select("aal")
-    .eq("id", cookieSession.sid)
-    .maybeSingle();
-
   return {
     userId: String(row.user_id),
     email: String(row.email).toLowerCase(),
     founder: Boolean(row.founder),
-    aal: normalizeAal((sessionRow as { aal?: string } | null)?.aal),
+    aal: normalizeAal(row.aal),
     expiresAt,
   };
 }

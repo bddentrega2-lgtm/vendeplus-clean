@@ -1,3 +1,14 @@
+# 2026-09-16 - Preview MFA retomado sin promover produccion
+
+- Produccion fue devuelta previamente al deployment estable sin MFA `dpl_5pGq7FNG9Pa7AoHD8ChrNWtoZgRy`; login comercio/delivery volvio a funcionar.
+- Causa del fallo MFA: `src/lib/server/panel-session-store.ts` consultaba/escribia `private.panel_sessions` directo via PostgREST (`.schema("private")`), schema no expuesta; eso generaba 500 en `/api/auth/panel-session` y bloqueaba paneles.
+- Fix preparado en `vendeplus-login-stability-fix`: la app ya no toca `private.panel_sessions` directo. Usa RPC nuevas `create_panel_session_v2` y `get_panel_session_v2` que guardan/devuelven `aal`.
+- Migracion aditiva aplicada en Supabase remoto: `20260916203000_panel_session_aal_rpc_v2.sql`. No cambia las RPC originales que usa el rollback productivo actual; smoke posterior de produccion estable OK.
+- Se incluyo parche de compatibilidad para accesos directos/PWA antiguos: `public/sw.js`, `RegisterServiceWorker`, `LoginForm` y `TransportAgencyPanel` limpian storage viejo y fuerzan actualizacion de service worker en rutas privadas.
+- Validaciones locales: `npm.cmd run test:critical` OK 78/78; `git diff --check` OK; `npm.cmd run build` OK con 220 paginas.
+- Preview sin promover: `https://vendeplus-clean-rnoyht6zn-entrega2-s-projects.vercel.app`, deployment `dpl_B7yWh1ECfb3hooxF2LCtcVZgHYyo`, inspector `https://vercel.com/entrega2-s-projects/vendeplus-clean/B7yWh1ECfb3hooxF2LCtcVZgHYyo`. Smoke anonimo devuelve 302 a Vercel SSO, esperado; logs sin errores.
+- Produccion sigue en el deployment estable anterior, sin MFA obligatorio. No promover MFA hasta que el usuario pruebe preview: login comercio clave/Google, login delivery clave/Google, admin Google, `/admin/seguridad`, verificar TOTP y volver a `/admin`.
+
 # 2026-09-16 - Admin protegido con MFA TOTP
 
 - Usuario pidio mejorar seguridad de acceso a admin para que no dependa solo de clave.
