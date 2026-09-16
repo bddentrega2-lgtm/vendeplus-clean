@@ -6,7 +6,10 @@
 - Migracion aplicada en Supabase remoto: `20260916193000_admin_mfa_aal.sql`; agrega `private.panel_sessions.aal` con check `aal1/aal2`.
 - Archivos principales: `src/lib/admin/access.ts`, `src/lib/panel/auth.ts`, `src/lib/server/panel-session-store.ts`, `src/app/api/auth/panel-session/route.ts`, `src/components/admin/AdminMfaManager.tsx`, `src/app/admin/seguridad/page.tsx`, `src/components/admin/AdminShell.tsx`, `scripts/critical-contracts.test.mjs`.
 - Validaciones: `npm.cmd run test:critical` OK 78/78, `git diff --check` OK, `npm.cmd run build` OK con 220 paginas, `supabase db push --linked --dry-run` listo y luego migracion aplicada.
-- Pendiente inmediato: commit/push, deploy productivo y smoke. Tras deploy, el fundador debe entrar a `/admin/seguridad`, configurar/verificar autenticador y luego volver a `/admin`.
+- Commit/push: `9afbac0 Exige MFA para acceso fundador admin`.
+- Produccion Ready: `dpl_ELdu98BdvUG2XGMSrG1v3ZEZmcd9`, artefacto `https://vendeplus-clean-bjo1f3c20-entrega2-s-projects.vercel.app`, alias `https://www.somos-ve.com`.
+- Smoke anonimo productivo: `/` y `/panel/login` 200; `/admin` y `/admin/seguridad` 307 a login; `/api/admin/summary` 401; `/api/admin/auth-check` 404 oculto; `/api/panel/stats` 401.
+- Siguiente paso operativo: fundador inicia sesion, entra a `/admin/seguridad`, configura/verifica autenticador y luego vuelve a `/admin`.
 
 # 2026-09-16 - Hotfix OAuth: callback dedicado para Google
 
