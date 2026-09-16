@@ -6,6 +6,8 @@
 - Validaciones locales: `npm.cmd run test:critical` OK 77/77, `git diff --check` OK, `npm.cmd run build` OK con 219 paginas.
 - Requisito de configuracion Supabase: agregar en Authentication > URL Configuration > Redirect URLs `https://www.somos-ve.com/auth/panel-callback`. Mantener tambien `/panel/login`, `/registro`, `/transporte/registro` y `/transporte/panel` si se usan.
 - Pendiente inmediato: commit, push, deploy productivo y smoke.
+- Actualizacion posterior aplicada directamente en Supabase Auth via Management API: `uri_allow_list` ahora incluye `https://www.somos-ve.com/auth/panel-callback`, `https://www.somos-ve.com/auth/panel-callback**`, `https://www.somos-ve.com/registro` y `https://www.somos-ve.com/transporte/registro`, ademas de las rutas existentes `/panel/login` y `/transporte/panel`.
+- Smoke posterior: `https://www.somos-ve.com/auth/panel-callback` y `/panel/login` responden 200.
 
 # 2026-09-16 - Hotfix OAuth: login Google espera sesion de panel
 
