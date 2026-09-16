@@ -25,6 +25,12 @@
 - Usuario autorizo pasar preview asegurado a produccion. Deployment productivo READY: `dpl_75frXYoTv2mSuyRNJbFS8uuPpWhF`, artefacto `https://vendeplus-clean-rcwxn5met-entrega2-s-projects.vercel.app`, alias `https://www.somos-ve.com`.
 - Smoke productivo anonimo post deploy: `/`, `/panel/login`, `/registro`, `/transporte/panel`, `/transporte/registro` => 200; `/api/admin/summary`, `/api/panel/stats`, `/api/transport/me` => 401. Logs Vercel ultimos 10 min sin errores, solo smoke esperado.
 - Pendiente: usuario prueba login Google admin en produccion, login delivery, logout y registro con Google. Si OK, no queda trabajo inmediato salvo monitoreo.
+- Usuario reporto que Google seguia colgado. Logs mostraron `POST /api/auth/panel-session` 200 seguido de `GET /api/panel/context` 401.
+- Diagnostico aplicado: posible presencia de multiples cookies `somos_panel_session` (legacy + nueva); backend leia solo la primera. Hotfix `afd1d61` lee todas las cookies con ese nombre y usa la primera valida con `sid + secret`; tambien fuerza `window.location.assign(data.url)` si Supabase OAuth devuelve URL.
+- Validaciones hotfix: reproduccion auditoria OK con 4 `REMEDIATED`; `npm.cmd run test:critical` OK 77/77; `npm.cmd run build` OK 218 paginas; `git diff --check` OK.
+- Hotfix asegurado en GitHub: commit `afd1d61` (`Corrige lectura de sesion OAuth`) en `checkpoint/ajustes-delivery-shibui-20260915`.
+- Produccion hotfix READY: `dpl_Euey9DnjzxscPmexw7mx6jpiG6fW`, artefacto `https://vendeplus-clean-bjpatcfri-entrega2-s-projects.vercel.app`, alias `https://www.somos-ve.com`.
+- Smoke productivo anonimo hotfix: `/` 200, `/panel/login` 200, `/api/admin/summary` 401, `/api/panel/stats` 401, `/api/transport/me` 401; logs recientes sin errores.
 
 # 2026-09-16 - Auditoria de seguridad actual
 
