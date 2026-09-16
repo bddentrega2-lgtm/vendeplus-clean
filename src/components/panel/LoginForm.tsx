@@ -37,11 +37,12 @@ export function LoginForm() {
 
       try {
         const accessToken = await completePanelOAuthSession();
-        if (!accessToken || !isMounted) return;
+        if (!accessToken || !isMounted) {
+          throw new Error("No se pudo completar la sesion con Google.");
+        }
 
-        await refreshSession();
         const nextPath = new URLSearchParams(window.location.search).get("next") || "/panel";
-        router.push(safeInternalPanelPath(nextPath));
+        window.location.replace(safeInternalPanelPath(nextPath));
       } catch (error: any) {
         if (isMounted) setError(error.message || "No se pudo completar el inicio con Google.");
       } finally {
