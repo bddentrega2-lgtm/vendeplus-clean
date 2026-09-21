@@ -3,7 +3,6 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { assertStoreAccess, panelErrorResponse, requirePanelAuth } from "@/lib/panel/access";
 import { getCustomerBadges, shouldContactCustomer } from "@/lib/customers/customer-segments";
 import { buildContactAgainMessage, buildRepeatLastOrderMessage, buildWhatsappUrl } from "@/lib/customers/customer-messages";
-import { safeUpsertCustomerFromOrder } from "@/lib/customers/upsert-customer-from-order";
 
 function toNumber(value: unknown) {
   const parsed = Number(value || 0);
@@ -24,11 +23,10 @@ function matchesSegment(customer: any, segment: string) {
   const ordersCount = toNumber(customer.orders_count);
   const totalSpent = toNumber(customer.total_spent_usd);
 
-  if (segment === "new") return ordersCount <= 1;
+  if (segment === "new") return ordersCount === 1;
   if (segment === "frequent") return ordersCount >= 3;
   if (segment === "vip") return ordersCount >= 5 || totalSpent >= 100;
   if (segment === "contact") return shouldContactCustomer(customer);
-  if (segment === "pending_payment") return toNumber(customer.pending_payments_count) > 0;
   if (segment === "delivery") return customer.preferred_fulfillment === "delivery";
   if (segment === "pickup") return customer.preferred_fulfillment === "pickup";
 
@@ -56,41 +54,6 @@ function getLastOrderSummary(order: any) {
     created_at: order.created_at,
     items: order.order_items || [],
   };
-}
-
-async function hydrateCustomersFromExistingOrders(supabase: any, storeIds: string[] | null) {
-  let ordersQuery = supabase
-    .from("orders")
-    .select(
-      `
-      id,
-      store_id,
-      customer_name,
-      customer_phone,
-      delivery_type,
-      payment_method,
-      delivery_reference,
-      total_usd,
-      created_at
-    `
-    )
-    .order("created_at", { ascending: false })
-    .limit(500);
-
-  if (storeIds !== null) {
-    ordersQuery = ordersQuery.in("store_id", storeIds);
-  }
-
-  const { data, error } = await ordersQuery;
-  if (error) return 0;
-
-  let processed = 0;
-  for (const order of data || []) {
-    const customerId = await safeUpsertCustomerFromOrder(supabase, order as any);
-    if (customerId) processed += 1;
-  }
-
-  return processed;
 }
 
 export async function GET(request: NextRequest) {
@@ -161,7 +124,7 @@ export async function GET(request: NextRequest) {
     customersQuery = applyCustomerSearch(customersQuery, safeSearch);
 
     if (segment === "new") {
-      customersQuery = customersQuery.lte("orders_count", 1);
+      customersQuery = customersQuery.eq("orders_count", 1);
     } else if (segment === "frequent") {
       customersQuery = customersQuery.gte("orders_count", 3);
     } else if (segment === "vip") {
@@ -181,7 +144,7 @@ export async function GET(request: NextRequest) {
 
     const summaryPromises = [
       { key: "total", query: supabase.from("customers").select("id", { count: "exact", head: true }) },
-      { key: "newCustomers", query: supabase.from("customers").select("id", { count: "exact", head: true }).lte("orders_count", 1) },
+      { key: "newCustomers", query: supabase.from("customers").select("id", { count: "exact", head: true }).eq("orders_count", 1) },
       { key: "frequent", query: supabase.from("customers").select("id", { count: "exact", head: true }).gte("orders_count", 3) },
       { key: "vip", query: supabase.from("customers").select("id", { count: "exact", head: true }).or("orders_count.gte.5,total_spent_usd.gte.100") },
       { key: "contact", query: supabase.from("customers").select("id", { count: "exact", head: true }).gte("orders_count", 2).lte("last_order_at", new Date(Date.now() - 21 * 86400000).toISOString()) },
@@ -216,7 +179,6 @@ export async function GET(request: NextRequest) {
           frequent: 0,
           vip: 0,
           contact: 0,
-          pendingPayment: 0,
         },
         needsMigration: true,
         error: "Aplica la migración de clientes para activar este módulo.",
@@ -228,64 +190,12 @@ export async function GET(request: NextRequest) {
     const hasMore = pageRows.length > limit;
     let customers = hasMore ? pageRows.slice(0, limit) : pageRows;
 
-    if (!customers.length && offset === 0 && !safeSearch && segment === "all") {
-      const processed = await hydrateCustomersFromExistingOrders(supabase, scopedStoreIds);
+    const lastOrderIds = customers.map((customer: any) => customer.last_order_id).filter(Boolean);
 
-      if (processed > 0) {
-        let hydratedCustomersQuery = supabase
-          .from("customers")
-          .select(
-            `
-            id,
-            store_id,
-            name,
-            phone,
-            phone_normalized,
-            notes,
-            tags,
-            orders_count,
-            total_spent_usd,
-            average_ticket_usd,
-            last_order_id,
-            last_order_at,
-            favorite_products,
-            frequent_address,
-            preferred_payment_method,
-            preferred_fulfillment,
-            stores (
-              name,
-              slug
-            )
-          `
-          )
-          .order("last_order_at", { ascending: false, nullsFirst: false })
-          .range(offset, to);
-
-        if (scopedStoreIds !== null) {
-          hydratedCustomersQuery = hydratedCustomersQuery.in("store_id", scopedStoreIds);
-        }
-
-        const hydratedResult = await hydratedCustomersQuery;
-        if (!hydratedResult.error) {
-          const hydratedRows = hydratedResult.data || [];
-          customers = hydratedRows.length > limit ? hydratedRows.slice(0, limit) : hydratedRows;
-        }
-      }
-    }
-
-    const customerIds = customers.map((customer: any) => customer.id).filter(Boolean);
-
-    let pendingByCustomer = new Map<string, number>();
     let lastOrdersById = new Map<string, any>();
 
-    if (customerIds.length) {
-      const [pendingResult, lastOrdersResult] = await Promise.all([
-        supabase
-          .from("orders")
-          .select("customer_id, payment_status")
-          .in("customer_id", customerIds)
-          .in("payment_status", ["pending", "review", "incomplete"]),
-        supabase
+    if (lastOrderIds.length) {
+      const lastOrdersResult = await supabase
           .from("orders")
           .select(
             `
@@ -301,15 +211,7 @@ export async function GET(request: NextRequest) {
             )
           `
           )
-          .in("id", customers.map((customer: any) => customer.last_order_id).filter(Boolean)),
-      ]);
-
-      if (!pendingResult.error) {
-        for (const order of pendingResult.data || []) {
-          const customerId = String((order as any).customer_id || "");
-          pendingByCustomer.set(customerId, (pendingByCustomer.get(customerId) || 0) + 1);
-        }
-      }
+          .in("id", lastOrderIds);
 
       if (!lastOrdersResult.error) {
         lastOrdersById = new Map(
@@ -319,12 +221,8 @@ export async function GET(request: NextRequest) {
     }
 
     const enriched = customers.map((customer: any) => {
-      const pendingPaymentsCount = pendingByCustomer.get(String(customer.id)) || 0;
       const lastOrder = lastOrdersById.get(String(customer.last_order_id));
-      const badges = getCustomerBadges({
-        ...customer,
-        pending_payments_count: pendingPaymentsCount,
-      });
+      const badges = getCustomerBadges(customer);
       const storeName = customer.stores?.name || "tu comercio";
       const repeatMessage = buildRepeatLastOrderMessage({
         customerName: customer.name,
@@ -338,7 +236,6 @@ export async function GET(request: NextRequest) {
 
       return {
         ...customer,
-        pending_payments_count: pendingPaymentsCount,
         badges,
         last_order: getLastOrderSummary(lastOrder),
         repeat_message: repeatMessage,
@@ -361,9 +258,6 @@ export async function GET(request: NextRequest) {
       frequent: globalSummary.frequent || 0,
       vip: globalSummary.vip || 0,
       contact: globalSummary.contact || 0,
-      pendingPayment: enriched.filter(
-        (customer) => toNumber(customer.pending_payments_count) > 0
-      ).length,
     };
 
     return NextResponse.json({

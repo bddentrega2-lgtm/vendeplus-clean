@@ -74,7 +74,9 @@ export async function PATCH(request: NextRequest) {
         subscription_started_at: new Date().toISOString(),
         subscription_ends_at: nextDue,
         next_payment_due_at: nextDue,
-        last_payment_at: new Date().toISOString(),
+        last_payment_at: planType === "per_service"
+          ? (payment as any).created_at
+          : new Date().toISOString(),
         service_fee_billing_cycle: "monthly",
       };
       if (planType === "monthly") subscriptionUpdate.monthly_price_usd = 20;

@@ -284,21 +284,21 @@ export function DashboardManager() {
 
   const cards = [
     {
-      label: "Ventas del período",
+      label: "Valor de productos",
       value: formatUsd(summary.totalRevenueUsd),
-      detail: `${summary.totalOrders || 0} pedidos registrados`,
+      detail: `Últimos 7 días · ${summary.totalOrders || 0} pedidos no cancelados`,
       icon: DollarSign,
     },
     {
-      label: "Pedidos registrados",
+      label: "Pedidos no cancelados",
       value: String(summary.totalOrders || 0),
-      detail: `${summary.completedOrders || 0} completados · ${summary.cancelledOrders || 0} cancelados`,
+      detail: `Últimos 7 días · ${summary.cancelledOrders || 0} cancelados aparte`,
       icon: ClipboardList,
     },
     {
       label: "Ticket promedio",
       value: formatUsd(summary.averageTicketUsd),
-      detail: "Promedio por pedido",
+      detail: "Productos por pedido · últimos 7 días",
       icon: ShoppingBag,
     },
     {
@@ -450,7 +450,7 @@ export function DashboardManager() {
             </p>
             <h2 className="mt-2 text-3xl font-black">Resumen operativo</h2>
             <p className="mt-2 max-w-3xl text-sm font-semibold leading-relaxed text-white/70">
-              Métricas principales de los comercios que puedes administrar.
+              Actividad de los últimos 7 días. Los cancelados se muestran aparte y no suman al valor de productos.
             </p>
           </div>
 
@@ -482,7 +482,7 @@ export function DashboardManager() {
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           <div className="rounded-[24px] bg-[#F8F3E8] p-4">
             <p className="text-xs font-black uppercase tracking-[0.12em] text-[#746f69]">
-              Clientes totales
+              Clientes históricos
             </p>
             <p className="mt-2 text-3xl font-black text-[#25262B]">
               {stats.customers?.total || 0}
@@ -490,7 +490,7 @@ export function DashboardManager() {
           </div>
           <div className="rounded-[24px] bg-green-50 p-4">
             <p className="text-xs font-black uppercase tracking-[0.12em] text-green-700">
-              Frecuentes
+              Frecuentes históricos
             </p>
             <p className="mt-2 text-3xl font-black text-green-700">
               {stats.customers?.frequent || 0}
@@ -498,7 +498,7 @@ export function DashboardManager() {
           </div>
           <div className="rounded-[24px] bg-amber-50 p-4">
             <p className="text-xs font-black uppercase tracking-[0.12em] text-amber-800">
-              Por contactar
+              Por contactar hoy
             </p>
             <p className="mt-2 text-3xl font-black text-amber-800">
               {stats.customers?.contact || 0}

@@ -115,7 +115,9 @@ export async function GET(
 
     if (ordersError) throw ordersError;
 
-    const lastOrder = (orders || [])[0] || null;
+    const lastOrder = (orders || []).find((order: any) =>
+      !["cancelled", "canceled", "cancelado"].includes(String(order.status || "").toLowerCase())
+    ) || null;
     const storeName = customer.stores?.name || "tu comercio";
     const repeatMessage = buildRepeatLastOrderMessage({
       customerName: customer.name,

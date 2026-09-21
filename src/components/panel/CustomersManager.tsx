@@ -46,7 +46,6 @@ type CustomerRow = {
   frequent_address: string | null;
   preferred_payment_method: string | null;
   preferred_fulfillment: string | null;
-  pending_payments_count?: number;
   badges?: Array<{ key: string; label: string }>;
   stores?: { name?: string; slug?: string } | null;
   last_order?: {
@@ -83,14 +82,17 @@ type CustomerOrder = {
 
 const segmentOptions = [
   { value: "all", label: "Todos" },
-  { value: "new", label: "Nuevos" },
+  { value: "new", label: "Una compra" },
   { value: "frequent", label: "Frecuentes" },
   { value: "vip", label: "VIP" },
   { value: "contact", label: "Por contactar" },
-  { value: "pending_payment", label: "Pago pendiente" },
   { value: "delivery", label: "Delivery frecuente" },
   { value: "pickup", label: "Retiro frecuente" },
 ];
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("es-VE").format(Number(value || 0));
+}
 
 function formatDate(value?: string | null) {
   if (!value) return "Sin compras";
@@ -116,7 +118,6 @@ function getBadgeStyle(key: string) {
   if (key === "vip") return "bg-[#FFB547] text-[#25262B]";
   if (key === "frequent") return "bg-green-100 text-green-700";
   if (key === "contact") return "bg-amber-100 text-amber-800";
-  if (key === "pending_payment") return "bg-red-100 text-red-700";
   return "bg-[#F8F3E8] text-[#746f69]";
 }
 
@@ -212,19 +213,13 @@ function CustomerDetail({
               <h3 className="text-lg font-black">Resumen</h3>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <div className="rounded-2xl bg-[#F8F3E8] p-3">
-                  <p className="text-xs font-bold text-[#746f69]">Pedidos</p>
+                  <p className="text-xs font-bold text-[#746f69]">Pedidos no cancelados</p>
                   <p className="text-2xl font-black">{customer.orders_count || 0}</p>
                 </div>
                 <div className="rounded-2xl bg-[#F8F3E8] p-3">
-                  <p className="text-xs font-bold text-[#746f69]">Total</p>
+                  <p className="text-xs font-bold text-[#746f69]">Valor de productos</p>
                   <p className="text-2xl font-black">
                     {formatUsd(Number(customer.total_spent_usd || 0))}
-                  </p>
-                </div>
-                <div className="rounded-2xl bg-[#F8F3E8] p-3">
-                  <p className="text-xs font-bold text-[#746f69]">Ticket</p>
-                  <p className="text-2xl font-black">
-                    {formatUsd(Number(customer.average_ticket_usd || 0))}
                   </p>
                 </div>
                 <div className="rounded-2xl bg-[#F8F3E8] p-3">
@@ -580,9 +575,8 @@ export function CustomersManager() {
     () => [
       { label: "Clientes", value: summary?.total || 0 },
       { label: "Frecuentes", value: summary?.frequent || 0 },
-      { label: "Nuevos", value: summary?.newCustomers || 0 },
+      { label: "Una compra", value: summary?.newCustomers || 0 },
       { label: "Por contactar", value: summary?.contact || 0 },
-      { label: "Pago pendiente", value: summary?.pendingPayment || 0 },
     ],
     [summary]
   );
@@ -740,15 +734,15 @@ export function CustomersManager() {
 
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div className="rounded-2xl bg-[#F8F3E8] px-3 py-2">
-                  <p className="text-xs font-bold text-[#746f69]">Total</p>
+                  <p className="text-xs font-bold text-[#746f69]">Pedidos</p>
                   <p className="font-black">
-                    {formatUsd(Number(customer.total_spent_usd || 0))}
+                    {formatNumber(Number(customer.orders_count || 0))}
                   </p>
                 </div>
                 <div className="rounded-2xl bg-[#F8F3E8] px-3 py-2">
-                  <p className="text-xs font-bold text-[#746f69]">Ticket</p>
+                  <p className="text-xs font-bold text-[#746f69]">Valor productos</p>
                   <p className="font-black">
-                    {formatUsd(Number(customer.average_ticket_usd || 0))}
+                    {formatUsd(Number(customer.total_spent_usd || 0))}
                   </p>
                 </div>
               </div>

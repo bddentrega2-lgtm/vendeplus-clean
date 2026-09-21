@@ -29,17 +29,16 @@ function cleanSearch(value: unknown) {
     .slice(0, 80);
 }
 
-function matchesSegment(customer: any, segment: string, pendingPaymentsCount: number) {
+function matchesSegment(customer: any, segment: string) {
   if (!segment || segment === "all") return true;
 
   const ordersCount = toNumber(customer.orders_count);
   const totalSpent = toNumber(customer.total_spent_usd);
 
-  if (segment === "new") return ordersCount <= 1;
+  if (segment === "new") return ordersCount === 1;
   if (segment === "frequent") return ordersCount >= 3;
   if (segment === "vip") return ordersCount >= 5 || totalSpent >= 100;
   if (segment === "contact") return shouldContactCustomer(customer);
-  if (segment === "pending_payment") return pendingPaymentsCount > 0;
   if (segment === "delivery") return customer.preferred_fulfillment === "delivery";
   if (segment === "pickup") return customer.preferred_fulfillment === "pickup";
 
@@ -70,29 +69,23 @@ function formatDate(value: unknown) {
   }
 }
 
-function buildCsv(customers: any[], pendingByCustomer: Map<string, number>) {
+function buildCsv(customers: any[]) {
   const headers = [
     "Comercio",
     "Nombre",
     "Telefono",
     "Pedidos",
-    "Total USD",
-    "Ticket promedio USD",
+    "Valor de productos USD",
     "Ultima compra",
     "Metodo de pago preferido",
     "Modalidad preferida",
     "Direccion frecuente",
-    "Pagos pendientes",
     "Etiquetas",
     "Notas",
   ];
 
   const rows = customers.map((customer) => {
-    const pending = pendingByCustomer.get(String(customer.id)) || 0;
-    const badges = getCustomerBadges({
-      ...customer,
-      pending_payments_count: pending,
-    })
+    const badges = getCustomerBadges(customer)
       .map((badge) => badge.label)
       .join(", ");
     const tags = Array.isArray(customer.tags) ? customer.tags.join(", ") : "";
@@ -103,12 +96,10 @@ function buildCsv(customers: any[], pendingByCustomer: Map<string, number>) {
       customer.phone || "",
       toNumber(customer.orders_count),
       toNumber(customer.total_spent_usd).toFixed(2),
-      toNumber(customer.average_ticket_usd).toFixed(2),
       formatDate(customer.last_order_at),
       customer.preferred_payment_method || "",
       customer.preferred_fulfillment || "",
       customer.frequent_address || "",
-      pending,
       [badges, tags].filter(Boolean).join(" | "),
       customer.notes || "",
     ];
@@ -157,9 +148,8 @@ export async function GET(request: NextRequest) {
       assertStoreManager(auth, storeId, "No tienes permiso para exportar clientes de este comercio.");
     }
 
-    let customersQuery = supabase
-      .from("customers")
-      .select(
+    const buildCustomersQuery = () => {
+      let query = supabase.from("customers").select(
         `
         id,
         store_id,
@@ -180,50 +170,38 @@ export async function GET(request: NextRequest) {
           slug
         )
       `
-      )
-      .order("last_order_at", { ascending: false, nullsFirst: false })
-      .limit(MAX_EXPORT_ROWS);
+      ).order("last_order_at", { ascending: false, nullsFirst: false }).order("id", { ascending: true });
 
-    if (storeId) {
-      customersQuery = customersQuery.eq("store_id", storeId);
-    } else if (managerStoreIds !== null) {
-      customersQuery = managerStoreIds.length
-        ? customersQuery.in("store_id", managerStoreIds)
-        : customersQuery.eq("store_id", "__no_authorized_store__");
-    } else if (auth.storeIds !== null) {
-      customersQuery = customersQuery.in("store_id", auth.storeIds);
-    }
-
-    if (search) {
-      customersQuery = customersQuery.or(
-        `name.ilike.%${search}%,phone.ilike.%${search}%,phone_normalized.ilike.%${search}%`
-      );
-    }
-
-    const { data, error } = await customersQuery;
-    if (error) throw error;
-
-    const customers = data || [];
-    const customerIds = customers.map((customer: any) => customer.id).filter(Boolean);
-    const pendingByCustomer = new Map<string, number>();
-
-    if (customerIds.length) {
-      const { data: pendingOrders } = await supabase
-        .from("orders")
-        .select("customer_id, payment_status")
-        .in("customer_id", customerIds)
-        .in("payment_status", ["pending", "review", "incomplete"]);
-
-      for (const order of pendingOrders || []) {
-        const customerId = String((order as any).customer_id || "");
-        pendingByCustomer.set(customerId, (pendingByCustomer.get(customerId) || 0) + 1);
+      if (storeId) {
+        query = query.eq("store_id", storeId);
+      } else if (managerStoreIds !== null) {
+        query = managerStoreIds.length
+          ? query.in("store_id", managerStoreIds)
+          : query.eq("store_id", "__no_authorized_store__");
+      } else if (auth.storeIds !== null) {
+        query = query.in("store_id", auth.storeIds);
       }
+
+      if (search) {
+        query = query.or(
+          `name.ilike.%${search}%,phone.ilike.%${search}%,phone_normalized.ilike.%${search}%`
+        );
+      }
+      return query;
+    };
+
+    const customers: any[] = [];
+    for (let offset = 0; offset < MAX_EXPORT_ROWS; offset += 500) {
+      const { data, error } = await buildCustomersQuery().range(offset, Math.min(offset + 499, MAX_EXPORT_ROWS - 1));
+      if (error) throw error;
+      customers.push(...(data || []));
+      if ((data || []).length < 500) break;
     }
 
     const filtered = customers.filter((customer: any) =>
-      matchesSegment(customer, segment, pendingByCustomer.get(String(customer.id)) || 0)
+      matchesSegment(customer, segment)
     );
-    const csv = buildCsv(filtered, pendingByCustomer);
+    const csv = buildCsv(filtered);
     const date = new Date().toISOString().slice(0, 10);
 
     return new NextResponse(`\uFEFF${csv}`, {

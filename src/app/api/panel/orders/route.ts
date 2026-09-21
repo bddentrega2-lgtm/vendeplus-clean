@@ -10,7 +10,8 @@ import {
 import { getInitialPaymentStatus, getSuggestedPaymentCurrency, isPaymentStatus } from "@/lib/payments";
 import { isStoreSubscriptionPastDue } from "@/lib/supabase/catalog";
 import { normalizePhone } from "@/lib/customers/normalize-phone";
-import { safeUpsertCustomerFromOrder } from "@/lib/customers/upsert-customer-from-order";
+import { isCustomerOrderCancelled } from "@/lib/customers/customer-metrics";
+import { recalculateCustomerFromOrder, safeUpsertCustomerFromOrder } from "@/lib/customers/upsert-customer-from-order";
 import { getVenezuelaRelativeRange } from "@/lib/time/venezuela";
 import { getStoreServiceFeeUsd } from "@/lib/plans";
 import { createOrderAtomic } from "@/lib/server/create-order-atomic";
@@ -1068,7 +1069,10 @@ export async function POST(request: NextRequest) {
         delivery_type: storedDeliveryType,
         payment_method: paymentMethod,
         delivery_reference: deliveryReference || null,
+        subtotal_usd: subtotalUsd,
+        delivery_usd: deliveryUsd,
         total_usd: totalUsd,
+        status: "received",
         created_at: order.created_at || new Date().toISOString(),
       });
     }
@@ -1109,7 +1113,7 @@ export async function PATCH(request: NextRequest) {
 
     const { data: existingOrder, error: existingError } = await supabase
       .from("orders")
-      .select("id, store_id, delivery_status, transport_agency_status")
+      .select("id, store_id, customer_id, customer_name, customer_phone, customer_phone_normalized, status, delivery_status, transport_agency_status, created_at")
       .eq("id", id)
       .single();
 
@@ -1158,6 +1162,13 @@ export async function PATCH(request: NextRequest) {
           if (result.error) throw result.error;
           return result.data;
         })();
+
+    if (
+      existingOrder.customer_id &&
+      isCustomerOrderCancelled(existingOrder.status) !== isCustomerOrderCancelled(status)
+    ) {
+      await recalculateCustomerFromOrder(supabase, existingOrder);
+    }
 
     return NextResponse.json({ order: data });
   } catch (error: any) {

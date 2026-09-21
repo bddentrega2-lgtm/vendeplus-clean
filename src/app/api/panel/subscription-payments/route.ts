@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPlan, getStoreServiceFeeUsd, PER_SERVICE_FEE_USD } from "@/lib/plans";
+import { getPlan, PER_SERVICE_FEE_USD } from "@/lib/plans";
+import { loadServiceFeeBalances } from "@/lib/billing/service-fees";
 import {
   assertStoreManager,
   badRequest,
@@ -25,34 +26,11 @@ function addDays(date: Date, days: number) {
 }
 
 async function getServiceUsage(supabase: any, store: any) {
-  const periodStart =
-    store.last_payment_at ||
-    store.subscription_started_at ||
-    store.trial_ends_at ||
-    store.created_at ||
-    new Date().toISOString();
-
-  const { data, error } = await supabase
-    .from("orders")
-    .select("id, status, platform_service_fee_usd")
-    .eq("store_id", store.id)
-    .gte("created_at", periodStart)
-    .gt("platform_service_fee_usd", 0);
-
-  if (error) throw error;
-
-  const receivedOrders = data || [];
-  const serviceCount = receivedOrders.length;
-  const amountUsd = Number(
-    receivedOrders
-      .reduce((sum: number, order: any) => sum + money(order.platform_service_fee_usd || getStoreServiceFeeUsd(store)), 0)
-      .toFixed(2)
-  );
-
+  const balance = (await loadServiceFeeBalances(supabase, [store])).get(store.id);
   return {
-    serviceCount,
-    amountUsd,
-    periodStart,
+    serviceCount: balance?.serviceCount || 0,
+    amountUsd: balance?.amountUsd || 0,
+    periodStart: balance?.periodStart || null,
   };
 }
 
@@ -72,7 +50,7 @@ export async function GET(request: NextRequest) {
 
     let storesQuery = supabase
       .from("stores")
-      .select("id, name, slug, plan_type, subscription_status, trial_ends_at, subscription_started_at, subscription_ends_at, next_payment_due_at, monthly_price_usd, usd_to_bs, last_payment_at, created_at, product_limit, service_fee_payer, service_fee_billing_cycle")
+      .select("id, name, slug, plan_type, is_test, subscription_status, trial_ends_at, subscription_started_at, subscription_ends_at, next_payment_due_at, monthly_price_usd, usd_to_bs, last_payment_at, created_at, product_limit, service_fee_payer, service_fee_billing_cycle")
       .order("name", { ascending: true });
 
     let paymentsQuery = supabase
@@ -99,16 +77,13 @@ export async function GET(request: NextRequest) {
     if (storesResult.error) throw storesResult.error;
 
     const stores = storesResult.data || [];
-    const serviceUsageByStore = Object.fromEntries(
-      await Promise.all(
-        stores.map(async (store: any) => [
-          store.id,
-          store.plan_type === "per_service"
-            ? await getServiceUsage(supabase, store)
-            : { serviceCount: 0, amountUsd: 0, periodStart: null },
-        ])
-      )
-    );
+    const balances = await loadServiceFeeBalances(supabase, stores);
+    const serviceUsageByStore = Object.fromEntries(stores.map((store: any) => {
+      const balance = balances.get(store.id);
+      return [store.id, balance
+        ? { serviceCount: balance.serviceCount, amountUsd: balance.amountUsd, periodStart: balance.periodStart }
+        : { serviceCount: 0, amountUsd: 0, periodStart: null }];
+    }));
 
     return NextResponse.json({
       stores: storesResult.data || [],
@@ -136,7 +111,7 @@ export async function POST(request: NextRequest) {
     const supabase = createSupabaseAdminClient();
     const { data: store, error: storeError } = await supabase
       .from("stores")
-      .select("id, plan_type, subscription_status, trial_ends_at, subscription_started_at, subscription_ends_at, next_payment_due_at, monthly_price_usd, usd_to_bs, last_payment_at, created_at, product_limit, service_fee_payer, service_fee_billing_cycle")
+      .select("id, plan_type, is_test, subscription_status, trial_ends_at, subscription_started_at, subscription_ends_at, next_payment_due_at, monthly_price_usd, usd_to_bs, last_payment_at, created_at, product_limit, service_fee_payer, service_fee_billing_cycle")
       .eq("id", storeId)
       .single();
 

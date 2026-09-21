@@ -93,6 +93,12 @@ function toHourKey(value: string) {
   }).format(new Date(value)) + ":00";
 }
 
+function isValidDateKey(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 function getDateRange(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const range = searchParams.get("range") || "last_7_days";
@@ -223,6 +229,16 @@ export async function GET(request: NextRequest) {
     const auth = await requirePanelAuth(request);
     const supabase = createSupabaseAdminClient();
     const { searchParams } = new URL(request.url);
+    if (searchParams.get("range") === "custom") {
+      const startParam = searchParams.get("start") || "";
+      const endParam = searchParams.get("end") || "";
+      if (!isValidDateKey(startParam) || !isValidDateKey(endParam) || startParam > endParam) {
+        return NextResponse.json(
+          { error: "Selecciona un período personalizado válido." },
+          { status: 400 }
+        );
+      }
+    }
     const mode = searchParams.get("mode") === "summary" ? "summary" : "full";
     const requestedStoreId =
       searchParams.get("storeId") ||

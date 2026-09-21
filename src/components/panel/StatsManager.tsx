@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   BarChart3,
@@ -69,6 +69,7 @@ type StatsData = {
   };
   topProducts: TopProduct[];
   topCustomers: TopCustomer[];
+  customers: { total: number; frequent: number; contact: number };
   salesByDay: ChartItem[];
   ordersByDay: ChartItem[];
   ordersByHour: ChartItem[];
@@ -223,6 +224,7 @@ export function StatsManager() {
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => shouldShowPanelInitialAccessGate());
   const [isLoading, setIsLoading] = useState(() => hasSavedPanelAuth());
   const [error, setError] = useState("");
+  const requestId = useRef(0);
 
   async function loadStats(currentPin: string, overrides?: Partial<{
     storeId: string;
@@ -230,6 +232,7 @@ export function StatsManager() {
     startDate: string;
     endDate: string;
   }>) {
+    const currentRequest = ++requestId.current;
     setIsLoading(true);
     setError("");
 
@@ -240,18 +243,35 @@ export function StatsManager() {
       endDate: overrides?.endDate ?? endDate,
     };
 
+    if (filters.range === "custom") {
+      if (!filters.startDate || !filters.endDate) {
+        setError("Selecciona la fecha inicial y la fecha final.");
+        setIsLoading(false);
+        return;
+      }
+      if (filters.startDate > filters.endDate) {
+        setError("La fecha inicial no puede ser posterior a la fecha final.");
+        setIsLoading(false);
+        return;
+      }
+    }
+
     try {
       const data = await apiRequest(currentPin, filters);
+      if (currentRequest !== requestId.current) return;
       setStats(data);
       setIsUnlocked(true);
       if (!filters.storeId && data.stores.length === 1) setSelectedStoreId(data.stores[0].id);
       savePanelPin(currentPin);
     } catch (error: any) {
+      if (currentRequest !== requestId.current) return;
       setError(error.message || "No se pudieron cargar las estadísticas.");
       setIsUnlocked(false);
     } finally {
-      setIsLoading(false);
-      setIsCheckingAccess(false);
+      if (currentRequest === requestId.current) {
+        setIsLoading(false);
+        setIsCheckingAccess(false);
+      }
     }
   }
 
@@ -284,7 +304,6 @@ export function StatsManager() {
   const insights = useMemo(() => {
     if (!stats) return [];
     const topProduct = stats.topProducts[0];
-    const repeatCustomers = stats.topCustomers.filter((customer) => customer.orders > 1).length;
     const preferredMode =
       stats.summary.deliveryOrders >= stats.summary.pickupOrders ? "entrega" : "retiro";
     const bestDay = stats.peak.strongestWeekday?.label || "sin suficiente data";
@@ -297,7 +316,7 @@ export function StatsManager() {
       `El ticket promedio fue de ${formatUsd(stats.summary.averageTicketUsd)}.`,
       `La mayoría de tus pedidos fueron por ${preferredMode}.`,
       `Tu día con más pedidos fue ${bestDay} y la hora más fuerte fue ${bestHour}.`,
-      `Tienes ${repeatCustomers} clientes que compraron más de una vez.`,
+      `Tienes ${formatNumber(stats.customers.frequent)} clientes frecuentes en tu historial.`,
     ];
   }, [stats]);
 
@@ -334,9 +353,9 @@ export function StatsManager() {
 
   const cards = [
     {
-      label: "Ventas del comercio",
+      label: "Valor de productos",
       value: formatUsd(stats.summary.totalRevenueUsd),
-      detail: `Sin delivery · ${stats.range.days} días`,
+      detail: `Pedidos no cancelados · sin delivery · ${stats.range.days} días`,
       icon: DollarSign,
     },
     {
@@ -346,15 +365,15 @@ export function StatsManager() {
       icon: Bike,
     },
     {
-      label: "Cantidad de pedidos",
+      label: "Pedidos no cancelados",
       value: formatNumber(stats.summary.totalOrders),
-      detail: "Pedidos dentro del rango",
+      detail: "Recibidos dentro del rango",
       icon: ShoppingBag,
     },
     {
       label: "Ticket promedio",
       value: formatUsd(stats.summary.averageTicketUsd),
-      detail: "Ingreso promedio por pedido",
+      detail: "Valor promedio de productos por pedido",
       icon: TrendingUp,
     },
   ];
@@ -380,7 +399,7 @@ export function StatsManager() {
           </button>
         </div>
 
-        <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_220px_160px_160px]">
+        <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_200px_150px_150px_auto]">
           <select
             value={selectedStoreId}
             onChange={(event) => {
@@ -424,9 +443,16 @@ export function StatsManager() {
             value={endDate}
             disabled={range !== "custom"}
             onChange={(event) => setEndDate(event.target.value)}
-            onBlur={() => range === "custom" && loadStats(pin)}
             className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-black outline-none disabled:bg-[#F8F3E8] disabled:text-[#746f69]"
           />
+          <button
+            type="button"
+            onClick={() => loadStats(pin)}
+            disabled={range !== "custom" || isLoading}
+            className="rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Aplicar
+          </button>
         </div>
         {error && <p className="mt-3 text-sm font-black text-red-600">{error}</p>}
       </section>
@@ -477,7 +503,8 @@ export function StatsManager() {
         </section>
 
         <section className="rounded-3xl bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.06] ring-1 ring-[#25262B]/[0.06]">
-          <h2 className="text-xl font-black">Clientes frecuentes</h2>
+          <h2 className="text-xl font-black">Clientes que más compraron</h2>
+          <p className="mt-1 text-sm font-bold text-[#746f69]">Ordenados por valor de productos en el período.</p>
           <div className="mt-5 space-y-3">
             {stats.topCustomers.length === 0 ? (
               <p className="rounded-2xl bg-[#F8F3E8] p-4 text-sm font-bold text-[#746f69]">

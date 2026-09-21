@@ -955,7 +955,10 @@ export async function POST(request: NextRequest) {
           order.form.deliveryType === "national_shipping"
             ? cleanText(order.form.nationalIdNumber) || null
             : order.form.deliveryReference || null,
+        subtotal_usd: subtotalUsd,
+        delivery_usd: deliveryUsd,
         total_usd: totalUsd,
+        status: "received",
         created_at: persistedOrder.created_at || new Date().toISOString(),
       });
     }

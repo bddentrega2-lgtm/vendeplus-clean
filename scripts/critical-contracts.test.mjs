@@ -809,7 +809,8 @@ test("clientes suscripcion y logros quedan aislados por sede", () => {
   );
 
   assert.match(customers, /const scopedStoreIds = requestedStoreId \? \[requestedStoreId\] : auth\.storeIds/);
-  assert.match(customers, /hydrateCustomersFromExistingOrders\(supabase, scopedStoreIds\)/);
+  assert.match(backfill, /refresh_customer_product_metrics/);
+  assert.match(backfill, /p_store_ids: storeIds/);
   assert.match(backfill, /request\.headers\.get\("x-panel-store-id"\)/);
   assert.match(customerExport, /request\.headers\.get\("x-panel-store-id"\)/);
   assert.match(subscription, /paymentsQuery = paymentsQuery\.eq\("store_id", requestedStoreId\)/);
@@ -843,11 +844,7 @@ test("TDK puede estar activa sin aparecer en Marketplace", () => {
   assert.match(catalog, /row\.marketplace_visible !== false/);
 });
 
-test("super admin calcula crecimiento en PostgreSQL sin descargar pedidos", () => {
-  const migration = readFileSync(
-    new URL("../supabase/migrations/20260821040000_admin_growth_metrics.sql", import.meta.url),
-    "utf8",
-  );
+test("resumen admin pagina pedidos y separa fee generado del cobrado", () => {
   const route = readFileSync(
     new URL("../src/app/api/admin/summary/route.ts", import.meta.url),
     "utf8",
@@ -857,15 +854,29 @@ test("super admin calcula crecimiento en PostgreSQL sin descargar pedidos", () =
     "utf8",
   );
 
-  assert.match(migration, /create or replace function public\.admin_growth_metrics/);
-  assert.match(migration, /stores\.is_test is not true/);
-  assert.match(migration, /where is_cancelled is false/);
-  assert.match(migration, /revoke all on function public\.admin_growth_metrics\(integer\) from public, anon, authenticated/);
-  assert.match(migration, /grant execute on function public\.admin_growth_metrics\(integer\) to service_role/);
-  assert.match(route, /supabase\.rpc\("admin_growth_metrics", \{ p_months: 12 \}\)/);
-  assert.match(dashboard, /Pedidos mes a mes/);
-  assert.match(dashboard, /Ranking de comercios este mes/);
-  assert.match(dashboard, /Pedidos por modalidad este mes/);
+  assert.match(route, /requireAdminAuth\(request\)/);
+  assert.match(route, /store\.is_test !== true/);
+  assert.match(route, /fetchPages/);
+  assert.match(route, /PAGE_SIZE = 500/);
+  assert.match(route, /\.eq\("status", "approved"\)/);
+  assert.match(route, /\.eq\("plan_type", "per_service"\)/);
+  assert.match(route, /buildPeriodSummary/);
+  assert.match(route, /overview: \{/);
+  assert.match(route, /historicalOrders/);
+  assert.match(route, /ordersThisMonth/);
+  assert.match(route, /approvedPaymentsUsd/);
+  for (const label of [
+    "Comercios", "Activos", "Pausados", "Trial", "Vencidos",
+    "Pedidos históricos", "Pedidos este mes", "Productos", "Clientes",
+    "Usuarios", "Pagos aprobados", "Fees pendientes",
+  ]) {
+    assert.ok(dashboard.includes('label: "' + label + '"'), label);
+  }
+  assert.match(dashboard, /Fee generado/);
+  assert.match(dashboard, /Fee cobrado/);
+  assert.match(dashboard, /Comercios por pedidos/);
+  assert.match(dashboard, /Comercios por fee cobrado/);
+  assert.doesNotMatch(dashboard, /MRR|Ventas historicas/);
 });
 
 test("Marketplace usa ofertas ventas y ubicacion reales sin pedir permiso al abrir", () => {
@@ -1209,7 +1220,25 @@ test("estadisticas y clientes usan rangos y resumenes completos", () => {
   assert.match(customersRoute, /select\("id", \{ count: "exact", head: true \}\)/);
   assert.match(customersRoute, /summaryResults/);
   assert.match(customersRoute, /total: globalSummary\.total \|\| 0/);
-  assert.match(customersRoute, /pendingPayment: enriched\.filter/);
+  assert.match(customersRoute, /newCustomers.*\.eq\("orders_count", 1\)/);
+  assert.doesNotMatch(customersRoute, /pendingPayment/);
+});
+
+test("clientes excluyen cancelados y delivery sin recorrer el historico en la web", () => {
+  const migration = read("supabase/migrations/20260921113000_recalculate_customer_product_metrics.sql");
+  const customerMetrics = read("src/lib/customers/upsert-customer-from-order.ts");
+  const customerUi = read("src/components/panel/CustomersManager.tsx");
+  const exportRoute = read("src/app/api/panel/customers/export/route.ts");
+  const ordersRoute = read("src/app/api/panel/orders/route.ts");
+
+  assert.match(migration, /not in \('cancelled', 'canceled', 'cancelado'\)/);
+  assert.match(migration, /orders\.subtotal_usd/);
+  assert.match(migration, /orders\.total_usd, 0\) - coalesce\(orders\.delivery_usd/);
+  assert.match(customerMetrics, /customerOrders = customerOrders\.filter/);
+  assert.match(customerMetrics, /customerProductValueUsd\(order\)/);
+  assert.match(ordersRoute, /recalculateCustomerFromOrder\(supabase, existingOrder\)/);
+  assert.doesNotMatch(customerUi, /Pago pendiente/);
+  assert.match(exportRoute, /offset \+= 500/);
 });
 
 test("Pizza Mia carga promociones idempotentes con ingrediente incluido", () => {

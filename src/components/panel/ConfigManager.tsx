@@ -1439,7 +1439,7 @@ function StoreSettingsCard({
       {store.plan_type === "per_service" ? (
         <section className="mt-5 rounded-2xl bg-[#F8F3E8] p-4">
           <h3 className="text-base font-black text-[#25262B]">Cargo por servicio</h3>
-          <p className="mt-1 text-xs font-bold text-[#746f69]">Cada pedido procesado acumula $0,10 para Somos.</p>
+          <p className="mt-1 text-xs font-bold text-[#746f69]">Cada pedido recibido acumula $0,10 para Somos.</p>
           <p className="mt-3 rounded-xl bg-white p-3 text-sm font-black text-[#2E3A79]">Acumulado del corte: ${Number(store.service_fee_balance?.amount_usd || 0).toFixed(2)} · {Number(store.service_fee_balance?.orders_count || 0)} pedidos</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="text-xs font-black text-[#746f69]">¿Quién asume el cargo?

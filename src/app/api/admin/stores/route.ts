@@ -10,6 +10,7 @@ import {
 } from "@/lib/admin/metrics-fallback";
 import { ensureStoreAccessUser, normalizeAccessEmail } from "@/lib/admin/store-access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { loadServiceFeeBalances, type ServiceFeeBalance } from "@/lib/billing/service-fees";
 
 function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
@@ -24,33 +25,11 @@ function toNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function withSomosBilling(stores: any[], orders: any[]) {
-  const totals = new Map<string, number>();
-  const storesById = new Map(stores.map((store) => [store.id, store]));
-
-  for (const order of orders) {
-    const store = storesById.get(order.store_id);
-    if (!store) continue;
-    if (store.is_test === true) continue;
-
-    const periodStart =
-      store.last_payment_at ||
-      store.subscription_started_at ||
-      store.trial_ends_at ||
-      store.created_at;
-
-    if (periodStart && new Date(order.created_at).getTime() < new Date(periodStart).getTime()) continue;
-
-    totals.set(
-      order.store_id,
-      Number(((totals.get(order.store_id) || 0) + toNumber(order.platform_service_fee_usd)).toFixed(2))
-    );
-  }
-
+function withSomosBilling(stores: any[], balances: Map<string, ServiceFeeBalance>) {
   return stores.map((store) => ({
     ...store,
     somos_billed_usd: store.plan_type === "per_service"
-      ? totals.get(store.id) || 0
+      ? balances.get(store.id)?.amountUsd || 0
       : store.plan_type === "monthly"
         ? toNumber(store.monthly_price_usd)
         : 0,
@@ -78,21 +57,17 @@ export async function GET(request: NextRequest) {
     await requireAdminAuth(request);
     const supabase = createSupabaseAdminClient();
 
-    const [storesResult, metricsResult, serviceFeesResult] =
+    const [storesResult, metricsResult] =
       await Promise.all([
         supabase.from("stores").select(adminStoreSelect).order("name", { ascending: true }),
         supabase.rpc("admin_store_metrics"),
-        supabase
-          .from("orders")
-          .select("store_id, status, created_at, platform_service_fee_usd")
-          .gt("platform_service_fee_usd", 0),
       ]);
 
     if (storesResult.error) throw storesResult.error;
     if (metricsResult.error && !isMissingAdminMetricsRpc(metricsResult.error)) {
       throw metricsResult.error;
     }
-    if (serviceFeesResult.error) throw serviceFeesResult.error;
+    const feeBalances = await loadServiceFeeBalances(supabase, storesResult.data || []);
 
     const metricsRows = metricsResult.error
       ? await loadAdminStoreMetricsFallback(supabase)
@@ -101,7 +76,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       stores: withSomosBilling(
         withCounts(storesResult.data || [], metricsRows),
-        serviceFeesResult.data || []
+        feeBalances
       ),
     });
   } catch (error) {

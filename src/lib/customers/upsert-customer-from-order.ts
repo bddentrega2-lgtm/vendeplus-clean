@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { normalizePhone } from "@/lib/customers/normalize-phone";
+import { customerProductValueUsd, isCustomerOrderCancelled } from "@/lib/customers/customer-metrics";
 
 type OrderForCustomer = {
   id: string;
@@ -10,6 +11,9 @@ type OrderForCustomer = {
   payment_method?: string | null;
   delivery_reference?: string | null;
   total_usd?: number | string | null;
+  subtotal_usd?: number | string | null;
+  delivery_usd?: number | string | null;
+  status?: string | null;
   created_at?: string | null;
 };
 
@@ -67,6 +71,9 @@ async function recalculateCustomer(
       delivery_type,
       payment_method,
       delivery_reference,
+      status,
+      subtotal_usd,
+      delivery_usd,
       total_usd,
       created_at,
       order_items (
@@ -93,6 +100,9 @@ async function recalculateCustomer(
         delivery_type,
         payment_method,
         delivery_reference,
+        status,
+        subtotal_usd,
+        delivery_usd,
         total_usd,
         created_at,
         order_items (
@@ -109,27 +119,25 @@ async function recalculateCustomer(
     customerOrders = fallbackResult.data || [];
   }
 
-  if (!customerOrders.length) {
-    customerOrders = [fallbackOrder];
-  }
+  customerOrders = customerOrders.filter((order) => !isCustomerOrderCancelled(order.status));
 
   const ordersCount = customerOrders.length;
   const totalSpentUsd = customerOrders.reduce(
-    (sum: number, order: any) => sum + toNumber(order.total_usd),
+    (sum: number, order: any) => sum + customerProductValueUsd(order),
     0
   );
-  const lastOrder = customerOrders[0] || fallbackOrder;
+  const lastOrder = customerOrders[0] || null;
 
   const { error: updateError } = await supabase
     .from("customers")
     .update({
-      name: lastOrder.customer_name || fallbackOrder.customer_name || "Cliente",
-      phone: lastOrder.customer_phone || fallbackOrder.customer_phone,
+      name: lastOrder?.customer_name || fallbackOrder.customer_name || "Cliente",
+      phone: lastOrder?.customer_phone || fallbackOrder.customer_phone,
       orders_count: ordersCount,
       total_spent_usd: totalSpentUsd,
       average_ticket_usd: ordersCount ? totalSpentUsd / ordersCount : 0,
-      last_order_id: lastOrder.id || fallbackOrder.id,
-      last_order_at: lastOrder.created_at || fallbackOrder.created_at || new Date().toISOString(),
+      last_order_id: lastOrder?.id || null,
+      last_order_at: lastOrder?.created_at || null,
       favorite_products: summarizeFavoriteProducts(customerOrders),
       frequent_address: mostFrequent(customerOrders.map((order: any) => order.delivery_reference)),
       preferred_payment_method: mostFrequent(
@@ -205,6 +213,16 @@ export async function upsertCustomerFromOrder(
   await recalculateCustomer(supabase, customerId, order.store_id, phoneNormalized, order);
 
   return customerId;
+}
+
+export async function recalculateCustomerFromOrder(
+  supabase: SupabaseClient<any, any, any>,
+  order: OrderForCustomer & { customer_id?: string | null; customer_phone_normalized?: string | null }
+) {
+  const customerId = String(order.customer_id || "").trim();
+  const phoneNormalized = String(order.customer_phone_normalized || normalizePhone(order.customer_phone)).trim();
+  if (!customerId || !order.store_id || !phoneNormalized) return;
+  await recalculateCustomer(supabase, customerId, order.store_id, phoneNormalized, order);
 }
 
 export async function safeUpsertCustomerFromOrder(

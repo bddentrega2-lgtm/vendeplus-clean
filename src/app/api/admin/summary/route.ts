@@ -1,236 +1,138 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth, adminErrorResponse } from "@/lib/admin/access";
-import {
-  isMissingAdminMetricsRpc,
-  loadAdminStoreMetricsFallback,
-  loadAdminSummaryMetricsFallback,
-} from "@/lib/admin/metrics-fallback";
+import { isMissingAdminMetricsRpc, loadAdminStoreMetricsFallback } from "@/lib/admin/metrics-fallback";
+import { buildPeriodSummary, getSummaryPeriod, isSummaryStoreExpired } from "@/lib/admin/summary-period";
+import { loadServiceFeeBalances } from "@/lib/billing/service-fees";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getPlan } from "@/lib/plans";
-import { isDateBeforeToday } from "@/lib/subscription-status";
 
-function toNumber(value: unknown) {
-  const parsed = Number(value || 0);
-  return Number.isFinite(parsed) ? parsed : 0;
+const PAGE_SIZE = 500;
+
+async function fetchPages(buildQuery: () => any) {
+  const rows: any[] = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const { data, error } = await buildQuery().range(offset, offset + PAGE_SIZE - 1);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if ((data || []).length < PAGE_SIZE) return rows;
+  }
 }
 
-function getPendingServiceFees(stores: any[], orders: any[]) {
-  const storesById = new Map(
-    stores
-      .filter((store) => store.is_test !== true)
-      .map((store) => [store.id, store])
-  );
+async function countRows(query: any) {
+  const { count, error } = await query;
+  if (error) throw error;
+  return count || 0;
+}
 
-  return Number(
-    orders
-      .reduce((sum, order) => {
-        const store = storesById.get(order.store_id);
-        if (!store || store.plan_type !== "per_service") {
-          return sum;
-        }
-        const periodStart =
-          store.last_payment_at ||
-          store.subscription_started_at ||
-          store.trial_ends_at ||
-          store.created_at;
-        if (periodStart && new Date(order.created_at) < new Date(periodStart)) return sum;
-        return sum + toNumber(order.platform_service_fee_usd);
-      }, 0)
-      .toFixed(2)
-  );
+async function loadStoreMetrics(supabase: ReturnType<typeof createSupabaseAdminClient>) {
+  try {
+    return await fetchPages(() => supabase.rpc("admin_store_metrics").order("store_id", { ascending: true }));
+  } catch (error) {
+    if (!isMissingAdminMetricsRpc(error)) throw error;
+    return loadAdminStoreMetricsFallback(supabase);
+  }
 }
 
 export async function GET(request: NextRequest) {
   try {
     const auth = await requireAdminAuth(request);
     const supabase = createSupabaseAdminClient();
+    const period = getSummaryPeriod(
+      request.nextUrl.searchParams.get("period"),
+      request.nextUrl.searchParams.get("anchor")
+    );
 
-    const [
-      storesResult,
-      recentStoresResult,
-      summaryMetricsResult,
-      storeMetricsResult,
-      financialMetricsResult,
-      growthMetricsResult,
-    ] = await Promise.all([
-      supabase.from("stores").select(`
-        id,
-        slug,
-        name,
-        business_type,
-        whatsapp,
-        is_active,
-        plan_type,
-        trial_ends_at,
-        subscription_status,
-        next_payment_due_at,
-        monthly_price_usd,
-        payment_methods,
-        accepts_delivery
-        ,is_test
-        ,subscription_started_at
-        ,last_payment_at
-        ,created_at
-      `),
-      supabase
-        .from("stores")
-        .select("id, slug, name, business_type, whatsapp, is_active, created_at, plan_type, trial_ends_at, subscription_status")
-        .order("created_at", { ascending: false })
-        .limit(6),
-      supabase.rpc("admin_summary_metrics").maybeSingle(),
-      supabase.rpc("admin_store_metrics"),
-      supabase.rpc("admin_financial_metrics").maybeSingle(),
-      supabase.rpc("admin_growth_metrics", { p_months: 12 }),
+    const stores = await fetchPages(() => supabase.from("stores").select(
+      "id, slug, name, business_type, whatsapp, is_active, is_test, plan_type, trial_ends_at, subscription_status, subscription_ends_at, next_payment_due_at, payment_methods, subscription_started_at, last_payment_at, created_at"
+    ).order("id", { ascending: true }));
+    const realStores = stores.filter((store) => store.is_test !== true);
+    const storeIds = realStores.map((store) => store.id);
+    const currentMonth = getSummaryPeriod("month", null);
+    const [orders, payments, approvedPayments, feeBalances, storeMetricsRows, productCount, customerCount, assignmentCount, historicalOrders, ordersThisMonth] = await Promise.all([
+      storeIds.length ? fetchPages(() => supabase.from("orders")
+        .select("id, store_id, created_at, status, platform_service_fee_usd, customer_phone_normalized, customer_id")
+        .in("store_id", storeIds)
+        .gte("created_at", period.startIso)
+        .lt("created_at", period.endIso)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })) : [],
+      storeIds.length ? fetchPages(() => supabase.from("store_subscription_payments")
+        .select("id, store_id, amount_usd")
+        .in("store_id", storeIds)
+        .eq("status", "approved")
+        .eq("plan_type", "per_service")
+        .gte("reviewed_at", period.startIso)
+        .lt("reviewed_at", period.endIso)
+        .order("reviewed_at", { ascending: true })
+        .order("id", { ascending: true })) : [],
+      storeIds.length ? fetchPages(() => supabase.from("store_subscription_payments")
+        .select("id, amount_usd")
+        .in("store_id", storeIds)
+        .eq("status", "approved")
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })) : [],
+      loadServiceFeeBalances(supabase, stores),
+      loadStoreMetrics(supabase),
+      storeIds.length ? countRows(supabase.from("products").select("id", { count: "exact", head: true }).in("store_id", storeIds)) : 0,
+      storeIds.length ? countRows(supabase.from("customers").select("id", { count: "exact", head: true }).in("store_id", storeIds)) : 0,
+      storeIds.length ? countRows(supabase.from("store_users").select("id", { count: "exact", head: true }).in("store_id", storeIds)) : 0,
+      storeIds.length ? countRows(supabase.from("orders").select("id", { count: "exact", head: true }).in("store_id", storeIds)) : 0,
+      storeIds.length ? countRows(supabase.from("orders").select("id", { count: "exact", head: true })
+        .in("store_id", storeIds).gte("created_at", currentMonth.startIso).lt("created_at", currentMonth.endIso)) : 0,
     ]);
 
-    if (storesResult.error) throw storesResult.error;
-    if (recentStoresResult.error) throw recentStoresResult.error;
-    if (summaryMetricsResult.error && !isMissingAdminMetricsRpc(summaryMetricsResult.error)) {
-      throw summaryMetricsResult.error;
-    }
-    if (storeMetricsResult.error && !isMissingAdminMetricsRpc(storeMetricsResult.error)) {
-      throw storeMetricsResult.error;
-    }
-    if (growthMetricsResult.error && !isMissingAdminMetricsRpc(growthMetricsResult.error)) {
-      throw growthMetricsResult.error;
-    }
-    const stores = storesResult.data || [];
-    let financialMetrics = financialMetricsResult.error
-      ? null
-      : (financialMetricsResult.data as Record<string, unknown> | null);
-
-    if (!financialMetrics) {
-      const [approvedPaymentsResult, serviceFeesResult] = await Promise.all([
-        supabase
-          .from("store_subscription_payments")
-          .select("amount_usd")
-          .eq("status", "approved")
-          .limit(10000),
-        supabase
-          .from("orders")
-          .select("store_id, status, created_at, platform_service_fee_usd")
-          .gt("platform_service_fee_usd", 0)
-          .limit(10000),
-      ]);
-      if (approvedPaymentsResult.error) throw approvedPaymentsResult.error;
-      if (serviceFeesResult.error) throw serviceFeesResult.error;
-
-      financialMetrics = {
-        approved_payments_usd: Number(
-          (approvedPaymentsResult.data || [])
-            .reduce((sum: number, payment: any) => sum + toNumber(payment.amount_usd), 0)
-            .toFixed(2)
-        ),
-        pending_service_fees_usd: getPendingServiceFees(
-          stores,
-          serviceFeesResult.data || []
-        ),
-      };
-    }
-    const summaryMetrics = (summaryMetricsResult.error
-      ? await loadAdminSummaryMetricsFallback(supabase)
-      : summaryMetricsResult.data || {}) as Record<string, unknown>;
-    const storeMetricsRows = storeMetricsResult.error
-      ? await loadAdminStoreMetricsFallback(supabase)
-      : storeMetricsResult.data || [];
-    const storeMetrics = new Map(
-      storeMetricsRows.map((entry: any) => [entry.store_id, entry])
+    const periodSummary = buildPeriodSummary(
+      period,
+      orders,
+      payments,
+      new Map(realStores.map((store) => [store.id, store.name]))
     );
-    const now = Date.now();
-    const threeDaysFromNow = now + 3 * 24 * 60 * 60 * 1000;
-
-    const alerts = stores.flatMap((store: any) => {
-      const storeAlerts: Array<{ type: string; storeId: string; storeName: string; message: string }> = [];
-      const trialEndsAt = store.trial_ends_at ? new Date(store.trial_ends_at).getTime() : null;
-      const paymentDueAt = store.next_payment_due_at || null;
-
-      if (trialEndsAt && trialEndsAt >= now && trialEndsAt <= threeDaysFromNow) {
-        storeAlerts.push({
-          type: "trial_ending",
-          storeId: store.id,
-          storeName: store.name,
-          message: "Trial vence en 3 dias o menos.",
-        });
+    const metricsByStore = new Map(storeMetricsRows.map((row: any) => [row.store_id, row]));
+    const now = new Date();
+    const threeDaysFromNow = now.getTime() + 3 * 24 * 60 * 60 * 1000;
+    const alerts = realStores.flatMap((store) => {
+      const entries: Array<{ type: string; storeId: string; storeName: string; message: string }> = [];
+      const trialEnd = store.trial_ends_at ? new Date(store.trial_ends_at).getTime() : null;
+      if (store.plan_type === "trial" && trialEnd && trialEnd >= now.getTime() && trialEnd <= threeDaysFromNow) {
+        entries.push({ type: "trial_ending", storeId: store.id, storeName: store.name, message: "Trial vence en 3 dias o menos." });
       }
-      if (
-        store.subscription_status === "expired" ||
-        store.subscription_status === "past_due" ||
-        isDateBeforeToday(paymentDueAt, new Date(now))
-      ) {
-        storeAlerts.push({
-          type: "expired",
-          storeId: store.id,
-          storeName: store.name,
-          message: "Cuenta vencida o pago pendiente.",
-        });
+      if (isSummaryStoreExpired(store, now)) {
+        entries.push({ type: "expired", storeId: store.id, storeName: store.name, message: "Cuenta vencida o pago pendiente." });
       }
-      if (!toNumber((storeMetrics.get(store.id) as any)?.active_product_count)) {
-        storeAlerts.push({
-          type: "no_products",
-          storeId: store.id,
-          storeName: store.name,
-          message: "No tiene productos activos.",
-        });
+      if (!Number((metricsByStore.get(store.id) as any)?.active_product_count || 0)) {
+        entries.push({ type: "no_products", storeId: store.id, storeName: store.name, message: "No tiene productos activos." });
       }
       if (!Array.isArray(store.payment_methods) || store.payment_methods.length === 0) {
-        storeAlerts.push({
-          type: "no_payments",
-          storeId: store.id,
-          storeName: store.name,
-          message: "No tiene metodos de pago configurados.",
-        });
+        entries.push({ type: "no_payments", storeId: store.id, storeName: store.name, message: "No tiene metodos de pago configurados." });
       }
       if (!store.whatsapp) {
-        storeAlerts.push({
-          type: "no_whatsapp",
-          storeId: store.id,
-          storeName: store.name,
-          message: "No tiene WhatsApp receptor.",
-        });
+        entries.push({ type: "no_whatsapp", storeId: store.id, storeName: store.name, message: "No tiene WhatsApp receptor." });
       }
-
-      return storeAlerts;
+      return entries;
     });
 
     return NextResponse.json({
       summary: {
-        totalStores: stores.length,
-        activeStores: stores.filter((store: any) => store.is_active !== false).length,
-        inactiveStores: stores.filter((store: any) => store.is_active === false).length,
-        trialStores: stores.filter((store: any) => store.plan_type === "trial" || store.subscription_status === "trial").length,
-        expiredStores: stores.filter(
-          (store: any) =>
-            store.subscription_status === "expired" ||
-            store.subscription_status === "past_due" ||
-            isDateBeforeToday(store.next_payment_due_at || store.trial_ends_at)
-        ).length,
-        totalOrders: toNumber(summaryMetrics.total_orders),
-        ordersToday: toNumber(summaryMetrics.orders_today),
-        ordersLast7Days: toNumber(summaryMetrics.orders_last_7_days),
-        totalProducts: toNumber(summaryMetrics.total_products),
-        totalAssignments: toNumber(summaryMetrics.total_assignments),
-        totalCustomers: toNumber(summaryMetrics.total_customers),
-        estimatedMrrUsd: stores.reduce((sum: number, store: any) => {
-          if (
-            store.is_active === false ||
-            ["cancelled", "paused", "expired", "past_due"].includes(store.subscription_status) ||
-            isDateBeforeToday(store.next_payment_due_at || store.trial_ends_at)
-          ) return sum;
-          const configuredPrice = Number(store.monthly_price_usd || 0);
-          return sum + (configuredPrice || getPlan(store.plan_type).priceUsd);
-        }, 0),
-        revenueUsd: toNumber(summaryMetrics.revenue_usd),
-        approvedPaymentsUsd: toNumber(financialMetrics.approved_payments_usd),
-        pendingServiceFeesUsd: toNumber(financialMetrics.pending_service_fees_usd),
-        attentionStores: new Set(alerts.map((alert) => alert.storeId)).size,
+        ...periodSummary,
+        overview: {
+          totalStores: realStores.length,
+          activeStores: realStores.filter((store) => store.is_active !== false).length,
+          inactiveStores: realStores.filter((store) => store.is_active === false).length,
+          trialStores: realStores.filter((store) => store.plan_type === "trial" || store.subscription_status === "trial").length,
+          expiredStores: realStores.filter((store) => isSummaryStoreExpired(store, now)).length,
+          historicalOrders,
+          ordersThisMonth,
+          totalProducts: productCount,
+          totalCustomers: customerCount,
+          totalAssignments: assignmentCount,
+          approvedPaymentsUsd: Number((approvedPayments.reduce((sum, payment) =>
+            sum + Math.round(Number(payment.amount_usd || 0) * 100), 0) / 100).toFixed(2)),
+          pendingFeeUsd: Number([...feeBalances.values()].reduce((sum, balance) => sum + balance.amountUsd, 0).toFixed(2)),
+          attentionStores: new Set(alerts.map((alert) => alert.storeId)).size,
+        },
       },
-      recentStores: recentStoresResult.data || [],
+      recentStores: [...realStores].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 6),
       alerts: alerts.slice(0, 12),
-      growth: growthMetricsResult.error ? null : growthMetricsResult.data,
-      auth: {
-        mode: auth.mode,
-        email: auth.email || null,
-      },
+      auth: { mode: auth.mode, email: auth.email || null },
     });
   } catch (error) {
     return adminErrorResponse(error, "Error cargando resumen admin.");

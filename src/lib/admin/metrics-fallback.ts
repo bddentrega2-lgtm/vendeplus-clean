@@ -18,6 +18,16 @@ function incrementCount(map: Map<string, number>, key?: string | null) {
   map.set(key, (map.get(key) || 0) + 1);
 }
 
+async function fetchPaged(supabase: SupabaseLike, table: string, columns: string) {
+  const rows: any[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const result = await supabase.from(table).select(columns).order("id").range(offset, offset + 499);
+    if (result.error) throw result.error;
+    rows.push(...(result.data || []));
+    if ((result.data || []).length < 500) return rows;
+  }
+}
+
 export async function loadAdminSummaryMetricsFallback(supabase: SupabaseLike) {
   const [ordersResult, productsResult, storeUsersResult, customersResult] = await Promise.all([
     supabase
@@ -70,15 +80,11 @@ export async function loadAdminSummaryMetricsFallback(supabase: SupabaseLike) {
 }
 
 export async function loadAdminStoreMetricsFallback(supabase: SupabaseLike) {
-  const [productsResult, ordersResult, usersResult] = await Promise.all([
-    supabase.from("products").select("id, store_id, is_available").limit(5000),
-    supabase.from("orders").select("id, store_id, created_at").limit(10000),
-    supabase.from("store_users").select("id, store_id").limit(5000),
+  const [products, orders, users] = await Promise.all([
+    fetchPaged(supabase, "products", "id, store_id, is_available"),
+    fetchPaged(supabase, "orders", "id, store_id, created_at, status"),
+    fetchPaged(supabase, "store_users", "id, store_id"),
   ]);
-
-  if (productsResult.error) throw productsResult.error;
-  if (ordersResult.error) throw ordersResult.error;
-  if (usersResult.error) throw usersResult.error;
 
   const productCounts = new Map<string, number>();
   const activeProductCounts = new Map<string, number>();
@@ -88,13 +94,14 @@ export async function loadAdminStoreMetricsFallback(supabase: SupabaseLike) {
   const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
   const storeIds = new Set<string>();
 
-  for (const product of productsResult.data || []) {
+  for (const product of products) {
     storeIds.add(product.store_id);
     incrementCount(productCounts, product.store_id);
     if (product.is_available !== false) incrementCount(activeProductCounts, product.store_id);
   }
 
-  for (const order of ordersResult.data || []) {
+  for (const order of orders) {
+    if (["cancelled", "canceled", "cancelado"].includes(String(order.status || "").toLowerCase())) continue;
     storeIds.add(order.store_id);
     incrementCount(orderCounts, order.store_id);
     if (new Date(order.created_at).getTime() >= thirtyDaysAgo) {
@@ -102,7 +109,7 @@ export async function loadAdminStoreMetricsFallback(supabase: SupabaseLike) {
     }
   }
 
-  for (const user of usersResult.data || []) {
+  for (const user of users) {
     storeIds.add(user.store_id);
     incrementCount(userCounts, user.store_id);
   }

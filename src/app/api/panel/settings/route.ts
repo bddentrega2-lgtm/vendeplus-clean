@@ -12,6 +12,7 @@ import { loadTransportAgencyDeliverySettings } from "@/lib/transport";
 import { assertAchievementFeature, loadStoreAchievements } from "@/lib/achievements";
 import { normalizeBusinessType } from "@/lib/business-types";
 import { revalidatePath } from "next/cache";
+import { loadServiceFeeBalances, type ServiceFeeStore } from "@/lib/billing/service-fees";
 
 function optionalNumber(value: unknown) {
   if (value === "" || value === null || value === undefined) return null;
@@ -266,6 +267,11 @@ const storeSelect = `
   is_active
   ,service_fee_payer
   ,service_fee_billing_cycle
+  ,last_payment_at
+  ,subscription_started_at
+  ,trial_ends_at
+  ,created_at
+  ,is_test
 `;
 
 const baseStoreSelect = `
@@ -297,7 +303,11 @@ const baseStoreSelect = `
   subscription_ends_at,
   next_payment_due_at,
   monthly_price_usd,
-  plan_type
+  plan_type,
+  last_payment_at,
+  subscription_started_at,
+  created_at,
+  is_test
 `;
 
 function addPaymentDetailsFallback(store: any) {
@@ -365,14 +375,17 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error;
 
+    const feeBalances = await loadServiceFeeBalances(supabase, (data || []) as unknown as ServiceFeeStore[]);
     const storesWithFees = await Promise.all((data || []).map(async (store: any) => {
-      const [achievementState, balanceResult] = await Promise.all([
-        loadStoreAchievements(supabase, store.id),
-        store.plan_type === "per_service"
-          ? supabase.rpc("store_service_fee_balance", { p_store_id: store.id }).maybeSingle()
-          : Promise.resolve({ data: null }),
-      ]);
-      return { ...store, service_fee_balance: balanceResult.data || null, achievement_features: achievementState.features };
+      const achievementState = await loadStoreAchievements(supabase, store.id);
+      const balance = feeBalances.get(store.id);
+      return {
+        ...store,
+        service_fee_balance: balance
+          ? { period_start: balance.periodStart, orders_count: balance.serviceCount, amount_usd: balance.amountUsd }
+          : null,
+        achievement_features: achievementState.features,
+      };
     }));
     let catalogLayoutAvailable = true;
     let storesWithLayout = storesWithFees;

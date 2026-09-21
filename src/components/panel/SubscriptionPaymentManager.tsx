@@ -375,7 +375,7 @@ export function SubscriptionPaymentManager() {
               Liquidacion completa del corte. No se aceptan abonos parciales.
             </p>
             <p className="mt-1 text-xs font-bold text-[#746f69]">
-              Cuando el pago sea aprobado por admin, el acumulado vuelve a cero y comienza un nuevo mes de corte.
+              Al aprobarse el pago se cierra el corte enviado. Los pedidos recibidos después de enviarlo forman un saldo nuevo y pueden aparecer de inmediato.
             </p>
           </section>
         ) : null}
