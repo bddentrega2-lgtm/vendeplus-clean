@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getPublicStoreBySlug } from "@/lib/supabase/catalog";
 import {
   isPrepaidTablePaymentMethod,
+  availableTablePaymentMethods,
 } from "@/lib/table-orders";
 import { getStoreIdByTableOrderToken } from "@/lib/server/table-order-tokens";
 
@@ -23,7 +24,7 @@ export default async function TableOrderPage({
   const [{ data: tableStore }, store] = await Promise.all([
     supabase
       .from("stores")
-      .select("id, table_orders_access_enabled, table_orders_enabled, table_order_fulfillment_mode, payment_methods, table_payment_methods")
+      .select("id, table_orders_access_enabled, table_orders_enabled, table_order_fulfillment_mode, payment_methods, table_payment_methods, table_waiter_calls_enabled, table_waiter_call_label")
       .eq("id", tableStoreId)
       .eq("slug", storeSlug)
       .eq("is_active", true)
@@ -42,9 +43,7 @@ export default async function TableOrderPage({
     .order("name", { ascending: true });
   if (error) throw error;
 
-  const storeMethods = Array.isArray(tableStore.payment_methods)
-    ? tableStore.payment_methods
-    : [];
+  const storeMethods = availableTablePaymentMethods(tableStore.payment_methods);
   const selectedMethods = Array.isArray(tableStore.table_payment_methods)
     ? tableStore.table_payment_methods
     : [];
@@ -59,6 +58,8 @@ export default async function TableOrderPage({
       tables={tables || []}
       enabled={tableStore.table_orders_access_enabled === true && tableStore.table_orders_enabled === true}
       paymentMethods={paymentMethods}
+      waiterCallsEnabled={tableStore.table_waiter_calls_enabled === true}
+      waiterCallLabel={tableStore.table_waiter_call_label}
       fulfillmentMode={tableStore.table_order_fulfillment_mode === "counter_pickup" ? "counter_pickup" : "table_service"}
     />
   );

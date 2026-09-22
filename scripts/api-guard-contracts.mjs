@@ -39,6 +39,11 @@ const PUBLIC_SERVICE_ROLE_ROUTES = {
   "src/app/api/table-orders/status/route.ts": [
     /getStoreIdByTableOrderToken/,
   ],
+  "src/app/api/table-orders/waiter/route.ts": [
+    /getStoreIdByTableOrderToken/,
+    /checkDistributedRateLimit/,
+    /request_table_waiter/,
+  ],
   "src/app/api/transport/agencies/apply/route.ts": [
     /checkDistributedRateLimit/,
     /captchaToken/,

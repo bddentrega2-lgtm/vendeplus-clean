@@ -16,6 +16,7 @@ import { getVenezuelaRelativeRange } from "@/lib/time/venezuela";
 import { getStoreServiceFeeUsd } from "@/lib/plans";
 import { createOrderAtomic } from "@/lib/server/create-order-atomic";
 import { cancelOrderWithInventory } from "@/lib/server/cancel-order-with-inventory";
+import { tableCancellationReason } from "@/lib/table-orders";
 
 const allowedStatuses = [
   "received",
@@ -52,6 +53,9 @@ const ordersSelect = `
   payment_notes,
   payment_bank,
   payment_verified_by,
+  table_cancellation_reason,
+  table_cancelled_at,
+  table_cancelled_by,
   subtotal_usd,
   delivery_usd,
   delivery_provider,
@@ -1095,8 +1099,14 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
+  const startedAt = performance.now();
   try {
     const auth = await requirePanelAuth(request);
+    const authDuration = performance.now() - startedAt;
+    const respond = (order: unknown) => NextResponse.json({ order }, { headers: {
+      "Cache-Control": "private, no-store",
+      "Server-Timing": `auth;dur=${authDuration.toFixed(1)}, total;dur=${(performance.now() - startedAt).toFixed(1)}`,
+    } });
     const body = await request.json();
     const id = body.id;
     const status = body.status;
@@ -1113,8 +1123,9 @@ export async function PATCH(request: NextRequest) {
 
     const { data: existingOrder, error: existingError } = await supabase
       .from("orders")
-      .select("id, store_id, customer_id, customer_name, customer_phone, customer_phone_normalized, status, delivery_status, transport_agency_status, created_at")
+      .select("id, store_id, customer_id, customer_name, customer_phone, customer_phone_normalized, status, delivery_type, delivery_status, transport_agency_status, created_at, active_transport_orders:transport_orders(id)")
       .eq("id", id)
+      .not("active_transport_orders.status", "in", "(agency_rejected,cancelled,delivery_failed)")
       .single();
 
     if (existingError) throw existingError;
@@ -1125,16 +1136,7 @@ export async function PATCH(request: NextRequest) {
       "No tienes permiso para operar este pedido."
     );
 
-    const { data: activeTransportOrder, error: activeTransportError } = await supabase
-      .from("transport_orders")
-      .select("id, status")
-      .eq("order_id", id)
-      .not("status", "in", "(agency_rejected,cancelled,delivery_failed)")
-      .maybeSingle();
-
-    if (activeTransportError) throw activeTransportError;
-
-    if (activeTransportOrder?.id) {
+    if (existingOrder.active_transport_orders?.length) {
       return badRequest("La empresa delivery ya recibio este pedido. El estado operativo lo actualiza la empresa delivery.");
     }
 
@@ -1143,6 +1145,27 @@ export async function PATCH(request: NextRequest) {
       (await isOrderDeliveredByExternalDelivery(supabase, existingOrder))
     ) {
       return badRequest("No puedes cancelar un pedido ya entregado por la empresa delivery.");
+    }
+
+    if (existingOrder.delivery_type === "table") {
+      const reason = tableCancellationReason(body.cancellationReason, body.cancellationDetail);
+      if (status === "cancelled" && !reason) return badRequest("Selecciona el motivo de cancelación.");
+      const result = await supabase.rpc("update_table_order_status_v2", {
+        p_store_id: existingOrder.store_id,
+        p_order_id: id,
+        p_expected_status: body.expectedStatus || existingOrder.status,
+        p_status: status,
+        p_reason: reason,
+        p_actor: auth.userId || "Acceso del comercio",
+      });
+      if (result.error) {
+        if (["P0001", "P0002"].includes(result.error.code)) return badRequest(result.error.message);
+        throw result.error;
+      }
+      if (existingOrder.customer_id && isCustomerOrderCancelled(existingOrder.status) !== isCustomerOrderCancelled(status)) {
+        await recalculateCustomerFromOrder(supabase, existingOrder);
+      }
+      return respond(Array.isArray(result.data) ? result.data[0] : result.data);
     }
 
     const data = status === "cancelled"
@@ -1170,7 +1193,7 @@ export async function PATCH(request: NextRequest) {
       await recalculateCustomerFromOrder(supabase, existingOrder);
     }
 
-    return NextResponse.json({ order: data });
+    return respond(data);
   } catch (error: any) {
     return panelErrorResponse(error, "Error actualizando pedido.");
   }

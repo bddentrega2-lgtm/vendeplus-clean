@@ -7,6 +7,9 @@ import type { SavedOrder, Store } from "@/types";
 import { formatBaseCurrency, formatBs } from "@/lib/currency";
 import { buildPaymentInfo } from "@/lib/payment-display";
 import { getOrderKey } from "@/components/public/CheckoutForm";
+import { getTablePaymentInstructions, isInPersonTablePaymentMethod } from "@/lib/table-orders";
+import { paymentStatusLabels, type PaymentStatus } from "@/lib/payments";
+import { WaiterCallButton } from "@/components/public/WaiterCallButton";
 
 export function ConfirmationClient({ store }: { store: Store }) {
   const [order, setOrder] = useState<SavedOrder | null>(null);
@@ -16,6 +19,7 @@ export function ConfirmationClient({ store }: { store: Store }) {
   const [paymentCopyPreview, setPaymentCopyPreview] = useState("");
   const [paymentCopyError, setPaymentCopyError] = useState("");
   const [tableStatus, setTableStatus] = useState("received");
+  const [tablePaymentStatus, setTablePaymentStatus] = useState("pending");
   const showPricesInBs = store.showPricesInBs !== false;
   const baseCurrency = store.baseCurrency || "USD";
 
@@ -33,7 +37,11 @@ export function ConfirmationClient({ store }: { store: Store }) {
     if (!order?.databaseId || !order.tableOrder?.storeToken) return;
 
     let active = true;
+    let closed = false;
+    let busy = false;
     const refreshStatus = async () => {
+      if (closed || busy || document.visibilityState !== "visible") return;
+      busy = true;
       try {
         const params = new URLSearchParams({
           orderId: order.databaseId || "",
@@ -44,17 +52,23 @@ export function ConfirmationClient({ store }: { store: Store }) {
         });
         if (!response.ok) return;
         const payload = await response.json();
-        if (active && payload.order?.status) setTableStatus(payload.order.status);
+        if (active && payload.order?.status) {
+          setTableStatus(payload.order.status);
+          setTablePaymentStatus(payload.order.payment_status || "pending");
+          closed = ["completed", "cancelled"].includes(payload.order.status);
+        }
       } catch {
         // The last known state remains visible during a temporary connection issue.
-      }
+      } finally { busy = false; }
     };
 
     void refreshStatus();
     const intervalId = window.setInterval(refreshStatus, 5000);
+    document.addEventListener("visibilitychange", refreshStatus);
     return () => {
       active = false;
       window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", refreshStatus);
     };
   }, [order]);
 
@@ -160,13 +174,19 @@ export function ConfirmationClient({ store }: { store: Store }) {
                   <p className="mt-3 rounded-xl bg-red-50 p-2 text-center text-xs font-black text-red-700">
                     El pedido fue cancelado. Consulta al personal.
                   </p>
-                ) : tableStatus === "ready" || tableStatus === "completed" ? (
+                ) : tableStatus === "completed" ? (
+                  <p className="mt-3 text-center text-sm font-black text-green-700">Pedido entregado.</p>
+                ) : tableStatus === "ready" || tableStatus === "delivering" ? (
                   <p className="mt-3 rounded-xl bg-green-50 p-3 text-center text-sm font-black text-green-700">
                     {order.tableOrder.fulfillmentMode === "counter_pickup"
                       ? "Tu pedido está listo. Retíralo en la barra."
                       : `Tu pedido está listo. Te lo llevaremos a ${order.tableOrder.tableName}.`}
                   </p>
                 ) : null}
+                <p className="mt-3 text-sm font-bold">Pago: {paymentStatusLabels[tablePaymentStatus as PaymentStatus] || "Pendiente"}</p>
+                {!["completed", "cancelled"].includes(tableStatus) && tablePaymentStatus !== "verified" && isInPersonTablePaymentMethod(order.form.paymentMethod)
+                  ? <p className="mt-2 text-sm font-bold">{getTablePaymentInstructions(order.form.paymentMethod, order.tableOrder.fulfillmentMode)}</p> : null}
+                {tableStatus !== "cancelled" ? <WaiterCallButton context={order.tableOrder} /> : null}
               </div>
             ) : null}
 

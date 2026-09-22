@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import NextImage from "next/image";
 import {
   CheckCircle2,
   CircleDollarSign,
@@ -26,6 +25,8 @@ import {
 } from "lucide-react";
 import { formatBs, formatUsd } from "@/lib/currency";
 import { getSuggestedPaymentCurrency } from "@/lib/payments";
+import { useTableCancellation } from "@/components/panel/orders/use-table-cancellation";
+import { PaymentReviewDialog } from "@/components/panel/orders/PaymentReviewDialog";
 import {
   getPanelAccessToken,
   getSavedPanelPin,
@@ -88,7 +89,7 @@ function getCompactStoreName(name?: string | null) {
   return branchName || fullName;
 }
 
-function OrderDetail({
+export function OrderDetail({
   order,
   pin,
   onClose,
@@ -100,12 +101,14 @@ function OrderDetail({
   onUpdated: () => void;
 }) {
   const [status, setStatus] = useState(order.status);
+  const { requestCancellation, cancellationDialog } = useTableCancellation();
+  const [statusError, setStatusError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const [paymentCopied, setPaymentCopied] = useState(false);
   const [isSavingPayment, setIsSavingPayment] = useState(false);
   const [paymentMessage, setPaymentMessage] = useState("");
-  const [isOpeningReceipt, setIsOpeningReceipt] = useState(false);
+  const [isReviewingPayment, setIsReviewingPayment] = useState(false);
   const [paymentDraft, setPaymentDraft] = useState({
     paymentStatus: getOrderPaymentStatus(order),
     paymentReference: order.payment_reference || "",
@@ -116,6 +119,10 @@ function OrderDetail({
     paymentNotes: order.payment_notes || "",
   });
   const gpsUrl = getGpsUrl(order);
+  useEffect(() => { setStatus(order.status); }, [order.status]);
+  useEffect(() => {
+    setPaymentDraft((current) => ({ ...current, paymentStatus: order.payment_status || "pending" }));
+  }, [order.payment_status]);
   const routeUrl = getRouteUrl(order);
   const requestReferenceUrl = getWhatsappMessageUrl(
     order.customer_phone,
@@ -128,8 +135,11 @@ function OrderDetail({
     : null;
 
   async function updateStatus(nextStatus: string) {
-    setStatus(nextStatus);
+    const cancellation = order.delivery_type === "table" && nextStatus === "cancelled"
+      ? await requestCancellation() : undefined;
+    if (cancellation === null) return;
     setIsSaving(true);
+    setStatusError("");
 
     try {
       await apiRequest(pin, "/api/panel/orders", {
@@ -137,10 +147,15 @@ function OrderDetail({
         body: JSON.stringify({
           id: order.id,
           status: nextStatus,
+          expectedStatus: status,
+          ...cancellation,
         }),
       });
 
+      setStatus(nextStatus);
       onUpdated();
+    } catch (error) {
+      setStatusError(error instanceof Error ? error.message : "No se pudo actualizar el pedido.");
     } finally {
       setIsSaving(false);
     }
@@ -188,30 +203,15 @@ function OrderDetail({
     }
   }
 
-  async function openPaymentReceipt() {
-    const receiptWindow = window.open("about:blank", "_blank");
-    setIsOpeningReceipt(true);
-    setPaymentMessage("");
-    try {
-      const data = await apiRequest(pin, `/api/panel/orders/${order.id}/payment-receipt`);
-      if (receiptWindow) {
-        receiptWindow.location.href = data.url;
-      } else {
-        setPaymentMessage("Permite ventanas emergentes para abrir la captura.");
-      }
-    } catch (receiptError) {
-      receiptWindow?.close();
-      setPaymentMessage(
-        receiptError instanceof Error ? receiptError.message : "No se pudo abrir la imagen."
-      );
-    } finally {
-      setIsOpeningReceipt(false);
-    }
-  }
-
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-[#25262B]/70 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-[#25262B]/70 p-4 backdrop-blur-sm" style={{ margin: 0 }}>
+      {cancellationDialog}
+      {isReviewingPayment ? <PaymentReviewDialog key={order.id} order={order} pin={pin} onClose={() => setIsReviewingPayment(false)} /> : null}
       <div className="mx-auto max-w-4xl rounded-[36px] bg-[#F8F3E8] p-4 shadow-2xl">
+        {statusError ? <p role="alert" className="mb-3 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-700">{statusError}</p> : null}
+        {order.table_cancellation_reason ? <p className="mb-3 rounded-lg bg-white p-3 text-sm font-bold">
+          Cancelado: {order.table_cancellation_reason}{order.table_cancelled_at ? ` · ${formatDate(order.table_cancelled_at)}` : ""}
+        </p> : null}
         <div className="rounded-[32px] bg-[#2E3A79] p-5 text-white">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -227,12 +227,18 @@ function OrderDetail({
             <button
               type="button"
               onClick={onClose}
+              aria-label="Cerrar detalle"
               className="grid h-11 w-11 place-items-center rounded-full bg-white/10"
             >
               <X size={20} />
             </button>
           </div>
         </div>
+
+        {order.has_payment_receipt || order.payment_reference ? <button type="button"
+          className="vp-button-soft mt-4 w-full" onClick={() => setIsReviewingPayment(true)}>
+          <ImageIcon size={17} /> Ver comprobante o referencia
+        </button> : null}
 
         <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
           <section className="rounded-[32px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.06]">
@@ -316,24 +322,11 @@ function OrderDetail({
                 <p>Cliente: {order.customer_name}</p>
                 <p>Teléfono: {order.customer_phone}</p>
                 <p>Pago: {order.payment_method}</p>
+                {order.payment_reference ? <p className="break-words">Referencia: {order.payment_reference}</p> : null}
+                {order.payment_bank ? <p className="break-words">Banco: {order.payment_bank}</p> : null}
+                {order.amount_paid != null ? <p>Monto registrado: {order.amount_paid} {order.payment_currency}</p> : null}
                 <p>Modalidad: {getDeliverySummary(order)}</p>
               </div>
-              {order.has_payment_receipt ? (
-                <div className="mt-4 rounded-3xl bg-emerald-50 p-3 ring-1 ring-emerald-200">
-                  <p className="text-xs font-black uppercase tracking-[0.14em] text-emerald-800">
-                    Comprobante recibido
-                  </p>
-                  <button
-                    type="button"
-                    disabled={isOpeningReceipt}
-                    onClick={openPaymentReceipt}
-                    className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-3 text-sm font-black text-white disabled:opacity-60"
-                  >
-                    {isOpeningReceipt ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />}
-                    Ver captura o foto
-                  </button>
-                </div>
-              ) : null}
             </section>
 
             {currentTransportOrder ? (
@@ -435,8 +428,9 @@ function OrderDetail({
 
               <div className="mt-4 grid gap-2">
                 <p className="rounded-2xl bg-[#F8F3E8] p-3 text-xs font-bold leading-relaxed text-[#746f69]">
-                  El comercio confirma el pago por WhatsApp. Cuando reciba el dinero,
-                  marca el pedido como pagado para control interno.
+                  {order.delivery_type === "table"
+                    ? "Marca el pago cuando confirmes el dinero recibido."
+                    : "El comercio confirma el pago por WhatsApp. Cuando reciba el dinero, marca el pedido como pagado para control interno."}
                 </p>
 
                 {order.payment_verified_at ? (
@@ -464,7 +458,7 @@ function OrderDetail({
                   {paymentCopied ? "Datos copiados" : "Copiar datos de pago"}
                 </button>
 
-                {requestReferenceUrl && !order.payment_verified_at ? (
+                {requestReferenceUrl && !order.payment_verified_at && order.delivery_type !== "table" ? (
                   <a
                     href={requestReferenceUrl}
                     target="_blank"
@@ -564,6 +558,7 @@ function OrderDetail({
 }
 
 export function OrdersManager() {
+  const { requestCancellation, cancellationDialog } = useTableCancellation();
   const { isFounderMode, stores: panelStores } = usePanelAuth();
   const [pin, setPin] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -578,12 +573,7 @@ export function OrdersManager() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<OrderRow | null>(null);
-  const [paymentReview, setPaymentReview] = useState<{
-    order: OrderRow;
-    imageUrl: string | null;
-    isLoading: boolean;
-    error: string;
-  } | null>(null);
+  const [paymentReview, setPaymentReview] = useState<OrderRow | null>(null);
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => shouldShowPanelInitialAccessGate());
   const [isLoading, setIsLoading] = useState(() => hasSavedPanelAuth());
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -751,29 +741,10 @@ export function OrdersManager() {
     }
   }, [pin]);
 
-  const openPaymentReview = useCallback(async (order: OrderRow) => {
+  const openPaymentReview = useCallback((order: OrderRow) => {
     if (!order.has_payment_receipt && !order.payment_reference) return;
-    setPaymentReview({ order, imageUrl: null, isLoading: order.has_payment_receipt === true, error: "" });
-    if (!order.has_payment_receipt) return;
-    try {
-      const data = await apiRequest(pin, `/api/panel/orders/${order.id}/payment-receipt`);
-      setPaymentReview((current) =>
-        current?.order.id === order.id
-          ? { ...current, imageUrl: data.url, isLoading: false }
-          : current
-      );
-    } catch (reviewError) {
-      setPaymentReview((current) =>
-        current?.order.id === order.id
-          ? {
-              ...current,
-              isLoading: false,
-              error: reviewError instanceof Error ? reviewError.message : "No se pudo abrir la captura.",
-            }
-          : current
-      );
-    }
-  }, [pin]);
+    setPaymentReview(order);
+  }, []);
 
   const visibleOrders = orders;
 
@@ -811,6 +782,9 @@ export function OrdersManager() {
   }, [currentFilters, invalidateOrderCache, loadOrders, pin]);
 
   const changeOrderStatus = useCallback(async (order: OrderRow, nextStatus: string) => {
+    const cancellation = order.delivery_type === "table" && nextStatus === "cancelled"
+      ? await requestCancellation() : undefined;
+    if (cancellation === null) return;
     setSavingStatusOrderId(order.id);
     setError("");
 
@@ -820,6 +794,8 @@ export function OrdersManager() {
         body: JSON.stringify({
           id: order.id,
           status: nextStatus,
+          expectedStatus: order.status,
+          ...cancellation,
         }),
       });
 
@@ -837,7 +813,7 @@ export function OrdersManager() {
     } finally {
       setSavingStatusOrderId(null);
     }
-  }, [invalidateOrderCache, pin]);
+  }, [invalidateOrderCache, pin, requestCancellation]);
 
   const markPaymentVerified = useCallback(async (order: OrderRow) => {
     setSavingPaymentId(order.id);
@@ -1065,6 +1041,7 @@ export function OrdersManager() {
 
   return (
     <div className="space-y-5">
+      {cancellationDialog}
       <NewOrderToast notification={newOrderToast} onClose={() => setNewOrderToast(null)} />
       <section className="rounded-2xl bg-white p-4 shadow-lg shadow-[#2E3A79]/[0.05] ring-1 ring-[#25262B]/[0.06]">
         <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
@@ -1493,47 +1470,7 @@ export function OrdersManager() {
       )}
 
       {paymentReview ? (
-        <div className="fixed inset-0 z-[70] grid place-items-center bg-[#25262B]/70 p-4 backdrop-blur-sm">
-          <section className="w-full max-w-lg rounded-[32px] bg-white p-4 shadow-2xl">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Revisar pago</p>
-                <h2 className="mt-1 text-xl font-black">{paymentReview.order.public_code}</h2>
-                <p className="text-sm font-bold text-[#746f69]">{paymentReview.order.payment_method}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPaymentReview(null)}
-                className="grid h-10 w-10 place-items-center rounded-full bg-[#F8F3E8]"
-                aria-label="Cerrar revisión de pago"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            {paymentReview.order.payment_reference ? (
-              <p className="mt-4 rounded-2xl bg-blue-50 p-3 text-sm font-black text-blue-800">
-                Referencia: {paymentReview.order.payment_reference}
-              </p>
-            ) : null}
-            {paymentReview.isLoading ? (
-              <div className="mt-4 grid h-64 place-items-center rounded-3xl bg-[#F8F3E8]">
-                <Loader2 className="animate-spin text-[#2E3A79]" size={28} />
-              </div>
-            ) : paymentReview.imageUrl ? (
-              <div className="relative mt-4 h-[min(60vh,520px)] overflow-hidden rounded-3xl bg-[#F8F3E8]">
-                <NextImage
-                  src={paymentReview.imageUrl}
-                  alt={`Comprobante del pedido ${paymentReview.order.public_code}`}
-                  fill
-                  unoptimized
-                  className="object-contain"
-                />
-              </div>
-            ) : paymentReview.error ? (
-              <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700">{paymentReview.error}</p>
-            ) : null}
-          </section>
-        </div>
+        <PaymentReviewDialog key={paymentReview.id} order={paymentReview} pin={pin} onClose={() => setPaymentReview(null)} />
       ) : null}
     </div>
   );

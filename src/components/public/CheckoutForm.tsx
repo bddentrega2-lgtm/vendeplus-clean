@@ -30,6 +30,8 @@ import { compressImageForUpload } from "@/lib/images/client-compress";
 import {
   getTableOrderContext,
   isPrepaidTablePaymentMethod,
+  isInPersonTablePaymentMethod,
+  getTablePaymentInstructions,
   type TableOrderContext,
 } from "@/lib/table-orders";
 
@@ -430,6 +432,7 @@ export function CheckoutForm({ store }: { store: Store }) {
     ? tableOrder.paymentMethods.filter(isPrepaidTablePaymentMethod)
     : store.paymentMethods;
   const isCashPayment = isCashPaymentMethod(form.paymentMethod);
+  const inPersonTablePayment = Boolean(tableOrder && form.deliveryType === "table" && isInPersonTablePaymentMethod(form.paymentMethod));
   const paymentInfo = form.paymentMethod
     ? buildPaymentInfo({
         store,
@@ -473,15 +476,15 @@ export function CheckoutForm({ store }: { store: Store }) {
       return "Escribe la cédula del cliente.";
     }
     if (!form.paymentMethod.trim()) return "Selecciona un método de pago.";
-    if (store.paymentProofMode === "reference" && form.paymentReference.trim()) {
+    if (!inPersonTablePayment && store.paymentProofMode === "reference" && form.paymentReference.trim()) {
       if (form.paymentReference.replace(/\D/g, "").length < 4) {
         return "La referencia debe tener al menos 4 dígitos.";
       }
     }
-    if (store.paymentProofMode === "reference" && store.paymentProofRequired && !form.paymentReference.trim()) {
+    if (!inPersonTablePayment && store.paymentProofMode === "reference" && store.paymentProofRequired && !form.paymentReference.trim()) {
       return "Escribe la referencia de pago.";
     }
-    if (store.paymentProofMode === "image" && store.paymentProofRequired && !form.paymentReceiptToken) {
+    if (!inPersonTablePayment && store.paymentProofMode === "image" && store.paymentProofRequired && !form.paymentReceiptToken) {
       return "Sube la captura de pago o foto del billete.";
     }
     if (tableOrder && !availablePaymentMethods.includes(form.paymentMethod)) {
@@ -882,11 +885,13 @@ export function CheckoutForm({ store }: { store: Store }) {
                     className="vp-input mt-2 min-h-20 resize-none"
                     value={form.cashPaymentNote}
                     onChange={(event) => updateField("cashPaymentNote", event.target.value)}
-                    placeholder="Ej: pago en dólares al recibir o necesito cambio de $20..."
+                    placeholder={tableOrder ? "Ej: necesito cambio de $20" : "Ej: pago en dólares al recibir o necesito cambio de $20..."}
                   />
                 </label>
               ) : null}
-              {paymentInfo ? (
+              {inPersonTablePayment ? <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm font-bold text-amber-900">
+                {getTablePaymentInstructions(form.paymentMethod, tableOrder?.fulfillmentMode)}
+              </p> : paymentInfo ? (
                 <div className="mt-4 rounded-[26px] bg-[#2E3A79] p-4 text-white">
                   <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
                     <div>

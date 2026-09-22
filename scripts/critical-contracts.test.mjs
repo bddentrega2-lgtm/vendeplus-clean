@@ -1739,9 +1739,12 @@ test("comprobantes de pago son privados, configurables y se eliminan a los 30 di
   assert.match(migration, /interval '30 days'/);
   assert.match(cleanup, /CRON_SECRET/);
   const panel = read("src/components/panel/OrdersManager.tsx");
-  assert.match(panel, /Comprobante recibido/);
-  assert.match(panel, /window\.open\("about:blank", "_blank"\)/);
-  assert.match(panel, /Revisar pago/);
+  assert.match(panel, /Ver comprobante o referencia/);
+  assert.match(panel, /<PaymentReviewDialog/);
+  assert.doesNotMatch(panel, /window\.open\("about:blank", "_blank"\)/);
+  const review = read("src/components/panel/orders/PaymentReviewDialog.tsx");
+  assert.match(review, /Revisar pago/);
+  assert.match(review, /payment-receipt`, \{ cache: "no-store", signal: AbortSignal.timeout\(15_000\) \}/);
   assert.match(panel, /¿Marcar \$\{order\.public_code\} como pagado\?/);
   assert.match(panel, /has_payment_receipt/);
   const settings = read("src/components/panel/ConfigManager.tsx");

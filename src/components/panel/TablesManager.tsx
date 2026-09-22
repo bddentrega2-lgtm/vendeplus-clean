@@ -1,9 +1,13 @@
 "use client";
 
 import Image from "next/image";
-import QRCode from "qrcode";
+import dynamic from "next/dynamic";
 import {
   Check,
+  Eye,
+  BellRing,
+  ClipboardList,
+  Clock3,
   ChevronDown,
   Download,
   Edit3,
@@ -20,28 +24,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
 import { getPanelAuthHeaders } from "@/lib/panel/client-auth";
 import { formatUsd } from "@/lib/currency";
-import { TABLE_ORDERS_CHANGED_EVENT } from "@/lib/table-orders";
+import { TABLE_ASSISTANCE_LABELS, TABLE_ORDERS_CHANGED_EVENT } from "@/lib/table-orders";
+import { useTableCancellation } from "@/components/panel/orders/use-table-cancellation";
+import { PaymentReviewDialog } from "@/components/panel/orders/PaymentReviewDialog";
+import { formatOrderAge, getPaymentStatusLabel, type OrderRow } from "@/components/panel/orders/orders-manager-helpers";
+import { applyConfirmedTableOrder, fetchTableSnapshot, getCachedTableSnapshot, requestTableJson, type TableSnapshot, type TableRow, type WaiterCall, type ActiveTableOrder as ActiveOrder } from "@/lib/panel/table-snapshot-client";
 
-type TableRow = {
-  id: string;
-  name: string;
-  zone: string | null;
-  is_enabled: boolean;
-};
-
-type ActiveOrder = {
-  id: string;
-  public_code: string;
-  store_table_id: string | null;
-  table_name_snapshot: string | null;
-  table_fulfillment_snapshot: "table_service" | "counter_pickup" | null;
-  total_usd: number | string;
-  status: string;
-  created_at: string;
-  customer_name: string | null;
-  payment_method: string | null;
-  payment_status: string | null;
-};
+const OrderDetail = dynamic(() => import("@/components/panel/OrdersManager").then((module) => module.OrderDetail), { ssr: false });
 
 const statusLabels: Record<string, string> = {
   received: "Enviado",
@@ -56,12 +45,28 @@ const nextStatusAction: Record<string, { status: string; label: string }> = {
   accepted: { status: "preparing", label: "Iniciar preparación" },
   preparing: { status: "ready", label: "Marcar listo" },
   ready: { status: "completed", label: "Marcar entregado" },
+  delivering: { status: "completed", label: "Marcar entregado" },
 };
 
 export function TablesManager() {
   const { selectedStoreId, selectedStore } = usePanelAuth();
   const [tables, setTables] = useState<TableRow[]>([]);
   const [activeOrders, setActiveOrders] = useState<ActiveOrder[]>([]);
+  const [waiterCallsEnabled, setWaiterCallsEnabled] = useState(false);
+  const [waiterCallLabel, setWaiterCallLabel] = useState(TABLE_ASSISTANCE_LABELS[0]);
+  const [customAssistanceLabel, setCustomAssistanceLabel] = useState(false);
+  const [waiterCalls, setWaiterCalls] = useState<WaiterCall[]>([]);
+  const [selectedOrder, setSelectedOrder] = useState<OrderRow | null>(null);
+  const selectedOrderRef = useRef(selectedOrder);
+  selectedOrderRef.current = selectedOrder;
+  const [openingOrderId, setOpeningOrderId] = useState("");
+  const [paymentOrderId, setPaymentOrderId] = useState("");
+  const [now, setNow] = useState(Date.now);
+  const { requestCancellation, cancellationDialog } = useTableCancellation();
+  const currentStoreRef = useRef(selectedStoreId);
+  currentStoreRef.current = selectedStoreId;
+  const loadSequence = useRef(0);
+  const detailSequence = useRef(0);
   const [enabled, setEnabled] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
   const [selectedPaymentMethods, setSelectedPaymentMethods] = useState<string[]>([]);
@@ -75,6 +80,8 @@ export function TablesManager() {
   const [editingZone, setEditingZone] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [pendingOrderIds, setPendingOrderIds] = useState<Set<string>>(new Set());
+  const pendingOrdersRef = useRef(new Set<string>());
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isSetupOpen, setIsSetupOpen] = useState(false);
@@ -87,41 +94,60 @@ export function TablesManager() {
   }, [qrToken, selectedStore?.slug]);
 
   const load = useCallback(async (background = false) => {
+    const sequence = ++loadSequence.current;
     if (!selectedStoreId || !hasPremiumAccess) {
       setIsLoading(false);
       return;
     }
 
-    if (!background) setIsLoading(true);
-    setError("");
-    try {
-      const response = await fetch(
-        `/api/panel/tables?storeId=${encodeURIComponent(selectedStoreId)}`,
-        { headers: await getPanelAuthHeaders() }
-      );
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "No se pudieron cargar las mesas.");
+    const cached = !background ? getCachedTableSnapshot(selectedStoreId) : null;
+    if (!background) setIsLoading(!cached);
+    const applySnapshot = (data: TableSnapshot) => {
       setTables(data.tables || []);
       setActiveOrders(data.activeOrders || []);
+      setWaiterCalls(data.waiterCalls || []);
+      if (!background) {
       setEnabled(Boolean(data.enabled));
       setQrToken(data.qrToken || "");
       setPaymentMethods(data.paymentMethods || []);
       setSelectedPaymentMethods(data.selectedPaymentMethods || []);
       setFulfillmentMode(data.fulfillmentMode === "counter_pickup" ? "counter_pickup" : "table_service");
+      setWaiterCallsEnabled(data.waiterCallsEnabled === true);
+      const assistanceLabel = data.waiterCallLabel || TABLE_ASSISTANCE_LABELS[0];
+      setWaiterCallLabel(assistanceLabel);
+      setCustomAssistanceLabel(!TABLE_ASSISTANCE_LABELS.includes(assistanceLabel));
+      }
       if (!setupVisibilityInitialized.current) {
         setIsSetupOpen(!data.enabled);
         setupVisibilityInitialized.current = true;
       }
+    };
+    if (cached) applySnapshot(cached);
+    try {
+      const data = await fetchTableSnapshot(selectedStoreId, background);
+      if (currentStoreRef.current !== selectedStoreId || sequence !== loadSequence.current) return;
+      applySnapshot(data);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar las mesas.");
+      if (currentStoreRef.current === selectedStoreId) setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar las mesas.");
     } finally {
-      if (!background) setIsLoading(false);
+      if (!background && currentStoreRef.current === selectedStoreId) setIsLoading(false);
     }
   }, [hasPremiumAccess, selectedStoreId]);
 
   useEffect(() => {
     setupVisibilityInitialized.current = false;
+    setSelectedOrder(null);
+    setPaymentOrderId("");
+    setActiveOrders([]);
+    setWaiterCalls([]);
+    pendingOrdersRef.current = new Set();
+    setPendingOrderIds(new Set());
   }, [selectedStoreId]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     void load();
@@ -129,30 +155,32 @@ export function TablesManager() {
 
   useEffect(() => {
     const refreshActiveOrders = (event: Event) => {
-      const detail = (event as CustomEvent<{ storeId?: string }>).detail;
-      if (detail?.storeId === selectedStoreId) void load(true);
+      const detail = (event as CustomEvent<{ storeId?: string; activeOrders?: ActiveOrder[]; waiterCalls?: WaiterCall[]; tables?: TableRow[] }>).detail;
+      if (detail?.storeId !== selectedStoreId) return;
+      if (detail.activeOrders) {
+        setActiveOrders(detail.activeOrders);
+        setWaiterCalls(detail.waiterCalls || []);
+        if (detail.tables) setTables(detail.tables);
+      } else void load(true);
     };
     window.addEventListener(TABLE_ORDERS_CHANGED_EVENT, refreshActiveOrders);
     return () => window.removeEventListener(TABLE_ORDERS_CHANGED_EVENT, refreshActiveOrders);
   }, [load, selectedStoreId]);
 
   useEffect(() => {
-    if (!qrUrl) {
-      setQrDataUrl("");
-      return;
-    }
+    if (!qrUrl || !isSetupOpen) return;
     let active = true;
-    void QRCode.toDataURL(qrUrl, {
+    void import("qrcode").then((QRCode) => QRCode.toDataURL(qrUrl, {
       width: 960,
       margin: 3,
       color: { dark: "#042332", light: "#FFFFFF" },
-    }).then((value) => {
+    })).then((value) => {
       if (active) setQrDataUrl(value);
     });
     return () => {
       active = false;
     };
-  }, [qrUrl]);
+  }, [qrUrl, isSetupOpen]);
 
   async function request(method: "POST" | "PATCH" | "DELETE", body: Record<string, unknown>) {
     const response = await fetch("/api/panel/tables", {
@@ -174,6 +202,8 @@ export function TablesManager() {
         enabled,
         paymentMethods: selectedPaymentMethods,
         fulfillmentMode,
+        waiterCallsEnabled,
+        waiterCallLabel,
       });
       setNotice("Configuración guardada.");
       if (enabled) setIsSetupOpen(false);
@@ -239,27 +269,135 @@ export function TablesManager() {
   }
 
   async function updateOrderStatus(orderId: string, status: string) {
-    setIsSaving(true);
+    const storeId = selectedStoreId;
+    const pendingKey = `${storeId}:${orderId}`;
+    if (pendingOrdersRef.current.has(pendingKey)) return;
+    const order = activeOrders.find((item) => item.id === orderId);
+    if (!order) return;
+    const cancellation = status === "cancelled" ? await requestCancellation() : undefined;
+    if (cancellation === null) return;
+    if (currentStoreRef.current !== storeId || pendingOrdersRef.current.has(pendingKey)) return;
+    pendingOrdersRef.current.add(pendingKey);
+    setPendingOrderIds(new Set(pendingOrdersRef.current));
     setError("");
     try {
-      const response = await fetch("/api/panel/orders", {
+      const data = await requestTableJson("/api/panel/orders", {
         method: "PATCH",
         headers: { ...(await getPanelAuthHeaders()), "Content-Type": "application/json" },
-        body: JSON.stringify({ id: orderId, status }),
+        body: JSON.stringify({ id: orderId, status, expectedStatus: order.status, ...cancellation }),
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "No se pudo actualizar el pedido.");
+      if (currentStoreRef.current !== storeId) return;
+      if (!data.order || data.order.id !== orderId) throw new Error("No se pudo confirmar el estado. Actualiza el pedido.");
+      applyConfirmedTableOrder(storeId, data.order);
       setActiveOrders((current) =>
-        ["completed", "cancelled"].includes(status)
+        ["completed", "cancelled"].includes(data.order.status)
           ? current.filter((order) => order.id !== orderId)
-          : current.map((order) => order.id === orderId ? { ...order, status } : order)
+          : current.map((order) => order.id === orderId ? { ...order, ...data.order } : order)
       );
-      await load(true);
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "No se pudo actualizar el pedido.");
+      if (currentStoreRef.current === storeId) {
+        setError(saveError instanceof Error ? saveError.message : "No se pudo actualizar el pedido.");
+        void load(true);
+      }
     } finally {
-      setIsSaving(false);
+      pendingOrdersRef.current.delete(pendingKey);
+      if (currentStoreRef.current === storeId) setPendingOrderIds(new Set(pendingOrdersRef.current));
     }
+  }
+
+  const openOrder = useCallback(async (orderId: string) => {
+    const sequence = ++detailSequence.current;
+    const storeId = selectedStoreId;
+    setOpeningOrderId(orderId);
+    setError("");
+    try {
+      const data = await requestTableJson(`/api/panel/orders?storeId=${encodeURIComponent(storeId || "")}&orderId=${encodeURIComponent(orderId)}`, {
+        headers: await getPanelAuthHeaders(), cache: "no-store",
+      });
+      if (currentStoreRef.current !== storeId || sequence !== detailSequence.current) return;
+      if (!data.order) throw new Error("El pedido ya no está disponible.");
+      setSelectedOrder(data.order);
+    } catch (error) {
+      if (currentStoreRef.current === storeId && sequence === detailSequence.current) setError(error instanceof Error ? error.message : "No se pudo abrir el pedido.");
+    } finally { if (sequence === detailSequence.current) setOpeningOrderId(""); }
+  }, [selectedStoreId]);
+
+  useEffect(() => {
+    const selected = selectedOrderRef.current;
+    if (!selected) return;
+    const summary = activeOrders.find((order) => order.id === selected.id);
+    const changed = summary
+      ? summary.status !== selected.status || summary.payment_status !== selected.payment_status
+      : !["completed", "cancelled"].includes(selected.status);
+    if (changed) void openOrder(selected.id);
+  }, [activeOrders, openOrder]);
+
+  async function attendCall(call: WaiterCall) {
+    setIsSaving(true);
+    try {
+      await request("PATCH", { action: "attend", tableId: call.table_id, requestedAt: call.requested_at });
+      await load(true);
+    } catch (error) { setError(error instanceof Error ? error.message : "No se pudo atender la llamada."); }
+    finally { setIsSaving(false); }
+  }
+
+  async function verifyPayment(orderId: string) {
+    const storeId = selectedStoreId;
+    const pendingKey = `${storeId}:${orderId}`;
+    if (pendingOrdersRef.current.has(pendingKey)) throw new Error("Espera a que termine el cambio de este pedido.");
+    pendingOrdersRef.current.add(pendingKey);
+    setPendingOrderIds(new Set(pendingOrdersRef.current));
+    try {
+      const data = await requestTableJson(`/api/panel/orders/${encodeURIComponent(orderId)}/payment`, {
+        method: "PATCH",
+        headers: { ...(await getPanelAuthHeaders()), "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentStatus: "verified" }),
+      });
+      if (currentStoreRef.current !== storeId) return;
+      if (data.order?.id !== orderId || data.order.payment_status !== "verified") throw new Error("No se pudo confirmar el pago. Actualiza el pedido.");
+      applyConfirmedTableOrder(storeId, data.order);
+      setActiveOrders((current) => current.map((order) => order.id === orderId ? { ...order, ...data.order } : order));
+    } catch (error) {
+      if (currentStoreRef.current === storeId) void load(true);
+      throw error;
+    } finally {
+      pendingOrdersRef.current.delete(pendingKey);
+      if (currentStoreRef.current === storeId) setPendingOrderIds(new Set(pendingOrdersRef.current));
+    }
+  }
+
+  function renderOrder(order: ActiveOrder, counter = false) {
+    const pending = pendingOrderIds.has(`${selectedStoreId}:${order.id}`);
+    const next = nextStatusAction[order.status];
+    return <section key={order.id} className="min-w-0 border-t border-[#25262B]/10 py-3">
+      <div className="flex flex-wrap justify-between gap-2 text-xs font-black">
+        <span>{order.public_code}</span>
+        <span className="flex items-center gap-1 text-[#746f69]" title={new Date(order.created_at).toLocaleString("es-VE")}>
+          <Clock3 size={14} /> {formatOrderAge(order.created_at, now)}
+        </span>
+      </div>
+      <p className="mt-1 break-words text-sm font-black">{order.customer_name || "Cliente sin nombre"}</p>
+      <p className="text-xs font-bold">{order.payment_method || "Pago por confirmar"} · {formatUsd(Number(order.total_usd || 0))}</p>
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <p className="text-xs font-bold">{statusLabels[order.status] || order.status} · {getPaymentStatusLabel(order.payment_status)}</p>
+        <button type="button" onClick={() => setPaymentOrderId(order.id)} title="Revisar pago" aria-label={`Revisar pago de ${order.public_code}`}
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-[#25262B]/15 bg-white text-[#2E3A79] hover:bg-[#F8F3E8]">
+          <Eye size={18} />
+        </button>
+      </div>
+      <div className="mt-3 grid gap-2">
+        <button type="button" className="vp-button-soft w-full" onClick={() => void openOrder(order.id)} disabled={Boolean(openingOrderId)}>
+          {openingOrderId === order.id ? <Loader2 size={16} className="animate-spin" /> : <ClipboardList size={16} />} Comanda y pago
+        </button>
+        {next ? <button type="button" className="vp-button-primary w-full disabled:cursor-not-allowed disabled:opacity-50" disabled={pending}
+          onClick={() => void updateOrderStatus(order.id, next.status)}>
+          {pending ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} {pending ? "Guardando..." : counter && order.status === "ready" ? "Marcar retirado" : next.label}
+        </button> : null}
+        <button type="button" className="vp-button-soft w-full text-red-700" disabled={pending} onClick={() => void updateOrderStatus(order.id, "cancelled")}>
+          <X size={16} /> Cancelar pedido
+        </button>
+      </div>
+    </section>;
   }
 
   function downloadQr() {
@@ -295,9 +433,15 @@ export function TablesManager() {
   const counterOrders = activeOrders.filter(
     (order) => order.table_fulfillment_snapshot === "counter_pickup" || !order.store_table_id
   );
+  const paymentOrder = activeOrders.find((order) => order.id === paymentOrderId);
 
   return (
     <div className="space-y-6">
+      {cancellationDialog}
+      {paymentOrder ? <PaymentReviewDialog key={paymentOrder.id} order={paymentOrder} pin="" onClose={() => setPaymentOrderId("")}
+        onVerify={() => verifyPayment(paymentOrder.id)} /> : null}
+      {selectedOrder ? <OrderDetail key={selectedOrder.id} order={selectedOrder} pin="" onClose={() => { detailSequence.current++; setOpeningOrderId(""); setSelectedOrder(null); }}
+        onUpdated={() => { void openOrder(selectedOrder.id); void load(true); }} /> : null}
       {error ? <p className="rounded-2xl bg-red-50 p-3 text-sm font-black text-red-700">{error}</p> : null}
       {notice ? <p className="rounded-2xl bg-green-50 p-3 text-sm font-black text-green-700">{notice}</p> : null}
 
@@ -367,6 +511,26 @@ export function TablesManager() {
               <span className="mt-1 block text-xs text-[#746f69]">El comercio lleva el pedido a la mesa elegida.</span>
             </label>
           </div>
+          {fulfillmentMode === "table_service" ? <label className="mt-4 flex items-center gap-2 text-sm font-bold">
+            <input type="checkbox" checked={waiterCallsEnabled} onChange={(event) => setWaiterCallsEnabled(event.target.checked)} className="h-5 w-5" />
+            Permitir pedir asistencia
+          </label> : null}
+          {fulfillmentMode === "table_service" && waiterCallsEnabled ? <div className="mt-3 space-y-3">
+            <label className="block text-sm font-bold">Texto del botón
+              <select className="vp-input mt-2 w-full" value={customAssistanceLabel ? "custom" : waiterCallLabel}
+                onChange={(event) => {
+                  setCustomAssistanceLabel(event.target.value === "custom");
+                  if (event.target.value !== "custom") setWaiterCallLabel(event.target.value);
+                }}>
+                {TABLE_ASSISTANCE_LABELS.map((label) => <option key={label}>{label}</option>)}
+                <option value="custom">Personalizado</option>
+              </select>
+            </label>
+            {customAssistanceLabel ? <label className="block text-sm font-bold">Texto personalizado
+              <input className="vp-input mt-2 w-full" value={waiterCallLabel} maxLength={40} minLength={3}
+                onChange={(event) => setWaiterCallLabel(event.target.value)} />
+            </label> : null}
+          </div> : null}
           <h3 className="mt-5 text-sm font-black">Pagos previos disponibles</h3>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             {paymentMethods.map((method) => (
@@ -395,6 +559,16 @@ export function TablesManager() {
         </div>
       </section> : null}
 
+      {waiterCalls.length ? <section className="border-y border-amber-200 bg-amber-50 p-4">
+        <h2 className="flex items-center gap-2 text-lg font-black"><BellRing size={20} /> Solicitudes de asistencia</h2>
+        <div className="mt-2 divide-y divide-amber-200">
+          {waiterCalls.map((call) => <div key={`${call.table_id}-${call.requested_at}`} className="flex flex-wrap items-center justify-between gap-2 py-3">
+            <p className="text-sm font-bold">{tables.find((table) => table.id === call.table_id)?.name || "Mesa"} · {formatOrderAge(call.requested_at, now)}</p>
+            <button type="button" className="vp-button-soft" disabled={isSaving} onClick={() => void attendCall(call)}><Check size={16} /> Atendido</button>
+          </div>)}
+        </div>
+      </section> : null}
+
       {counterOrders.length ? (
         <section className="rounded-[28px] bg-white p-5 shadow-lg ring-1 ring-[#25262B]/10">
           <div className="flex items-center justify-between gap-3">
@@ -407,24 +581,7 @@ export function TablesManager() {
             </span>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {counterOrders.map((order) => (
-              <article key={order.id} className="rounded-2xl border border-[#25262B]/10 p-4">
-                <p className="text-xs font-black text-[#2E3A79]">{order.public_code}</p>
-                <p className="mt-1 truncate text-sm font-black">{order.customer_name || "Cliente sin nombre"}</p>
-                <p className="text-xs font-bold text-[#746f69]">{order.payment_method || "Pago por confirmar"} · {formatUsd(Number(order.total_usd || 0))}</p>
-                <p className="mt-2 text-xs font-black text-amber-800">{statusLabels[order.status] || "Con pedido"}</p>
-                <div className="mt-3 grid gap-2">
-                  {nextStatusAction[order.status] ? (
-                    <button type="button" className="vp-button-primary w-full" onClick={() => updateOrderStatus(order.id, nextStatusAction[order.status].status)} disabled={isSaving}>
-                      <Check size={16} /> {order.status === "ready" ? "Marcar retirado" : nextStatusAction[order.status].label}
-                    </button>
-                  ) : null}
-                  <button type="button" className="vp-button-soft w-full text-red-700" onClick={() => updateOrderStatus(order.id, "cancelled")} disabled={isSaving}>
-                    <X size={16} /> Cancelar pedido
-                  </button>
-                </div>
-              </article>
-            ))}
+            {counterOrders.map((order) => renderOrder(order, true))}
           </div>
         </section>
       ) : null}
@@ -466,45 +623,12 @@ export function TablesManager() {
                         ? "Desactivada"
                         : tableOrders.length
                           ? `${tableOrders.length} ${tableOrders.length === 1 ? "pedido activo" : "pedidos activos"}`
-                          : "Libre"}
+                          : "Sin pedidos activos"}
                     </p>
                   </div>
                   {tableOrders.length ? (
                     <div className="mt-4 grid gap-3">
-                      {tableOrders.map((order) => (
-                        <section key={order.id} className="rounded-2xl border border-[#25262B]/10 p-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="text-xs font-black text-[#2E3A79]">{order.public_code}</p>
-                              <p className="truncate text-sm font-black">{order.customer_name || "Cliente sin nombre"}</p>
-                              <p className="text-xs font-bold text-[#746f69]">{order.payment_method || "Pago por confirmar"} · {formatUsd(Number(order.total_usd || 0))}</p>
-                            </div>
-                            <span className="shrink-0 text-right text-xs font-black text-amber-800">
-                              {statusLabels[order.status] || "Con pedido"}
-                            </span>
-                          </div>
-                          <div className="mt-3 grid gap-2">
-                            {nextStatusAction[order.status] ? (
-                              <button
-                                type="button"
-                                className="vp-button-primary w-full"
-                                onClick={() => updateOrderStatus(order.id, nextStatusAction[order.status].status)}
-                                disabled={isSaving}
-                              >
-                                <Check size={16} /> {nextStatusAction[order.status].label}
-                              </button>
-                            ) : null}
-                            <button
-                              type="button"
-                              className="vp-button-soft w-full text-red-700"
-                              onClick={() => updateOrderStatus(order.id, "cancelled")}
-                              disabled={isSaving}
-                            >
-                              <X size={16} /> Cancelar pedido
-                            </button>
-                          </div>
-                        </section>
-                      ))}
+                      {tableOrders.map((order) => renderOrder(order))}
                     </div>
                   ) : (
                     <button type="button" className="vp-button-soft mt-4 w-full" onClick={() => updateTable(table.id, { isEnabled: !table.is_enabled })} disabled={isSaving}>

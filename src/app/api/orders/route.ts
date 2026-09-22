@@ -10,6 +10,8 @@ import { isMissingColumnError } from "@/lib/supabase/schema-compat";
 import { normalizePhone } from "@/lib/customers/normalize-phone";
 import {
   isPrepaidTablePaymentMethod,
+  isInPersonTablePaymentMethod,
+  availableTablePaymentMethods,
 } from "@/lib/table-orders";
 import { safeUpsertCustomerFromOrder } from "@/lib/customers/upsert-customer-from-order";
 import {
@@ -373,7 +375,7 @@ export async function POST(request: NextRequest) {
     const supabase = createSupabaseAdminClient();
     let storeResult = await supabase
       .from("stores")
-      .select("id, slug, name, whatsapp, usd_to_bs, base_currency, is_active, latitude, longitude, opening_hours, business_hours, manual_open_status, manual_open_note, accepts_delivery, accepts_pickup, accepts_national_shipping, request_customer_id_number, payment_proof_mode, payment_proof_required, payment_methods, table_orders_access_enabled, table_orders_enabled, table_payment_methods, table_order_fulfillment_mode, plan_type, monthly_price_usd, service_fee_payer, service_fee_billing_cycle, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
+      .select("id, slug, name, whatsapp, usd_to_bs, base_currency, is_active, latitude, longitude, opening_hours, business_hours, manual_open_status, manual_open_note, accepts_delivery, accepts_pickup, accepts_national_shipping, request_customer_id_number, payment_proof_mode, payment_proof_required, payment_methods, table_orders_access_enabled, table_orders_enabled, table_payment_methods, table_order_fulfillment_mode, table_waiter_calls_enabled, table_waiter_call_label, plan_type, monthly_price_usd, service_fee_payer, service_fee_billing_cycle, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
       .eq("id", storeId)
       .single();
 
@@ -426,9 +428,7 @@ export async function POST(request: NextRequest) {
         return requestBadRequest("Los pedidos en mesa no están disponibles en este momento.");
       }
 
-      const storePaymentMethods = Array.isArray((store as any).payment_methods)
-        ? (store as any).payment_methods
-        : [];
+      const storePaymentMethods = availableTablePaymentMethods((store as any).payment_methods);
       const tablePaymentMethods = Array.isArray((store as any).table_payment_methods)
         ? (store as any).table_payment_methods
         : [];
@@ -464,6 +464,12 @@ export async function POST(request: NextRequest) {
       validatedTable = table;
       order.form.deliveryReference = table.name;
       }
+    }
+
+    const inPersonTablePayment = requestedDeliveryType === "table" && isInPersonTablePaymentMethod(order.form.paymentMethod);
+    if (inPersonTablePayment) {
+      order.form.paymentReference = "";
+      order.form.paymentReceiptToken = "";
     }
 
     if (isStoreSubscriptionPastDue(store as any)) {
@@ -641,12 +647,15 @@ export async function POST(request: NextRequest) {
       (sum, item) => sum + item.unitPriceUsd * item.quantity,
       0
     );
-    let deliverySettings = await loadStoreDeliverySettings(supabase, storeId, {
+    // Table orders have no delivery quote; do not read zones, rates or agencies.
+    let deliverySettings = requestedDeliveryType === "table"
+      ? mapStoreDeliverySettings(store)
+      : await loadStoreDeliverySettings(supabase, storeId, {
       acceptsDelivery: (store as any).accepts_delivery,
       acceptsPickup: (store as any).accepts_pickup,
       acceptsNationalShipping: (store as any).accepts_national_shipping,
     });
-    const transportSettings = await loadTransportAgencyDeliverySettings(
+    const transportSettings = requestedDeliveryType === "table" ? null : await loadTransportAgencyDeliverySettings(
       supabase,
       storeId,
       deliverySettings.pickupEnabled
@@ -746,9 +755,9 @@ export async function POST(request: NextRequest) {
       routeUrl: order.routeUrl,
     });
     const orderDbId = randomUUID();
-    const paymentReference = cleanText(order.form.paymentReference);
-    const paymentReceiptToken = cleanText(order.form.paymentReceiptToken, 60);
-    const paymentProofMode = ["reference", "image"].includes((store as any).payment_proof_mode)
+    const paymentReference = inPersonTablePayment ? "" : cleanText(order.form.paymentReference);
+    const paymentReceiptToken = inPersonTablePayment ? "" : cleanText(order.form.paymentReceiptToken, 60);
+    const paymentProofMode = !inPersonTablePayment && ["reference", "image"].includes((store as any).payment_proof_mode)
       ? (store as any).payment_proof_mode
       : "disabled";
     const paymentProofRequired = (store as any).payment_proof_required === true;
@@ -779,7 +788,7 @@ export async function POST(request: NextRequest) {
     if (paymentProofMode === "image" && paymentProofRequired && !pendingReceipt) {
       return requestBadRequest("Sube la captura de pago o foto del billete.");
     }
-    const initialPaymentStatus = getInitialPaymentStatus(order.form.paymentMethod);
+    const initialPaymentStatus = requestedDeliveryType === "table" ? "pending" : getInitialPaymentStatus(order.form.paymentMethod);
     const orderPayload = {
       id: orderDbId,
       public_code: publicCode,
@@ -983,6 +992,8 @@ export async function POST(request: NextRequest) {
             tableZone: validatedTable.zone,
             paymentMethods: [],
             fulfillmentMode: tableFulfillmentMode || "table_service",
+            waiterCallsEnabled: (store as any).table_waiter_calls_enabled === true,
+            waiterCallLabel: (store as any).table_waiter_call_label,
           }
         : null,
     };

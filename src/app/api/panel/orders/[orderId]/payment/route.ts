@@ -61,11 +61,11 @@ export async function PATCH(
     const isVerified = paymentStatus === "verified";
     const updatePayload = {
       payment_status: paymentStatus,
-      payment_reference: paymentReference || null,
-      payment_currency: cleanText(body.paymentCurrency, 20).toUpperCase() || null,
-      amount_paid: optionalNumber(body.amountPaid),
-      payment_bank: cleanText(body.paymentBank, 120) || null,
-      payment_notes: cleanText(body.paymentNotes, 500) || null,
+      ...(Object.hasOwn(body, "paymentReference") ? { payment_reference: paymentReference || null } : {}),
+      ...(Object.hasOwn(body, "paymentCurrency") ? { payment_currency: cleanText(body.paymentCurrency, 20).toUpperCase() || null } : {}),
+      ...(Object.hasOwn(body, "amountPaid") ? { amount_paid: optionalNumber(body.amountPaid) } : {}),
+      ...(Object.hasOwn(body, "paymentBank") ? { payment_bank: cleanText(body.paymentBank, 120) || null } : {}),
+      ...(Object.hasOwn(body, "paymentNotes") ? { payment_notes: cleanText(body.paymentNotes, 500) || null } : {}),
       payment_verified_at: isVerified ? new Date().toISOString() : null,
       payment_verified_by: isVerified ? auth.userId || null : null,
     };
@@ -74,6 +74,7 @@ export async function PATCH(
       .from("orders")
       .update(updatePayload)
       .eq("id", orderId)
+      .eq("store_id", existingOrder.store_id)
       .select(
         `
         id,

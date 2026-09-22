@@ -56,6 +56,9 @@ export type OrderIntegration = {
 };
 
 export type OrderRow = {
+  table_cancellation_reason?: string | null;
+  table_cancelled_at?: string | null;
+  table_cancelled_by?: string | null;
   id: string;
   public_code: string;
   customer_id?: string | null;

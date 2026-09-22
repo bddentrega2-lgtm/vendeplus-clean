@@ -1,5 +1,6 @@
 ﻿"use client";
 import { StoreBrandHeader } from "@/components/public/StoreBrandHeader";
+import { WaiterCallButton } from "@/components/public/WaiterCallButton";
 import type { CSSProperties } from "react";
 import { MessageCircle, Search, Share2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -174,6 +175,7 @@ export function CatalogClient({
               {activeTableOrder.fulfillmentMode === "counter_pickup" ? "Entrega" : "Recibir en"}
             </p>
             <p className="text-base font-black">{activeTableOrder.tableName}{activeTableOrder.tableZone ? ` · ${activeTableOrder.tableZone}` : ""}</p>
+            <WaiterCallButton key={activeTableOrder.tableId} context={activeTableOrder} />
           </div>
           {onChangeTable ? <button type="button" onClick={onChangeTable} className="text-xs font-black underline">Cambiar</button> : null}
         </section>

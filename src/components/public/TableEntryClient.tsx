@@ -18,6 +18,8 @@ type Props = {
   enabled: boolean;
   paymentMethods: string[];
   fulfillmentMode: "table_service" | "counter_pickup";
+  waiterCallsEnabled: boolean;
+  waiterCallLabel: string;
 };
 
 export function TableEntryClient({
@@ -27,6 +29,8 @@ export function TableEntryClient({
   enabled,
   paymentMethods,
   fulfillmentMode,
+  waiterCallsEnabled,
+  waiterCallLabel,
 }: Props) {
   const [selectedTable, setSelectedTable] = useState<TableOrderContext | null>(null);
   const [restoredSelection, setRestoredSelection] = useState(false);
@@ -51,10 +55,13 @@ export function TableEntryClient({
       previousContext?.storeToken === storeToken &&
       tables.some((table) => table.id === previousContext.tableId)
     ) {
-      setSelectedTable(previousContext);
+      const table = tables.find((item) => item.id === previousContext.tableId)!;
+      const context = { ...previousContext, tableName: table.name, tableZone: table.zone, paymentMethods, fulfillmentMode, waiterCallsEnabled, waiterCallLabel };
+      saveTableOrderContext(store.slug, context);
+      setSelectedTable(context);
     }
     setRestoredSelection(true);
-  }, [fulfillmentMode, paymentMethods, store.slug, storeToken, tables]);
+  }, [fulfillmentMode, paymentMethods, store.slug, storeToken, tables, waiterCallsEnabled, waiterCallLabel]);
 
   const tablesByZone = useMemo(() => {
     const groups = new Map<string, PublicStoreTable[]>();
@@ -126,6 +133,8 @@ export function TableEntryClient({
                         tableZone: table.zone,
                         paymentMethods,
                         fulfillmentMode,
+                        waiterCallsEnabled,
+                        waiterCallLabel,
                       };
                       saveTableOrderContext(store.slug, context);
                       setSelectedTable(context);

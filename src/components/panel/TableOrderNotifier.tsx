@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NewOrderToast, type NewOrderToastData } from "@/components/panel/NewOrderToast";
 import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
-import { getPanelAccessToken, getPanelAuthHeaders } from "@/lib/panel/client-auth";
+import { getPanelAccessToken } from "@/lib/panel/client-auth";
 import {
   playNewOrderSound,
   unlockOrderNotificationSound,
 } from "@/lib/panel/order-notification-sound";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { TABLE_ORDERS_CHANGED_EVENT } from "@/lib/table-orders";
+import { fetchTableSnapshot } from "@/lib/panel/table-snapshot-client";
 
 type TableOrderSummary = {
   id: string;
@@ -27,21 +28,25 @@ export function TableOrderNotifier() {
   const [isRealtimeReady, setIsRealtimeReady] = useState(false);
   const knownOrderIdsRef = useRef(new Set<string>());
   const hasBaselineRef = useRef(false);
-  const requestInFlightRef = useRef(false);
+  const requestInFlightRef = useRef<string | null>(null);
+  const queuedRefreshRef = useRef<string | null>(null);
+  const mountedRef = useRef(true);
+  const currentStoreRef = useRef(selectedStoreId);
+  currentStoreRef.current = selectedStoreId;
+  const knownCallsRef = useRef(new Set<string>());
   const hasAccess = selectedStore?.table_orders_access_enabled === true;
 
   const refresh = useCallback(async (notifyNew: boolean) => {
-    if (!selectedStoreId || !hasAccess || requestInFlightRef.current) return;
-    requestInFlightRef.current = true;
+    if (!selectedStoreId || !hasAccess || !mountedRef.current) return;
+    if (requestInFlightRef.current === selectedStoreId) {
+      queuedRefreshRef.current = selectedStoreId;
+      return;
+    }
+    requestInFlightRef.current = selectedStoreId;
 
     try {
-      const response = await fetch(
-        `/api/panel/tables?storeId=${encodeURIComponent(selectedStoreId)}`,
-        { cache: "no-store", headers: await getPanelAuthHeaders() }
-      );
-      if (!response.ok) return;
-
-      const payload = await response.json();
+      const payload = await fetchTableSnapshot(selectedStoreId, true);
+      if (!mountedRef.current || currentStoreRef.current !== selectedStoreId) return;
       const orders: TableOrderSummary[] = Array.isArray(payload.activeOrders)
         ? payload.activeOrders
         : [];
@@ -52,12 +57,17 @@ export function TableOrderNotifier() {
       for (const order of orders) {
         if (order.id) knownOrderIdsRef.current.add(order.id);
       }
+      const calls: Array<{ table_id: string; requested_at: string }> = payload.waiterCalls || [];
+      const newCall = notifyNew && hasBaselineRef.current
+        ? calls.find((call) => !knownCallsRef.current.has(`${call.table_id}:${call.requested_at}`)) : null;
+      knownCallsRef.current = new Set(calls.map((call) => `${call.table_id}:${call.requested_at}`));
       hasBaselineRef.current = true;
 
+      window.dispatchEvent(new CustomEvent(TABLE_ORDERS_CHANGED_EVENT, {
+        detail: { storeId: selectedStoreId, activeOrders: orders, waiterCalls: calls, tables: payload.tables },
+      }));
+
       if (newOrder) {
-        window.dispatchEvent(new CustomEvent(TABLE_ORDERS_CHANGED_EVENT, {
-          detail: { storeId: selectedStoreId, orderId: newOrder.id },
-        }));
         void playNewOrderSound();
         setNotification({
           id: `${newOrder.id}-${Date.now()}`,
@@ -67,16 +77,33 @@ export function TableOrderNotifier() {
             newOrder.table_name_snapshot || "Mesa",
           ].join(" · "),
         });
+      } else if (newCall) {
+        void playNewOrderSound();
+        setNotification({ id: `${newCall.table_id}:${newCall.requested_at}`, title: "Solicitud de asistencia",
+          subtitle: payload.tables?.find((table: { id: string }) => table.id === newCall.table_id)?.name || "Mesa" });
       }
     } catch {
       // El siguiente evento o sondeo vuelve a intentarlo sin interrumpir el panel.
     } finally {
-      requestInFlightRef.current = false;
+      if (requestInFlightRef.current === selectedStoreId) {
+        requestInFlightRef.current = null;
+        if (queuedRefreshRef.current === selectedStoreId) {
+          queuedRefreshRef.current = null;
+          // Drain one trailing refresh so the last event in a burst is not lost.
+          if (mountedRef.current && currentStoreRef.current === selectedStoreId) void refresh(true);
+        }
+      }
     }
   }, [hasAccess, selectedStoreId]);
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; queuedRefreshRef.current = null; };
+  }, []);
+
+  useEffect(() => {
     knownOrderIdsRef.current = new Set();
+    knownCallsRef.current = new Set();
     hasBaselineRef.current = false;
     setNotification(null);
     void refresh(false);

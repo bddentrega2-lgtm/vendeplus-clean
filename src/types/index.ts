@@ -321,6 +321,8 @@ export type SavedOrder = {
     tableZone: string | null;
     paymentMethods: string[];
     fulfillmentMode: "table_service" | "counter_pickup";
+    waiterCallsEnabled?: boolean;
+    waiterCallLabel?: string;
   } | null;
 };
 
