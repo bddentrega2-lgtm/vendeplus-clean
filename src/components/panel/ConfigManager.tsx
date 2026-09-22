@@ -1445,7 +1445,7 @@ function StoreSettingsCard({
             <label className="text-xs font-black text-[#746f69]">¿Quién asume el cargo?
               <select value={draft.service_fee_payer} onChange={(event) => updateField("service_fee_payer", event.target.value)} className="mt-1 w-full rounded-xl bg-white px-3 py-3 text-sm text-[#25262B]">
                 <option value="merchant">Lo asume el comercio</option>
-                <option value="customer">Se agrega al pedido del cliente</option>
+                <option value="customer">Lo paga el cliente (Recomendado)</option>
               </select>
             </label>
             <div className="rounded-xl bg-white px-3 py-3">

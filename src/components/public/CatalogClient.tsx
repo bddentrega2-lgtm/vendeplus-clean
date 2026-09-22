@@ -261,7 +261,7 @@ export function CatalogClient({
       ) : null}
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <h2 className="text-xl font-black text-[#25262B]">Menú</h2>
+        <h2 className="text-xl font-black text-[#25262B]">Catálogo</h2>
         <p className="rounded-full bg-white px-3 py-2 text-xs font-black text-[#746f69] shadow-sm">{menuProducts.length} productos</p>
       </div>
 

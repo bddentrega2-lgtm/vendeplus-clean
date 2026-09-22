@@ -214,8 +214,8 @@ test("panel de comercios usa logo Somos y la paleta nueva queda como default", (
     new URL("../src/components/panel/PanelShell.tsx", import.meta.url),
     "utf8",
   );
-  const signupRoute = readFileSync(
-    new URL("../src/app/api/signup/route.ts", import.meta.url),
+  const adminStores = readFileSync(
+    new URL("../src/lib/admin/stores.ts", import.meta.url),
     "utf8",
   );
   const settingsRoute = readFileSync(
@@ -239,8 +239,8 @@ test("panel de comercios usa logo Somos y la paleta nueva queda como default", (
   assert.match(panelShell, /label: "Mesa \/ Barra"/);
   assert.match(panelFrame, /title: "Mesa \/ Barra"/);
   assert.match(tablesManager, /Pedidos en Mesa \/ Barra/);
-  assert.doesNotMatch(signupRoute, /primary_color:\s*"#2E3A79"/);
-  assert.match(signupRoute, /primary_color:\s*"#1F464C"/);
+  assert.doesNotMatch(adminStores, /primary_color:\s*"#2E3A79"/);
+  assert.match(adminStores, /primary_color:.*"#1F464C"/);
   assert.match(settingsRoute, /accent_color:.*"#F27533"/);
   assert.match(migration, /lower\(primary_color\) = '#2e3a79'/);
   assert.match(migration, /lower\(accent_color\) = '#ffb547'/);
@@ -1018,7 +1018,7 @@ test("Somos usa su WhatsApp oficial en Home y despues de cada registro", () => {
   assert.match(whatsapp, /SOMOS_WHATSAPP_PHONE = "584224600742"/);
   assert.match(home, /Contactar por WhatsApp/);
   assert.match(signup, /window\.location\.assign\(officialWhatsappUrl\)/);
-  assert.match(signup, /Enviar registro a Somos/);
+  assert.match(signup, /Enviar solicitud a Somos/);
   assert.doesNotMatch(signup, /`Cédula: \$\{representativeIdNumber/);
   assert.match(transport, /window\.location\.assign\(whatsappUrl\)/);
   assert.match(transport, /Enviar registro a Somos/);
@@ -1349,25 +1349,39 @@ test("Marketplace y registro conservan ciudad estructurada", () => {
   assert.match(marketplace, /Filtrar por ciudad/);
   assert.match(marketplace, /store\.citySlug === activeCity/);
   assert.match(signup, /from\("service_cities"\)/);
-  assert.match(signup, /city_id: city\.id/);
+  assert.match(signup, /city_id: cityId/);
 });
 
-test("registro preserva la clave y no confunde rechazo de seguridad con longitud", () => {
+test("registro guarda solicitud y admin crea el acceso solo al aprobar", () => {
   const signup = readFileSync(
     new URL("../src/app/api/signup/route.ts", import.meta.url),
     "utf8",
   );
-  const transportSignup = readFileSync(
-    new URL("../src/app/api/transport/agencies/apply/route.ts", import.meta.url),
+  const signupForm = readFileSync(
+    new URL("../src/components/public/SignupForm.tsx", import.meta.url),
+    "utf8",
+  );
+  const adminRoute = readFileSync(
+    new URL("../src/app/api/admin/registration-requests/route.ts", import.meta.url),
+    "utf8",
+  );
+  const migration = readFileSync(
+    new URL("../supabase/migrations/20260921203000_commerce_registration_requests.sql", import.meta.url),
     "utf8",
   );
 
-  assert.match(signup, /const password = String\(body\.get\("password"\) \|\| ""\)/);
-  assert.match(signup, /Por seguridad, no podemos aceptar esa combinacion/);
-  assert.doesNotMatch(signup, /const password = cleanText/);
-  assert.match(signup, /if \(!oauthUser \|\| existingUser\.id !== oauthUser\.id\)/);
-  assert.match(signup, /Date\.now\(\) - createdAtMs < 60_000/);
-  assert.match(transportSignup, /if \(!oauthUser \|\| existingUser\.id !== oauthUser\.id\)/);
+  assert.match(signup, /from\("commerce_registration_requests"\)/);
+  assert.match(signup, /weekly_order_volume: weeklyOrderVolume/);
+  assert.doesNotMatch(signup, /auth\.signUp|auth\.admin\.createUser|from\("stores"\)\.insert/);
+  assert.doesNotMatch(signupForm, /type="password"|Registrarme con Google/);
+  assert.match(signupForm, /WEEKLY_ORDER_VOLUME_OPTIONS\.map/);
+  assert.match(adminRoute, /requireAdminAuth\(request\)/);
+  assert.match(adminRoute, /auth\.admin\.createUser/);
+  assert.match(adminRoute, /from\("store_users"\)\.insert/);
+  assert.match(adminRoute, /resetPasswordForEmail/);
+  assert.doesNotMatch(adminRoute, /service_cities\(name, state_name\), stores\(slug\)/);
+  assert.match(migration, /weekly_order_volume in \('starting', 'one_to_ten', 'eleven_to_thirty', 'over_thirty'\)/);
+  assert.match(migration, /commerce-registration-assets[\s\S]*false/);
 });
 
 test("login solo navega a rutas internas saneadas", () => {
@@ -1813,4 +1827,15 @@ test("rutas con service_role declaran guardia o contrato publico", () => {
   assert.deepEqual(result.findings, []);
   assert.ok(result.checkedRoutes >= 70);
   assert.ok(result.publicServiceRoleRoutes >= 10);
+});
+
+test("catalogo usa etiqueta general y recomienda trasladar el fee al cliente", () => {
+  const catalog = read("src/components/public/CatalogClient.tsx");
+  const subscription = read("src/components/panel/SubscriptionPaymentManager.tsx");
+  const settings = read("src/components/panel/ConfigManager.tsx");
+
+  assert.match(catalog, />Catálogo<\/h2>/);
+  assert.doesNotMatch(catalog, />Menú<\/h2>/);
+  assert.match(subscription, /Lo paga el cliente[\s\S]*Recomendado/);
+  assert.match(settings, /Lo paga el cliente \(Recomendado\)/);
 });

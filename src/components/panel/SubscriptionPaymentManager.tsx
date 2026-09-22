@@ -352,7 +352,12 @@ export function SubscriptionPaymentManager() {
                     : "bg-white text-[#25262B] ring-[#25262B]/10",
                 ].join(" ")}
               >
-                <p className="font-black">Lo paga el cliente</p>
+                <p className="flex flex-wrap items-center gap-2 font-black">
+                  Lo paga el cliente
+                  <span className="rounded-full bg-[#FFB547] px-2 py-1 text-[10px] font-black uppercase text-[#25262B]">
+                    Recomendado
+                  </span>
+                </p>
                 <p className="mt-1 text-xs font-bold opacity-75">
                   Se suma al total del pedido como fee de plataforma.
                 </p>

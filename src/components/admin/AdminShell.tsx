@@ -3,6 +3,7 @@ import { LogoutButton } from "@/components/panel/LogoutButton";
 import { PwaInstallButton } from "@/components/pwa/PwaInstallButton";
 import {
   Building2,
+  ClipboardList,
   CreditCard,
   Home,
   LayoutDashboard,
@@ -18,6 +19,7 @@ import {
 const navItems = [
   { href: "/admin", label: "Resumen", icon: LayoutDashboard },
   { href: "/admin/comercios", label: "Comercios", icon: Building2 },
+  { href: "/admin/solicitudes", label: "Solicitudes", icon: ClipboardList },
   { href: "/admin/comercios/nuevo", label: "Crear comercio", icon: PlusCircle },
   { href: "/admin/usuarios", label: "Usuarios", icon: UserRoundPlus },
   { href: "/admin/planes", label: "Planes", icon: Tags },
