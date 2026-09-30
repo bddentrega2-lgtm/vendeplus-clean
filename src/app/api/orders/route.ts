@@ -114,8 +114,8 @@ function normalizeItems(value: unknown): CartItem[] {
       ),
       unitPriceUsd: toSafeNumber(item?.unitPriceUsd, 0),
       notes: cleanText(item?.notes, 280) || undefined,
-      selectedOptions: Array.isArray(item?.selectedOptions)
-        ? item.selectedOptions.map((option: any) => ({
+          selectedOptions: Array.isArray(item?.selectedOptions)
+        ? item.selectedOptions.slice(0, 50).map((option: any) => ({
             groupId: cleanText(option?.groupId),
             groupName: cleanText(option?.groupName, 140),
             valueId: cleanText(option?.valueId),
@@ -624,8 +624,16 @@ export async function POST(request: NextRequest) {
         });
       });
 
-      const optionExtraUsd = frozenOptions.reduce(
-        (sum, option) => sum + option.priceDeltaUsd,
+      const groupedOptions = Array.from(frozenOptions.reduce((groups, option) => {
+        const key = `${option.groupId}:${option.valueId}`;
+        const current = groups.get(key);
+        if (current) current.quantity += 1;
+        else groups.set(key, { ...option, quantity: 1 });
+        return groups;
+      }, new Map<string, (typeof frozenOptions)[number] & { quantity: number }>()).values());
+
+      const optionExtraUsd = groupedOptions.reduce(
+        (sum, option) => sum + option.priceDeltaUsd * option.quantity,
         0
       );
       unitPriceUsd += optionExtraUsd;
@@ -640,7 +648,7 @@ export async function POST(request: NextRequest) {
         quantity: item.quantity,
         unitPriceUsd,
         notes: item.notes,
-        selectedOptions: frozenOptions,
+        selectedOptions: groupedOptions,
         inventorySelections: item.inventorySelections,
       } satisfies CartItem;
     });
@@ -917,7 +925,7 @@ export async function POST(request: NextRequest) {
         option_group_name: option.groupName,
         option_name: option.valueName,
         price_delta_usd: option.priceDeltaUsd,
-        quantity: 1,
+        quantity: Math.max(1, Math.floor(Number(option.quantity || 1))),
       })),
     }));
 

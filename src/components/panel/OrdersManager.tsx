@@ -296,8 +296,8 @@ export function OrderDetail({
                               {group.options
                                 .map((option) =>
                                   option.price > 0
-                                    ? `${option.name} (+${formatUsd(option.price)})`
-                                    : option.name
+                                    ? `${option.quantity > 1 ? `${option.quantity}x ` : ""}${option.name} (+${formatUsd(option.price * option.quantity)})`
+                                    : `${option.quantity > 1 ? `${option.quantity}x ` : ""}${option.name}`
                                 )
                                 .join(", ")}
                             </p>

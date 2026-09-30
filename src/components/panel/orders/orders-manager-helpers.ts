@@ -436,13 +436,14 @@ export function getDeliverySummary(order: OrderRow) {
 }
 
 export function groupOrderItemOptions(item: OrderItem) {
-  const groups = new Map<string, Array<{ name: string; price: number }>>();
+  const groups = new Map<string, Array<{ name: string; price: number; quantity: number }>>();
 
   for (const option of item.order_item_options || []) {
     const current = groups.get(option.option_group_name) || [];
     current.push({
       name: option.option_name,
       price: Number(option.price_delta_usd || 0),
+      quantity: Math.max(1, Number(option.quantity || 1)),
     });
     groups.set(option.option_group_name, current);
   }

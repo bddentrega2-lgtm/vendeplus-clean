@@ -56,6 +56,7 @@ function buildSelectedOptions(
           valueId: value.id,
           valueName: value.name,
           priceDeltaUsd: getOptionPriceDelta(value, selectedVariant),
+          quantity: 1,
         } satisfies SelectedCartOption;
       })
       .filter(Boolean) as SelectedCartOption[];
@@ -231,6 +232,15 @@ function ProductOptionsSheet({
       }
 
       return { ...current, [groupId]: nextIds };
+    });
+  }
+
+  function selectRepeatableOption(groupId: string, index: number, valueId: string) {
+    setMessage("");
+    setSelections((current) => {
+      const next = [...(current[groupId] || [])];
+      next[index] = valueId;
+      return { ...current, [groupId]: next };
     });
   }
 
@@ -446,6 +456,10 @@ function ProductOptionsSheet({
           {(product.optionGroups || []).map((group) => {
             const selectedIds = selections[group.id] || [];
             const maxSelect = group.maxSelect > 0 ? group.maxSelect : group.values.length;
+            const repeatableRolls = group.selectionType === "multiple"
+              && group.required
+              && group.minSelect === maxSelect
+              && group.description?.toLocaleLowerCase("es").includes("cada selección de roll incluye 10 piezas");
             const instruction =
               group.selectionType === "single"
                 ? group.required
@@ -478,8 +492,21 @@ function ProductOptionsSheet({
                   {instruction}
                   {group.description ? ` · ${group.description}` : ""}
                 </p>
+                {repeatableRolls ? (
+                  <p className="mt-2 text-xs font-black text-[#2E3A79]" aria-live="polite">
+                    {selectedIds.filter(Boolean).length} de {maxSelect} selecciones
+                  </p>
+                ) : null}
                 <div className="mt-3 grid gap-2">
-                  {group.values.map((value) => {
+                  {repeatableRolls ? Array.from({ length: maxSelect }, (_, index) => (
+                    <label key={index} className="grid gap-1 rounded-2xl bg-white px-3 py-2.5 ring-1 ring-[#25262B]/[0.07]">
+                      <span className="text-xs font-black text-[#746f69]">Selección {index + 1} · 10 piezas</span>
+                      <select value={selectedIds[index] || ""} onChange={(event) => selectRepeatableOption(group.id, index, event.target.value)} className="min-h-11 w-full bg-transparent text-sm font-black text-[#25262B] outline-none">
+                        <option value="">Elige un roll</option>
+                        {group.values.map((value) => <option key={value.id} value={value.id}>{value.name}</option>)}
+                      </select>
+                    </label>
+                  )) : group.values.map((value) => {
                     const active = selectedIds.includes(value.id);
                     const priceDeltaUsd = getOptionPriceDelta(value, selectedVariant);
                     const controlType =

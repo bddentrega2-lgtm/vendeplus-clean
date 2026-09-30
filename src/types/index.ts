@@ -90,6 +90,7 @@ export type SelectedCartOption = {
   valueId: string;
   valueName: string;
   priceDeltaUsd: number;
+  quantity?: number;
 };
 
 export type Product = {

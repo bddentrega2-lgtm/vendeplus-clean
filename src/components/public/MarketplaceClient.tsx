@@ -188,8 +188,8 @@ export function MarketplaceClient({ stores, featuredProducts = [], discovery = {
     if (!preferencesReady) return;
     const navigate = () => {
       const hash = window.location.hash;
-      if (hash === "#promociones" || hash === "#inicio") {
-        const view = hash === "#promociones" ? "offers" : "home";
+      if (hash === "#promociones" || hash === "#cerca" || hash === "#inicio") {
+        const view = hash === "#promociones" ? "offers" : hash === "#cerca" ? "nearby" : "home";
         setActiveView(view);
         setActiveFilter(view === "offers" ? "Ofertas" : "Todos");
         window.scrollTo({ top: 0 });
@@ -263,7 +263,9 @@ export function MarketplaceClient({ stores, featuredProducts = [], discovery = {
   const offerStoreIds = useMemo(() => new Set(discovery.offers.map((product) => product.storeId)), [discovery.offers]);
   const filteredStores = useMemo(() => { const needle = normalizeSearch(query); const categoryFilter = !["Todos", "Abiertos", "Delivery", "Retiro", "Ofertas"].includes(activeFilter) ? normalizeSearch(activeFilter) : ""; const effectiveCity = activeView === "nearby" && locationCitySlug ? locationCitySlug : activeCity; return storesWithDistance.filter(({ store }) => { const text = storeSearchText(store); const productMatch = (productSearchByStore.get(store.id) || []).some((value) => value.includes(needle)); const specialMatch = activeFilter === "Abiertos" ? store.openState?.isOpen !== false : activeFilter === "Delivery" ? store.deliverySettings?.deliveryEnabled !== false : activeFilter === "Retiro" ? store.deliverySettings?.pickupEnabled !== false : activeFilter === "Ofertas" ? offerStoreIds.has(store.id) : true; const cityMatch = effectiveCity === "Todas" || store.citySlug === effectiveCity; return cityMatch && (!needle || text.includes(needle) || productMatch) && (!categoryFilter || text.includes(categoryFilter)) && specialMatch; }).sort((a, b) => coordinates ? Number(a.distance ?? Number.MAX_VALUE) - Number(b.distance ?? Number.MAX_VALUE) : a.store.name.localeCompare(b.store.name)); }, [activeCity, activeFilter, activeView, coordinates, locationCitySlug, offerStoreIds, productSearchByStore, query, storesWithDistance]);
   const filteredStoreIds = useMemo(() => new Set(filteredStores.map(({ store }) => store.id)), [filteredStores]);
-  const mapStores = useMemo(() => filteredStores.map(({ store }) => store), [filteredStores]);
+  const mapStores = useMemo(() => storesWithDistance
+    .filter(({ store }) => activeCity === "Todas" || store.citySlug === activeCity)
+    .map(({ store }) => store), [activeCity, storesWithDistance]);
   const filterProducts = useCallback((products: MarketplaceProduct[]) => {
     const needle = normalizeSearch(query);
     return products.filter((product) => filteredStoreIds.has(product.storeId) && (!needle || normalizeSearch(`${product.productName} ${product.description} ${product.storeName}`).includes(needle)));
@@ -357,7 +359,7 @@ export function MarketplaceClient({ stores, featuredProducts = [], discovery = {
       <div className="market-search-area vp-container pt-2 sm:pt-7">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="hidden max-w-2xl sm:block">{partnerName ? <div className="flex items-center gap-3"><OptimizedImage src={partnerLogoUrl || ""} alt={partnerName} width={56} height={56} className="h-14 w-14 rounded-xl bg-white object-cover p-0.5" /><div><p className="text-xs font-bold uppercase tracking-[0.08em] text-white/65">Marketplace aliado · Con tecnología Somos</p><h1 className="text-3xl font-black leading-tight">{title}</h1></div></div> : <>{eyebrow ? <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#FFD45C]">{eyebrow}</p> : null}<h1 className="mt-1 text-4xl font-black leading-tight">{title}</h1>{description ? <p className="mt-1 text-sm font-semibold text-white/70">{description}</p> : null}</>}</div>
-          {cities.length ? <button type="button" onClick={() => setCityPickerOpen(true)} className="market-city-selector inline-flex h-12 min-w-[190px] items-center gap-2 rounded-full bg-[var(--marketplace-accent)] px-4 text-sm font-black text-white shadow-md shadow-black/10 ring-2 ring-white/20 transition active:scale-[0.97]"><MapPin size={17} className="shrink-0" /><span className="min-w-0 flex-1 text-left"><small>Ciudad</small><b className="truncate">{selectedCityName}</b></span><ChevronDown size={17} /></button> : null}
+          {cities.length ? <button type="button" onClick={() => setCityPickerOpen(true)} className="market-city-selector inline-flex h-12 min-w-[190px] items-center gap-2 rounded-full bg-[var(--marketplace-accent)] px-4 text-sm font-black text-white shadow-md shadow-black/10 ring-2 ring-white/20 transition active:scale-[0.97]"><MapPin size={17} className="shrink-0" /><span className="min-w-0 flex-1 truncate text-left">{selectedCityName}</span><ChevronDown size={17} /></button> : null}
         </div>
         {partnerName && partnerBannerImageUrl ? <div className="relative mt-4 h-36 overflow-hidden rounded-[20px] sm:h-52"><OptimizedImage src={partnerBannerImageUrl} alt={`Banner de ${partnerName}`} fill sizes="1080px" className="object-cover" /></div> : null}
         {partnerName && partnerLocation ? <p className="mt-3 flex items-center gap-1.5 text-xs font-bold text-white/70"><MapPin size={13} />{partnerLocation}</p> : null}
@@ -368,11 +370,11 @@ export function MarketplaceClient({ stores, featuredProducts = [], discovery = {
     </section>
     <div className="market-directory-toolbar vp-container">
       <button ref={mapTrigger} type="button" onClick={() => setMapOpen(true)}><MapIcon size={18} />Mapa</button>
-      {!native ? <Link href="/mi-cuenta"><UserRound size={18} />Mi perfil</Link> : null}
+      {native ? <button type="button" onClick={() => selectView("nearby")} aria-current={activeView === "nearby" ? "page" : undefined}><Compass size={18} />Cerca</button> : null}
     </div>
     {mapOpen ? <section role="dialog" aria-modal="true" aria-label="Mapa del Marketplace" className="market-map-dialog">
       <header><h2>Comercios en el mapa</h2><button type="button" autoFocus aria-label="Cerrar mapa" title="Cerrar mapa" onClick={closeMap}><X size={22} /></button></header>
-      <div className="market-map-filters"><span>{filteredStores.length} comercios</span><span>{selectedCityName}</span></div>
+      <div className="market-map-filters"><span>{mapStores.length} comercios</span><span>{selectedCityName}</span></div>
       <MarketplaceMap stores={mapStores} />
     </section> : null}
     {activeView === "home" ? <>
@@ -392,6 +394,6 @@ export function MarketplaceClient({ stores, featuredProducts = [], discovery = {
       whatsappMessage={partnerName ? `Hola Somos, necesito informacion sobre el marketplace de ${partnerName}.` : "Hola Somos, necesito informacion sobre el Marketplace."}
     />
     {cityPickerOpen ? cityPicker : null}
-    <nav aria-label="Navegación del Marketplace" className="fixed inset-x-0 bottom-0 z-50 border-t border-[#143D42]/[0.08] bg-white/95 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(20,61,66,0.08)] backdrop-blur-xl sm:hidden"><div className="mx-auto grid max-w-md grid-cols-4">{([{ id: "home", label: "Inicio", icon: Home }, { id: "nearby", label: "Cerca", icon: Compass }, { id: "offers", label: "Ofertas", icon: Percent }, { id: "stores", label: "Comercios", icon: StoreIcon }] as const).map((item) => { const Icon = item.icon; const active = activeView === item.id; return <button key={item.id} type="button" onClick={() => selectView(item.id)} aria-current={active ? "page" : undefined} className={`flex min-h-12 flex-col items-center gap-1 text-[10px] font-black transition duration-200 active:scale-90 ${active ? "text-[#143D42]" : "text-[#55706E]"}`}><span className={`grid h-7 w-7 place-items-center transition duration-200 ${active ? "rounded-full bg-[#143D42] text-white" : "text-[#143D42]"}`}><Icon size={18} /></span>{item.label}<span className={`h-1 w-5 rounded-full transition duration-200 ${active ? "bg-[#FF7133]" : "bg-transparent"}`} /></button>; })}</div></nav>
+    <nav aria-label="Navegación del Marketplace" className="fixed inset-x-0 bottom-0 z-50 border-t border-[#143D42]/[0.08] bg-white/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(20,61,66,0.08)] backdrop-blur-xl sm:hidden"><div className="mx-auto grid max-w-md grid-cols-4">{([{ id: "home", label: "Inicio", icon: Home }, { id: "nearby", label: "Cerca", icon: Compass }, { id: "offers", label: "Ofertas", icon: Percent }] as const).map((item) => { const Icon = item.icon; const active = activeView === item.id; return <button key={item.id} type="button" onClick={() => selectView(item.id)} aria-current={active ? "page" : undefined} className={`flex min-h-12 flex-col items-center gap-1 text-[10px] font-black transition duration-200 active:scale-90 ${active ? "text-[#143D42]" : "text-[#55706E]"}`}><span className={`grid h-7 w-7 place-items-center transition duration-200 ${active ? "rounded-full bg-[#143D42] text-white" : "text-[#143D42]"}`}><Icon size={18} /></span>{item.label}<span className={`h-1 w-5 rounded-full transition duration-200 ${active ? "bg-[#FF7133]" : "bg-transparent"}`} /></button>; })}<Link href="/mi-cuenta" className="flex min-h-12 flex-col items-center gap-1 text-[10px] font-black text-[#55706E] transition active:scale-90"><span className="grid h-7 w-7 place-items-center text-[#143D42]"><UserRound size={18} /></span>Mi perfil<span className="h-1 w-5 rounded-full bg-transparent" /></Link></div></nav>
   </main>;
 }

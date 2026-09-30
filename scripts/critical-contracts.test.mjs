@@ -1241,6 +1241,52 @@ test("estadisticas y clientes usan rangos y resumenes completos", () => {
   assert.doesNotMatch(customersRoute, /pendingPayment/);
 });
 
+test("mapa ignora filtros y perfil aparece solo en la barra web movil", () => {
+  const marketplace = read("src/components/public/MarketplaceClient.tsx");
+  assert.match(marketplace, /const mapStores = useMemo\(\(\) => storesWithDistance/);
+  assert.match(marketplace, /activeCity === "Todas" \|\| store\.citySlug === activeCity/);
+  assert.doesNotMatch(marketplace, /const mapStores = useMemo\(\(\) => filteredStores/);
+  assert.match(marketplace, /grid-cols-4/);
+  assert.doesNotMatch(marketplace, /id: "stores", label: "Comercios"/);
+  assert.match(marketplace, /<UserRound size=\{18\} \/><\/span>Mi perfil/);
+  assert.doesNotMatch(marketplace, /<MapIcon size=\{18\} \/>Mapa<\/button>[\s\S]{0,180}Mi perfil/);
+});
+
+test("app comprador muestra Cerca junto a Mapa sin recargar su barra inferior", () => {
+  const nativeExperience = read("src/components/mobile/NativeExperience.tsx");
+  const nativeStyles = read("src/app/native-polish.css");
+  const marketplace = read("src/components/public/MarketplaceClient.tsx");
+  assert.doesNotMatch(nativeExperience, /marketplaceView\("cerca"\)/);
+  assert.match(nativeStyles, /native-buyer-nav \{ grid-template-columns: repeat\(4/);
+  assert.match(marketplace, /native \? <button type="button" onClick=\{\(\) => selectView\("nearby"\)\}[\s\S]*?<Compass size=\{18\} \/>Cerca/);
+});
+
+test("boxes Joshi permiten rolls repetidos por bloques de diez y conservan cantidades", () => {
+  const productCard = read("src/components/public/ProductCard.tsx");
+  const ordersRoute = read("src/app/api/orders/route.ts");
+  const printer = read("mobile/somos-android/android/app/src/main/java/com/somosve/app/SomosPrinterPlugin.java");
+  const migration = read("supabase/migrations/20260930203000_configure_joshi_sushi_boxes.sql");
+  assert.match(productCard, /Cada selección de roll incluye 10 piezas/i);
+  assert.match(productCard, /Selección \{index \+ 1\} · 10 piezas/);
+  assert.match(productCard, /selectedIds\.filter\(Boolean\)\.length/);
+  assert.match(ordersRoute, /current\.quantity \+= 1/);
+  assert.match(ordersRoute, /quantity: Math\.max\(1, Math\.floor\(Number\(option\.quantity/);
+  assert.match(printer, /option\.optInt\("quantity", 1\)/);
+  for (const count of [2, 3, 4, 6]) assert.match(migration, new RegExp(`, ${count}, (?:true|false)\\)`));
+  assert.match(migration, /'Box Entrada\+20 Piezas', 2, true/);
+  assert.match(migration, /'Elige tu entrada'/);
+  assert.match(migration, /price_delta_usd, is_active[\s\S]*0, true/);
+});
+
+test("promo 20 de Joshi reutiliza el grupo valido del box 20", () => {
+  const migration = read("supabase/migrations/20260930204500_configure_joshi_sushi_promo_20.sql");
+  assert.match(migration, /lower\('PROMO 20 piezas'\)/);
+  assert.match(migration, /lower\('Box 20 piezas'\)/);
+  assert.match(migration, /lower\('Elige tus rolls'\)/);
+  assert.match(migration, /on conflict \(product_id, option_group_id\) do update/);
+  assert.match(migration, /lower\(groups\.name\) = lower\('Frío'\)/);
+});
+
 test("clientes excluyen cancelados y delivery sin recorrer el historico en la web", () => {
   const migration = read("supabase/migrations/20260921113000_recalculate_customer_product_metrics.sql");
   const customerMetrics = read("src/lib/customers/upsert-customer-from-order.ts");

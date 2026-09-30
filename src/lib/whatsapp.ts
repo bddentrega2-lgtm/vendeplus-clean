@@ -36,7 +36,7 @@ export function buildOrderMessage(params: {
       const note = cleanText(item.notes) ? `\n   Nota: ${cleanText(item.notes)}` : "";
       const options = item.selectedOptions?.length
         ? `\n${item.selectedOptions
-            .map((option) => `   ${option.groupName}: ${option.valueName}`)
+            .map((option) => `   ${option.groupName}: ${Number(option.quantity || 1) > 1 ? `${option.quantity}x ` : ""}${option.valueName}`)
             .join("\n")}`
         : "";
       const inventory = item.inventorySelections?.length

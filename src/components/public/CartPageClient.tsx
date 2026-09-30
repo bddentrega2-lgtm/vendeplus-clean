@@ -19,8 +19,8 @@ function formatSelectedOptions(item: CartItem, baseCurrency: "USD" | "EUR" | str
     const current = groups.get(option.groupName) || [];
     current.push(
       option.priceDeltaUsd > 0
-        ? `${option.valueName} (+${formatBaseCurrency(option.priceDeltaUsd, baseCurrency)})`
-        : option.valueName
+        ? `${Number(option.quantity || 1) > 1 ? `${option.quantity}x ` : ""}${option.valueName} (+${formatBaseCurrency(option.priceDeltaUsd * Number(option.quantity || 1), baseCurrency)})`
+        : `${Number(option.quantity || 1) > 1 ? `${option.quantity}x ` : ""}${option.valueName}`
     );
     groups.set(option.groupName, current);
   }
