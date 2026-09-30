@@ -2,6 +2,7 @@
 
 import { Store } from "lucide-react";
 import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
+import { confirmNativeLeave } from "@/hooks/use-native-app";
 
 export function PanelStoreSelector() {
   const { stores, selectedStoreId, selectStore } = usePanelAuth();
@@ -9,6 +10,7 @@ export function PanelStoreSelector() {
   if (stores.length <= 1) return null;
 
   function handleChange(storeId: string) {
+    if (!confirmNativeLeave()) return;
     selectStore(storeId);
   }
 

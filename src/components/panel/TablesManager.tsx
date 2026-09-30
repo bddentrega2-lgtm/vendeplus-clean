@@ -206,7 +206,6 @@ export function TablesManager() {
         waiterCallLabel,
       });
       setNotice("Configuración guardada.");
-      if (enabled) setIsSetupOpen(false);
       window.setTimeout(() => setNotice(""), 2200);
       await load(true);
     } catch (saveError) {

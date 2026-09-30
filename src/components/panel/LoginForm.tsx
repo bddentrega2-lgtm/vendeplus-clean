@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Eye, EyeOff, Loader2, Lock } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Eye, EyeOff, Loader2, Lock } from "lucide-react";
+import { BrandLogo } from "@/components/public/BrandLogo";
 import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
 import { GoogleLogo } from "@/components/shared/GoogleLogo";
 import {
   completePanelOAuthSession,
+  completeNativePanelOAuthSession,
   hasPanelOAuthReturn,
   savePanelToken,
   signInPanelWithGoogle,
@@ -67,8 +69,23 @@ export function LoginForm() {
 
     void redirectIfSessionExists();
     completeOAuthLogin();
+    const completeNativeOAuthLogin = async () => {
+      try {
+        const accessToken = await completeNativePanelOAuthSession();
+        if (!accessToken || !isMounted) return;
+        await refreshSession();
+        window.location.replace("/panel");
+      } catch (reason) {
+        if (isMounted) setError(reason instanceof Error ? reason.message : "No se pudo completar el inicio con Google.");
+      }
+    };
+    void completeNativeOAuthLogin();
+    window.addEventListener("focus", completeNativeOAuthLogin);
+    window.addEventListener("somos:resume", completeNativeOAuthLogin);
     return () => {
       isMounted = false;
+      window.removeEventListener("focus", completeNativeOAuthLogin);
+      window.removeEventListener("somos:resume", completeNativeOAuthLogin);
     };
   }, [refreshSession, router]);
 
@@ -142,7 +159,8 @@ export function LoginForm() {
   }
 
   return (
-    <main className="min-h-screen bg-[#F8F3E8] px-4 py-8 text-[#25262B]">
+    <main className="somos-login min-h-screen bg-[#F8F3E8] px-4 py-8 text-[#25262B]">
+      <header className="native-login-brand"><Link href="/marketplace" aria-label="Volver a comprar" title="Volver a comprar"><ArrowLeft size={22} /></Link><BrandLogo size="sm" priority /><span /></header>
       <section className="mx-auto max-w-xl rounded-[40px] bg-white p-6 text-center shadow-2xl shadow-[#2E3A79]/[0.10] ring-1 ring-[#25262B]/[0.06]">
         <div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl bg-[#2E3A79] text-[#FFB547]">
           <Lock size={26} />
@@ -156,6 +174,7 @@ export function LoginForm() {
           Acceso privado para comercios. Cada usuario verá solo la información de sus negocios asignados.
         </p>
 
+        <form onSubmit={(event) => { event.preventDefault(); if (!isLoading) void login(); }}>
         <div className="mt-6 space-y-3 text-left">
           <label className="block">
             <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
@@ -165,6 +184,9 @@ export function LoginForm() {
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               type="email"
+              autoComplete="username"
+              autoCapitalize="none"
+              required
               placeholder="admin@somos.app"
               className="mt-1 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
             />
@@ -179,6 +201,8 @@ export function LoginForm() {
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
+                required
                 placeholder="Tu contraseña"
                 className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 pr-12 text-sm font-bold outline-none focus:border-[#2E3A79]"
               />
@@ -195,8 +219,7 @@ export function LoginForm() {
         </div>
 
         <button
-          type="button"
-          onClick={login}
+          type="submit"
           disabled={isLoading}
           className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B] disabled:opacity-60"
         >
@@ -207,6 +230,7 @@ export function LoginForm() {
           )}
           Entrar al panel
         </button>
+        </form>
 
         <div className="my-4 flex items-center gap-3">
           <span className="h-px flex-1 bg-[#25262B]/10" />
@@ -224,7 +248,7 @@ export function LoginForm() {
           Continuar con Google
         </button>
 
-        {error && <p className="mt-3 text-sm font-black text-red-600">{error}</p>}
+        {error && <p role="alert" className="mt-3 text-sm font-black text-red-600">{error}</p>}
 
         <p className="mt-5 text-xs font-bold text-[#746f69]">
           ¿Aún no tienes comercio?{" "}

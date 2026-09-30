@@ -185,7 +185,8 @@ test("mapa permite mosaicos seguros y seleccion directa sin boton confuso", () =
   assert.match(nextConfig, /https:\/\/\*\.tile\.openstreetmap\.org/);
   assert.match(locationPicker, /void loadLeaflet\(\)/);
   assert.match(locationPicker, /Elegir en el mapa/);
-  assert.match(locationPicker, /Punto guardado\. Ajusta el pin/);
+  assert.match(locationPicker, /Ajusta el pin si necesitas precisar\./);
+  assert.doesNotMatch(locationPicker, /Punto guardado/);
   assert.doesNotMatch(locationPicker, /Marcar centro del mapa/);
   assert.doesNotMatch(locationPicker, /selectMapCenter/);
 });
@@ -293,6 +294,10 @@ test("tokens de Mesa se resuelven desde almacenamiento privado", () => {
     new URL("../supabase/migrations/20260819223000_drop_legacy_table_order_token.sql", import.meta.url),
     "utf8",
   );
+  const tokenCreationMigration = readFileSync(
+    new URL("../supabase/migrations/20260923143000_create_table_tokens_for_new_stores.sql", import.meta.url),
+    "utf8",
+  );
 
   assert.match(tokenStore, /rpc\("table_order_token_for_store"/);
   assert.match(tokenStore, /rpc\("table_order_store_id_for_token"/);
@@ -310,6 +315,9 @@ test("tokens de Mesa se resuelven desde almacenamiento privado", () => {
   assert.match(migration, /grant execute on function public\.table_order_token_for_store\(uuid\) to service_role/);
   assert.match(cleanupMigration, /drop index if exists public\.stores_table_order_token_uidx/);
   assert.match(cleanupMigration, /drop column if exists table_order_token/);
+  assert.match(tokenCreationMigration, /after insert on public\.stores/i);
+  assert.match(tokenCreationMigration, /insert into private\.store_table_order_tokens \(store_id\)/i);
+  assert.match(tokenCreationMigration, /on conflict \(store_id\) do nothing/i);
 });
 
 test("pedidos publicos y manuales se crean en una transaccion idempotente", () => {
@@ -879,9 +887,9 @@ test("resumen admin pagina pedidos y separa fee generado del cobrado", () => {
   assert.doesNotMatch(dashboard, /MRR|Ventas historicas/);
 });
 
-test("Marketplace usa ofertas ventas y ubicacion reales sin pedir permiso al abrir", () => {
+test("Marketplace web usa ubicacion voluntaria; deteccion inicial queda limitada a Somos nativo", () => {
   const migration = readFileSync(
-    new URL("../supabase/migrations/20260821041000_marketplace_discovery.sql", import.meta.url),
+    new URL("../supabase/migrations/20260925180000_marketplace_fair_discovery.sql", import.meta.url),
     "utf8",
   );
   const marketplace = readFileSync(
@@ -899,14 +907,20 @@ test("Marketplace usa ofertas ventas y ubicacion reales sin pedir permiso al abr
   assert.match(migration, /partition by eligible_products\.store_id/);
   assert.match(migration, /where store_rank = 1/);
   assert.match(migration, /products\.discount_percent/);
-  assert.match(migration, /where created_at >= now\(\) - interval '45 days'/);
+  assert.match(migration, /where store_rank <= 2/);
+  assert.match(migration, /stores\.created_at >= now\(\) - interval '30 days'/);
+  assert.match(migration, /having count\(products\.id\) >= 3/);
+  assert.match(migration, /'newStoreIds'/);
   assert.match(migration, /stores\.marketplace_visible is true/);
-  assert.match(migration, /revoke all on function public\.marketplace_discovery\(integer\) from public, anon, authenticated/);
-  assert.match(migration, /grant execute on function public\.marketplace_discovery\(integer\) to service_role/);
+  assert.match(migration, /revoke all on function public\.marketplace_discovery_v2\(integer\) from public, anon, authenticated/);
+  assert.match(migration, /grant execute on function public\.marketplace_discovery_v2\(integer\) to service_role/);
   assert.match(page, /getMarketplaceDiscovery\(\)/);
   assert.match(readFileSync(new URL("../src/lib/supabase/catalog.ts", import.meta.url), "utf8"), /row\.is_test !== true/);
   assert.match(marketplace, /onClick=\{requestLocation\}/);
   assert.doesNotMatch(marketplace, /useEffect\(\(\) => \{[^}]*requestLocation\(\)/);
+  assert.doesNotMatch(marketplace, /autoLocationStarted|nativeCityMode/);
+  assert.match(marketplace, /const cityRequired = cities.length > 0 && \(!preferencesReady \|\| !cityConfirmed\)/);
+  assert.match(marketplace, /if \(cityRequired\) return/);
   assert.match(marketplace, /distanceKm\(coordinates, store\)/);
   assert.match(marketplace, /Ofertas que valen la pena/);
   assert.match(marketplace, /Los favoritos de la semana/);
@@ -914,13 +928,16 @@ test("Marketplace usa ofertas ventas y ubicacion reales sin pedir permiso al abr
   assert.doesNotMatch(marketplace, /Un ganador por tienda|Comercios locales, productos reales|pedidos directos por WhatsApp/);
   assert.doesNotMatch(marketplace, /Tiendas recomendadas/);
   assert.match(marketplace, /grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4/);
-  assert.match(marketplace, /placeholder="¿Que quieres pedir hoy\?"/);
+  assert.match(marketplace, /placeholder="¿Qué quieres pedir hoy\?"/);
   assert.match(marketplace, /"Abiertos", "Delivery", "Retiro", "Ofertas"/);
   assert.doesNotMatch(marketplace, />Ver catalogo/);
-  assert.match(marketplace, /Reci.n llegados/);
+  assert.match(marketplace, /Comercios reci.n llegados/);
   assert.match(marketplace, /No autorizaste la ubicacion/);
-  assert.match(marketplace, /products=\{filteredOffers\}/);
-  assert.match(marketplace, /products=\{filteredBestSellers\}/);
+  assert.match(marketplace, /products=\{curatedSections\.offers\.slice\(0, 6\)\}/);
+  assert.match(marketplace, /products=\{curatedSections\.bestSellers\.slice\(0, 6\)\}/);
+  assert.match(marketplace, /<StoreRail stores=\{curatedSections\.newStores\}/);
+  assert.match(marketplace, /Number\(storeAppearances\.get\(item\.storeId\) \|\| 0\) >= 2/);
+  assert.doesNotMatch(marketplace, /vendidos esta semana/);
   assert.doesNotMatch(marketplace, /Escribe tu zona, ciudad o sector/);
 });
 
@@ -930,14 +947,14 @@ test("Marketplace nuevo exige foto propia y usa una experiencia movil tipo app",
 
   assert.match(discovery, /select\("id, image_url"\)/);
   assert.match(discovery, /filter\(\(product\) => productImages\.has\(product\.productId\)\)/);
-  assert.match(marketplace, /sticky top-14 z-30/);
+  assert.match(marketplace, /rounded-b-\[32px\] bg-\[var\(--marketplace-primary\)\]/);
   assert.match(marketplace, /Navegación del Marketplace/);
   assert.match(marketplace, /grid max-w-md grid-cols-4/);
-  assert.match(marketplace, /<button type="button" onClick=\{requestLocation\}[\s\S]*<Compass[\s\S]*Cerca<\/button>/);
-  assert.doesNotMatch(marketplace, /aria-label="Usar mi ubicación"/);
-  assert.match(marketplace, /badge === "Oferta"[\s\S]*bg-\[#FFF0E8\][\s\S]*bg-\[#FFF7D9\][\s\S]*bg-\[#E8F6F1\]/);
-  assert.match(marketplace, /bg-\[#FFF0E8\][\s\S]*<Home[\s\S]*bg-\[#E8F6F1\][\s\S]*<Compass/);
-  assert.match(marketplace, /<BrandLogo size="sm" priority \/>/);
+  assert.match(marketplace, /type MarketplaceView = "home" \| "nearby" \| "offers" \| "stores"/);
+  assert.match(marketplace, /onClick=\{\(\) => selectView\(item\.id\)\}/);
+  assert.match(marketplace, /badge === "Oferta"[\s\S]*bg-\[#FF7133\][\s\S]*bg-\[#BDEDDD\][\s\S]*bg-\[#0F6B63\]/);
+  assert.doesNotMatch(marketplace, /bg-\[#FFE8DC\]|bg-\[#FFF2B8\]|bg-\[#DDF4EC\]/);
+  assert.match(marketplace, /<BrandLogo variant="white" size="sm" priority \/>/);
   assert.match(marketplace, /<PwaInstallButton subtle label="Instalar" \/>/);
 });
 
@@ -1346,8 +1363,12 @@ test("Marketplace y registro conservan ciudad estructurada", () => {
     "utf8",
   );
 
-  assert.match(marketplace, /Filtrar por ciudad/);
-  assert.match(marketplace, /store\.citySlug === activeCity/);
+  const cityPicker = readFileSync(new URL("../src/components/public/MarketplaceCityPicker.tsx", import.meta.url), "utf8");
+  assert.match(marketplace, /MarketplaceCityPicker/);
+  assert.match(cityPicker, /aria-labelledby="city-picker-title"/);
+  assert.match(marketplace, /effectiveCity === "Todas" \|\| store\.citySlug === effectiveCity/);
+  assert.match(marketplace, /activeView === "nearby" && locationCitySlug/);
+  assert.doesNotMatch(marketplace, /nearbyStores[\s\S]{0,180}\.slice\(0, 6\)/);
   assert.match(signup, /from\("service_cities"\)/);
   assert.match(signup, /city_id: cityId/);
 });
@@ -1830,6 +1851,59 @@ test("rutas con service_role declaran guardia o contrato publico", () => {
   assert.deepEqual(result.findings, []);
   assert.ok(result.checkedRoutes >= 70);
   assert.ok(result.publicServiceRoleRoutes >= 10);
+});
+
+test("Android reutiliza una cola de impresion revocable y aislada por comercio", () => {
+  const config = read("mobile/somos-android/capacitor.config.ts");
+  const serverConfig = read("mobile/somos-android/server-config.ts");
+  const migration = read("supabase/migrations/20260826152000_store_thermal_printing.sql");
+  const agentMigration = read("supabase/migrations/20260827120000_print_agent_devices.sql");
+  const jobs = read("src/app/api/printing-agent/jobs/route.ts");
+  const pair = read("src/app/api/printing-agent/pair/route.ts");
+  const push = read("src/app/api/printing-agent/push-token/route.ts");
+  const auth = read("src/lib/printing/agent-auth-server.ts");
+  const printer = read("mobile/somos-android/android/app/src/main/java/com/somosve/app/SomosPrinterPlugin.java");
+  const printerConfig = read("mobile/somos-android/android/app/src/main/java/com/somosve/app/PrinterServerConfig.java");
+
+  assert.match(config, /appId: "com\.somosve\.app"/);
+  assert.match(config, /server: resolveAndroidServer\(process\.env\)/);
+  assert.match(serverConfig, /url: "https:\/\/www\.somos-ve\.com"/);
+  assert.match(serverConfig, /cleartext: false/);
+  assert.match(migration, /create table if not exists public\.order_print_jobs/);
+  assert.match(migration, /for update skip locked/);
+  assert.match(agentMigration, /create table if not exists public\.print_agent_devices/);
+  assert.match(auth, /randomBytes\(32\)/);
+  assert.match(auth, /createHash\("sha256"\)/);
+  assert.match(pair, /checkDistributedRateLimit/);
+  assert.match(pair, /p_platform: platform/);
+  assert.match(jobs, /requirePrintAgent\(request\)/);
+  assert.match(jobs, /p_manual_only: !settings\.is_enabled/);
+  assert.match(jobs, /\.eq\("store_id", device\.store_id\)/);
+  assert.match(jobs, /\.eq\("claimed_by", device\.id\)/);
+  assert.match(jobs, /customer_phone, delivery_type/);
+  assert.match(jobs, /payment_method, payment_reference/);
+  assert.doesNotMatch(jobs, /payment_status|delivery_distance_km|delivery_notes/);
+  assert.match(jobs, /delivery_address, transport_agency_name/);
+  assert.match(jobs, /option_group_name, option_name, price_delta_usd/);
+  assert.match(printer, /appendField\(text, "Telefono", jsonString\(order, "customer_phone", ""\)\)/);
+  assert.match(printer, /appendWrappedField\(text, "DIRECCION", deliveryAddress, columns\)/);
+  assert.match(printer, /appendField\(text, "Pago", jsonString\(order, "payment_method", ""\)\)/);
+  assert.match(printer, /if \(!sameText\(deliveryAddress, deliveryReference\)\)/);
+  assert.doesNotMatch(printer, /"Distancia"|"TARIFA"|"Estado pago"/);
+  assert.match(printer, /text\.append\("SUBTOTAL: \$"\)/);
+  assert.match(printer, /text\.append\("TOTAL BS: "\)/);
+  assert.match(printer, /PrinterServerConfig\.apiUrl\(context, JOBS_PATH\)/);
+  assert.match(printerConfig, /OFFICIAL_ORIGIN = "https:\/\/www\.somos-ve\.com"/);
+  assert.match(printerConfig, /PREVIEW_HOST = "vendeplus-clean-/);
+  const checkout = read("src/components/public/CheckoutForm.tsx");
+  const publicOrders = read("src/app/api/orders/route.ts");
+  const manualOrders = read("src/app/api/panel/orders/route.ts");
+  assert.match(checkout, /return `SO-\$\{dayCode\}-\$\{numericSuffix\}`/);
+  assert.match(publicOrders, /\^SO-\\d\{4\}-\\d\{6\}\$/);
+  assert.match(publicOrders, /randomInt\(0, 1_000_000\)/);
+  assert.match(manualOrders, /return `SO-\$\{dayCode\}-\$\{suffix\}`/);
+  assert.match(push, /requirePrintAgent\(request\)/);
+  assert.match(push, /fcm_token_updated_at/);
 });
 
 test("catalogo usa etiqueta general y recomienda trasladar el fee al cliente", () => {

@@ -1,0 +1,118 @@
+apply plugin: 'com.android.application'
+
+def buyerStaging = System.getenv('SOMOS_ANDROID_BUYER_STAGING') == '1'
+def releaseKeystorePath = System.getenv('SOMOS_ANDROID_KEYSTORE_PATH')
+def releaseKeyAlias = System.getenv('SOMOS_ANDROID_KEY_ALIAS')
+def releaseStorePassword = System.getenv('SOMOS_ANDROID_STORE_PASSWORD')
+def releaseKeyPassword = System.getenv('SOMOS_ANDROID_KEY_PASSWORD')
+def releaseSigningReady = [releaseKeystorePath, releaseKeyAlias, releaseStorePassword, releaseKeyPassword].every { it }
+
+android {
+    namespace = "com.somosve.app"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId buyerStaging ? "com.somosve.app.staging" : "com.somosve.app"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode buyerStaging ? 14 : 13
+        versionName buyerStaging ? "1.4.0-buyer-beta.3" : "1.4.1-panel-auth"
+        manifestPlaceholders = [somosAppLabel: buyerStaging ? 'Somos Pruebas' : 'Somos']
+        buildConfigField 'String', 'BUYER_AUTH_HOST', buyerStaging ? '"xpqmmdmixpyqruykkbkf.supabase.co"' : '"rvmtjtuztewcrmodrodb.supabase.co"'
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    buildFeatures { buildConfig true }
+    signingConfigs {
+        if (releaseSigningReady) {
+            release {
+                storeFile file(releaseKeystorePath)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (releaseSigningReady) signingConfig signingConfigs.release
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    implementation platform('com.google.firebase:firebase-bom:34.4.0')
+    implementation 'com.google.firebase:firebase-messaging'
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+// A local/preview origin must never accidentally become a release artifact.
+tasks.register('verifyReleaseOrigin') {
+    doLast {
+        if (buyerStaging) throw new GradleException('Buyer staging is debug-only; never publish it as a release.')
+        def config = new groovy.json.JsonSlurper().parse(file('src/main/assets/capacitor.config.json'))
+        if (config.server?.url != 'https://www.somos-ve.com' || config.server?.cleartext != false ||
+            config.server?.allowNavigation != ['www.somos-ve.com', 'somos-ve.com']) {
+            throw new GradleException('Release requires the official HTTPS origin. Sync without local/preview variables first.')
+        }
+    }
+}
+
+tasks.register('verifyReleaseSigning') {
+    doLast {
+        if (!releaseSigningReady) {
+            throw new GradleException('Release signing variables are incomplete. No release artifact was produced.')
+        }
+        if (!file(releaseKeystorePath).isFile()) {
+            throw new GradleException('Release keystore was not found at the configured external path.')
+        }
+    }
+}
+
+tasks.register('verifyAppIdentity') {
+    doLast {
+        def config = new groovy.json.JsonSlurper().parse(file('src/main/assets/capacitor.config.json'))
+        def expected = buyerStaging ? 'com.somosve.app.staging' : 'com.somosve.app'
+        if (config.appId != expected) throw new GradleException('Capacitor and Android identities differ. Sync using the same staging flag.')
+        if (buyerStaging && (config.server?.cleartext != false ||
+            !(config.server?.url ==~ /https:\/\/vendeplus-clean-[a-z0-9]{9}-entrega2-s-projects\.vercel\.app/) ||
+            config.server?.allowNavigation != [new URI(config.server.url).host])) {
+            throw new GradleException('Buyer staging requires a single HTTPS preview origin.')
+        }
+    }
+}
+tasks.matching { it.name == 'preBuild' }.configureEach { dependsOn('verifyAppIdentity') }
+tasks.matching { it.name == 'preReleaseBuild' }.configureEach {
+    dependsOn('verifyReleaseOrigin')
+    dependsOn('verifyReleaseSigning')
+}
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (!buyerStaging && servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

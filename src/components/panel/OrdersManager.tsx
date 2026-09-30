@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNativeBackLayer, useNativeTextState } from "@/hooks/use-native-app";
 import Link from "next/link";
 import {
   CheckCircle2,
@@ -14,6 +15,7 @@ import {
   Navigation,
   PackageCheck,
   Plus,
+  Printer,
   RefreshCcw,
   Search,
   Send,
@@ -38,6 +40,7 @@ import {
   playNewOrderSound,
   unlockOrderNotificationSound,
 } from "@/lib/panel/order-notification-sound";
+import { hasNativeOrderAlerts } from "@/lib/mobile/order-alerts";
 import {
   NewOrderToast,
   type NewOrderToastData,
@@ -106,6 +109,8 @@ export function OrderDetail({
   const [isSaving, setIsSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const [paymentCopied, setPaymentCopied] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [printMessage, setPrintMessage] = useState("");
   const [isSavingPayment, setIsSavingPayment] = useState(false);
   const [paymentMessage, setPaymentMessage] = useState("");
   const [isReviewingPayment, setIsReviewingPayment] = useState(false);
@@ -175,6 +180,25 @@ export function OrderDetail({
     await navigator.clipboard.writeText(buildPaymentDataText(order));
     setPaymentCopied(true);
     setTimeout(() => setPaymentCopied(false), 1800);
+  }
+
+  async function printCommand() {
+    setIsPrinting(true);
+    setPrintMessage("");
+    try {
+      await apiRequest(pin, `/api/panel/printing/orders/${order.id}`, { method: "POST" });
+      const plugin = (window as typeof window & { Capacitor?: { Plugins?: { SomosPrinter?: { processQueue: () => Promise<{ processed: number }> } } } }).Capacitor?.Plugins?.SomosPrinter;
+      if (plugin) {
+        const result = await plugin.processQueue();
+        setPrintMessage(result.processed > 0 ? "Comanda enviada a la impresora." : "Comanda en cola. Reintenta desde Impresion.");
+      } else {
+        setPrintMessage("Comanda en cola para la app Somos.");
+      }
+    } catch (error) {
+      setPrintMessage(error instanceof Error ? error.message : "No se pudo imprimir la comanda.");
+    } finally {
+      setIsPrinting(false);
+    }
   }
 
   async function savePayment(nextStatus?: string) {
@@ -518,6 +542,16 @@ export function OrderDetail({
               <div className="mt-4 grid gap-2">
                 <button
                   type="button"
+                  onClick={printCommand}
+                  disabled={isPrinting}
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-4 py-3 text-sm font-black text-[#2E3A79] disabled:opacity-60"
+                >
+                  {isPrinting ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
+                  {isPrinting ? "Imprimiendo..." : "Imprimir comanda"}
+                </button>
+                {printMessage ? <p className="rounded-2xl bg-white/10 p-3 text-xs font-bold">{printMessage}</p> : null}
+                <button
+                  type="button"
                   onClick={copyCommand}
                   className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-4 py-3 text-sm font-black text-[#25262B]"
                 >
@@ -559,14 +593,15 @@ export function OrderDetail({
 
 export function OrdersManager() {
   const { requestCancellation, cancellationDialog } = useTableCancellation();
-  const { isFounderMode, stores: panelStores } = usePanelAuth();
+  const { isFounderMode, stores: panelStores, accountId, selectedStoreId: activeStoreId } = usePanelAuth();
+  const filterKey = `private_orders_${accountId}_${activeStoreId}_`;
   const [pin, setPin] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [orders, setOrders] = useState<OrderRow[]>([]);
-  const [selectedStatus, setSelectedStatus] = useState("all");
+  const [selectedStatus, setSelectedStatus] = useNativeTextState(filterKey + "status", "all");
   const [selectedStoreId, setSelectedStoreId] = useState("all");
   const [selectedPaymentStatus, setSelectedPaymentStatus] = useState("all");
-  const [selectedDate, setSelectedDate] = useState("today");
+  const [selectedDate, setSelectedDate] = useNativeTextState(filterKey + "date", "today");
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("all");
   const [selectedDeliveryType, setSelectedDeliveryType] = useState("all");
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
@@ -574,6 +609,8 @@ export function OrdersManager() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<OrderRow | null>(null);
   const [paymentReview, setPaymentReview] = useState<OrderRow | null>(null);
+  useNativeBackLayer(Boolean(selectedOrder) && !paymentReview, () => setSelectedOrder(null));
+  useNativeBackLayer(Boolean(paymentReview), () => setPaymentReview(null));
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => shouldShowPanelInitialAccessGate());
   const [isLoading, setIsLoading] = useState(() => hasSavedPanelAuth());
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -669,7 +706,7 @@ export function OrdersManager() {
             const currentIds = new Set(current.map((order) => order.id));
             const newOrder = nextOrders.find((order: OrderRow) => order?.id && !currentIds.has(order.id));
             if (newOrder) {
-              void playNewOrderSound();
+              if (!hasNativeOrderAlerts()) void playNewOrderSound();
               setNewOrderToast({
                 id: `${newOrder.id}-${Date.now()}`,
                 title: newOrder.public_code || newOrder.id?.slice(0, 8) || "Pedido recibido",
@@ -1040,10 +1077,10 @@ export function OrdersManager() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="native-orders space-y-5">
       {cancellationDialog}
       <NewOrderToast notification={newOrderToast} onClose={() => setNewOrderToast(null)} />
-      <section className="rounded-2xl bg-white p-4 shadow-lg shadow-[#2E3A79]/[0.05] ring-1 ring-[#25262B]/[0.06]">
+      <section className="orders-toolbar rounded-2xl bg-white p-4 shadow-lg shadow-[#2E3A79]/[0.05] ring-1 ring-[#25262B]/[0.06]">
         <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
           <div>
             <h2 className="text-xl font-black">Pedidos operativos</h2>
@@ -1066,10 +1103,13 @@ export function OrdersManager() {
                 invalidateOrderCache();
                 void loadOrders(pin, currentFilters, { force: true });
               }}
+              data-native-icon="true"
+              aria-label="Actualizar pedidos"
+              title="Actualizar pedidos"
               className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-5 py-3 text-sm font-black text-white"
             >
               <RefreshCcw size={16} />
-              Actualizar
+              <span>Actualizar</span>
             </button>
             <button
               type="button"
@@ -1272,7 +1312,7 @@ export function OrdersManager() {
             <article
               key={order.id}
               className={[
-                "rounded-xl bg-white px-3 py-2 shadow-sm ring-1",
+                "native-order-card rounded-xl bg-white px-3 py-2 shadow-sm ring-1",
                 isNewOrder
                   ? "ring-2 ring-[#FFB547]"
                   : "ring-[#25262B]/[0.06]",

@@ -37,7 +37,7 @@ type Props = {
   searchArea?: string;
   value: DeliveryLocation | null;
   onChange: (location: DeliveryLocation) => void;
-  mode?: "delivery" | "store";
+  mode?: "delivery" | "store" | "saved";
   pointName?: string;
   referenceMarkerLabel?: string;
   referencePopupLabel?: string;
@@ -146,7 +146,7 @@ export function LocationPicker({
             source: "map",
           });
           setMessageType("info");
-          setMessage("Pin ajustado. Puedes continuar o moverlo si necesitas corregirlo.");
+          setMessage("");
         });
       }
 
@@ -169,7 +169,7 @@ export function LocationPicker({
       await updateDestinationMarker(latitude, longitude);
       onChangeRef.current(nextLocation);
       setMessageType("info");
-      setMessage("Punto guardado. Ajusta el pin hasta la entrada si necesitas precisar la ubicacion.");
+      setMessage("");
     },
     [updateDestinationMarker]
   );
@@ -193,7 +193,7 @@ export function LocationPicker({
 
       const map = leaflet.map(mapRef.current, {
         center: [initialCenter.latitude, initialCenter.longitude],
-        zoom: 14,
+        zoom: mode === "saved" ? 5 : 14,
         zoomControl: true,
       });
       leafletMapRef.current = map;
@@ -208,7 +208,7 @@ export function LocationPicker({
         })
         .addTo(map);
 
-      if (mode !== "store") {
+      if (mode === "delivery") {
         leaflet
           .marker([initialCenter.latitude, initialCenter.longitude], { icon: storeIcon })
           .addTo(map)
@@ -408,7 +408,7 @@ export function LocationPicker({
           <div ref={mapRef} className="h-[340px] w-full" />
           <div className="space-y-3 border-t border-[#25262B]/10 bg-white p-3">
             <p className="text-center text-xs font-bold text-[#746f69]">
-              Punto guardado. Ajusta el pin hasta la entrada o el punto donde sera atendido el repartidor.
+              Ajusta el pin si necesitas precisar.
             </p>
           </div>
         </div>

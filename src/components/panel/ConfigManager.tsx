@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useNativeDirtyGuard } from "@/hooks/use-native-app";
 import {
   CheckCircle2,
   Loader2,
@@ -274,6 +275,8 @@ function StoreSettingsCard({
     service_fee_payer: store.service_fee_payer === "customer" ? "customer" : "merchant",
     service_fee_billing_cycle: "monthly",
   });
+  const [savedDraft, setSavedDraft] = useState(() => JSON.stringify(draft));
+  useNativeDirtyGuard(JSON.stringify(draft) !== savedDraft);
 
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
@@ -401,6 +404,7 @@ function StoreSettingsCard({
       });
 
       setMessage(data.warning || "Configuración guardada correctamente.");
+      setSavedDraft(JSON.stringify(draft));
       onSaved();
     } catch (error: any) {
       setMessage(error.message || "No se pudo guardar.");

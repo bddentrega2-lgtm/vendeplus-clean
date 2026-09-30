@@ -11,6 +11,7 @@ import {
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { TABLE_ORDERS_CHANGED_EVENT } from "@/lib/table-orders";
 import { fetchTableSnapshot } from "@/lib/panel/table-snapshot-client";
+import { hasNativeOrderAlerts } from "@/lib/mobile/order-alerts";
 
 type TableOrderSummary = {
   id: string;
@@ -68,7 +69,7 @@ export function TableOrderNotifier() {
       }));
 
       if (newOrder) {
-        void playNewOrderSound();
+        if (!hasNativeOrderAlerts()) void playNewOrderSound();
         setNotification({
           id: `${newOrder.id}-${Date.now()}`,
           title: newOrder.public_code || "Pedido en mesa recibido",

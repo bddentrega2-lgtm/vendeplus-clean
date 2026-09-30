@@ -3,6 +3,7 @@
 import { Download, Smartphone, X } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
+import { useNativeApp } from "@/hooks/use-native-app";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -41,6 +42,7 @@ export function PwaInstallButton({
   footer?: boolean;
   label?: string;
 }) {
+  const native = useNativeApp();
   const [installPrompt, setInstallPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(false);
@@ -119,6 +121,7 @@ export function PwaInstallButton({
     }
   }
 
+  if (native) return null;
   if (installed) {
     if (tile) {
       return (

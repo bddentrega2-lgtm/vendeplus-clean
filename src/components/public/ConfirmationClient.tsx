@@ -10,6 +10,8 @@ import { getOrderKey } from "@/components/public/CheckoutForm";
 import { getTablePaymentInstructions, isInPersonTablePaymentMethod } from "@/lib/table-orders";
 import { paymentStatusLabels, type PaymentStatus } from "@/lib/payments";
 import { WaiterCallButton } from "@/components/public/WaiterCallButton";
+import { getTableOrderContext } from "@/lib/table-orders";
+import { isNativeApp } from "@/lib/mobile/state";
 
 export function ConfirmationClient({ store }: { store: Store }) {
   const [order, setOrder] = useState<SavedOrder | null>(null);
@@ -27,7 +29,12 @@ export function ConfirmationClient({ store }: { store: Store }) {
     try {
       const raw = localStorage.getItem(getOrderKey(store.slug));
       if (!raw) return;
-      setOrder(JSON.parse(raw));
+      const saved = JSON.parse(raw);
+      if (isNativeApp() && saved.tableOrder && !saved.tableOrder.storeToken) {
+        const context = getTableOrderContext(store.slug);
+        if (context?.tableId === saved.tableOrder.tableId) saved.tableOrder = context;
+      }
+      setOrder(saved);
     } catch {
       setOrder(null);
     }

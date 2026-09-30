@@ -13,7 +13,9 @@ import {
   LayoutList,
   Loader2,
   Lock,
+  Pencil,
   Plus,
+  RefreshCw,
   Save,
   Search,
   Sparkles,
@@ -34,6 +36,8 @@ import { fetchPanelJson } from "@/lib/panel/client-fetch-cache";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import { compressImageForUpload } from "@/lib/images/client-compress";
 import { PremiumInventoryPreview } from "@/components/panel/PremiumInventoryPreview";
+import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
+import { useNativeDirtyGuard, useNativeTextState } from "@/hooks/use-native-app";
 
 type StoreRow = {
   id: string;
@@ -278,6 +282,8 @@ function ProductEditor({
   });
 
   const [isSaving, setIsSaving] = useState(false);
+  const [savedDraft, setSavedDraft] = useState(() => JSON.stringify(draft));
+  useNativeDirtyGuard(savedDraft !== JSON.stringify(draft));
   const [isDeleting, setIsDeleting] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [message, setMessage] = useState("");
@@ -307,6 +313,7 @@ function ProductEditor({
       });
 
       setMessage("Producto guardado correctamente.");
+      setSavedDraft(JSON.stringify(draft));
       onSaved();
     } catch (error: any) {
       setMessage(error.message || "Error al guardar.");
@@ -661,6 +668,7 @@ function ProductEditor({
 }
 
 export function ProductManager() {
+  const { accountId, selectedStoreId } = usePanelAuth();
   const [pin, setPin] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [stores, setStores] = useState<StoreRow[]>([]);
@@ -671,7 +679,7 @@ export function ProductManager() {
   const [isLoading, setIsLoading] = useState(() => hasSavedPanelAuth());
   const [isUploadingNewImage, setIsUploadingNewImage] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [productQuery, setProductQuery] = useState("");
+  const [productQuery, setProductQuery] = useNativeTextState(`private_products_${accountId}_${selectedStoreId}_query`, "");
   const [productView, setProductView] = useState<"comfortable" | "compact">(
     "compact"
   );
@@ -702,6 +710,7 @@ export function ProductManager() {
       categories.filter((category) => category.store_id === newProduct.store_id),
     [categories, newProduct.store_id]
   );
+  useNativeDirtyGuard(isCreateOpen && Boolean(newProduct.name || newProduct.description || newProduct.price_usd || newProduct.image_url || newProduct.variants.length));
   const isShibuiInventoryPilot = stores.some(
     (store) =>
       store.id === "126f8168-f1ca-4a08-8eaf-c3816b9d9195" &&
@@ -919,7 +928,7 @@ export function ProductManager() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="native-products space-y-5">
       {isShibuiInventoryPilot ? (
         isInventoryPreviewOpen ? (
           <PremiumInventoryPreview
@@ -948,8 +957,9 @@ export function ProductManager() {
         )
       ) : null}
 
-      <section className="rounded-2xl bg-white p-4 shadow-lg shadow-[#2E3A79]/[0.05] ring-1 ring-[#25262B]/[0.06]">
-        <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
+      <section className="product-create-section rounded-2xl bg-white p-4 shadow-lg shadow-[#2E3A79]/[0.05] ring-1 ring-[#25262B]/[0.06]">
+        <div className="product-create-toolbar flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
+          <p className="native-only native-product-count">{filteredProducts.length} de {products.length}<span> productos</span></p>
           <div>
             <h2 className="text-xl font-black">Productos</h2>
             <p className="text-sm font-bold text-[#746f69]">
@@ -965,6 +975,7 @@ export function ProductManager() {
             {isCreateOpen ? <X size={17} /> : <Plus size={17} />}
             {isCreateOpen ? "Cancelar" : "Crear producto"}
           </button>
+          <button type="button" className="native-only" data-native-icon="true" aria-label="Actualizar lista" title="Actualizar lista" onClick={() => loadData(pin)} disabled={isLoading}>{isLoading ? <Loader2 size={18} className="animate-spin" /> : <RefreshCw size={18} />}</button>
         </div>
 
         {isCreateOpen ? (
@@ -1229,7 +1240,7 @@ export function ProductManager() {
       </section>
 
       <section className="space-y-4">
-        <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+        <div className="product-list-toolbar flex flex-col justify-between gap-3 md:flex-row md:items-center">
           <div>
             <h2 className="text-2xl font-black">Productos editables</h2>
             <p className="text-sm font-bold text-[#746f69]">
@@ -1241,15 +1252,18 @@ export function ProductManager() {
               type="button"
               onClick={() => loadData(pin)}
               disabled={isLoading}
+              aria-label="Actualizar lista"
+              title="Actualizar lista"
+              data-native-icon="true"
               className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-5 py-3 text-sm font-black text-white disabled:opacity-60"
             >
-              {isLoading ? <Loader2 size={16} className="animate-spin" /> : null}
-              Actualizar lista
+              {isLoading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+              <span>Actualizar lista</span>
             </button>
           </div>
         </div>
 
-        <div className="grid gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-[#25262B]/[0.06] lg:grid-cols-[1fr_auto]">
+        <div className="product-list-filters grid gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-[#25262B]/[0.06] lg:grid-cols-[1fr_auto]">
           <label className="flex items-center gap-3 rounded-2xl bg-[#F8F3E8] px-4 py-3">
             <Search size={18} className="text-[#746f69]" />
             <input
@@ -1263,6 +1277,7 @@ export function ProductManager() {
             <button
               type="button"
               onClick={() => setProductView("comfortable")}
+              aria-pressed={productView === "comfortable"}
               className={[
                 "inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-black",
                 productView === "comfortable"
@@ -1276,6 +1291,7 @@ export function ProductManager() {
             <button
               type="button"
               onClick={() => setProductView("compact")}
+              aria-pressed={productView === "compact"}
               className={[
                 "inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-black",
                 productView === "compact"
@@ -1328,22 +1344,22 @@ export function ProductManager() {
                           Promo {Number(product.discount_percent || 0)}%
                         </p>
                       ) : null}
+                    </div>
+                    <div className="min-w-0 text-left sm:text-right">
                       {product.is_cart_suggestion ? (
-                        <p className="ml-1 mt-1 inline-flex rounded-full bg-[#2E3A79]/10 px-2 py-0.5 text-[11px] font-black text-[#2E3A79]">
+                        <p className="mb-1 inline-flex rounded-full bg-green-100 px-2.5 py-1 text-[11px] font-black text-green-700">
                           Complemento
                         </p>
                       ) : null}
-                    </div>
-                    <div className="min-w-0 text-left sm:text-right">
                       <span
                         className={[
                           "inline-flex rounded-full px-2.5 py-1 text-[11px] font-black",
                           product.is_available
-                            ? "bg-green-100 text-green-700"
+                            ? "bg-[#F0F2F2] text-[#526164]"
                             : "bg-red-100 text-red-700",
                         ].join(" ")}
                       >
-                        {product.is_available ? "Disponible" : "No disponible"}
+                        {product.is_available ? "Activo" : "Oculto"}
                       </span>
                       {getProductOptionGroups(product).length ? (
                         <p className="mt-1 truncate text-[11px] font-black text-[#2E3A79]">
@@ -1358,9 +1374,9 @@ export function ProductManager() {
                         </p>
                       )}
                     </div>
-                    <details className="sm:min-w-[260px]">
-                      <summary className="inline-flex cursor-pointer list-none items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-4 py-2 text-xs font-black text-white">
-                        Editar
+                    <details className="product-edit min-w-0 open:col-span-full">
+                      <summary aria-label={`Editar ${product.name}`} title={`Editar ${product.name}`} className="inline-flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-lg bg-[#2E3A79] text-white">
+                        <Pencil size={18} aria-hidden="true" />
                       </summary>
                       <div className="mt-3">
                         <ProductEditor

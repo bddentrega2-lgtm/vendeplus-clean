@@ -164,6 +164,7 @@ export type Store = {
   inventoryEnabled?: boolean;
   catalogLayout?: "classic" | "visual";
   monthlyBadges?: string[];
+  ratingSummary?: { average: number; count: number };
 };
 
 export type StoreDeliveryZone = {

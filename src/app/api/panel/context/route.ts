@@ -59,6 +59,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({
+      userId: auth.userId,
       isFounderMode: auth.isFounderMode,
       stores,
       selectedStoreId: selectedStore?.id || "",

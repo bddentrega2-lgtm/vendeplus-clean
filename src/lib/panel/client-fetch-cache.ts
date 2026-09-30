@@ -4,12 +4,14 @@ type CacheEntry = { expiresAt: number; data: unknown };
 
 const responseCache = new Map<string, CacheEntry>();
 const inflightRequests = new Map<string, Promise<unknown>>();
+let cacheGeneration = 0;
 
 function headersKey(headers?: HeadersInit) {
   return JSON.stringify(Array.from(new Headers(headers).entries()).sort());
 }
 
 export function clearPanelReadCache() {
+  cacheGeneration += 1;
   responseCache.clear();
   inflightRequests.clear();
 }
@@ -44,11 +46,13 @@ export async function fetchPanelJson<T = any>(
 
   let request = inflightRequests.get(key) as Promise<T> | undefined;
   if (!request) {
+    const generation = cacheGeneration;
     request = (async () => {
       const response = await fetch(url, options);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Error en la solicitud.");
-      responseCache.set(key, { data, expiresAt: Date.now() + ttlMs });
+      // A response started before logout/store change must not repopulate the cache.
+      if (generation === cacheGeneration) responseCache.set(key, { data, expiresAt: Date.now() + ttlMs });
       return data as T;
     })();
     inflightRequests.set(key, request);

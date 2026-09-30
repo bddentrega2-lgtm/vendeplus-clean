@@ -5,6 +5,8 @@ import { join, relative, sep } from "node:path";
 const API_ROOT = join(process.cwd(), "src", "app", "api");
 
 const PUBLIC_SERVICE_ROLE_ROUTES = {
+  "src/app/api/marketplace/directory/route.ts": [/getPublicStores\(\)/, /getStoreRatingSummaries\(ids\)/],
+  "src/app/api/marketplace/ratings/route.ts": [/getPublicStores\(\)/, /stores\.some\(store => store\.id === id\)/],
   "src/app/api/auth/panel-session/route.ts": [/supabase\.auth\.getUser\(token\)/],
   "src/app/api/cities/route.ts": [/export async function GET/, /\.select\(/],
   "src/app/api/catalog/cart-suggestions/route.ts": [
@@ -31,6 +33,21 @@ const PUBLIC_SERVICE_ROLE_ROUTES = {
   "src/app/api/orders/route.ts": [
     /checkDistributedRateLimit/,
     /createOrderAtomic/,
+  ],
+  "src/app/api/printing-agent/jobs/route.ts": [
+    /requirePrintAgent\(request\)/,
+    /\.eq\("store_id", device\.store_id\)/,
+    /\.eq\("claimed_by", device\.id\)/,
+  ],
+  "src/app/api/printing-agent/pair/route.ts": [
+    /checkDistributedRateLimit/,
+    /pair_print_agent_device/,
+    /hashPrintAgentSecret\(token\)/,
+  ],
+  "src/app/api/printing-agent/push-token/route.ts": [
+    /requirePrintAgent\(request\)/,
+    /\.eq\("store_id", device\.store_id\)/,
+    /\.is\("revoked_at", null\)/,
   ],
   "src/app/api/signup/route.ts": [
     /checkDistributedRateLimit/,
@@ -64,6 +81,7 @@ const GUARD_PATTERNS = {
   admin: [/requireAdminAuth\(request\)/],
   panel: [/requirePanelAuth\(request\)/, /getPanelAuthContext\(request\)/],
   transport: [/requireTransportAgencyAuth\(request\)/],
+  buyer: [/getVerifiedBuyer\(request\)/],
 };
 
 function toRepoPath(path) {
@@ -88,6 +106,7 @@ function listRouteFiles(directory) {
 }
 
 function routeKind(routePath) {
+  if (routePath.startsWith("src/app/api/buyer/")) return "buyer";
   if (routePath.startsWith("src/app/api/admin/")) return "admin";
   if (routePath.startsWith("src/app/api/panel/")) return "panel";
   if (routePath.startsWith("src/app/api/transport/")) return "transport";
@@ -102,7 +121,7 @@ export function auditApiGuards() {
   const findings = [];
   const routeFiles = listRouteFiles(API_ROOT)
     .map((path) => ({ path, repoPath: toRepoPath(path), source: readFileSync(path, "utf8") }))
-    .filter(({ source }) => source.includes("createSupabaseAdminClient"));
+    .filter(({ source }) => /createSupabaseAdminClient|getMarketplacePartners|getStoreRatingSummaries/.test(source));
 
   for (const { repoPath, source } of routeFiles) {
     const publicRequirements = PUBLIC_SERVICE_ROLE_ROUTES[repoPath];
@@ -116,7 +135,7 @@ export function auditApiGuards() {
 
     const kind = routeKind(repoPath);
     if (!kind) {
-      findings.push(`${repoPath}: usa service_role sin clasificacion admin/panel/transport/public`);
+      findings.push(`${repoPath}: usa service_role sin clasificacion admin/panel/transport/buyer/public`);
       continue;
     }
 

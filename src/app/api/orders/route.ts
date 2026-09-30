@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomInt, randomUUID } from "crypto";
 import { getStoreServiceFeeUsd } from "@/lib/plans";
 import { NextRequest, NextResponse } from "next/server";
 import type { CartItem, CheckoutFormData, SavedOrder, Store } from "@/types";
@@ -35,6 +35,8 @@ import {
 } from "@/lib/server/observability";
 import { isValidTableOrderTokenForStore } from "@/lib/server/table-order-tokens";
 import { createOrderAtomic } from "@/lib/server/create-order-atomic";
+import { getVerifiedBuyer } from "@/lib/buyer/auth-server";
+import { safeSendPrintWakePush } from "@/lib/printing/firebase-push";
 
 const MAX_ORDER_BODY_BYTES = 180_000;
 const MAX_ORDER_ITEMS = 80;
@@ -321,6 +323,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const buyer = request.headers.has("authorization") ? await getVerifiedBuyer(request) : null;
+    if (request.headers.has("authorization") && !buyer) return withApiHeaders(NextResponse.json({ error: "Tu sesion de comprador vencio. Ingresa de nuevo antes de confirmar." }, { status: 401 }));
     const body = await request.json();
     const order = body.order as SavedOrder | undefined;
     const storeId = cleanText(body.storeId);
@@ -738,7 +742,10 @@ export async function POST(request: NextRequest) {
     const totalUsd = subtotalUsd + deliveryUsd + platformServiceFeeCustomerUsd;
     const totalBs = totalUsd * toSafeNumber((store as any).usd_to_bs, 600);
     const totals = { subtotalUsd, deliveryUsd, serviceFeeUsd: platformServiceFeeCustomerUsd, totalUsd, totalBs };
-    const publicCode = cleanText(order.id) || `VP-${randomUUID().slice(0, 3).toUpperCase()}`;
+    const requestedPublicCode = cleanText(order.id);
+    const publicCode = /^SO-\d{4}-\d{6}$/.test(requestedPublicCode)
+      ? requestedPublicCode
+      : `SO-${new Date().toISOString().slice(5, 10).replace("-", "")}-${String(randomInt(0, 1_000_000)).padStart(6, "0")}`;
     const storeForMessage = {
       name: (store as any).name || order.storeName || "Comercio",
       baseCurrency: String((store as any).base_currency || "USD").toUpperCase() === "EUR" ? "EUR" : "USD",
@@ -918,6 +925,7 @@ export async function POST(request: NextRequest) {
       supabase,
       order: orderPayload,
       items: itemsPayload,
+      buyerId: buyer?.id,
     });
     const persistedOrder = atomicResult.order;
     if (pendingReceipt?.order_id && pendingReceipt.order_id !== persistedOrder.id) {
@@ -970,6 +978,7 @@ export async function POST(request: NextRequest) {
         status: "received",
         created_at: persistedOrder.created_at || new Date().toISOString(),
       });
+      await safeSendPrintWakePush({ supabase, storeId, orderId: persistedOrder.id });
     }
     const savedOrder: SavedOrder = {
       ...order,

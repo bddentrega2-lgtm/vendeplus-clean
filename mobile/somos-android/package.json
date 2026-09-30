@@ -1,0 +1,19 @@
+{
+  "name": "somos-android",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "android:add": "cap add android",
+    "android:open": "cap open android",
+    "android:sync": "cap sync android",
+    "doctor": "cap doctor"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.2",
+    "@capacitor/core": "8.5.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.2",
+    "typescript": "6.0.3"
+  }
+}

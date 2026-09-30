@@ -18,12 +18,14 @@ export type MarketplaceDiscovery = {
   offers: MarketplaceProduct[];
   bestSellers: MarketplaceProduct[];
   newProducts: MarketplaceProduct[];
+  newStoreIds: string[];
 };
 
 const emptyDiscovery: MarketplaceDiscovery = {
   offers: [],
   bestSellers: [],
   newProducts: [],
+  newStoreIds: [],
 };
 
 function normalizeProducts(value: unknown): MarketplaceProduct[] {
@@ -49,7 +51,7 @@ function normalizeProducts(value: unknown): MarketplaceProduct[] {
 export async function getMarketplaceDiscovery(): Promise<MarketplaceDiscovery> {
   try {
     const supabase = createSupabaseAdminClient();
-    const { data, error } = await supabase.rpc("marketplace_discovery", { p_limit: 12 });
+    const { data, error } = await supabase.rpc("marketplace_discovery_v2", { p_limit: 12 });
     if (error) return emptyDiscovery;
     const payload = data && typeof data === "object" ? data as Record<string, unknown> : {};
     const newProducts = normalizeProducts(payload.newProducts);
@@ -76,6 +78,9 @@ export async function getMarketplaceDiscovery(): Promise<MarketplaceDiscovery> {
       newProducts: newProducts
         .filter((product) => productImages.has(product.productId))
         .map((product) => ({ ...product, imageUrl: productImages.get(product.productId) || "" })),
+      newStoreIds: Array.isArray(payload.newStoreIds)
+        ? payload.newStoreIds.map((value) => String(value || "")).filter(Boolean)
+        : [],
     };
   } catch {
     return emptyDiscovery;

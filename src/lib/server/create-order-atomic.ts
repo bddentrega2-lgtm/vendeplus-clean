@@ -30,12 +30,16 @@ export async function createOrderAtomic({
   supabase,
   order,
   items,
+  buyerId,
 }: {
   supabase: SupabaseAdminClient;
   order: Record<string, unknown>;
   items: AtomicOrderItem[];
+  buyerId?: string;
 }) {
-  const { data, error } = await supabase.rpc("create_order_atomic", {
+  const { data, error } = buyerId ? await supabase.rpc("create_buyer_order_atomic", {
+    p_order: order, p_items: items, p_buyer_id: buyerId,
+  }) : await supabase.rpc("create_order_atomic", {
     p_order: order,
     p_items: items,
   });

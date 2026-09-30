@@ -4,6 +4,7 @@ node_modules
 SESSION_HANDOFF.md
 AGENTS.md
 docs
+/mobile/
 tmp
 .env*
 supabase/.temp

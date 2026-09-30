@@ -1,4 +1,5 @@
 import type { SavedOrder, Store } from "@/types";
+import { buyerAuthHeaders } from "@/lib/buyer/client";
 
 export async function saveOrderToSupabase(
   order: SavedOrder,
@@ -7,7 +8,7 @@ export async function saveOrderToSupabase(
 ) {
   const response = await fetch("/api/orders", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...await buyerAuthHeaders() },
     body: JSON.stringify({ order, storeId: store.id, idempotencyKey }),
   });
 

@@ -1,4 +1,5 @@
 import type { Store } from "@/types";
+import { StoreRating } from "@/components/buyer/StoreRating";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import { DEFAULT_STORE_COVER_IMAGE } from "@/lib/brand-copy";
 
@@ -37,8 +38,9 @@ export function StoreBrandHeader({ store }: { store: BrandedStore }) {
   );
 
   return (
-    <section className="mx-auto mb-5 max-w-6xl px-4 pt-4">
-      <div className={`relative h-64 overflow-hidden rounded-[36px] shadow-2xl shadow-[#2E3A79]/20 md:h-72 ${usesSomosCover ? "bg-[#F8F3E8]" : "bg-[#25262B]"}`}>
+    <section className="store-brand-header mx-auto mb-5 max-w-6xl px-4 pt-4">
+      <StoreRating storeId={store.id} />
+      <div className={`store-brand-cover relative h-64 overflow-hidden rounded-[36px] shadow-2xl shadow-[#2E3A79]/20 md:h-72 ${usesSomosCover ? "bg-[#F8F3E8]" : "bg-[#25262B]"}`}>
         <OptimizedImage
           src={coverImage}
           alt={store.name}
@@ -51,7 +53,7 @@ export function StoreBrandHeader({ store }: { store: BrandedStore }) {
 
         <div className={usesSomosCover ? "absolute inset-0 bg-gradient-to-t from-[#143D42]/90 via-[#143D42]/15 to-transparent" : "absolute inset-0 bg-gradient-to-t from-black/82 via-black/40 to-black/10"} />
 
-        <div className="absolute bottom-0 left-0 right-0 p-5 text-white md:p-7">
+        <div className="store-brand-identity absolute bottom-0 left-0 right-0 p-5 text-white md:p-7">
           <div className="flex items-end gap-4">
             {store.logoUrl ? (
               <OptimizedImage

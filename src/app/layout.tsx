@@ -4,6 +4,8 @@ import Script from "next/script";
 import { RegisterServiceWorker } from "@/components/pwa/RegisterServiceWorker";
 import { PUBLIC_SITE_URL } from "@/lib/public-url";
 import "./globals.css";
+import "./native-polish.css";
+import { NativeExperience } from "@/components/mobile/NativeExperience";
 
 const nunito = Nunito_Sans({
   subsets: ["latin"],
@@ -53,6 +55,7 @@ export default function RootLayout({
       </head>
       <body className={nunito.variable} suppressHydrationWarning>
         <RegisterServiceWorker />
+        <NativeExperience />
         {children}
       </body>
     </html>

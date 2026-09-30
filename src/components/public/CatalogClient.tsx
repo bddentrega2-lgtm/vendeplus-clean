@@ -10,6 +10,7 @@ import { ProductListItem } from "@/components/public/ProductCard";
 import { CartBar } from "@/components/public/CartBar";
 import { PwaInstallButton } from "@/components/pwa/PwaInstallButton";
 import { getCart } from "@/lib/cart";
+import { useNativeTextState } from "@/hooks/use-native-app";
 import { buildClientPublicUrl } from "@/lib/public-url";
 import { useLiveStoreOpenState } from "@/hooks/use-live-store-open-state";
 import {
@@ -37,8 +38,8 @@ export function CatalogClient({
   tableOrder?: TableOrderContext | null;
   onChangeTable?: () => void;
 }) {
-  const [selectedCategoryId, setSelectedCategoryId] = useState("all");
-  const [query, setQuery] = useState("");
+  const [selectedCategoryId, setSelectedCategoryId] = useNativeTextState(`catalog_${store.slug}_category`, "all");
+  const [query, setQuery] = useNativeTextState(`catalog_${store.slug}_query`, "");
   const [cartItems, setCartItems] = useState<ReturnType<typeof getCart>>([]);
   const [shareStatus, setShareStatus] = useState("");
   const [layoutPreview, setLayoutPreview] = useState<"classic" | "visual" | null>(null);
@@ -166,7 +167,7 @@ export function CatalogClient({
   }, [store.slug]);
 
   return (
-    <main style={getBrandStyle(store)} className="vp-public-store vp-container pb-32 pt-5">
+    <main style={getBrandStyle(store)} className="native-catalog vp-public-store vp-container pb-32 pt-5">
       <StoreBrandHeader store={store} />
       {activeTableOrder ? (
         <section className="mb-4 flex items-center justify-between gap-3 rounded-[24px] bg-[#FFB547] p-4 text-[#25262B] shadow-lg">
@@ -185,7 +186,7 @@ export function CatalogClient({
           {openState.label}. Puedes revisar el catálogo, pero el comercio no está recibiendo pedidos ahora.
         </section>
       ) : null}
-      <section className="mb-4 rounded-3xl bg-white/90 p-3 shadow-lg shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.07]">
+      <section className="catalog-tools mb-4 rounded-3xl bg-white/90 p-3 shadow-lg shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.07]">
         <div className="flex items-center gap-3 rounded-2xl bg-[#FFF8F0] px-4 py-2.5 ring-1 ring-[#25262B]/[0.06]">
           <Search size={18} className="text-[#746f69]" />
           <input
@@ -235,7 +236,7 @@ export function CatalogClient({
       <CategoryTabs categories={store.categories} selectedCategoryId={selectedCategoryId} onSelect={setSelectedCategoryId} />
 
       {showFeatured ? (
-        <section className="mb-6">
+        <section className="catalog-featured mb-6">
           <div className="mb-3 flex items-center justify-between gap-4">
             <div>
               <h2 className="text-2xl font-black text-[#25262B]">Favoritos del momento</h2>
@@ -262,7 +263,7 @@ export function CatalogClient({
         </section>
       ) : null}
 
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="catalog-summary mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <h2 className="text-xl font-black text-[#25262B]">Catálogo</h2>
         <p className="rounded-full bg-white px-3 py-2 text-xs font-black text-[#746f69] shadow-sm">{menuProducts.length} productos</p>
       </div>

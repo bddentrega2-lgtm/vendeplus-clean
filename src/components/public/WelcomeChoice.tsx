@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowRight, ShoppingBag, Store } from "lucide-react";
 import { BrandLogo } from "@/components/public/BrandLogo";
+import { isNativeApp } from "@/lib/mobile/state";
 
 const WELCOME_CHOICE_KEY = "somos-welcome-choice-v1";
 type WelcomeState = "checking" | "visible" | "hidden";
@@ -14,6 +15,7 @@ export function WelcomeChoice() {
   const firstChoiceRef = useRef<HTMLAnchorElement>(null);
 
   useLayoutEffect(() => {
+    if (isNativeApp()) { setWelcomeState("hidden"); return; }
     try {
       setWelcomeState(localStorage.getItem(WELCOME_CHOICE_KEY) ? "hidden" : "visible");
     } catch {

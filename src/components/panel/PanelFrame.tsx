@@ -5,8 +5,9 @@ import { usePathname } from "next/navigation";
 import { PanelShell } from "@/components/panel/PanelShell";
 import { isSubscriptionPastDue } from "@/lib/subscription-status";
 import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
-import { PanelAnnouncements } from "@/components/panel/PanelAnnouncements";
 import { TableOrderNotifier } from "@/components/panel/TableOrderNotifier";
+import { useEffect } from "react";
+import { safeMobileRoute, writeMobile } from "@/lib/mobile/state";
 
 const panelRouteMeta: Record<string, { active: string; title: string; subtitle: string }> = {
   "/panel": {
@@ -69,6 +70,11 @@ const panelRouteMeta: Record<string, { active: string; title: string; subtitle: 
     title: "Configuración",
     subtitle: "Edita la información principal del negocio.",
   },
+  "/panel/impresion": {
+    active: "/panel/impresion",
+    title: "Impresion",
+    subtitle: "Conecta una impresora termica y configura tus comandas.",
+  },
   "/panel/update-password": {
     active: "/panel/update-password",
     title: "Contraseña",
@@ -126,7 +132,10 @@ function LockedFeatureBlock({ achievementTitle }: { achievementTitle: string }) 
 
 export function PanelFrame({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { isBootstrapping, selectedStoreId, selectedStore, achievementFeatures, achievements } = usePanelAuth();
+  const { isBootstrapping, isRevalidating, contextError, refreshSession, revalidateSession, accountId, selectedStoreId, selectedStore, achievementFeatures, achievements } = usePanelAuth();
+  useEffect(() => {
+    if (!isBootstrapping && !contextError && accountId && selectedStoreId && safeMobileRoute(pathname)) writeMobile("private_route", pathname);
+  }, [isBootstrapping, contextError, accountId, selectedStoreId, pathname]);
 
   const meta = panelRouteMeta[pathname] || panelRouteMeta["/panel"];
 
@@ -142,6 +151,8 @@ export function PanelFrame({ children }: { children: React.ReactNode }) {
     );
   }
 
+  if (contextError && !accountId) return <main className="grid min-h-screen place-content-center gap-4 p-6 text-center"><p role="alert">{contextError}</p><button type="button" onClick={() => void refreshSession()} className="min-h-12 rounded-lg bg-[#143D42] px-5 text-white">Reintentar</button><Link href="/panel/login">Ingresar</Link></main>;
+
   const isExpired = isStorePastDue(selectedStore);
   const requiredFeature = routeFeatureRequirements[pathname];
   const requiredAchievement = requiredFeature
@@ -152,13 +163,15 @@ export function PanelFrame({ children }: { children: React.ReactNode }) {
     : "";
   const shouldBlockContent = isExpired && !routesAllowedWhenExpired.has(pathname);
 
-  return (
+  const checking = isRevalidating || Boolean(contextError);
+  return (<>
+    {checking ? <div className="native-session-check" role="status"><div className="grid gap-4 p-6 text-center"><p>{contextError || "Comprobando tu acceso..."}</p>{contextError ? <><button onClick={() => void revalidateSession()} className="min-h-12 rounded-lg bg-[#143D42] px-5 text-white">Reintentar</button><Link href="/panel/login">Ingresar</Link></> : null}</div></div> : null}
+    <div inert={checking} style={checking ? { visibility: "hidden" } : undefined}>
     <PanelShell active={meta.active} title={meta.title} subtitle={meta.subtitle}>
       <TableOrderNotifier />
-      <div key={selectedStoreId}>
-        <PanelAnnouncements />
+      <div key={`${accountId}:${selectedStoreId}`}>
         {shouldBlockContent ? <ExpiredPanelBlock /> : lockedAchievementTitle ? <LockedFeatureBlock achievementTitle={lockedAchievementTitle} /> : children}
       </div>
-    </PanelShell>
+    </PanelShell></div></>
   );
 }

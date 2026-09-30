@@ -58,7 +58,7 @@ export function OnboardingTour() {
   const isLastStep = stepIndex === steps.length - 1;
 
   return (
-    <section className="fixed bottom-4 left-4 right-4 z-[80] rounded-[28px] bg-[#25262B] p-4 text-white shadow-2xl shadow-[#25262B]/30 ring-1 ring-white/10 sm:left-auto sm:w-[420px]">
+    <section className="panel-onboarding-tour fixed bottom-4 left-4 right-4 z-[80] rounded-[28px] bg-[#25262B] p-4 text-white shadow-2xl shadow-[#25262B]/30 ring-1 ring-white/10 sm:left-auto sm:w-[420px]">
       <button
         type="button"
         onClick={closeTour}

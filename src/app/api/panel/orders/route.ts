@@ -1,6 +1,6 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { randomUUID } from "crypto";
+import { randomInt, randomUUID } from "crypto";
 import {
   assertStoreAccess,
   badRequest,
@@ -232,8 +232,8 @@ function createManualPublicCode() {
   const dayCode = `${String(now.getMonth() + 1).padStart(2, "0")}${String(
     now.getDate()
   ).padStart(2, "0")}`;
-  const suffix = randomUUID().slice(0, 3).toUpperCase();
-  return `VP-${dayCode}-${suffix}`;
+  const suffix = String(randomInt(0, 1_000_000)).padStart(6, "0");
+  return `SO-${dayCode}-${suffix}`;
 }
 
 function cleanText(value: unknown) {

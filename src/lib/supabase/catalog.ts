@@ -1342,15 +1342,20 @@ export async function getPublicStoreBySlug(slug: string): Promise<Store | null> 
     return allowDemoFallbacks() ? getFallbackStoreBySlug(slug) || null : null;
   }
 
-  data = await hydrateStoreDeliveryRelations(data);
-
   if (isStoreSubscriptionPastDue(data)) return null;
 
   const productIds = (data.products || []).map((product: AnyRecord) => product.id).filter(Boolean);
+  const [hydratedData, imagesResult] = await Promise.all([
+    hydrateStoreDeliveryRelations(data),
+    productIds.length
+      ? supabase.from("product_images")
+          .select("product_id, image_url, sort_order, is_active")
+          .in("product_id", productIds).eq("is_active", true).order("sort_order")
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  data = hydratedData;
+
   if (productIds.length) {
-    const imagesResult = await supabase.from("product_images")
-      .select("product_id, image_url, sort_order, is_active")
-      .in("product_id", productIds).eq("is_active", true).order("sort_order");
     if (!imagesResult.error) {
       const imagesByProductId = new Map<string, AnyRecord[]>();
       for (const image of imagesResult.data || []) {

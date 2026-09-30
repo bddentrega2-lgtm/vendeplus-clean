@@ -25,6 +25,7 @@ export function PublicFooter({
             <Link href="/registro">Registrar comercio</Link>
             <Link href="/transporte/registro">Registrar empresa delivery</Link>
             <Link href="/marketplace">Ver comercios</Link>
+            <Link href="/privacidad">Privacidad</Link>
           </div>
           {shareTitle && shareText ? (
             <PublicShareActions

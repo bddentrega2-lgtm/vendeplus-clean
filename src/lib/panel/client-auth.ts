@@ -2,6 +2,9 @@
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { safeInternalPanelPath } from "@/lib/panel/safe-redirect";
+import { clearMobilePrivateState } from "@/lib/mobile/state";
+import { clearPanelReadCache } from "@/lib/panel/client-fetch-cache";
+import { isNativeApp } from "@/lib/mobile/state";
 
 const PANEL_TOKEN_KEY = "vendeplus_panel_token";
 const PANEL_PIN_KEY = "vendeplus_panel_pin";
@@ -11,6 +14,17 @@ const PANEL_OAUTH_REDIRECT_KEY = "vendeplus_panel_oauth_redirect";
 let memoryPanelToken = "";
 let panelSessionBootstrapped = false;
 let panelTokenPromise: Promise<string> | null = null;
+
+type NativePanelAuthPlugin = {
+  getPanelRedirectUrl: () => Promise<{ url: string }>;
+  open: (value: { url: string }) => Promise<void>;
+  consumePanel: () => Promise<{ url?: string }>;
+};
+
+function nativePanelAuthPlugin(): NativePanelAuthPlugin | null {
+  if (typeof window === "undefined") return null;
+  return (window as Window & { Capacitor?: { Plugins?: { SomosBuyerAuth?: NativePanelAuthPlugin } } }).Capacitor?.Plugins?.SomosBuyerAuth || null;
+}
 
 function isTokenStillUsable(token: string) {
   try {
@@ -90,15 +104,19 @@ export async function signInPanelWithGoogle(
     throw new Error("El inicio con Google no esta disponible en este momento.");
   }
 
-  const redirectTo = new URL(
-    options.usePanelCallback ? "/auth/panel-callback" : redirectPath,
-    window.location.origin
-  );
+  const nativePlugin = isNativeApp() ? nativePanelAuthPlugin() : null;
+  const nativeRedirect = nativePlugin ? (await nativePlugin.getPanelRedirectUrl()).url : "";
+  if (nativeRedirect && !["com.somosve.app://panel-auth", "com.somosve.app.staging://panel-auth"].includes(nativeRedirect)) {
+    throw new Error("Regreso nativo del panel invalido.");
+  }
+  const redirectTo = nativeRedirect
+    ? new URL(nativeRedirect)
+    : new URL(options.usePanelCallback ? "/auth/panel-callback" : redirectPath, window.location.origin);
   const next = new URLSearchParams(window.location.search).get("next");
   const safeNext = next ? safeInternalPanelPath(next) : "";
   const finalPath = safeNext || safeInternalPanelPath(redirectPath);
 
-  redirectTo.searchParams.set("next", finalPath);
+  if (!nativeRedirect) redirectTo.searchParams.set("next", finalPath);
 
   sessionStorage.setItem(PANEL_OAUTH_REDIRECT_KEY, finalPath);
 
@@ -106,6 +124,7 @@ export async function signInPanelWithGoogle(
     provider: "google",
     options: {
       redirectTo: redirectTo.toString(),
+      skipBrowserRedirect: Boolean(nativePlugin),
       queryParams: {
         access_type: "offline",
         prompt: "select_account",
@@ -116,8 +135,32 @@ export async function signInPanelWithGoogle(
   if (error) throw error;
 
   if (data?.url) {
-    window.location.assign(data.url);
+    if (nativePlugin) await nativePlugin.open({ url: data.url });
+    else window.location.assign(data.url);
   }
+}
+
+export async function completeNativePanelOAuthSession() {
+  const plugin = nativePanelAuthPlugin();
+  const supabase = createSupabaseBrowserClient();
+  if (!plugin || !supabase) return "";
+  const { url: value } = await plugin.consumePanel();
+  if (!value) return "";
+  const callback = new URL(value);
+  const expected = new URL((await plugin.getPanelRedirectUrl()).url);
+  if (callback.protocol !== expected.protocol || callback.host !== expected.host || callback.pathname !== expected.pathname || callback.searchParams.has("error")) {
+    throw new Error("No se completo el acceso del panel con Google.");
+  }
+  const code = callback.searchParams.get("code");
+  if (!code) throw new Error("No se recibio el acceso del panel.");
+  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+  if (error) throw error;
+  const accessToken = data.session?.access_token || "";
+  if (!accessToken) throw new Error("No se pudo abrir la sesion del panel.");
+  savePanelToken(accessToken);
+  await syncPanelServerSession(accessToken);
+  clearPendingPanelOAuthRedirect();
+  return accessToken;
 }
 
 export function getPendingPanelOAuthRedirect() {
@@ -196,6 +239,8 @@ export function savePanelPin(pin: string) {
 
 export function clearPanelAuthStorage() {
   if (typeof window === "undefined") return;
+  clearMobilePrivateState();
+  clearPanelReadCache();
   memoryPanelToken = "";
   panelSessionBootstrapped = false;
   panelTokenPromise = null;

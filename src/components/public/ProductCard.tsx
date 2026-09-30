@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Plus, X } from "lucide-react";
+import { Check, Loader2, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Product, ProductInventorySku, ProductOptionGroup, ProductOptionValue, ProductVariant, SelectedCartOption } from "@/types";
 import { addToCart } from "@/lib/cart";
@@ -927,7 +927,7 @@ export function ProductListItem({
   return (
     <article
       className={[
-        isVisualLayout ? "overflow-hidden rounded-2xl p-2 shadow-sm ring-1" : "min-h-[128px] rounded-2xl p-2 shadow-sm ring-1",
+        isVisualLayout ? "catalog-product catalog-product-visual overflow-hidden rounded-2xl p-2 shadow-sm ring-1" : "catalog-product min-h-[128px] rounded-2xl p-2 shadow-sm ring-1",
         product.isFeatured
           ? "bg-[#FFF8F0] ring-[#FFB547]/55 shadow-[#FFB547]/10"
           : "bg-white ring-[#25262B]/[0.07]",
@@ -985,8 +985,8 @@ export function ProductListItem({
                 ))}
               </select>
             ) : null}
-            <div className="flex items-end justify-between gap-2">
-              <div className="min-w-0 leading-tight">
+            <div className={isVisualLayout ? "catalog-product-actions grid grid-cols-[minmax(0,1fr)_auto] items-end gap-1" : "catalog-product-actions flex flex-wrap items-end justify-between gap-2"}>
+              <div className="catalog-product-price min-w-0 break-words leading-tight">
                 {originalUnitPrice && originalUnitPrice > unitPrice ? (
                   <p className="text-[11px] font-black text-[#746f69] line-through">
                     {formatBaseCurrency(originalUnitPrice, baseCurrency)}
@@ -1007,8 +1007,9 @@ export function ProductListItem({
                 onMouseEnter={prefetchOptions}
                 onFocus={prefetchOptions}
                 disabled={!isStoreOpen || !canAdd}
+                title={!isStoreOpen ? "Cerrado" : !inventoryAvailable ? "Agotado" : isLoadingOptions ? "Cargando" : added ? "Listo" : "Anadir"}
                 className={[
-                  "inline-flex min-h-8 shrink-0 items-center justify-center gap-1 rounded-full px-2.5 text-center text-[11px] font-black leading-tight",
+                  "catalog-add inline-flex min-h-10 shrink-0 items-center justify-center gap-1 rounded-lg px-2 text-center text-[11px] font-black leading-tight",
                   added
                     ? "bg-[#6FA64F] text-white"
                     : !isStoreOpen || !canAdd
@@ -1016,8 +1017,8 @@ export function ProductListItem({
                     : "bg-[#FFB547] text-[#25262B]",
                 ].join(" ")}
               >
-                {added ? <Check size={15} /> : <Plus size={15} />}
-                {!isStoreOpen ? "Cerrado" : !inventoryAvailable ? "Agotado" : isLoadingOptions ? "Cargando" : added ? "Listo" : "Añadir"}
+                {isLoadingOptions ? <Loader2 size={15} className="animate-spin" /> : added ? <Check size={15} /> : isStoreOpen && inventoryAvailable ? <Plus size={15} /> : null}
+                <span className={isVisualLayout && isStoreOpen && inventoryAvailable ? "sr-only" : undefined}>{!isStoreOpen ? "Cerrado" : !inventoryAvailable ? "Agotado" : isLoadingOptions ? "Cargando" : added ? "Listo" : "Añadir"}</span>
               </button>
             </div>
             {optionsMessage ? (

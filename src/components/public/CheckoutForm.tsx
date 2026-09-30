@@ -11,6 +11,7 @@ import { formatBaseCurrency, formatBs } from "@/lib/currency";
 import {
   clearCustomerBrowserProfile,
   getCustomerBrowserProfile,
+  getCustomerIdParts,
   saveCustomerBrowserProfile,
 } from "@/lib/customer-browser-profile";
 import {
@@ -26,6 +27,9 @@ import { buildOrderMessage, buildWhatsAppUrl } from "@/lib/whatsapp";
 import { saveOrderToSupabase } from "@/lib/supabase/orders";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import { useLiveStoreOpenState } from "@/hooks/use-live-store-open-state";
+import { FrequentLocation } from "@/components/mobile/FrequentLocation";
+import { useNativeApp } from "@/hooks/use-native-app";
+import { isNativeApp, readMobile, writeMobile, removeMobile, safeCheckoutDraft } from "@/lib/mobile/state";
 import { compressImageForUpload } from "@/lib/images/client-compress";
 import {
   getTableOrderContext,
@@ -67,22 +71,15 @@ export function getOrderKey(storeSlug: string) {
   return `vendeplus_last_order_${storeSlug}`;
 }
 
-function getCustomerIdParts(value: string) {
-  const normalized = String(value || "").trim().toUpperCase();
-  const match = normalized.match(/^([VEJ])[-\s]?([0-9]*)$/);
-  return {
-    type: match?.[1] || "V",
-    number: match?.[2] || normalized.replace(/[^0-9]/g, ""),
-  };
-}
-
 function createOrderId() {
   const date = new Date();
   const dayCode = `${String(date.getMonth() + 1).padStart(2, "0")}${String(
     date.getDate()
   ).padStart(2, "0")}`;
-  const random = Math.random().toString(36).slice(2, 5).toUpperCase();
-  return `VP-${dayCode}-${random}`;
+  const values = new Uint32Array(1);
+  globalThis.crypto.getRandomValues(values);
+  const numericSuffix = String(values[0] % 1_000_000).padStart(6, "0");
+  return `SO-${dayCode}-${numericSuffix}`;
 }
 
 function createIdempotencyKey() {
@@ -134,6 +131,7 @@ function formatCheckoutOptions(
 }
 
 export function CheckoutForm({ store }: { store: Store }) {
+  const native = useNativeApp();
   const router = useRouter();
   const openState = useLiveStoreOpenState(store);
   const [items, setItems] = useState<ReturnType<typeof getCart>>([]);
@@ -159,6 +157,24 @@ export function CheckoutForm({ store }: { store: Store }) {
   const lastQuoteRequestRef = useRef("");
   const idempotencyKeyRef = useRef(createIdempotencyKey());
   const receiptInputRef = useRef<HTMLInputElement>(null);
+  const draftReady = useRef(false);
+  const confirmed = useRef(false);
+  const sending = useRef(false);
+
+  useEffect(() => {
+    if (!isNativeApp()) return;
+    const saved = readMobile<{ form: Record<string, unknown>; key: string; updatedAt: number } | null>(`checkout_${store.slug}`, null);
+    if (getCart(store.slug).length && saved && Date.now() - saved.updatedAt < 86400000 && /^[0-9a-f-]{36}$/i.test(saved.key)) {
+      setForm((current) => ({ ...current, ...safeCheckoutDraft(saved.form || {}) }));
+      idempotencyKeyRef.current = saved.key;
+    } else removeMobile(`checkout_${store.slug}`);
+    draftReady.current = true;
+  }, [store.slug]);
+
+  useEffect(() => {
+    if (!draftReady.current || confirmed.current || !getCart(store.slug).length) return;
+    writeMobile(`checkout_${store.slug}`, { form: safeCheckoutDraft(form), key: idempotencyKeyRef.current, updatedAt: Date.now() });
+  }, [form, store.slug]);
 
   useEffect(() => {
     setItems(getCart(store.slug));
@@ -178,20 +194,25 @@ export function CheckoutForm({ store }: { store: Store }) {
   }, [router, store.slug]);
 
   useEffect(() => {
-    const profile = getCustomerBrowserProfile();
-    if (profile) {
-      setForm((current) => ({
-        ...current,
-        customerName: current.customerName || profile.name,
-        customerPhone: current.customerPhone || profile.phone,
-        nationalIdNumber: store.requestCustomerIdNumber && profile.idNumber
-          ? `${getCustomerIdParts(profile.idNumber).type}-${getCustomerIdParts(profile.idNumber).number}`
-          : current.nationalIdNumber,
-      }));
-      setHasSavedCustomer(true);
-    }
-    setCustomerProfileLoaded(true);
-  }, [store.requestCustomerIdNumber]);
+    const sync = () => {
+      const profile = getCustomerBrowserProfile();
+      if (profile) {
+        setForm((current) => ({
+          ...current,
+          customerName: current.customerName || profile.name,
+          customerPhone: current.customerPhone || profile.phone,
+          nationalIdNumber: (store.requestCustomerIdNumber || form.deliveryType === "national_shipping") && profile.idNumber && !getCustomerIdParts(current.nationalIdNumber).number
+            ? `${getCustomerIdParts(profile.idNumber).type}-${getCustomerIdParts(profile.idNumber).number}`
+            : current.nationalIdNumber,
+        }));
+        setHasSavedCustomer(true);
+      }
+      setCustomerProfileLoaded(true);
+    };
+    sync();
+    window.addEventListener("somos:customer-profile", sync);
+    return () => window.removeEventListener("somos:customer-profile", sync);
+  }, [store.requestCustomerIdNumber, form.deliveryType]);
 
   const subtotalUsd = useMemo(() => getCartSubtotal(items), [items]);
   const deliverySettings = useMemo(
@@ -577,12 +598,14 @@ export function CheckoutForm({ store }: { store: Store }) {
   }
 
   async function sendOrder() {
-    if (isSubmitting) return;
+    if (isSubmitting || sending.current || confirmed.current) return;
+    if (isNativeApp() && !navigator.onLine) { setError("Sin conexion. Conservamos tu carrito; vuelve a intentar al conectarte."); return; }
 
     const order = buildOrder();
     if (!order) return;
 
     setIsSubmitting(true);
+    sending.current = true;
     setError("");
 
     try {
@@ -597,22 +620,36 @@ export function CheckoutForm({ store }: { store: Store }) {
         return;
       }
 
-      localStorage.setItem(getOrderKey(store.slug), JSON.stringify(saveResult.order));
+      confirmed.current = true;
+      removeMobile(`checkout_${store.slug}`);
+      writeMobile("buyer_route", `/${store.slug}/confirmacion`);
+      const savedOrder = isNativeApp() ? {
+        ...saveResult.order,
+        form: { ...saveResult.order.form, paymentReceiptToken: "" },
+        quote: { ...saveResult.order.quote, quoteToken: undefined },
+        tableOrder: saveResult.order.tableOrder ? { ...saveResult.order.tableOrder, storeToken: "" } : null,
+      } : saveResult.order;
+      try { localStorage.setItem(getOrderKey(store.slug), JSON.stringify(savedOrder)); } catch { /* Server already confirmed; never resend because storage failed. */ }
       if (rememberCustomer) {
         const saved = saveCustomerBrowserProfile(
           saveResult.order.form.customerName,
           saveResult.order.form.customerPhone,
-          store.requestCustomerIdNumber ? saveResult.order.form.nationalIdNumber : ""
+          store.requestCustomerIdNumber || saveResult.order.form.deliveryType === "national_shipping" ? saveResult.order.form.nationalIdNumber : undefined
         );
         setHasSavedCustomer(saved);
       } else {
         clearCustomerBrowserProfile();
         setHasSavedCustomer(false);
       }
-      clearCart(store.slug);
+      try { clearCart(store.slug); } catch { /* Confirmation still takes precedence over local persistence. */ }
       setItems([]);
       if (saveResult.order.form.deliveryType === "table") {
         router.replace(`/${store.slug}/confirmacion`);
+        return;
+      }
+      if (isNativeApp()) {
+        router.replace(`/${store.slug}/confirmacion`);
+        window.setTimeout(() => { window.location.href = saveResult.order!.whatsappUrl; }, 350);
         return;
       }
       window.history.replaceState(null, "", `/${store.slug}/confirmacion`);
@@ -621,6 +658,7 @@ export function CheckoutForm({ store }: { store: Store }) {
     } catch (error: any) {
       setError(error.message || "No se pudo guardar el pedido.");
     } finally {
+      sending.current = false;
       setIsSubmitting(false);
     }
   }
@@ -807,6 +845,7 @@ export function CheckoutForm({ store }: { store: Store }) {
                 ) : null}
                 {canShareLocation ? (
                   <div className="mt-4">
+                    {native ? <FrequentLocation onUse={saved => { setLocation(saved.location); updateField("deliveryReference", saved.reference); }} /> : null}
                     <LocationPicker
                       storeLatitude={store.latitude}
                       storeLongitude={store.longitude}

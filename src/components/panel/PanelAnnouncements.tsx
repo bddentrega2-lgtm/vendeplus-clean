@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Bell, Check, Gift, Megaphone, Sparkles, TriangleAlert, X } from "lucide-react";
+import { Check, Gift, Megaphone, Sparkles, TriangleAlert, X } from "lucide-react";
 import { getPanelAuthHeaders, getSavedPanelToken } from "@/lib/panel/client-auth";
+import stylesUI from "./PanelNotifications.module.css";
 
 type Announcement = {
   id: string;
@@ -33,37 +34,42 @@ function readStoredIds(key: string) {
 }
 
 function saveStoredIds(key: string, ids: Set<string>) {
-  localStorage.setItem(key, JSON.stringify([...ids].slice(-100)));
+  try { localStorage.setItem(key, JSON.stringify([...ids].slice(-100))); } catch { /* Storage may be unavailable. */ }
 }
 
-export function PanelAnnouncements() {
+export function PanelAnnouncements({ isOpen, onToggle, onClose }: { isOpen: boolean; onToggle: () => void; onClose: () => void }) {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
-  const [isOpen, setIsOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     let active = true;
     async function load() {
-      if (!getSavedPanelToken()) return;
       try {
+        if (!getSavedPanelToken()) throw new Error("session");
         const response = await fetch("/api/panel/announcements", {
           headers: await getPanelAuthHeaders(),
         });
-        if (!response.ok) return;
+        if (!response.ok) throw new Error("announcements");
         const data = await response.json();
         if (active) {
           setSeenIds(readStoredIds(SEEN_KEY));
           setAnnouncements(Array.isArray(data.announcements) ? data.announcements : []);
+          setFailed(false);
         }
       } catch {
-        // Los avisos no deben interrumpir la operación del panel.
+        if (active) setFailed(true);
+      } finally {
+        if (active) setLoading(false);
       }
     }
     void load();
     return () => {
       active = false;
     };
-  }, []);
+  }, [retry]);
 
   const pendingCount = useMemo(
     () => announcements.filter((item) => !seenIds.has(item.id)).length,
@@ -75,21 +81,21 @@ export function PanelAnnouncements() {
     announcements.forEach((item) => nextSeen.add(item.id));
     saveStoredIds(SEEN_KEY, nextSeen);
     setSeenIds(nextSeen);
-    setIsOpen(true);
+    onToggle();
   }
 
   return (
-    <div className="fixed bottom-24 right-4 z-50 lg:bottom-6" aria-label="Novedades de Somos">
+    <div>
       {isOpen ? (
-        <section className="absolute bottom-16 right-0 max-h-[min(70vh,520px)] w-[calc(100vw-2rem)] max-w-sm overflow-hidden rounded-[26px] bg-white shadow-2xl ring-1 ring-[#25262B]/10">
+        <section id="panel-news" aria-label="Novedades de Somos" className={stylesUI.popover}>
           <header className="flex items-center justify-between bg-[#25262B] px-4 py-3 text-white">
-            <div className="flex items-center gap-2"><Bell size={18} className="text-[#FFB547]" /><p className="text-sm font-black">Novedades de Somos</p></div>
-            <button type="button" onClick={() => setIsOpen(false)} aria-label="Cerrar notificaciones" className="rounded-full p-1 hover:bg-white/10"><X size={18} /></button>
+            <div className="flex items-center gap-2"><Megaphone size={18} className="text-[#FFB547]" /><p className="text-sm font-black">Novedades de Somos</p></div>
+            <button type="button" onClick={onClose} aria-label="Cerrar novedades" className={stylesUI.close}><X size={18} /></button>
           </header>
           <div className="max-h-[min(60vh,450px)] space-y-3 overflow-y-auto p-3">
-            {!announcements.length ? (
+            {loading ? <p role="status" className={stylesUI.message}>Cargando novedades...</p> : failed ? <div role="alert" className={stylesUI.message}>No pudimos cargar las novedades.<button type="button" className={stylesUI.action} onClick={() => { setLoading(true); setRetry(value => value + 1); }}>Reintentar</button></div> : !announcements.length ? (
               <div className="py-8 text-center text-[#746f69]">
-                <Bell size={28} className="mx-auto opacity-40" />
+                <Megaphone size={28} className="mx-auto opacity-40" />
                 <p className="mt-3 text-sm font-black">Sin mensajes</p>
                 <p className="mt-1 text-xs font-bold">Aquí aparecerán las novedades de Somos.</p>
               </div>
@@ -98,14 +104,14 @@ export function PanelAnnouncements() {
               const visual = styles[announcement.kind] || styles.news;
               const Icon = visual.icon;
               return (
-                <article key={announcement.id} className={`rounded-2xl border p-3 ${visual.className}`}>
+                <article key={announcement.id} className={`rounded-lg border p-3 ${visual.className}`}>
                   <div className="flex items-start gap-2">
                     <Icon size={18} className="mt-0.5 shrink-0" />
                     <div className="min-w-0 flex-1"><p className="text-sm font-black">{announcement.title}</p><p className="mt-1 text-xs font-bold leading-relaxed opacity-80">{announcement.message}</p></div>
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-2">
-                    {announcement.action_label && announcement.action_url ? <Link href={announcement.action_url} onClick={() => setIsOpen(false)} className="rounded-full bg-white/80 px-3 py-1.5 text-xs font-black shadow-sm">{announcement.action_label}</Link> : null}
-                    <button type="button" onClick={() => setIsOpen(false)} className="inline-flex items-center gap-1 rounded-full px-2 py-1.5 text-xs font-black opacity-70 hover:bg-white/60 hover:opacity-100"><Check size={14} /> Entendido</button>
+                    {announcement.action_label && announcement.action_url ? <Link href={announcement.action_url} onClick={onClose} className="rounded-full bg-white/80 px-3 py-1.5 text-xs font-black shadow-sm">{announcement.action_label}</Link> : null}
+                    <button type="button" onClick={onClose} className="inline-flex items-center gap-1 rounded-full px-2 py-1.5 text-xs font-black opacity-70 hover:bg-white/60 hover:opacity-100"><Check size={14} /> Entendido</button>
                   </div>
                 </article>
               );
@@ -114,9 +120,9 @@ export function PanelAnnouncements() {
         </section>
       ) : null}
 
-      <button type="button" onClick={() => isOpen ? setIsOpen(false) : openNotifications()} aria-label={pendingCount ? `${pendingCount} notificaciones nuevas` : "Abrir notificaciones"} className="relative grid h-14 w-14 place-items-center rounded-full bg-[#2E3A79] text-white shadow-xl shadow-[#2E3A79]/30 transition hover:scale-105">
-        <Bell size={23} />
-        {!isOpen && pendingCount > 0 ? <span className="absolute -right-1 -top-1 grid min-h-6 min-w-6 place-items-center rounded-full bg-red-600 px-1.5 text-xs font-black text-white ring-2 ring-white">{pendingCount > 99 ? "99+" : pendingCount}</span> : null}
+      <button type="button" onClick={() => isOpen ? onClose() : openNotifications()} aria-label="Novedades de Somos" title="Novedades de Somos" aria-expanded={isOpen} aria-controls="panel-news" className={stylesUI.trigger}>
+        <Megaphone size={20} />
+        {!isOpen && pendingCount > 0 ? <span className={stylesUI.badge}>{pendingCount > 99 ? "99+" : pendingCount}</span> : null}
       </button>
     </div>
   );
