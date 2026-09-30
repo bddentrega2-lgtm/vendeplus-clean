@@ -1287,6 +1287,18 @@ test("promo 20 de Joshi reutiliza el grupo valido del box 20", () => {
   assert.match(migration, /lower\(groups\.name\) = lower\('Frío'\)/);
 });
 
+test("ajuste Sierra Yara desactiva sin borrar y conserva precios nuevos pendientes", () => {
+  const migration = read("supabase/migrations/20260930213000_update_sierra_yara_menu_stage1.sql");
+  assert.match(migration, /where slug = 'sierra-yara'/);
+  assert.match(migration, /set is_available = false/);
+  assert.doesNotMatch(migration, /delete from public\.products/);
+  assert.match(migration, /category_id = v_postres_id/);
+  assert.match(migration, /name = 'ENSALADA CÉSAR'/);
+  assert.match(migration, /values \(v_cesar_id, 'Pequeña', 6/);
+  assert.match(migration, /values \(v_cesar_id, 'Grande', 12/);
+  assert.doesNotMatch(migration, /COTOLETTA DE POLLO|MILANESA DE POLLO AL AJILLO|CHURRASCO DE RES/);
+});
+
 test("clientes excluyen cancelados y delivery sin recorrer el historico en la web", () => {
   const migration = read("supabase/migrations/20260921113000_recalculate_customer_product_metrics.sql");
   const customerMetrics = read("src/lib/customers/upsert-customer-from-order.ts");
