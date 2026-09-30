@@ -20,6 +20,12 @@ test("ubicacion frecuente guarda solo direccion y coordenadas validas", () => {
   assert.deepEqual(value, { name: "Casa", reference: "Porton blanco", location: { latitude: 10.5, longitude: -66.9, label: "Porton blanco", source: "map" } });
 });
 
+test("ubicacion frecuente permite una referencia vacia", () => {
+  assert.deepEqual(normalizeFrequentLocation({ name: "Casa", reference: "", location: { latitude: 10.5, longitude: -66.9 } }), {
+    name: "Casa", reference: "", location: { latitude: 10.5, longitude: -66.9, label: "Casa", source: "map" },
+  });
+});
+
 test("ubicacion frecuente rechaza datos incompletos o manipulados", () => {
   for (const point of [null, { latitude: 0, longitude: 0 }, { latitude: 91, longitude: 2 }, { latitude: NaN, longitude: 2 }, { latitude: "10", longitude: -66 }]) {
     assert.equal(normalizeFrequentLocation({ name: "Casa", reference: "Referencia", location: point }), null);

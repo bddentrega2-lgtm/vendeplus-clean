@@ -43,7 +43,7 @@ try {
     await page.getByRole("button", { name: "Mis datos", exact: true }).click();
     await page.getByLabel("Nombre", { exact: true }).fill("Prueba local");
     await page.getByLabel("Telefono", { exact: true }).fill("04120000000");
-    await page.getByRole("button", { name: "Guardar datos" }).click();
+    await page.getByRole("button", { name: "Guardar cambios" }).click();
     assert.match(await page.getByRole("dialog").innerText(), /No son una cuenta verificada/);
     assert.equal(await page.evaluate(() => window.somosNativeBack()), true);
     await page.getByRole("dialog").waitFor({ state: "hidden" });

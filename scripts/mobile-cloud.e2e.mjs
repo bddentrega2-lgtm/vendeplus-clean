@@ -38,8 +38,8 @@ try {
     await page.getByRole("button", { name: "Mis datos", exact: true }).click();
     await page.getByLabel("Nombre", { exact: true }).fill("QA Preview");
     await page.getByLabel("Telefono", { exact: true }).fill("04120000000");
-    await page.getByRole("button", { name: "Guardar datos" }).click();
-    await page.getByRole("status").filter({ hasText: "Datos guardados" }).waitFor();
+    await page.getByRole("button", { name: "Guardar cambios" }).click();
+    await page.getByRole("status").filter({ hasText: "Cambios guardados" }).waitFor();
     assert.equal(await page.evaluate(() => window.somosNativeBack()), true);
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.getByRole("button", { name: "Mis datos", exact: true }).click();

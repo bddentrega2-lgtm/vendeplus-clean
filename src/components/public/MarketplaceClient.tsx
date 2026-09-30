@@ -9,7 +9,7 @@ import { useNativeApp, useNativeBackLayer, useNativeTextState } from "@/hooks/us
 import { readMobile, writeMobile } from "@/lib/mobile/state";
 import { inferMarketplaceCity, type NativeCityPreference } from "@/lib/mobile/marketplace-city";
 import type { CSSProperties } from "react";
-import { ArrowRight, CakeSlice, Clock3, Compass, Home, MapPin, MoreHorizontal, Motorbike, Navigation, Percent, Search, Shirt, ShoppingBag, Smartphone, Sparkles, Store as StoreIcon, Utensils, X, Zap } from "lucide-react";
+import { ArrowRight, CakeSlice, ChevronDown, Clock3, Compass, Home, MapPin, MoreHorizontal, Motorbike, Navigation, Percent, Search, Shirt, ShoppingBag, Smartphone, Sparkles, Store as StoreIcon, Utensils, X, Zap } from "lucide-react";
 import type { Store } from "@/types";
 import { PublicFooter } from "@/components/public/PublicFooter";
 import { PublicHeader } from "@/components/public/PublicHeader";
@@ -348,7 +348,7 @@ export function MarketplaceClient({ stores, featuredProducts = [], discovery = {
     <div className={`fixed inset-x-0 top-0 z-[60] border-b border-white/10 bg-[var(--marketplace-primary)] text-white shadow-lg transition duration-300 sm:hidden ${compactHeaderVisible ? "visible translate-y-0 opacity-100" : "invisible pointer-events-none -translate-y-full opacity-0"}`} aria-hidden={!compactHeaderVisible}>
       <div className="vp-container flex h-14 items-center gap-2">
         {partnerName ? <OptimizedImage src={partnerLogoUrl || ""} alt={partnerName} width={36} height={36} className="h-9 w-9 rounded-lg bg-white object-cover p-0.5" /> : <Link href="/" aria-label="Ir al inicio de Somos" className="shrink-0"><BrandLogo variant="white" size="sm" /></Link>}
-        {cities.length ? <button type="button" onClick={() => setCityPickerOpen(true)} className="ml-auto flex min-w-0 items-center gap-1.5 rounded-full bg-white/10 px-3 py-2 text-xs font-black transition active:scale-95"><MapPin size={14} className="shrink-0 text-[var(--marketplace-accent)]" /><span className="max-w-[120px] truncate">{selectedCityName}</span></button> : <span className="ml-auto" />}
+        {cities.length ? <button type="button" onClick={() => setCityPickerOpen(true)} className="market-city-selector ml-auto flex min-w-0 items-center gap-1.5 rounded-full bg-white/10 px-3 py-2 text-xs font-black transition active:scale-95"><MapPin size={14} className="shrink-0 text-[var(--marketplace-accent)]" /><span className="max-w-[120px] truncate">{selectedCityName}</span><ChevronDown size={14} className="shrink-0" /></button> : <span className="ml-auto" />}
         <button type="button" onClick={focusSearch} aria-label="Buscar" className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[var(--marketplace-accent)] text-white transition active:scale-90"><Search size={18} /></button>
       </div>
     </div>
@@ -357,7 +357,7 @@ export function MarketplaceClient({ stores, featuredProducts = [], discovery = {
       <div className="market-search-area vp-container pt-2 sm:pt-7">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="hidden max-w-2xl sm:block">{partnerName ? <div className="flex items-center gap-3"><OptimizedImage src={partnerLogoUrl || ""} alt={partnerName} width={56} height={56} className="h-14 w-14 rounded-xl bg-white object-cover p-0.5" /><div><p className="text-xs font-bold uppercase tracking-[0.08em] text-white/65">Marketplace aliado · Con tecnología Somos</p><h1 className="text-3xl font-black leading-tight">{title}</h1></div></div> : <>{eyebrow ? <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#FFD45C]">{eyebrow}</p> : null}<h1 className="mt-1 text-4xl font-black leading-tight">{title}</h1>{description ? <p className="mt-1 text-sm font-semibold text-white/70">{description}</p> : null}</>}</div>
-          {cities.length ? <button type="button" onClick={() => setCityPickerOpen(true)} className="inline-flex h-11 min-w-[190px] items-center gap-2 rounded-full bg-[var(--marketplace-accent)] px-4 text-sm font-black text-white shadow-md shadow-black/10 ring-2 ring-white/20 transition active:scale-[0.97]"><MapPin size={17} className="shrink-0" /><span className="min-w-0 flex-1 truncate text-left">{selectedCityName}</span><ArrowRight size={15} /></button> : null}
+          {cities.length ? <button type="button" onClick={() => setCityPickerOpen(true)} className="market-city-selector inline-flex h-12 min-w-[190px] items-center gap-2 rounded-full bg-[var(--marketplace-accent)] px-4 text-sm font-black text-white shadow-md shadow-black/10 ring-2 ring-white/20 transition active:scale-[0.97]"><MapPin size={17} className="shrink-0" /><span className="min-w-0 flex-1 text-left"><small>Ciudad</small><b className="truncate">{selectedCityName}</b></span><ChevronDown size={17} /></button> : null}
         </div>
         {partnerName && partnerBannerImageUrl ? <div className="relative mt-4 h-36 overflow-hidden rounded-[20px] sm:h-52"><OptimizedImage src={partnerBannerImageUrl} alt={`Banner de ${partnerName}`} fill sizes="1080px" className="object-cover" /></div> : null}
         {partnerName && partnerLocation ? <p className="mt-3 flex items-center gap-1.5 text-xs font-bold text-white/70"><MapPin size={13} />{partnerLocation}</p> : null}

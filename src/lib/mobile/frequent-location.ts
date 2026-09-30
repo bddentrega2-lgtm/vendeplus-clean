@@ -10,8 +10,8 @@ export function normalizeFrequentLocation(value: unknown): FrequentLocation | nu
   if (!point || typeof point.latitude !== "number" || typeof point.longitude !== "number" || !Number.isFinite(point.latitude) || !Number.isFinite(point.longitude) || Math.abs(point.latitude) > 90 || Math.abs(point.longitude) > 180 || (point.latitude === 0 && point.longitude === 0)) return null;
   const name = typeof data.name === "string" ? data.name.trim().slice(0, 40) : "";
   const reference = typeof data.reference === "string" ? data.reference.trim().slice(0, 500) : "";
-  if (!name || !reference) return null;
-  return { name, reference, location: { latitude: point.latitude, longitude: point.longitude, label: reference, source: "map" } };
+  if (!name) return null;
+  return { name, reference, location: { latitude: point.latitude, longitude: point.longitude, label: reference || name, source: "map" } };
 }
 
 export function readFrequentLocation(): FrequentLocation | null {

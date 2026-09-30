@@ -38,25 +38,28 @@ html.somos-native-app .native-start { gap: 24px; color: var(--app-muted); font-s
 .native-loading-bar::after { content: ""; display: block; width: 32px; height: 3px; background: #c64b1d; animation: app-loading 1s ease-in-out infinite alternate; }
 @keyframes app-loading { to { transform: translateX(48px); } }
 html.somos-native-app .native-start button { min-height: 44px; padding: 10px 24px; border-radius: 8px; background: var(--app-ink); color: white; }
-html.somos-native-app .native-buyer-header { height: 64px; gap: 10px; padding: 8px 16px; background: white; color: var(--app-ink); border-bottom: 1px solid var(--app-line); }
+html.somos-native-app .native-buyer-header { height: 64px; gap: 10px; padding: 8px 16px; background: #143d42; color: white; border-bottom: 3px solid #f27533; }
 html.somos-native-app .native-buyer-header a { min-height: 44px; }
 html.somos-native-app .native-buyer-header .native-brand { margin: 0; flex-shrink: 0; }
 html.somos-native-app .native-brand img { width: 108px; height: auto; }
 html.somos-native-app .native-business-entry { padding: 0 8px; border-radius: 8px; font-weight: 700; max-width: 170px; }
 html.somos-native-app .native-business-entry svg { flex-shrink: 0; }
 html.somos-buyer-space body { padding-top: 64px; }
-html.somos-native-app :is(.native-buyer-nav, .native-business-nav) { background: white; box-shadow: none; border-top: 1px solid var(--app-line); }
+html.somos-native-app :is(.native-buyer-nav, .native-business-nav) { background: #fffaf6; box-shadow: 0 -4px 18px #143d4212; border-top: 1px solid #f1d8ca; }
 html.somos-native-app :is(.native-buyer-nav, .native-business-nav) > * { min-width: 0; font-size: 11px; font-weight: 700; gap: 5px; }
 html.somos-native-app :is(.native-buyer-nav, .native-business-nav) [aria-current="page"] { color: var(--app-accent); background: #fff7f2; box-shadow: inset 0 2px var(--app-accent); }
 html.somos-native-app .native-carts { background: #f0f6f4; border-bottom: 1px solid var(--app-line); }
 html.somos-native-app .native-carts a { min-height: 44px; }
 html.somos-native-app .somos-marketplace { padding-bottom: 20px; }
 html.somos-native-app .somos-marketplace > .hidden { display: none; }
-html.somos-native-app .somos-marketplace .market-intro { max-width: none; margin: 0; border-radius: 0; box-shadow: none; background: white; color: var(--app-ink); padding-bottom: 14px; border-bottom: 1px solid var(--app-line); }
+html.somos-native-app .somos-marketplace .market-intro { max-width: none; margin: 0; border-radius: 0; box-shadow: none; background: #f0f8f5; color: var(--app-ink); padding-bottom: 14px; border-bottom: 1px solid #cfe3dc; }
 html.somos-native-app .somos-marketplace .market-intro > header { display: none; }
 html.somos-native-app .market-search-area { padding-top: 8px; }
 html.somos-native-app .somos-marketplace .market-search-area > div:first-child > div { display: none; }
-html.somos-native-app .somos-marketplace .market-search-area > div:first-child > button { width: 100%; min-width: 0; padding: 0; color: var(--app-ink); background: white; box-shadow: none; border-radius: 0; }
+html.somos-native-app .somos-marketplace .market-search-area > div:first-child > button { width: 100%; min-width: 0; padding: 8px 12px; color: var(--app-ink); background: white; box-shadow: none; border: 1px solid #b9d4cb; border-radius: 8px; }
+html.somos-native-app .market-city-selector span { display: grid; gap: 1px; }
+html.somos-native-app .market-city-selector small { display: block; color: #5d6b70; font-size: 10px; font-weight: 700; line-height: 1; }
+html.somos-native-app .market-city-selector b { display: block; max-width: 100%; font-size: 14px; line-height: 18px; }
 html.somos-native-app .somos-marketplace .market-search-area > label { margin-top: 4px; }
 html.somos-native-app .somos-marketplace .market-search-area input { height: 48px; padding-left: 14px; font-size: 16px; font-weight: 500; border-radius: 8px; background: var(--app-surface); border: 1px solid var(--app-line); box-shadow: none; }
 html.somos-native-app .somos-marketplace .market-search-area > label > span { background: none; color: var(--app-muted); }
@@ -65,6 +68,7 @@ html.somos-native-app .somos-marketplace .market-search-area > .vp-scrollbar-non
 html.somos-native-app .somos-marketplace .market-search-area > .vp-scrollbar-none button.bg-white { background: var(--app-ink); color: white; border-color: var(--app-ink); }
 html.somos-native-app .somos-marketplace .market-search-area p[role="status"] { color: #83521c; background: #fff4d9; border-radius: 8px; }
 html.somos-native-app .somos-marketplace > section:not(.market-intro) { padding-top: 20px; padding-bottom: 12px; }
+html.somos-native-app .somos-marketplace > section:nth-of-type(even) { background: #fff8f3; }
 html.somos-native-app .somos-marketplace h2 { font-size: 20px; line-height: 1.3; font-weight: 800; }
 html.somos-native-app .somos-marketplace h2 + p { color: var(--app-muted); }
 html.somos-native-app .somos-marketplace .h-8.w-1\.5 { display: none; }
@@ -74,9 +78,31 @@ html.somos-native-app .market-product-card h3 { font-size: 14px; font-weight: 75
 html.somos-native-app .market-product-card > div:last-child > p { font-size: 10px; letter-spacing: 0; font-weight: 700; }
 html.somos-native-app .somos-marketplace a.group:not(.market-product-card) { border-radius: 8px; box-shadow: none; }
 html.somos-native-app .somos-marketplace [role="dialog"] { border-radius: 8px 8px 0 0; }
-html.somos-native-app .native-profile { box-shadow: 0 -8px 32px #183c4014; }
-html.somos-native-app .native-profile form > button { font-weight: 700; }
-html.somos-native-app .native-profile form > button[type="button"] { background: white; color: #a82c35; border: 1px solid #ecdadd; }
+html.somos-native-app .native-profile { box-shadow: 0 -8px 32px #183c4024; background: #f7fbf9; padding: 0 16px max(20px, env(safe-area-inset-bottom)); }
+html.somos-native-app .native-profile > header { position: sticky; top: 0; z-index: 3; margin-inline: -16px; padding: 14px 16px; background: #143d42; color: white; border-bottom: 3px solid #f27533; }
+html.somos-native-app .native-profile-form { display: grid; gap: 0; }
+html.somos-native-app .native-profile-form fieldset { display: grid; gap: 0; margin: 0; padding: 18px 0; border: 0; border-bottom: 1px solid #cfe0db; }
+html.somos-native-app .native-profile-form legend { display: flex; align-items: center; gap: 7px; padding: 0; color: var(--app-ink); font-size: 15px; font-weight: 800; }
+html.somos-native-app .native-profile-form :is(input, textarea, select) { border-color: #bfd2cd; background: white; }
+html.somos-native-app .native-profile-form textarea { width: 100%; min-height: 72px; padding: 10px; resize: vertical; border: 1px solid #bfd2cd; border-radius: 6px; font: inherit; font-size: 16px; }
+.native-profile-status { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 10px; margin-top: 16px; padding: 12px; border: 1px solid #e5c7b6; border-left: 4px solid #f27533; border-radius: 8px; background: #fff7f2; }
+.native-profile-status[data-verified="true"] { border-color: #b8d8cd; border-left-color: #147565; background: #eaf7f2; }
+.native-profile-status > span { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 50%; background: white; color: #143d42; }
+.native-profile-status strong, .native-profile-status small { display: block; overflow-wrap: anywhere; }
+.native-profile-status small { margin-top: 2px; color: #5d6b70; font-size: 11px; }
+.native-profile-location { display: grid; gap: 8px; }
+html.somos-native-app .native-profile-form .native-profile-location-add,
+html.somos-native-app .native-profile-form .native-profile-login,
+html.somos-native-app .native-profile-form .buyer-account-link { width: 100%; margin-top: 12px; border: 1px solid #b9d4cb; background: white; color: #143d42; }
+html.somos-native-app .native-profile-form .native-profile-action { display: grid; grid-template-columns: 38px minmax(0, 1fr) 20px; align-items: center; gap: 10px; min-height: 54px; padding: 7px 10px; border-radius: 8px; text-align: left; }
+html.somos-native-app .native-profile-form .native-profile-action > span { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 6px; background: #e6f2ee; color: #147565; }
+html.somos-native-app .native-profile-form .native-profile-action > strong { min-width: 0; font-size: 14px; font-weight: 800; }
+html.somos-native-app .native-profile-form .native-profile-location-add { border-color: #efc8b3; background: #fff8f3; }
+html.somos-native-app .native-profile-form .native-profile-location-add > span { background: #f27533; color: white; }
+html.somos-native-app .native-profile-form .native-profile-location-remove { justify-self: start; margin-top: 6px; border: 0; background: transparent; color: #a82c35; }
+html.somos-native-app .native-profile-form .native-profile-save { width: 100%; margin-top: 18px; background: #f27533; color: white; font-weight: 800; }
+html.somos-native-app .native-profile-form .native-profile-clear { width: 100%; margin-top: 8px; border: 0; background: transparent; color: #8f3440; }
+.native-profile-message { padding: 10px 12px; border-radius: 6px; background: #fff1ce; color: #604710; }
 
 /* Merchant sign-in retains the same auth handlers and form fields. */
 html.somos-native-app .somos-login { padding: 0 24px 32px; background: white !important; }

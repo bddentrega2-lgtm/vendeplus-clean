@@ -40,3 +40,10 @@ test("order API never reads a buyer id supplied in the request body", () => {
   assert.match(route, /buyerId: buyer\?\.id/);
   assert.doesNotMatch(route, /body\.buyerId|order\.buyerId|buyer_id\s*:\s*body/);
 });
+
+test("buyer history does not depend on the current store visibility or subscription", () => {
+  const route = readFileSync(new URL("../src/app/api/buyer/orders/route.ts", import.meta.url), "utf8");
+  assert.match(route, /\.from\("buyer_order_accounts"\)/);
+  assert.match(route, /\.from\("orders"\)/);
+  assert.doesNotMatch(route, /subscription_status|marketplace_enabled|is_active/);
+});
