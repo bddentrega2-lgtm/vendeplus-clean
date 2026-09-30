@@ -1197,12 +1197,13 @@ export async function getPublicTransportAgencyMarketplaceBySlug(slug: string): P
     .select(storeShellSelect)
     .in("id", storeIds)
     .eq("is_active", true)
+    .eq("marketplace_visible", true)
     .order("name", { ascending: true });
 
   if (storesError) return null;
 
   const marketplaceCandidates = ((storesData || []) as AnyRecord[]).filter(
-    (row) => !isStoreSubscriptionPastDue(row)
+    (row) => row.marketplace_visible !== false && !isStoreSubscriptionPastDue(row)
   );
 
   return {

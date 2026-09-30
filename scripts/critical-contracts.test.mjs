@@ -1740,7 +1740,8 @@ test("puente Entrega2 separa comercios credito directo y contado validado", () =
   assert.match(agencyMarketplace, /\.eq\("delivery_provider", "entrega2"\)/);
   assert.match(agencyMarketplace, /legacyEntrega2Settings\.data/);
   assert.doesNotMatch(agencyMarketplaceFunction, /getMarketplaceEligibleStoreIds\(/);
-  assert.doesNotMatch(agencyMarketplaceFunction, /marketplace_visible/);
+  assert.match(agencyMarketplaceFunction, /\.eq\("marketplace_visible", true\)/);
+  assert.match(agencyMarketplaceFunction, /row\.marketplace_visible !== false/);
 });
 
 test("comprobantes de pago son privados, configurables y se eliminan a los 30 dias", () => {
@@ -1865,7 +1866,9 @@ test("Android reutiliza una cola de impresion revocable y aislada por comercio",
   const printer = read("mobile/somos-android/android/app/src/main/java/com/somosve/app/SomosPrinterPlugin.java");
   const printerConfig = read("mobile/somos-android/android/app/src/main/java/com/somosve/app/PrinterServerConfig.java");
 
-  assert.match(config, /appId: "com\.somosve\.app"/);
+  assert.match(config, /\.\.\.resolveAndroidIdentity\(process\.env\)/);
+  assert.match(serverConfig, /appId: "com\.somosve\.app"/);
+  assert.match(serverConfig, /appId: "com\.somosve\.app\.staging"/);
   assert.match(config, /server: resolveAndroidServer\(process\.env\)/);
   assert.match(serverConfig, /url: "https:\/\/www\.somos-ve\.com"/);
   assert.match(serverConfig, /cleartext: false/);
