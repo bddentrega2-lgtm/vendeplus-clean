@@ -1,3 +1,14 @@
+# 2026-09-30 - Produccion validada, Joshi configurado y trabajo asegurado
+
+- Usuario valido los cambios web del Marketplace y luego confirmo "todo ok" en Android tras reiniciar de forma segura Somos normal. App instalada en A34: `com.somosve.app`, versionCode 13, versionName `1.4.1-panel-auth`; no se borraron datos, sesion ni impresion.
+- Marketplace final: mapa muestra todos los comercios de la ciudad sin depender de filtros; selector muestra directamente la ciudad; web movil usa Inicio/Cerca/Ofertas/Mi perfil, sin Comercios y sin Mi perfil junto a Mapa; Android muestra Cerca junto a Mapa y conserva barra inferior Inicio/Buscar/Promos/Mis datos.
+- Joshi Sushi produccion (`joshi-sushi`) configurado sin alterar precios, fotos ni descripciones. Box 20=2 rolls, Box 30=3, Box 40=4, Box 60=6; Box Entrada+20=2 rolls + 1 entrada; PROMO 20 reutiliza las 2 selecciones de Box 20. Cuatro rolls repetibles por casillas de 10 piezas, contador y validacion exacta. Entradas incluidas: Camaron Crispy, Ensalada dinamita, Croquetas de pescado, Gyozas de cerdo y vegetales. Recargos $0.
+- Cantidades repetidas se agrupan en carrito, checkout, pedido, historial, WhatsApp, panel e impresion (`6x Fish Roll`). No se creo pedido real; usuario debe probar uno cuando corresponda para confirmar impresion humana de cantidades y entrada.
+- Migraciones produccion aplicadas y auditadas: `20260930203000_configure_joshi_sushi_boxes.sql` y `20260930204500_configure_joshi_sushi_promo_20.sql`. API publica confirmo PROMO 20 (2-2, 4 opciones) y Box Entrada (rolls 2-2 + entrada 1-1, 4 opciones cada grupo).
+- Produccion READY en `dpl_GL6BiBRbfGmjNbFnhbT4Q4XNWTRp`, alias `https://www.somos-ve.com`. Ultimo build completo PASS: 257 paginas. Contratos criticos PASS: 84/84.
+- Todo asegurado en Git: commit `10bcce4 feat: mejora marketplace y configura boxes Joshi`, rama `checkpoint/somos-mobile-production-20260930`, push confirmado; HEAD local y remoto `10bcce4c9c78c028ed14cdc114ead3b88f2ea02f`; worktree limpio al cierre.
+- SIGUIENTE GRAN PASO: preparar candidato Play Store con AAB firmado, identidad/contacto legal, politica de privacidad y Data Safety, seguido de piloto final. Revisar primero estado actual de Firebase, keystore/Play App Signing y variables privadas sin pegarlas en chat. No recrear secretos ni borrar/reinstalar app. Frase sugerida para nueva conversacion: `Retomemos Vende+/Somos desde SESSION_HANDOFF.md y el commit 10bcce4. Quiero preparar la version candidata para Play Store con pasos seguros.`
+
 # 2026-09-30 - Emisor FCM implementado en preview; APK receptor lista, A34 desconectado
 
 - Usuario descargo cuenta servicio `somos-produccion-firebase-adminsdk-fbsvc-2fd48b7a39.json` en Downloads. Validada sin mostrar secretos: service_account, misma project_id que google-services, private key/client email/token URI correctos. OAuth Firebase Messaging real PASS sin exponer access token. Archivo no copiado al repo ni borrado.
