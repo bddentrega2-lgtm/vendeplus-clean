@@ -134,6 +134,11 @@ export function CatalogClient({
 
     return sections;
   }, [products, store.categories]);
+  const eagerProductId = showFeatured
+    ? featuredProducts[0]?.id
+    : showGroupedMenu
+      ? categorySections[0]?.products[0]?.id
+      : menuProducts[0]?.id;
 
   const cartQuantityByProduct = useMemo(() => {
     return cartItems.reduce<Record<string, number>>((acc, item) => {
@@ -255,6 +260,7 @@ export function CatalogClient({
                     cartQuantity={cartQuantityByProduct[product.id] || 0}
                     isStoreOpen={isStoreOpen}
                     layout={isVisualLayout ? "visual" : "classic"}
+                    eagerImage={product.id === eagerProductId}
                   />
                 </div>
               ))}
@@ -293,6 +299,7 @@ export function CatalogClient({
                     cartQuantity={cartQuantityByProduct[product.id] || 0}
                     isStoreOpen={isStoreOpen}
                     layout={isVisualLayout ? "visual" : "classic"}
+                    eagerImage={product.id === eagerProductId}
                   />
                 ))}
               </div>
@@ -321,6 +328,7 @@ export function CatalogClient({
               cartQuantity={cartQuantityByProduct[product.id] || 0}
               isStoreOpen={isStoreOpen}
               layout={isVisualLayout ? "visual" : "classic"}
+              eagerImage={product.id === eagerProductId}
             />
           ))}
         </div>

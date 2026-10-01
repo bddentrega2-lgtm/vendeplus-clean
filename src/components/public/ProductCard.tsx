@@ -11,6 +11,125 @@ import { OptimizedImage } from "@/components/shared/OptimizedImage";
 
 type SelectionMap = Record<string, string[]>;
 
+type OptionGroupsCacheEntry = {
+  data?: ProductOptionGroup[];
+  expiresAt: number;
+  promise?: Promise<ProductOptionGroup[]>;
+};
+
+const OPTION_GROUPS_CACHE_TTL_MS = 60_000;
+const OPTION_GROUPS_CACHE_LIMIT = 100;
+const OPTION_GROUPS_AUTOPREFETCH_LIMIT = 2;
+const optionGroupsCache = new Map<string, OptionGroupsCacheEntry>();
+const autoPrefetchedOptionKeys = new Set<string>();
+const autoPrefetchCountByStore = new Map<string, number>();
+
+function optionGroupsCacheKey(storeSlug: string, productId: string) {
+  return `${storeSlug}:${productId}`;
+}
+
+async function fetchProductOptionGroups(storeSlug: string, productId: string) {
+  const key = optionGroupsCacheKey(storeSlug, productId);
+  const now = Date.now();
+  const cached = optionGroupsCache.get(key);
+  if (cached?.data && cached.expiresAt > now) return cached.data;
+  if (cached?.promise) return cached.promise;
+
+  if (optionGroupsCache.size >= OPTION_GROUPS_CACHE_LIMIT) {
+    optionGroupsCache.delete(optionGroupsCache.keys().next().value || "");
+  }
+
+  const promise = (async () => {
+    const params = new URLSearchParams({ storeSlug, productId });
+    const response = await fetch(`/api/catalog/product-options?${params.toString()}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "No se pudieron cargar los extras.");
+    const optionGroups = Array.isArray(data.optionGroups) ? data.optionGroups as ProductOptionGroup[] : [];
+    optionGroupsCache.set(key, {
+      data: optionGroups,
+      expiresAt: Date.now() + OPTION_GROUPS_CACHE_TTL_MS,
+    });
+    return optionGroups;
+  })();
+
+  optionGroupsCache.set(key, { promise, expiresAt: now + OPTION_GROUPS_CACHE_TTL_MS });
+  try {
+    return await promise;
+  } catch (error) {
+    optionGroupsCache.delete(key);
+    throw error;
+  }
+}
+
+function reserveOptionGroupsAutoPrefetch(storeSlug: string, productId: string) {
+  const key = optionGroupsCacheKey(storeSlug, productId);
+  const cached = optionGroupsCache.get(key);
+  if (cached?.promise || (cached?.data && cached.expiresAt > Date.now())) return true;
+  if (autoPrefetchedOptionKeys.has(key)) return true;
+
+  const currentCount = autoPrefetchCountByStore.get(storeSlug) || 0;
+  if (currentCount >= OPTION_GROUPS_AUTOPREFETCH_LIMIT) return false;
+  autoPrefetchedOptionKeys.add(key);
+  autoPrefetchCountByStore.set(storeSlug, currentCount + 1);
+  return true;
+}
+
+function useOptionGroupsPrefetch({
+  enabled,
+  storeSlug,
+  productId,
+  setOptionGroups,
+}: {
+  enabled: boolean;
+  storeSlug: string;
+  productId: string;
+  setOptionGroups: (groups: ProductOptionGroup[]) => void;
+}) {
+  const targetRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const target = targetRef.current;
+    if (!enabled || !target || typeof IntersectionObserver === "undefined") return;
+
+    let active = true;
+    let timeoutId: number | undefined;
+    let idleId: number | undefined;
+    const load = () => {
+      void fetchProductOptionGroups(storeSlug, productId)
+        .then((groups) => {
+          if (active && groups.length) setOptionGroups(groups);
+        })
+        .catch(() => {
+          // El clic conserva el reintento y el mensaje visible para el cliente.
+        });
+    };
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting) return;
+        observer.disconnect();
+        if (!reserveOptionGroupsAutoPrefetch(storeSlug, productId)) return;
+        const requestIdle = (window as Window & { requestIdleCallback?: Window["requestIdleCallback"] }).requestIdleCallback;
+        if (requestIdle) {
+          idleId = requestIdle(load, { timeout: 1_200 });
+        } else {
+          timeoutId = window.setTimeout(load, 250);
+        }
+      },
+      { rootMargin: "240px 0px" }
+    );
+    observer.observe(target);
+
+    return () => {
+      active = false;
+      observer.disconnect();
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+      if (idleId !== undefined) window.cancelIdleCallback?.(idleId);
+    };
+  }, [enabled, productId, setOptionGroups, storeSlug]);
+
+  return targetRef;
+}
+
 let productModalLocks = 0;
 let previousBodyOverflow = "";
 let previousBodyOverscroll = "";
@@ -686,6 +805,12 @@ export function ProductSuggestionCard({
     () => ({ ...product, optionGroups: loadedOptionGroups || product.optionGroups || [] }),
     [loadedOptionGroups, product]
   );
+  const prefetchTargetRef = useOptionGroupsPrefetch({
+    enabled: isStoreOpen && hasOptionGroups && inventoryAvailable && !loadedOptionGroups,
+    storeSlug,
+    productId: product.id,
+    setOptionGroups: setLoadedOptionGroups,
+  });
 
   async function loadOptionGroups() {
     if (loadedOptionGroups) return loadedOptionGroups;
@@ -695,13 +820,9 @@ export function ProductSuggestionCard({
     setMessage("");
 
     const request = (async () => {
-      const params = new URLSearchParams({ storeSlug, productId: product.id });
-      const response = await fetch(`/api/catalog/product-options?${params.toString()}`);
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "No se pudieron cargar los extras.");
-      const optionGroups = Array.isArray(data.optionGroups) ? data.optionGroups : [];
+      const optionGroups = await fetchProductOptionGroups(storeSlug, product.id);
       setLoadedOptionGroups(optionGroups);
-      return optionGroups as ProductOptionGroup[];
+      return optionGroups;
     })();
 
     optionGroupsRequestRef.current = request;
@@ -738,22 +859,22 @@ export function ProductSuggestionCard({
   async function addOrCustomize(variant: ProductVariant | null) {
     setSelectedVariant(variant);
     if (hasOptionGroups || hasInventory) {
+      setIsCustomizing(true);
       try {
         const optionGroups = hasOptionGroups ? await loadOptionGroups() : [];
-        if (hasInventory || optionGroups.length) {
-          setIsCustomizing(true);
-          return;
+        if (!hasInventory && !optionGroups.length) {
+          setMessage("No se pudieron cargar los extras de este producto. Intenta de nuevo.");
         }
       } catch (error: any) {
         setMessage(error.message || "No se pudieron cargar los extras.");
-        return;
       }
+      return;
     }
     await addSimpleProduct(variant);
   }
 
   async function handleAdd() {
-    if (isAdding || isLoadingOptions) return;
+    if (isAdding) return;
     setMessage("");
 
     if (!isStoreOpen || product.isAvailable === false || !inventoryAvailable) {
@@ -770,8 +891,15 @@ export function ProductSuggestionCard({
     await addOrCustomize(selectedVariant);
   }
 
+  function prefetchOptions() {
+    if (!isStoreOpen || !hasOptionGroups || loadedOptionGroups || isLoadingOptions) return;
+    void loadOptionGroups().catch(() => {
+      // La apertura del modal muestra el error si el cliente intenta continuar.
+    });
+  }
+
   return (
-    <article className="w-[156px] shrink-0 snap-start">
+    <article ref={prefetchTargetRef} className="w-[156px] shrink-0 snap-start">
       <div className="relative aspect-square overflow-hidden rounded-[22px] bg-[#F8F3E8] shadow-sm ring-1 ring-[#25262B]/[0.06]">
         <OptimizedImage
           src={product.imageUrl}
@@ -789,11 +917,14 @@ export function ProductSuggestionCard({
         <button
           type="button"
           onClick={handleAdd}
-          disabled={isAdding || isLoadingOptions || !isStoreOpen || !inventoryAvailable}
+          onPointerDown={prefetchOptions}
+          onMouseEnter={prefetchOptions}
+          onFocus={prefetchOptions}
+          disabled={isAdding || !isStoreOpen || !inventoryAvailable}
           className={[
             "absolute bottom-2 right-2 grid h-11 w-11 place-items-center rounded-full bg-white text-[#25262B] shadow-lg ring-1 ring-[#25262B]/10 transition",
             added ? "bg-[#6FA64F] text-white" : "",
-            isAdding || isLoadingOptions || !isStoreOpen || !inventoryAvailable ? "opacity-70" : "active:scale-95",
+            isAdding || !isStoreOpen || !inventoryAvailable ? "opacity-70" : "active:scale-95",
           ].join(" ")}
           aria-label={`Agregar ${product.name}`}
         >
@@ -879,6 +1010,7 @@ export function ProductListItem({
   cartQuantity = 0,
   isStoreOpen = true,
   layout = "classic",
+  eagerImage = false,
 }: {
   product: Product;
   storeSlug: string;
@@ -888,6 +1020,7 @@ export function ProductListItem({
   cartQuantity?: number;
   isStoreOpen?: boolean;
   layout?: "classic" | "visual";
+  eagerImage?: boolean;
 }) {
   const isVisualLayout = layout === "visual";
   const hasVariants = Boolean(product.variants?.length);
@@ -914,6 +1047,12 @@ export function ProductListItem({
     }),
     [loadedOptionGroups, product]
   );
+  const prefetchTargetRef = useOptionGroupsPrefetch({
+    enabled: isStoreOpen && hasOptionGroups && inventoryAvailable && !loadedOptionGroups,
+    storeSlug,
+    productId: product.id,
+    setOptionGroups: setLoadedOptionGroups,
+  });
 
   const unitPrice = useMemo(() => {
     return product.priceUsd + (selectedVariant?.priceDeltaUsd || 0);
@@ -932,23 +1071,12 @@ export function ProductListItem({
     setOptionsMessage("");
 
     const request = (async () => {
-      const params = new URLSearchParams({
-        storeSlug,
-        productId: product.id,
-      });
-      const response = await fetch(`/api/catalog/product-options?${params.toString()}`);
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "No se pudieron cargar los extras.");
-      }
-
-      const nextOptionGroups = Array.isArray(data.optionGroups) ? data.optionGroups : [];
+      const nextOptionGroups = await fetchProductOptionGroups(storeSlug, product.id);
       setLoadedOptionGroups(nextOptionGroups);
       if (product.hasOptionGroups && !nextOptionGroups.length) {
         setOptionsMessage("No se pudieron cargar los extras de este producto. Intenta de nuevo.");
       }
-      return nextOptionGroups as ProductOptionGroup[];
+      return nextOptionGroups;
     })();
 
     optionGroupsRequestRef.current = request;
@@ -972,14 +1100,14 @@ export function ProductListItem({
     }
 
     if (requiresCustomization) {
+      setIsCustomizing(true);
       if (hasInventory && !hasOptionGroups) {
-        setIsCustomizing(true);
         return;
       }
       try {
         const optionGroups = await loadOptionGroups();
-        if (optionGroups.length) {
-          setIsCustomizing(true);
+        if (!optionGroups.length) {
+          setOptionsMessage("No se pudieron cargar los extras de este producto. Intenta de nuevo.");
         }
       } catch (error: any) {
         setOptionsMessage(error.message || "No se pudieron cargar los extras de este producto.");
@@ -1008,7 +1136,7 @@ export function ProductListItem({
   }
 
   function prefetchOptions() {
-    if (!isStoreOpen || !canAdd || !hasOptionGroups || loadedOptionGroups || isLoadingOptions) return;
+    if (!isStoreOpen || !hasOptionGroups || loadedOptionGroups || isLoadingOptions) return;
     void loadOptionGroups().catch(() => {
       // La apertura del modal muestra el error si el cliente intenta continuar.
     });
@@ -1016,6 +1144,7 @@ export function ProductListItem({
 
   return (
     <article
+      ref={prefetchTargetRef}
       className={[
         isVisualLayout ? "catalog-product catalog-product-visual overflow-hidden rounded-2xl p-2 shadow-sm ring-1" : "catalog-product min-h-[128px] rounded-2xl p-2 shadow-sm ring-1",
         product.isFeatured
@@ -1031,7 +1160,7 @@ export function ProductListItem({
         ].join(" ")}
       >
         <button type="button" onClick={() => { setActiveImage(productImages[0]); setIsGalleryOpen(true); }} className={isVisualLayout ? "relative aspect-square w-full overflow-hidden rounded-xl text-left" : "relative text-left"} aria-label={`Ver fotos de ${product.name} en grande`}>
-          <OptimizedImage src={product.imageUrl} alt={product.imageAlt} width={isVisualLayout ? 480 : 76} height={isVisualLayout ? 480 : 112} sizes={isVisualLayout ? "(max-width: 640px) 46vw, (max-width: 1024px) 30vw, 240px" : "76px"} className={isVisualLayout ? "h-full w-full rounded-xl bg-[#F8F3E8] object-cover" : "h-[112px] w-[76px] rounded-xl bg-[#F8F3E8] object-cover"} fallback={<div className={isVisualLayout ? "grid h-full w-full place-items-center rounded-xl bg-[#F8F3E8] text-3xl font-black text-[#2E3A79]" : "grid h-[112px] w-[76px] place-items-center rounded-xl bg-[#F8F3E8] text-lg font-black text-[#2E3A79]"}>{product.name.slice(0, 1).toUpperCase()}</div>} />
+          <OptimizedImage src={product.imageUrl} alt={product.imageAlt} width={isVisualLayout ? 480 : 76} height={isVisualLayout ? 480 : 112} sizes={isVisualLayout ? "(max-width: 640px) 46vw, (max-width: 1024px) 30vw, 240px" : "76px"} loading={eagerImage ? "eager" : undefined} fetchPriority={eagerImage ? "high" : undefined} className={isVisualLayout ? "h-full w-full rounded-xl bg-[#F8F3E8] object-cover" : "h-[112px] w-[76px] rounded-xl bg-[#F8F3E8] object-cover"} fallback={<div className={isVisualLayout ? "grid h-full w-full place-items-center rounded-xl bg-[#F8F3E8] text-3xl font-black text-[#2E3A79]" : "grid h-[112px] w-[76px] place-items-center rounded-xl bg-[#F8F3E8] text-lg font-black text-[#2E3A79]"}>{product.name.slice(0, 1).toUpperCase()}</div>} />
           {product.discountPercent && product.discountPercent > 0 ? <span className="absolute left-1 top-1 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-black text-white shadow-sm">-{product.discountPercent}%</span> : null}
           {productImages.length > 1 ? <span className="absolute bottom-1 right-1 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-black text-white">2 fotos</span> : null}
         </button>
@@ -1094,6 +1223,7 @@ export function ProductListItem({
               <button
                 type="button"
                 onClick={handleAdd}
+                onPointerDown={prefetchOptions}
                 onMouseEnter={prefetchOptions}
                 onFocus={prefetchOptions}
                 disabled={!isStoreOpen || !canAdd}

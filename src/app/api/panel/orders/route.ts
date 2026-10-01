@@ -159,13 +159,9 @@ const compactOrdersSelect = `
   id,
   public_code,
   store_id,
-  customer_id,
   customer_name,
   customer_phone,
   delivery_type,
-  store_table_id,
-  table_name_snapshot,
-  table_zone_snapshot,
   table_fulfillment_snapshot,
   payment_method,
   payment_status,
@@ -175,55 +171,24 @@ const compactOrdersSelect = `
   payment_verified_at,
   payment_notes,
   payment_bank,
-  subtotal_usd,
-  delivery_usd,
   delivery_provider,
-  delivery_fee_usd,
-  delivery_zone_id,
-  delivery_zone_name,
-  delivery_distance_km,
   delivery_pricing_type,
   delivery_status,
   delivery_notes,
-  delivery_address,
   transport_agency_id,
-  transport_agency_name,
-  transport_agency_fee_usd,
   transport_agency_status,
   total_usd,
-  total_bs,
-  distance_km,
-  delivery_lat,
-  delivery_lng,
-  delivery_reference,
   status,
-  whatsapp_message,
   created_at,
   stores (
-    name,
-    latitude,
-    longitude,
-    usd_to_bs
+    name
   ),
   order_integrations (
-    order_id,
     provider,
-    external_id,
-    status,
-    last_error,
-    updated_at
+    status
   ),
   transport_orders (
-    id,
-    order_id,
-    agency_id,
-    agency_name_snapshot,
-    agency_whatsapp_snapshot,
-    status,
-    delivery_fee_usd,
-    agency_status_note,
-    rejection_reason,
-    updated_at
+    status
   )
 `;
 
