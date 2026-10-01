@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ShoppingBag } from "lucide-react";
+import { createPortal } from "react-dom";
+import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 import { formatBaseCurrency, formatBs } from "@/lib/currency";
 import { getCart, getCartCount, getCartSubtotal } from "@/lib/cart";
@@ -23,6 +25,7 @@ export function CartBar({
   const router = useRouter();
   const [count, setCount] = useState(0);
   const [subtotal, setSubtotal] = useState(0);
+  const [portalStyle, setPortalStyle] = useState<CSSProperties>();
 
   useEffect(() => {
     function sync() {
@@ -46,10 +49,40 @@ export function CartBar({
     }
   }, [count, router, storeSlug]);
 
-  if (!isStoreOpen || count === 0) return null;
+  useEffect(() => {
+    const catalog = document.querySelector<HTMLElement>(".vp-public-store");
+    const computed = catalog ? window.getComputedStyle(catalog) : null;
+    const brand = {
+      "--brand-primary": computed?.getPropertyValue("--brand-primary") || "#2E3A79",
+      "--brand-accent": computed?.getPropertyValue("--brand-accent") || "#FFB547",
+      "--brand-button-text": computed?.getPropertyValue("--brand-button-text") || "#25262B",
+    };
+    const syncViewport = () => {
+      const viewport = window.visualViewport;
+      setPortalStyle({
+        ...brand,
+        left: viewport?.offsetLeft || 0,
+        top: viewport?.offsetTop || 0,
+        width: viewport?.width || window.innerWidth,
+        height: viewport?.height || window.innerHeight,
+      } as CSSProperties);
+    };
+    syncViewport();
+    window.visualViewport?.addEventListener("resize", syncViewport);
+    window.visualViewport?.addEventListener("scroll", syncViewport);
+    window.addEventListener("resize", syncViewport);
+    return () => {
+      window.visualViewport?.removeEventListener("resize", syncViewport);
+      window.visualViewport?.removeEventListener("scroll", syncViewport);
+      window.removeEventListener("resize", syncViewport);
+    };
+  }, []);
 
-  return (
-    <div className="vp-safe-bottom fixed inset-x-0 bottom-0 z-40 px-4 pb-4">
+  if (!isStoreOpen || count === 0 || !portalStyle) return null;
+
+  return createPortal(
+    <div className="product-cart-theme pointer-events-none fixed z-40 overflow-visible" style={portalStyle}>
+    <div className="vp-safe-bottom pointer-events-auto absolute inset-x-0 bottom-0 px-4 pb-4">
       <div className="mx-auto max-w-[480px] rounded-[28px] bg-[#25262B] p-2 shadow-2xl shadow-[#25262B]/30">
         <Link href={`/${storeSlug}/carrito`} className="flex items-center justify-between gap-3 rounded-[24px] bg-[#2E3A79] p-3 text-white">
           <div className="flex items-center gap-3">
@@ -69,5 +102,7 @@ export function CartBar({
         </Link>
       </div>
     </div>
+    </div>,
+    document.body,
   );
 }

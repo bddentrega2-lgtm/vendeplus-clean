@@ -1,6 +1,8 @@
 "use client";
 
 import { Check, Loader2, Plus, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Product, ProductInventorySku, ProductOptionGroup, ProductOptionValue, ProductVariant, SelectedCartOption } from "@/types";
 import { addToCart } from "@/lib/cart";
@@ -8,6 +10,63 @@ import { formatBaseCurrency, formatBs } from "@/lib/currency";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
 
 type SelectionMap = Record<string, string[]>;
+
+let productModalLocks = 0;
+let previousBodyOverflow = "";
+let previousBodyOverscroll = "";
+
+function ProductModalPortal({ children }: { children: ReactNode }) {
+  const [portalStyle, setPortalStyle] = useState<CSSProperties>();
+
+  useEffect(() => {
+    const catalog = document.querySelector<HTMLElement>(".vp-public-store");
+    const computed = catalog ? window.getComputedStyle(catalog) : null;
+    const brand = {
+      "--brand-primary": computed?.getPropertyValue("--brand-primary") || "#2E3A79",
+      "--brand-accent": computed?.getPropertyValue("--brand-accent") || "#FFB547",
+      "--brand-button-text": computed?.getPropertyValue("--brand-button-text") || "#25262B",
+    };
+    const syncViewport = () => {
+      const viewport = window.visualViewport;
+      setPortalStyle({
+        ...brand,
+        left: viewport?.offsetLeft || 0,
+        top: viewport?.offsetTop || 0,
+        width: viewport?.width || window.innerWidth,
+        height: viewport?.height || window.innerHeight,
+      } as CSSProperties);
+    };
+    syncViewport();
+    window.visualViewport?.addEventListener("resize", syncViewport);
+    window.visualViewport?.addEventListener("scroll", syncViewport);
+    window.addEventListener("resize", syncViewport);
+
+    if (productModalLocks === 0) {
+      previousBodyOverflow = document.body.style.overflow;
+      previousBodyOverscroll = document.body.style.overscrollBehavior;
+      document.body.style.overflow = "hidden";
+      document.body.style.overscrollBehavior = "none";
+    }
+    productModalLocks += 1;
+
+    return () => {
+      window.visualViewport?.removeEventListener("resize", syncViewport);
+      window.visualViewport?.removeEventListener("scroll", syncViewport);
+      window.removeEventListener("resize", syncViewport);
+      productModalLocks = Math.max(0, productModalLocks - 1);
+      if (productModalLocks === 0) {
+        document.body.style.overflow = previousBodyOverflow;
+        document.body.style.overscrollBehavior = previousBodyOverscroll;
+      }
+    };
+  }, []);
+
+  if (!portalStyle) return null;
+  return createPortal(
+    <div className="product-modal-theme fixed z-[90] overflow-hidden" style={portalStyle}>{children}</div>,
+    document.body
+  );
+}
 
 function inventorySkuLabel(attributes: Record<string, string>, fallback: string) {
   const labels = ["color", "talla", "detalle"]
@@ -314,14 +373,15 @@ function ProductOptionsSheet({
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end bg-[#25262B]/45 p-3 backdrop-blur-sm sm:items-center sm:justify-center">
-      <section role="dialog" aria-modal="true" aria-label={`Opciones de ${product.name}`} className="max-h-[88vh] w-full overflow-y-auto rounded-[28px] bg-white p-4 pb-6 shadow-2xl sm:max-w-xl">
+    <ProductModalPortal>
+    <div className="absolute inset-0 flex h-full w-full max-w-full items-end overflow-hidden bg-[#25262B]/45 p-0 backdrop-blur-sm sm:items-center sm:justify-center sm:p-3">
+      <section role="dialog" aria-modal="true" aria-label={`Opciones de ${product.name}`} className="max-h-[calc(100dvh-0.75rem)] min-w-0 w-full max-w-[calc(100dvw-0.75rem)] overflow-x-hidden overflow-y-auto overscroll-contain rounded-t-[24px] bg-white p-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl sm:max-h-[88dvh] sm:max-w-xl sm:rounded-[28px] sm:pb-6">
         <div className="flex items-start justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
               Añade tu producto
             </p>
-            <h2 className="mt-1 text-2xl font-black text-[#25262B]">
+            <h2 className="mt-1 break-words text-2xl font-black text-[#25262B]">
               {product.name}
             </h2>
             <p className="mt-1 text-sm font-bold text-[#746f69]">
@@ -472,8 +532,8 @@ function ProductOptionsSheet({
                   : `Puedes seleccionar hasta ${maxSelect}`;
 
             return (
-              <fieldset key={group.id} className="rounded-2xl bg-[#FFF8F0] p-3">
-                <legend className="text-sm font-black text-[#25262B]">
+              <fieldset key={group.id} className="min-w-0 rounded-2xl bg-[#FFF8F0] p-3">
+                <legend className="max-w-full break-words text-sm font-black text-[#25262B]">
                   <span className="flex flex-wrap items-center gap-2">
                     {group.name}
                     <span
@@ -488,7 +548,7 @@ function ProductOptionsSheet({
                     </span>
                   </span>
                 </legend>
-                <p className="mt-1 text-xs font-bold text-[#746f69]">
+                <p className="mt-1 break-words text-xs font-bold text-[#746f69]">
                   {instruction}
                   {group.description ? ` · ${group.description}` : ""}
                 </p>
@@ -499,9 +559,9 @@ function ProductOptionsSheet({
                 ) : null}
                 <div className="mt-3 grid gap-2">
                   {repeatableRolls ? Array.from({ length: maxSelect }, (_, index) => (
-                    <label key={index} className="grid gap-1 rounded-2xl bg-white px-3 py-2.5 ring-1 ring-[#25262B]/[0.07]">
+                    <label key={index} className="grid min-w-0 gap-1 rounded-2xl bg-white px-3 py-2.5 ring-1 ring-[#25262B]/[0.07]">
                       <span className="text-xs font-black text-[#746f69]">Selección {index + 1} · 10 piezas</span>
-                      <select value={selectedIds[index] || ""} onChange={(event) => selectRepeatableOption(group.id, index, event.target.value)} className="min-h-11 w-full bg-transparent text-sm font-black text-[#25262B] outline-none">
+                      <select value={selectedIds[index] || ""} onChange={(event) => selectRepeatableOption(group.id, index, event.target.value)} className="min-h-11 min-w-0 w-full max-w-full bg-transparent text-sm font-black text-[#25262B] outline-none">
                         <option value="">Elige un roll</option>
                         {group.values.map((value) => <option key={value.id} value={value.id}>{value.name}</option>)}
                       </select>
@@ -530,9 +590,9 @@ function ProductOptionsSheet({
                             onChange={() => toggleOption(group.id, value.id)}
                             className="h-4 w-4"
                           />
-                          <span className="truncate">{value.name}</span>
+                          <span className="min-w-0 break-words">{value.name}</span>
                         </span>
-                        <span className={active ? "text-white" : "text-[#746f69]"}>
+                        <span className={`shrink-0 ${active ? "text-white" : "text-[#746f69]"}`}>
                           {priceDeltaUsd > 0
                             ? `+${formatBaseCurrency(priceDeltaUsd, baseCurrency)}`
                             : `+${formatBaseCurrency(0, baseCurrency)}`}
@@ -583,6 +643,7 @@ function ProductOptionsSheet({
         </div>
       </section>
     </div>
+    </ProductModalPortal>
   );
 }
 
@@ -750,12 +811,13 @@ export function ProductSuggestionCard({
       </div>
 
       {isChoosingVariant ? (
-        <div className="fixed inset-0 z-[70] flex items-end bg-[#25262B]/45 p-3 backdrop-blur-sm sm:items-center sm:justify-center">
-          <section role="dialog" aria-modal="true" aria-label={`Presentaciones de ${product.name}`} className="w-full rounded-[28px] bg-white p-4 shadow-2xl sm:max-w-md">
+        <ProductModalPortal>
+        <div className="absolute inset-0 flex h-full w-full max-w-full items-end overflow-hidden bg-[#25262B]/45 p-3 backdrop-blur-sm sm:items-center sm:justify-center">
+          <section role="dialog" aria-modal="true" aria-label={`Presentaciones de ${product.name}`} className="max-h-[calc(100dvh-1.5rem)] min-w-0 w-full max-w-[calc(100dvw-1.5rem)] overflow-x-hidden overflow-y-auto overscroll-contain rounded-[24px] bg-white p-4 shadow-2xl sm:max-w-md sm:rounded-[28px]">
             <div className="flex items-start justify-between gap-3">
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Elige presentacion</p>
-                <h2 className="mt-1 text-xl font-black text-[#25262B]">{product.name}</h2>
+                <h2 className="mt-1 break-words text-xl font-black text-[#25262B]">{product.name}</h2>
               </div>
               <button type="button" onClick={() => setIsChoosingVariant(false)} className="grid h-10 w-10 place-items-center rounded-full bg-[#F8F3E8] text-[#2E3A79]" aria-label="Cerrar">
                 <X size={18} />
@@ -770,15 +832,16 @@ export function ProductSuggestionCard({
                     setIsChoosingVariant(false);
                     void addOrCustomize(variant);
                   }}
-                  className="flex items-center justify-between gap-3 rounded-2xl bg-[#FFF8F0] px-4 py-3 text-left text-sm font-black text-[#25262B] ring-1 ring-[#25262B]/[0.06]"
+                  className="flex min-w-0 items-center justify-between gap-3 rounded-2xl bg-[#FFF8F0] px-4 py-3 text-left text-sm font-black text-[#25262B] ring-1 ring-[#25262B]/[0.06]"
                 >
-                  <span>{variant.name}</span>
-                  <span>{formatBaseCurrency(product.priceUsd + Number(variant.priceDeltaUsd || 0), baseCurrency)}</span>
+                  <span className="min-w-0 break-words">{variant.name}</span>
+                  <span className="shrink-0">{formatBaseCurrency(product.priceUsd + Number(variant.priceDeltaUsd || 0), baseCurrency)}</span>
                 </button>
               ))}
             </div>
           </section>
         </div>
+        </ProductModalPortal>
       ) : null}
 
       {isCustomizing ? (
@@ -1077,13 +1140,15 @@ export function ProductListItem({
         />
       ) : null}
       {isGalleryOpen ? (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 p-3" role="dialog" aria-modal="true" aria-label={`Fotos de ${product.name}`}>
+        <ProductModalPortal>
+        <div className="absolute inset-0 flex h-full w-full max-w-full items-center justify-center overflow-hidden bg-black/85 p-3" role="dialog" aria-modal="true" aria-label={`Fotos de ${product.name}`}>
           <button type="button" onClick={() => setIsGalleryOpen(false)} className="absolute right-4 top-4 grid h-11 w-11 place-items-center rounded-full bg-white text-[#25262B]" aria-label="Cerrar fotos"><X size={20} /></button>
           <div className="w-full max-w-3xl">
-            <OptimizedImage src={activeImage} alt={product.imageAlt} width={1000} height={1000} sizes="100vw" className="max-h-[78vh] w-full rounded-2xl object-contain" />
+            <OptimizedImage src={activeImage} alt={product.imageAlt} width={1000} height={1000} sizes="100vw" className="max-h-[78dvh] w-full rounded-2xl object-contain" />
             {productImages.length > 1 ? <div className="mt-3 flex justify-center gap-3">{productImages.map((url, index) => <button type="button" key={url} onClick={() => setActiveImage(url)} className={activeImage === url ? "rounded-xl ring-4 ring-[#FFB547]" : "rounded-xl opacity-70"}><OptimizedImage src={url} alt={`${product.name}, foto ${index + 1}`} width={72} height={72} sizes="72px" className="h-18 w-18 rounded-xl object-cover" /></button>)}</div> : null}
           </div>
         </div>
+        </ProductModalPortal>
       ) : null}
     </article>
   );
