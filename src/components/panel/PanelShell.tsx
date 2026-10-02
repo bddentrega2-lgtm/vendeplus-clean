@@ -27,6 +27,7 @@ import {
   Sparkles,
   Trophy,
   Tags,
+  Trash2,
   Truck,
   UtensilsCrossed,
   X,
@@ -156,6 +157,7 @@ export function PanelShell({
           <div className="mt-4">
             <LogoutButton />
           </div>
+          <Link href="/eliminar-cuenta" className="mt-3 flex min-h-10 items-center gap-2 px-2 text-xs font-bold text-[#9B2132]"><Trash2 size={16} />Gestionar eliminacion de cuenta</Link>
         </aside>
 
         <section className={`flex-1 px-4 py-5 sm:px-6 lg:px-8 ${isNativeApp ? "native-panel-workspace min-w-0 px-0 pb-28 pt-0" : ""}`}>
@@ -263,6 +265,7 @@ export function PanelShell({
                   })}
                 </div>
                 <Link href="/panel/update-password" onClick={() => setIsMoreOpen(false)} className="mt-3 flex min-h-12 items-center gap-3 text-sm font-bold"><KeyRound size={19} />Cambiar contraseña</Link>
+                <Link href="/eliminar-cuenta" onClick={() => setIsMoreOpen(false)} className="flex min-h-12 items-center gap-3 text-sm font-bold text-[#9B2132]"><Trash2 size={19} />Eliminar cuenta</Link>
                 <div className="mt-3"><LogoutButton /></div>
               </div>
             </div>

@@ -4,4 +4,5 @@
     <string name="title_activity_main">Somos</string>
     <string name="package_name">com.somosve.app</string>
     <string name="custom_url_scheme">com.somosve.app</string>
+    <string name="retry">Reintentar</string>
 </resources>

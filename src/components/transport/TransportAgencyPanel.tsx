@@ -1545,6 +1545,14 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
             >
               <KeyRound size={17} />
             </Link>
+            <Link
+              href="/eliminar-cuenta"
+              aria-label="Eliminar cuenta"
+              title="Eliminar cuenta"
+              className="grid h-11 w-11 shrink-0 place-items-center self-end rounded-2xl bg-white/10 text-white transition hover:bg-white/20 sm:self-auto"
+            >
+              <Trash2 size={17} />
+            </Link>
             {agency?.slug ? (
               <>
                 <Link

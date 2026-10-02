@@ -10,7 +10,7 @@ export default function PrivacyPage() {
   return <main className="buyer-account-page buyer-privacy-page">
     <Link href="/marketplace" className="buyer-back"><ArrowLeft size={18} />Marketplace</Link>
     <header><div><ShieldCheck size={28} /><h1>Privacidad</h1></div></header>
-    <p className="buyer-privacy-updated">Ultima actualizacion: 30 de septiembre de 2026</p>
+    <p className="buyer-privacy-updated">Ultima actualizacion: 1 de octubre de 2026</p>
 
     <section>
       <h2>Datos que utilizamos</h2>
@@ -37,7 +37,7 @@ export default function PrivacyPage() {
 
     <section>
       <h2>Conservacion y eliminacion</h2>
-      <p>Puedes eliminar tu cuenta, sus sesiones, la vinculacion con tu historial y tus calificaciones desde Mi cuenta. Los pedidos ya enviados pueden conservarse como registros operativos del comercio cuando exista una necesidad comercial, de seguridad o legal.</p>
+      <p>Puedes eliminar tu cuenta o solicitar su eliminacion desde esta pagina. Si la cuenta administra comercios o empresas delivery, revisamos primero sus accesos para no dejar la operacion sin responsable. Los pedidos, catalogos y registros de facturacion pueden conservarse cuando exista una necesidad comercial, de seguridad o legal.</p>
       <Link href="/eliminar-cuenta" className="buyer-account-link">Eliminar mi cuenta</Link>
     </section>
 

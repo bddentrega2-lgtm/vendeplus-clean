@@ -6,6 +6,8 @@ def releaseKeyAlias = System.getenv('SOMOS_ANDROID_KEY_ALIAS')
 def releaseStorePassword = System.getenv('SOMOS_ANDROID_STORE_PASSWORD')
 def releaseKeyPassword = System.getenv('SOMOS_ANDROID_KEY_PASSWORD')
 def releaseSigningReady = [releaseKeystorePath, releaseKeyAlias, releaseStorePassword, releaseKeyPassword].every { it }
+def productionVersionCode = 14
+def productionVersionName = "1.5.0"
 
 android {
     namespace = "com.somosve.app"
@@ -14,8 +16,8 @@ android {
         applicationId buyerStaging ? "com.somosve.app.staging" : "com.somosve.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode buyerStaging ? 14 : 13
-        versionName buyerStaging ? "1.4.0-buyer-beta.3" : "1.4.1-panel-auth"
+        versionCode buyerStaging ? 14 : productionVersionCode
+        versionName buyerStaging ? "1.4.0-buyer-beta.3" : productionVersionName
         manifestPlaceholders = [somosAppLabel: buyerStaging ? 'Somos Pruebas' : 'Somos']
         buildConfigField 'String', 'BUYER_AUTH_HOST', buyerStaging ? '"xpqmmdmixpyqruykkbkf.supabase.co"' : '"rvmtjtuztewcrmodrodb.supabase.co"'
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
@@ -107,6 +109,22 @@ tasks.matching { it.name == 'preReleaseBuild' }.configureEach {
     dependsOn('verifyReleaseOrigin')
     dependsOn('verifyReleaseSigning')
 }
+
+tasks.register('writeReleaseMetadata') {
+    def outputFile = layout.buildDirectory.file('outputs/bundle/release/somos-release-metadata.json')
+    outputs.file(outputFile)
+    doLast {
+        def target = outputFile.get().asFile
+        target.parentFile.mkdirs()
+        target.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson([
+            packageName: 'com.somosve.app',
+            versionCode: productionVersionCode,
+            versionName: productionVersionName,
+            origin: 'https://www.somos-ve.com'
+        ]))
+    }
+}
+tasks.matching { it.name == 'bundleRelease' }.configureEach { finalizedBy('writeReleaseMetadata') }
 
 try {
     def servicesJSON = file('google-services.json')

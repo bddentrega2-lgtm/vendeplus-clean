@@ -305,6 +305,7 @@ html.somos-native-app .catalog-featured .catalog-product-visual button { font-si
 .buyer-delete-summary ul { display: grid; gap: 8px; padding-left: 22px; list-style: disc; }
 .buyer-delete-summary p, .buyer-delete-summary li, .buyer-delete-confirm p, .buyer-delete-result p { color: #405d58; line-height: 1.55; }
 .buyer-delete-confirm { padding-top: 20px; border-top: 1px solid #dae5e3; }
+.buyer-delete-operation-note { padding: 12px; border-left: 3px solid #ffb547; background: #fff8e7; }
 .buyer-delete-confirm label { font-size: 14px; font-weight: 700; }
 .buyer-delete-confirm input { width: 100%; min-height: 46px; padding: 10px 12px; border: 1px solid #b6c9c5; border-radius: 6px; background: white; color: #143d42; font: inherit; font-size: 16px; }
 .buyer-delete-confirm input:focus-visible { outline: 2px solid #143d42; outline-offset: 2px; }

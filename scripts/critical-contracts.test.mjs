@@ -1115,7 +1115,7 @@ test("checkout destaca nota opcional con ejemplo por rubro o por comercio", () =
   const settings = readFileSync(new URL("../src/components/panel/ConfigManager.tsx", import.meta.url), "utf8");
   const migration = readFileSync(new URL("../supabase/migrations/20260824170036_add_checkout_note_placeholder.sql", import.meta.url), "utf8");
 
-  assert.match(checkout, /5\. Indicaciones del pedido \(opcional\)/);
+  assert.match(checkout, />Indicaciones del pedido \(opcional\)</);
   assert.match(checkout, /checkoutNoteExample\(store\.category, store\.checkoutNotePlaceholder\)/);
   assert.match(examples, /Feliz cumpleaños Ana/);
   assert.match(settings, /Ejemplo para la nota del pedido/);
@@ -1142,13 +1142,25 @@ test("checkout separa nota del pedido de la informacion del efectivo", () => {
 
   assert.match(checkout, /value=\{form\.cashPaymentNote\}/);
   assert.match(checkout, /value=\{form\.notes\}/);
-  assert.match(checkout, /5\. Indicaciones del pedido \(opcional\)/);
+  assert.match(checkout, />Indicaciones del pedido \(opcional\)</);
   assert.match(checkout, /rounded-\[30px\] border border-\[#FFB547\]\/45 bg-\[#FFF8F0\]/);
   assert.doesNotMatch(checkout, /value=\{form\.cashPaymentNote\}[\s\S]{0,250}bg-\[#FFF8F0\]/);
   assert.match(orderRoute, /payment_notes: isCashPaymentMethod\(order\.form\.paymentMethod\)/);
   assert.match(orderRoute, /\.eq\("store_id", storeId\)/);
   assert.match(ordersPanel, /order\.payment_notes/);
   assert.match(whatsapp, /cashPaymentNote/);
+});
+
+test("checkout de mesa omite pasos redundantes y acepta comprobantes de hasta cinco MB", () => {
+  const checkout = readFileSync(new URL("../src/components/public/CheckoutForm.tsx", import.meta.url), "utf8");
+  const receiptRoute = readFileSync(new URL("../src/app/api/orders/payment-receipt/route.ts", import.meta.url), "utf8");
+
+  assert.match(checkout, /!tableOrder \? <section className="vp-card/);
+  assert.doesNotMatch(checkout, /Entrega en mesa|1\. Datos del cliente|2\. ¿CÃ³mo deseas recibir|4\. ¿CÃ³mo vas a pagar|5\. Indicaciones del pedido/);
+  assert.match(checkout, /MAX_PAYMENT_RECEIPT_BYTES = 5 \* 1024 \* 1024/);
+  assert.match(checkout, /Maximo 5 MB/);
+  assert.match(receiptRoute, /MAX_INPUT_BYTES = 5 \* 1024 \* 1024/);
+  assert.match(receiptRoute, /MAX_REQUEST_BYTES = MAX_INPUT_BYTES \+ 256 \* 1024/);
 });
 
 test("estadisticas agregan en Postgres sin limite y conservan aislamiento", () => {
@@ -1824,7 +1836,7 @@ test("comprobantes de pago son privados, configurables y se eliminan a los 30 di
   assert.doesNotMatch(panel, /window\.open\("about:blank", "_blank"\)/);
   const review = read("src/components/panel/orders/PaymentReviewDialog.tsx");
   assert.match(review, /Revisar pago/);
-  assert.match(review, /payment-receipt`, \{ cache: "no-store", signal: AbortSignal.timeout\(15_000\) \}/);
+  assert.match(review, /payment-receipt`, \{ cache: "no-store", signal: requestTimeoutSignal\(15_000\) \}/);
   assert.match(panel, /¿Marcar \$\{order\.public_code\} como pagado\?/);
   assert.match(panel, /has_payment_receipt/);
   const settings = read("src/components/panel/ConfigManager.tsx");

@@ -81,7 +81,7 @@ const GUARD_PATTERNS = {
   admin: [/requireAdminAuth\(request\)/],
   panel: [/requirePanelAuth\(request\)/, /getPanelAuthContext\(request\)/],
   transport: [/requireTransportAgencyAuth\(request\)/],
-  buyer: [/getVerifiedBuyer\(request\)/],
+  buyer: [/getVerifiedBuyer\(request\)/, /getPanelAuthContext\(request\)/],
 };
 
 function toRepoPath(path) {

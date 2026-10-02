@@ -181,8 +181,9 @@ img {
   overscroll-behavior-x: none;
 }
 
-.vp-public-store :is(.catalog-categories, .catalog-featured [class*="overflow-x-auto"]) {
+.vp-public-store :is(.catalog-categories [class*="overflow-x-auto"], .catalog-featured [class*="overflow-x-auto"]) {
   overscroll-behavior-x: contain;
+  contain: layout paint;
 }
 
 .vp-phone-shell {

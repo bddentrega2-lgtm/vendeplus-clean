@@ -67,6 +67,8 @@ const initialForm: CheckoutFormData = {
   cashPaymentNote: "",
 };
 
+const MAX_PAYMENT_RECEIPT_BYTES = 5 * 1024 * 1024;
+
 export function getOrderKey(storeSlug: string) {
   return `vendeplus_last_order_${storeSlug}`;
 }
@@ -577,6 +579,11 @@ export function CheckoutForm({ store }: { store: Store }) {
 
   async function uploadPaymentReceipt(file?: File) {
     if (!file) return;
+    if (file.size > MAX_PAYMENT_RECEIPT_BYTES) {
+      setError("La imagen supera el maximo permitido de 5 MB.");
+      if (receiptInputRef.current) receiptInputRef.current.value = "";
+      return;
+    }
     setIsUploadingReceipt(true);
     setError("");
     try {
@@ -678,10 +685,10 @@ export function CheckoutForm({ store }: { store: Store }) {
           <p className="mt-1 text-sm font-semibold text-white/75">Completa tus datos y revisa el total.</p>
         </section>
 
-        <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
-          <div className="space-y-5">
+        <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="min-w-0 space-y-5">
             <section className="vp-card p-4 sm:p-5">
-              <h2 className="text-xl font-black text-[#25262B]">1. Datos del cliente</h2>
+              <h2 className="text-xl font-black text-[#25262B]">Datos del cliente</h2>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <label>
                   <span className="vp-label">Nombre</span>
@@ -740,16 +747,9 @@ export function CheckoutForm({ store }: { store: Store }) {
               ) : null}
             </section>
 
-            <section className="vp-card p-4 sm:p-5">
-              <span className="vp-label">2. ¿Cómo deseas recibir tu pedido?</span>
-              {tableOrder ? (
-                <div className="mt-3 rounded-[22px] bg-[#FFB547] p-4 text-[#25262B]">
-                  <p className="text-xs font-black uppercase">
-                    {tableOrder.fulfillmentMode === "counter_pickup" ? "Entrega" : "Recibir en"}
-                  </p>
-                  <p className="mt-1 text-lg font-black">{tableOrder.tableName}{tableOrder.tableZone ? ` · ${tableOrder.tableZone}` : ""}</p>
-                </div>
-              ) : <div className="mt-2">
+            {!tableOrder ? <section className="vp-card p-4 sm:p-5">
+              <span className="vp-label">¿Cómo deseas recibir tu pedido?</span>
+              <div className="mt-2">
                 <select
                   className="vp-input"
                   value={form.deliveryType}
@@ -763,28 +763,17 @@ export function CheckoutForm({ store }: { store: Store }) {
                     </option>
                   ))}
                 </select>
-              </div>}
+              </div>
               {form.deliveryType === "delivery" && deliveryModeCopy ? (
                 <p className="mt-3 text-sm font-bold text-[#746f69]">{deliveryModeCopy}</p>
               ) : null}
-            </section>
+            </section> : null}
 
-            {form.deliveryType === "table" && tableOrder ? (
-              <section className="vp-card p-4 sm:p-5">
-                <h2 className="text-xl font-black text-[#25262B]">
-                  3. {tableOrder.fulfillmentMode === "counter_pickup" ? "Retiro en barra" : "Entrega en mesa"}
-                </h2>
-                <p className="mt-2 rounded-[24px] bg-[#FFF8F0] p-4 text-sm font-bold leading-relaxed text-[#746f69]">
-                  {tableOrder.fulfillmentMode === "counter_pickup"
-                    ? "Prepararemos el pedido después de verificar tu pago. Te avisaremos cuando esté listo para retirar en la barra."
-                    : `Prepararemos el pedido después de verificar tu pago y lo llevaremos a ${tableOrder.tableName}.`}
-                </p>
-              </section>
-            ) : form.deliveryType === "delivery" ? (
+            {form.deliveryType === "delivery" ? (
               <section className="vp-card p-4 sm:p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h2 className="text-xl font-black text-[#25262B]">3. Ubicación para Delivery</h2>
+                    <h2 className="text-xl font-black text-[#25262B]">Ubicación para Delivery</h2>
                   </div>
                   {isCalculating ? <Loader2 className="animate-spin text-[#2E3A79]" /> : <Navigation className="text-[#FFB547]" />}
                 </div>
@@ -876,7 +865,7 @@ export function CheckoutForm({ store }: { store: Store }) {
               </section>
             ) : form.deliveryType === "national_shipping" ? (
               <section className="vp-card p-4 sm:p-5">
-                <h2 className="text-xl font-black text-[#25262B]">3. Envio nacional</h2>
+                <h2 className="text-xl font-black text-[#25262B]">Envio nacional</h2>
                 <p className="mt-1 text-sm font-bold text-[#746f69]">El comercio coordinará los detalles por WhatsApp.</p>
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   {!store.requestCustomerIdNumber ? <label>
@@ -894,17 +883,17 @@ export function CheckoutForm({ store }: { store: Store }) {
                   </label>
                 </div>
               </section>
-            ) : (
+            ) : form.deliveryType === "pickup" ? (
               <section className="vp-card p-4 sm:p-5">
-                <h2 className="text-xl font-black text-[#25262B]">3. Retiro (pick up)</h2>
+                <h2 className="text-xl font-black text-[#25262B]">Retiro (pick up)</h2>
                 <p className="mt-2 rounded-[24px] bg-[#FFF8F0] p-4 text-sm font-bold leading-relaxed text-[#746f69]">
                   Retiras directamente en {store.name}. Direccion: {store.address || "por confirmar"}.
                 </p>
               </section>
-            )}
+            ) : null}
 
             <section className="vp-card p-4 sm:p-5">
-              <h2 className="text-xl font-black text-[#25262B]">4. ¿Cómo vas a pagar?</h2>
+              <h2 className="text-xl font-black text-[#25262B]">¿Cómo vas a pagar?</h2>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <label>
                   <span className="vp-label">Método de pago</span>
@@ -955,7 +944,7 @@ export function CheckoutForm({ store }: { store: Store }) {
                             >
                               <div className="min-w-0">
                                 <span className="block font-bold text-white/70">{line.label}</span>
-                                <span className="block break-words font-black">{line.value}</span>
+                                <span className="block font-black [overflow-wrap:anywhere]">{line.value}</span>
                               </div>
                               {line.copyable ? (
                                 <button
@@ -1029,7 +1018,7 @@ export function CheckoutForm({ store }: { store: Store }) {
                             : "Seleccionar imagen"}
                       </button>
                       <p className="mt-2 text-xs font-bold text-emerald-800">
-                        {receiptName ? `Archivo listo: ${receiptName}` : "JPG, PNG o WebP. Máximo 2 MB."}
+                        {receiptName ? `Archivo listo: ${receiptName}` : "JPG, PNG o WebP. Maximo 5 MB."}
                       </p>
                     </div>
                   ) : null}
@@ -1038,7 +1027,7 @@ export function CheckoutForm({ store }: { store: Store }) {
             </section>
 
             <section className="rounded-[30px] border border-[#FFB547]/45 bg-[#FFF8F0] p-4 shadow-sm shadow-[#FFB547]/10 sm:p-5">
-              <h2 className="text-xl font-black text-[#25262B]">5. Indicaciones del pedido (opcional)</h2>
+              <h2 className="text-xl font-black text-[#25262B]">Indicaciones del pedido (opcional)</h2>
               <label className="mt-4 block">
                 <textarea
                   aria-label="Indicaciones del pedido"
@@ -1051,7 +1040,7 @@ export function CheckoutForm({ store }: { store: Store }) {
             </section>
           </div>
 
-          <aside className="lg:sticky lg:top-5 lg:self-start">
+          <aside className="min-w-0 lg:sticky lg:top-5 lg:self-start">
             <section className="rounded-[36px] bg-[#25262B] p-3 text-white shadow-2xl shadow-[#25262B]/25">
               <div className="rounded-[30px] bg-white p-5 text-[#25262B]">
                 <h2 className="text-xl font-black">Revisa tu pedido</h2>

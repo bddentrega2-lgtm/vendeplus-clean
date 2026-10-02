@@ -30,12 +30,14 @@ export async function sendPrintWakePush({
   supabase,
   storeId,
   orderId,
+  eventType = "received",
   fetchImpl = fetch,
   credentials = readCredentials(),
 }: {
   supabase: SupabaseAdminClient;
   storeId: string;
   orderId: string;
+  eventType?: "received" | "paid";
   fetchImpl?: typeof fetch;
   credentials?: ReturnType<typeof readCredentials>;
 }) {
@@ -43,11 +45,17 @@ export async function sendPrintWakePush({
 
   const { data: settings, error: settingsError } = await supabase
     .from("store_print_settings")
-    .select("is_enabled")
+    .select("is_enabled, trigger_mode")
     .eq("store_id", storeId)
     .maybeSingle();
   if (settingsError) throw settingsError;
   if (!settings?.is_enabled) return { configured: true, attempted: 0, sent: 0, invalidated: 0 };
+  const triggerMode = ["received", "paid", "both"].includes(settings.trigger_mode)
+    ? settings.trigger_mode
+    : "received";
+  if (triggerMode !== "both" && triggerMode !== eventType) {
+    return { configured: true, attempted: 0, sent: 0, invalidated: 0 };
+  }
 
   const { data, error } = await supabase
     .from("print_agent_devices")
@@ -88,7 +96,7 @@ export async function sendPrintWakePush({
   return { configured: true, attempted: devices.length, sent, invalidated: invalidIds.length };
 }
 
-export async function safeSendPrintWakePush(input: { supabase: SupabaseAdminClient; storeId: string; orderId: string }) {
+export async function safeSendPrintWakePush(input: { supabase: SupabaseAdminClient; storeId: string; orderId: string; eventType?: "received" | "paid" }) {
   try { return await sendPrintWakePush(input); }
   catch { return { configured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON), attempted: 0, sent: 0, invalidated: 0 }; }
 }

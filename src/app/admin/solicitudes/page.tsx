@@ -1,3 +1,4 @@
+import { AdminAccountDeletionRequestsManager } from "@/components/admin/AdminAccountDeletionRequestsManager";
 import { AdminRegistrationRequestsManager } from "@/components/admin/AdminRegistrationRequestsManager";
 import { AdminShell } from "@/components/admin/AdminShell";
 
@@ -8,7 +9,10 @@ export default function AdminRegistrationRequestsPage() {
       title="Solicitudes"
       subtitle="Revisa el potencial de cada comercio y habilita el acceso únicamente después de aprobarlo."
     >
-      <AdminRegistrationRequestsManager />
+      <div className="space-y-6">
+        <AdminAccountDeletionRequestsManager />
+        <AdminRegistrationRequestsManager />
+      </div>
     </AdminShell>
   );
 }

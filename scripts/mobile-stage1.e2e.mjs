@@ -11,6 +11,10 @@ const results = [];
 const browser = await chromium.launch({ headless: true });
 const nativeContext = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 await nativeContext.addInitScript(() => {
+  // Simulate older Android Chrome/WebView releases used by some store tablets.
+  if (typeof AbortSignal !== "undefined") {
+    Object.defineProperty(AbortSignal, "timeout", { value: undefined, configurable: true });
+  }
   window.Capacitor = { isNativePlatform: () => true };
   if (!localStorage.getItem("somos_mobile_v1_market_city")) localStorage.setItem("somos_mobile_v1_market_city", JSON.stringify({ mode: "manual", city: "Todas", updatedAt: Date.now() }));
   if (!localStorage.getItem("somos-marketplace-preferences-v1")) localStorage.setItem("somos-marketplace-preferences-v1", JSON.stringify({ city: "Todas", view: "home", cityConfirmed: true }));
@@ -44,7 +48,7 @@ try {
     await page.getByLabel("Nombre", { exact: true }).fill("Prueba local");
     await page.getByLabel("Telefono", { exact: true }).fill("04120000000");
     await page.getByRole("button", { name: "Guardar cambios" }).click();
-    assert.match(await page.getByRole("dialog").innerText(), /No son una cuenta verificada/);
+    assert.match(await page.getByRole("dialog").innerText(), /Cambios guardados en este dispositivo/);
     assert.equal(await page.evaluate(() => window.somosNativeBack()), true);
     await page.getByRole("dialog").waitFor({ state: "hidden" });
     assert.equal(await page.evaluate(() => window.somosNativeBack()), false);

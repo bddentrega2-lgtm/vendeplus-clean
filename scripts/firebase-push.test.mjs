@@ -12,12 +12,12 @@ function load(path, dependencies) {
   return loadedModule.exports;
 }
 
-function database({ enabled = true, devices = [] } = {}) {
+function database({ enabled = true, triggerMode = "received", devices = [] } = {}) {
   const calls = [];
   const supabase = { from(table) {
     const state = { table, operation: "select" };
     const query = { then(resolve) {
-      const data = table === "store_print_settings" ? { is_enabled: enabled } : state.operation === "update" ? null : devices;
+      const data = table === "store_print_settings" ? { is_enabled: enabled, trigger_mode: triggerMode } : state.operation === "update" ? null : devices;
       return Promise.resolve({ data, error: null }).then(resolve);
     } };
     for (const method of ["select", "eq", "is", "not", "limit", "in"]) query[method] = (...args) => { calls.push({ table, method, args }); return query; };
@@ -70,6 +70,47 @@ test("disabled automatic printing never queries devices or sends push", async ()
   assert.deepEqual(plain(result), { configured: true, attempted: 0, sent: 0, invalidated: 0 });
   assert.equal(requests, 0);
   assert.equal(calls.some(call => call.table === "print_agent_devices"), false);
+});
+
+test("payment verification wakes only stores configured to print paid orders", async () => {
+  const devices = [{ id: "device-a", fcm_token: "token" }];
+  const skipped = database({ triggerMode: "paid", devices });
+  let requests = 0;
+  const fetchImpl = async () => { requests += 1; return { ok: true, json: async () => ({}) }; };
+
+  const receivedResult = await push.sendPrintWakePush({
+    supabase: skipped.supabase,
+    storeId: "store-a",
+    orderId: "order-a",
+    eventType: "received",
+    credentials,
+    fetchImpl,
+  });
+  assert.deepEqual(plain(receivedResult), { configured: true, attempted: 0, sent: 0, invalidated: 0 });
+  assert.equal(requests, 0);
+  assert.equal(skipped.calls.some(call => call.table === "print_agent_devices"), false);
+
+  const enabled = database({ triggerMode: "paid", devices });
+  const paidResult = await push.sendPrintWakePush({
+    supabase: enabled.supabase,
+    storeId: "store-a",
+    orderId: "order-a",
+    eventType: "paid",
+    credentials,
+    fetchImpl,
+  });
+  assert.deepEqual(plain(paidResult), { configured: true, attempted: 1, sent: 1, invalidated: 0 });
+  assert.equal(requests, 1);
+});
+
+test("payment verification queues a paid wake only on the first verified transition", () => {
+  const paymentRoute = readFileSync(new URL("../src/app/api/panel/orders/[orderId]/payment/route.ts", import.meta.url), "utf8");
+  const settings = readFileSync(new URL("../src/components/panel/PrintingManager.tsx", import.meta.url), "utf8");
+  assert.match(paymentRoute, /existingOrder\.payment_status !== "verified"/);
+  assert.match(paymentRoute, /after\(\(\) => safeSendPrintWakePush/);
+  assert.match(paymentRoute, /eventType: "paid"/);
+  assert.match(settings, /Imprimir al verificar el pago/);
+  assert.match(settings, /received && paid \? "both" : paid \? "paid" : "received"/);
 });
 
 test("order replay cannot send another push and Android deduplicates remote order IDs", () => {

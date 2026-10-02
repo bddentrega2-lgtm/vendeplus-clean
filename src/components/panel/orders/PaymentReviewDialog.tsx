@@ -3,6 +3,7 @@
 import NextImage from "next/image";
 import { Check, Loader2, RefreshCcw, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
+import { requestTimeoutSignal } from "@/lib/client/request-timeout";
 import { apiRequest, getPaymentStatusLabel, type OrderRow } from "./orders-manager-helpers";
 
 export function PaymentReviewDialog({ order, pin, onClose, onVerify }: {
@@ -43,7 +44,7 @@ export function PaymentReviewDialog({ order, pin, onClose, onVerify }: {
     setError("");
     setIsLoading(order.has_payment_receipt === true);
     if (order.has_payment_receipt) {
-      void apiRequest(pin, `/api/panel/orders/${encodeURIComponent(order.id)}/payment-receipt`, { cache: "no-store", signal: AbortSignal.timeout(15_000) })
+      void apiRequest(pin, `/api/panel/orders/${encodeURIComponent(order.id)}/payment-receipt`, { cache: "no-store", signal: requestTimeoutSignal(15_000) })
         .then((data) => {
           if (!data.url) throw new Error("El comprobante ya no está disponible.");
           if (active) setImageUrl(data.url);

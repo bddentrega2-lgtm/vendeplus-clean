@@ -1,7 +1,10 @@
 import { chromium } from "playwright";
 import assert from "node:assert/strict";
+import { mkdir } from "node:fs/promises";
 
 const base = process.argv[2] || "http://127.0.0.1:3107";
+const output = "tmp/buyer-account-deletion";
+await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ headless: true });
 const expires = Math.floor(Date.now() / 1000) + 3600;
 const user = { id: "10000000-0000-4000-8000-000000000001", email: "comprador@example.test", app_metadata: { providers: ["google"] }, user_metadata: {}, aud: "authenticated" };
@@ -15,11 +18,14 @@ try {
   await context.route("**/*", route => ["GET", "HEAD"].includes(route.request().method()) ? route.continue() : route.abort());
   await context.route("**/api/buyer/orders?*", route => route.fulfill({ json: { orders: [], hasMore: false } }));
   await context.route("**/api/buyer/account", route => {
+    if (route.request().method() === "GET") {
+      return route.fulfill({ json: { account: { email: "buyer@example.test", type: "buyer", operational: false, pending: false, requestedAt: null } } });
+    }
     deleteRequests++;
     assert.equal(route.request().method(), "DELETE");
     assert.equal(route.request().headers().authorization, `Bearer ${token}`);
     assert.deepEqual(route.request().postDataJSON(), { confirmation: "ELIMINAR" });
-    return route.fulfill({ json: { ok: true } });
+    return route.fulfill({ json: { ok: true, pending: false } });
   });
   await context.route("**/auth/v1/logout*", route => route.fulfill({ status: 204, body: "" }));
   const page = await context.newPage();
@@ -31,6 +37,7 @@ try {
   ]);
   assert.equal(new URL(page.url()).pathname, "/eliminar-cuenta");
   await page.getByText("Que se elimina", { exact: true }).waitFor();
+  await page.screenshot({ path: `${output}/buyer-confirmation.png`, fullPage: true });
   const confirmation = page.getByLabel("Escribe ELIMINAR para confirmar");
   const remove = page.getByRole("button", { name: "Eliminar mi cuenta", exact: true });
   assert.equal(await remove.isDisabled(), true);
@@ -46,5 +53,26 @@ try {
   await page.getByText("Cuenta eliminada", { exact: true }).waitFor();
   assert.equal(deleteRequests, 1);
   assert.deepEqual(errors, []);
-  console.log("PASS: discoverable deletion, exact confirmation, bearer identity, local sign-out and responsive layout; API simulated");
+  await context.close();
+
+  const operator = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  let operatorRequests = 0;
+  await operator.route("**/api/buyer/account", route => {
+    if (route.request().method() === "GET") return route.fulfill({ json: { account: { email: "owner@example.test", type: "commerce", operational: true, pending: false, requestedAt: null } } });
+    operatorRequests++;
+    return route.fulfill({ status: 202, json: { ok: true, pending: true } });
+  });
+  const operatorPage = await operator.newPage();
+  await operatorPage.goto(`${base}/eliminar-cuenta`);
+  await operatorPage.getByRole("button", { name: "Solicitar eliminacion", exact: true }).waitFor();
+  assert.match(await operatorPage.locator(".buyer-delete-operation-note").innerText(), /no dejar la operacion sin responsable/);
+  assert.equal(await operatorPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await operatorPage.screenshot({ path: `${output}/commerce-request.png`, fullPage: true });
+  await operatorPage.getByLabel("Escribe ELIMINAR para confirmar").fill("ELIMINAR");
+  await operatorPage.getByRole("button", { name: "Solicitar eliminacion", exact: true }).click();
+  await operatorPage.getByText("Solicitud recibida", { exact: true }).waitFor();
+  assert.equal(operatorRequests, 1);
+  await operatorPage.screenshot({ path: `${output}/commerce-requested.png`, fullPage: true });
+  await operator.close();
+  console.log("PASS: buyer deletion and operational request are discoverable, confirmed, responsive and distinct; API simulated");
 } finally { await browser.close(); }

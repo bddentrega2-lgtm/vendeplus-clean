@@ -90,6 +90,18 @@ export function PrintingManager() {
   useEffect(() => { void load(); }, [load]);
 
   const selectedPrinter = useMemo(() => printers.find((printer) => printer.address === selectedAddress), [printers, selectedAddress]);
+  const printOnReceived = settings.is_enabled && ["received", "both"].includes(settings.trigger_mode);
+  const printOnVerifiedPayment = settings.is_enabled && ["paid", "both"].includes(settings.trigger_mode);
+
+  const updatePrintTrigger = (trigger: "received" | "paid", checked: boolean) => {
+    const received = trigger === "received" ? checked : printOnReceived;
+    const paid = trigger === "paid" ? checked : printOnVerifiedPayment;
+    setSettings((value) => ({
+      ...value,
+      is_enabled: received || paid,
+      trigger_mode: received && paid ? "both" : paid ? "paid" : "received",
+    }));
+  };
 
   const pairThisPhone = async () => {
     const plugin = nativePlugin();
@@ -200,7 +212,8 @@ export function PrintingManager() {
           <label className="text-sm font-bold">Copias<select value={settings.copies} onChange={(event) => setSettings((value) => ({ ...value, copies: Number(event.target.value) }))} className="mt-1 min-h-11 w-full rounded-lg border border-[#25262B]/20 px-3"><option value={1}>1</option><option value={2}>2</option><option value={3}>3</option></select></label>
         </div>
         <label className="mt-4 flex items-center gap-3 text-sm font-bold"><input type="checkbox" checked={settings.include_prices} onChange={(event) => setSettings((value) => ({ ...value, include_prices: event.target.checked }))} className="h-5 w-5 accent-[#0F5A5E]" />Mostrar precios en la comanda</label>
-        <label className="mt-4 flex items-center gap-3 text-sm font-bold"><input type="checkbox" checked={settings.is_enabled} onChange={(event) => setSettings((value) => ({ ...value, is_enabled: event.target.checked }))} className="h-5 w-5 accent-[#0F5A5E]" />Imprimir pedidos automaticamente al recibirlos</label>
+        <label className="mt-4 flex items-center gap-3 text-sm font-bold"><input type="checkbox" checked={printOnReceived} onChange={(event) => updatePrintTrigger("received", event.target.checked)} className="h-5 w-5 accent-[#0F5A5E]" />Imprimir automaticamente al recibir el pedido</label>
+        <label className="mt-4 flex items-center gap-3 text-sm font-bold"><input type="checkbox" checked={printOnVerifiedPayment} onChange={(event) => updatePrintTrigger("paid", event.target.checked)} className="h-5 w-5 accent-[#0F5A5E]" />Imprimir al verificar el pago</label>
         <div className="mt-5 flex flex-wrap gap-2">
           <button onClick={saveSettings} disabled={busy !== ""} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#0F5A5E] px-5 text-sm font-black text-white disabled:opacity-50">{busy === "save" ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}Guardar</button>
           {isNative && nativePaired ? <button onClick={processQueue} disabled={busy !== "" || !selectedAddress} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[#0F5A5E] px-4 text-sm font-black text-[#0F5A5E] disabled:opacity-50">{busy === "queue" ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />}Imprimir pendientes</button> : null}

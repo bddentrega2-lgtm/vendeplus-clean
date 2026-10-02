@@ -36,12 +36,18 @@ try {
     } finally { Pop-Location }
     Push-Location $android
     try {
-        & .\gradlew.bat clean bundleRelease testReleaseUnitTest --console=plain
+        & .\gradlew.bat clean lintRelease testReleaseUnitTest bundleRelease --console=plain
         if ($LASTEXITCODE -ne 0) { throw 'Android release build failed.' }
     } finally { Pop-Location }
 
     $source = Join-Path $android 'app/build/outputs/bundle/release/app-release.aab'
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw 'Signed release AAB was not generated.' }
+    $metadataPath = Join-Path $android 'app/build/outputs/bundle/release/somos-release-metadata.json'
+    if (-not (Test-Path -LiteralPath $metadataPath -PathType Leaf)) { throw 'Release metadata was not generated.' }
+    $releaseMetadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
+    if ($releaseMetadata.packageName -ne 'com.somosve.app' -or $releaseMetadata.origin -ne 'https://www.somos-ve.com') {
+        throw 'Release metadata does not match the official application.'
+    }
     $folder = Join-Path $workspace 'tmp/play-internal'
     [void][IO.Directory]::CreateDirectory($folder)
     $target = Join-Path $folder 'somos-internal-release.aab'
@@ -49,9 +55,10 @@ try {
     $manifest = [ordered]@{
         artifact = $target
         sha256 = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
-        package = 'com.somosve.app'
-        versionCode = 11
-        origin = 'https://www.somos-ve.com'
+        package = $releaseMetadata.packageName
+        versionCode = [int]$releaseMetadata.versionCode
+        versionName = [string]$releaseMetadata.versionName
+        origin = $releaseMetadata.origin
         firebase = 'configured'
         createdAt = [DateTime]::UtcNow.ToString('o')
     }

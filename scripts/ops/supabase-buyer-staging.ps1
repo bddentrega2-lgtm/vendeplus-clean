@@ -1,6 +1,6 @@
 param([switch]$CreateFreeProject, [switch]$ReadAuthStatus, [switch]$InitializeSchema, [switch]$HardenPermissions, [switch]$Verify, [switch]$SeedCatalog, [switch]$TestBuyerFlow,
     [ValidateSet('inspect','build','deploy','status','share','start')][string]$PreviewAction,
-    [switch]$ConfigurePreviewRedirects, [switch]$ReadAuthDiagnostics, [switch]$ApplyReviewObservation,
+    [switch]$ConfigurePreviewRedirects, [switch]$ReadAuthDiagnostics, [switch]$ApplyReviewObservation, [switch]$ApplyAccountDeletionRequests,
     [ValidateSet('inspect','complete')][string]$DemoOrderAction)
 
 $ErrorActionPreference = 'Stop'
@@ -67,7 +67,7 @@ try {
             $auth = $null
         }
     }
-    if ($InitializeSchema -or $HardenPermissions -or $Verify -or $SeedCatalog -or $TestBuyerFlow -or $PreviewAction -or $ConfigurePreviewRedirects -or $ReadAuthDiagnostics -or $DemoOrderAction -or $ApplyReviewObservation) {
+    if ($InitializeSchema -or $HardenPermissions -or $Verify -or $SeedCatalog -or $TestBuyerFlow -or $PreviewAction -or $ConfigurePreviewRedirects -or $ReadAuthDiagnostics -or $DemoOrderAction -or $ApplyReviewObservation -or $ApplyAccountDeletionRequests) {
         $stageRef = 'xpqmmdmixpyqruykkbkf'
         $manifest = Get-Content (Join-Path $workspace 'tmp/buyer-staging/provisioning.dpapi.json') -Raw | ConvertFrom-Json
         if ($manifest.project_ref -ne $stageRef -or $manifest.state -ne 'created') { throw 'Staging project identity not confirmed.' }
@@ -130,6 +130,10 @@ try {
         if ($ApplyReviewObservation) {
             $null = Invoke-StagingQuery ([IO.File]::ReadAllText((Join-Path $workspace 'supabase/migrations/20260930030000_buyer_review_observation.sql')))
             Invoke-StagingQuery "select column_name, data_type from information_schema.columns where table_schema='public' and table_name='buyer_store_reviews' and column_name='observation'; select has_function_privilege('anon', 'public.save_buyer_store_review_with_observation(uuid,uuid,integer,text)', 'EXECUTE') as anon_execute, has_function_privilege('authenticated', 'public.save_buyer_store_review_with_observation(uuid,uuid,integer,text)', 'EXECUTE') as authenticated_execute, has_function_privilege('service_role', 'public.save_buyer_store_review_with_observation(uuid,uuid,integer,text)', 'EXECUTE') as service_execute;" | ConvertTo-Json -Depth 6
+        }
+        if ($ApplyAccountDeletionRequests) {
+            $null = Invoke-StagingQuery ([IO.File]::ReadAllText((Join-Path $workspace 'supabase/migrations/20261001153000_account_deletion_requests.sql')))
+            Invoke-StagingQuery "select c.relrowsecurity as rls_enabled, has_table_privilege('anon','public.account_deletion_requests','SELECT') as anon_select, has_table_privilege('authenticated','public.account_deletion_requests','SELECT') as authenticated_select, has_table_privilege('service_role','public.account_deletion_requests','SELECT') as service_select, (select count(*)::int from public.account_deletion_requests) as rows from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname='account_deletion_requests';" | ConvertTo-Json -Depth 6
         }
         if ($DemoOrderAction) {
             if ($DemoOrderAction -eq 'complete') {

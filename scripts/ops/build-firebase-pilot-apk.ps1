@@ -27,21 +27,21 @@ try {
     } finally { Pop-Location }
     Push-Location $android
     try {
-        & .\gradlew.bat clean assembleDebug testDebugUnitTest --console=plain
+        & .\gradlew.bat clean lintDebug assembleDebug testDebugUnitTest --console=plain
         if ($LASTEXITCODE -ne 0) { throw 'Android build failed.' }
     } finally { Pop-Location }
 
     $source = Join-Path $android 'app/build/outputs/apk/debug/app-debug.apk'
     $folder = Join-Path $workspace 'tmp/firebase-pilot'
     [void][IO.Directory]::CreateDirectory($folder)
-    $target = Join-Path $folder 'somos-1.4.1-panel-auth.apk'
+    $target = Join-Path $folder 'somos-1.5.0-print-candidate.apk'
     Copy-Item -LiteralPath $source -Destination $target -Force
     $manifest = [ordered]@{
         apk = $target
         sha256 = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
         package = 'com.somosve.app'
-        versionCode = 13
-        versionName = '1.4.1-panel-auth'
+        versionCode = 14
+        versionName = '1.5.0'
         origin = 'https://www.somos-ve.com'
         firebase = 'configured-client'
         createdAt = [DateTime]::UtcNow.ToString('o')

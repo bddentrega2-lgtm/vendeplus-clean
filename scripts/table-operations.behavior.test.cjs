@@ -12,7 +12,7 @@ function load(file, mocks = {}, globals = {}) {
   const module = { exports: {} };
   vm.runInNewContext('(function(require,module,exports){' + output + '\n})', { Request, Response, URL, AbortSignal, TypeError, console, ...globals })((name) => {
     if (name in mocks) return mocks[name];
-    if (name === 'next/server') return { NextResponse: Response };
+    if (name === 'next/server') return { NextResponse: Response, after: callback => callback() };
     throw Error('Unexpected dependency: ' + name);
   }, module, module.exports);
   return module.exports;
@@ -165,6 +165,7 @@ function snapshotHarness() {
   let token = 'session-a';
   const requests = [];
   const client = load('src/lib/panel/table-snapshot-client.ts', {
+    '@/lib/client/request-timeout': { requestTimeoutSignal: () => new AbortController().signal },
     './client-auth': { getSavedPanelToken: () => token, getPanelAuthHeaders: async () => ({ authorization: token }) },
   }, { fetch: (url) => new Promise(resolve => requests.push({ url, resolve })) });
   const snapshot = { enabled:true, qrToken:'private-qr', tables:[], waiterCalls:[], activeOrders:[{id:'one',status:'accepted'},{id:'two',status:'accepted'}] };
@@ -210,14 +211,14 @@ test('espera de red limitada libera resumen compartido y permite reintentar', as
   let hang = true;
   let calls = 0;
   const client = load('src/lib/panel/table-snapshot-client.ts', {
-    './client-auth': { getSavedPanelToken: () => 'qa', getPanelAuthHeaders: async () => ({}) },
-  }, {
-    AbortSignal: { timeout(ms) {
+    '@/lib/client/request-timeout': { requestTimeoutSignal(ms) {
       assert.equal(ms, 15_000);
       const controller = new AbortController();
       setTimeout(() => controller.abort(), 20);
       return controller.signal;
     } },
+    './client-auth': { getSavedPanelToken: () => 'qa', getPanelAuthHeaders: async () => ({}) },
+  }, {
     fetch: async (_, { signal }) => {
       calls++;
       if (!hang) return Response.json({ activeOrders: [], tables: [] });
@@ -235,12 +236,14 @@ test('espera de red limitada libera resumen compartido y permite reintentar', as
 
 test('limite tambien cubre cuerpo de respuesta y conserva errores operativos', async () => {
   let badStatus = false;
-  const client = load('src/lib/panel/table-snapshot-client.ts', { './client-auth': {} }, {
-    AbortSignal: { timeout() {
+  const client = load('src/lib/panel/table-snapshot-client.ts', {
+    '@/lib/client/request-timeout': { requestTimeoutSignal() {
       const controller = new AbortController();
       setTimeout(() => controller.abort(), 20);
       return controller.signal;
     } },
+    './client-auth': {},
+  }, {
     fetch: async (_, { signal }) => badStatus
       ? Response.json({ error: 'Verifica el pago antes de preparar.' }, { status: 400 })
       : { json: () => new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })) },
@@ -303,6 +306,7 @@ test('verificar pago solo modifica campos enviados y conserva datos omitidos', a
       '@/lib/panel/access': {requirePanelAuth:async()=>({userId:'actor'}),assertStoreAccess:(_,id)=>assert.equal(id,'store-a'),badRequest:()=>{throw Error('bad request');},panelErrorResponse:e=>{throw e;}},
       '@/lib/payments':{isPaymentStatus:value=>value==='verified'},
       '@/lib/supabase/schema-compat':{isMissingColumnError:()=>false},
+      '@/lib/printing/firebase-push':{safeSendPrintWakePush:async()=>({sent:0})},
     });
     const response = await route.PATCH(new Request('http://localhost/api/panel/orders/order-a/payment',{method:'PATCH',body:JSON.stringify({paymentStatus:'verified',...extra})}),{params:Promise.resolve({orderId:'order-a'})});
     assert.equal(response.status,200);
@@ -325,6 +329,7 @@ test('rafaga de diez eventos conserva un refresco final sin diez consultas paral
     '@/components/panel/PanelAuthProvider':{usePanelAuth:()=>({selectedStoreId:'a',selectedStore:{table_orders_access_enabled:true}})},
     '@/lib/panel/client-auth':{},
     '@/lib/panel/order-notification-sound':{playNewOrderSound:()=>{},unlockOrderNotificationSound:()=>{}},
+    '@/lib/mobile/order-alerts':{},
     '@/lib/supabase/client':{},
     '@/lib/table-orders':{TABLE_ORDERS_CHANGED_EVENT:'changed'},
     '@/lib/panel/table-snapshot-client':{fetchTableSnapshot:()=>new Promise(resolve=>requests.push(resolve))},
@@ -369,6 +374,8 @@ test('pedido de mesa omite delivery, mientras retiro conserva consultas y valida
       '@/lib/server/observability':{createApiRequestContext:()=>({}),attachApiResponseHeaders:r=>r,logApiEvent:()=>{},logApiError:(_,__,e)=>{throw e;}},
       '@/lib/server/table-order-tokens':{isValidTableOrderTokenForStore:async()=>true},
       '@/lib/server/create-order-atomic':{createOrderAtomic:async({order})=>{persisted=order;return{order,idempotentReplay:false};}},
+      '@/lib/buyer/auth-server':{getVerifiedBuyer:async()=>null},
+      '@/lib/printing/firebase-push':{safeSendPrintWakePush:async()=>({sent:0})},
     });
     const r=await route.POST(new Request('http://localhost/api/orders',{method:'POST',body:JSON.stringify({storeId:'store-a',idempotencyKey:'00000000-0000-4000-8000-000000000001',order:{items:[{productId:'product-a',quantity:1,unitPriceUsd:0}],form:{customerName:'QA',customerPhone:'12025550100',paymentMethod:'Efectivo',deliveryType:mode},quote:{},tableOrder:{storeToken:'qr',tableId:'table-a'}}})}));
     assert.equal(r.status,mode==='table'?200:400);

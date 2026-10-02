@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { requestTimeoutSignal } from "@/lib/client/request-timeout";
 import { bindMobileAccount, clearMobilePrivateState, isNativeApp, readMobile, writeMobile } from "@/lib/mobile/state";
 import { clearPanelReadCache } from "@/lib/panel/client-fetch-cache";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -51,6 +52,13 @@ type PanelAuthContextValue = {
 
 const PanelAuthContext = createContext<PanelAuthContextValue | null>(null);
 
+function getContextErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof TypeError || (error instanceof Error && /AbortSignal|timeout/i.test(error.message))) {
+    return fallback;
+  }
+  return error instanceof Error ? error.message : fallback;
+}
+
 export function PanelAuthProvider({ children }: { children: React.ReactNode }) {
   const [hasSession, setHasSession] = useState(() => Boolean(getSavedPanelToken()));
   const [isBootstrapping, setIsBootstrapping] = useState(true);
@@ -77,7 +85,7 @@ export function PanelAuthProvider({ children }: { children: React.ReactNode }) {
     const response = await fetch("/api/panel/context", {
       headers: await getPanelAuthHeaders(),
       cache: "no-store",
-      signal: AbortSignal.timeout(12000),
+      signal: requestTimeoutSignal(12_000),
     });
     if (version !== requestVersion.current) return;
     if (!response.ok) {
@@ -97,7 +105,7 @@ export function PanelAuthProvider({ children }: { children: React.ReactNode }) {
 
     saveSelectedPanelStoreId(nextStoreId);
     if (isNativeApp() && nextStoreId && nextStoreId !== data.selectedStoreId) {
-      const selectedResponse = await fetch("/api/panel/context", { headers: await getPanelAuthHeaders(), cache: "no-store", signal: AbortSignal.timeout(12000) });
+      const selectedResponse = await fetch("/api/panel/context", { headers: await getPanelAuthHeaders(), cache: "no-store", signal: requestTimeoutSignal(12_000) });
       if (!selectedResponse.ok) throw new Error("No pudimos comprobar el comercio elegido.");
       data = await selectedResponse.json();
       if (data.userId !== userId) throw new Error("La sesion cambio. Vuelve a ingresar.");
@@ -125,7 +133,7 @@ export function PanelAuthProvider({ children }: { children: React.ReactNode }) {
       await loadPanelContext();
     } catch (error) {
       resetContext();
-      setContextError(error instanceof Error ? error.message : "Revisa tu conexion y reintenta.");
+      setContextError(getContextErrorMessage(error, "No pudimos cargar el panel. Revisa tu conexion y reintenta."));
     } finally { setIsBootstrapping(false); }
   }
 
@@ -142,7 +150,7 @@ export function PanelAuthProvider({ children }: { children: React.ReactNode }) {
     if (!isNativeApp() || !accountRef.current) return;
     setIsRevalidating(true);
     try { await loadPanelContext(); }
-    catch (error) { setContextError(error instanceof Error ? error.message : "No pudimos comprobar tu acceso."); }
+    catch (error) { setContextError(getContextErrorMessage(error, "No pudimos comprobar tu acceso. Reintenta.")); }
     finally { setIsRevalidating(false); }
   }
 

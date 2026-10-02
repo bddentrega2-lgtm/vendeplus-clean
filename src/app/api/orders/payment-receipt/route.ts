@@ -5,12 +5,13 @@ import { checkDistributedRateLimit, getClientIp, rateLimitHeaders } from "@/lib/
 
 export const runtime = "nodejs";
 
-const MAX_INPUT_BYTES = 4 * 1024 * 1024;
+const MAX_INPUT_BYTES = 5 * 1024 * 1024;
+const MAX_REQUEST_BYTES = MAX_INPUT_BYTES + 256 * 1024;
 const MAX_STORED_BYTES = 2 * 1024 * 1024;
 
 export async function POST(request: NextRequest) {
   const contentLength = Number(request.headers.get("content-length") || 0);
-  if (contentLength > MAX_INPUT_BYTES) {
+  if (contentLength > MAX_REQUEST_BYTES) {
     return NextResponse.json({ error: "La imagen supera el tamaño permitido." }, { status: 413 });
   }
 

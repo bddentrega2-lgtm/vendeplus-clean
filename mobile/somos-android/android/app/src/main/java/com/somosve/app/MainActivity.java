@@ -110,7 +110,7 @@ public class MainActivity extends BridgeActivity {
         recoveryText.setPadding(0, 32, 0, 24);
         recovery.addView(recoveryText);
         retry = new Button(this);
-        retry.setText("Reintentar");
+        retry.setText(R.string.retry);
         retry.setOnClickListener(v -> { showRecovery(false); bridge.getWebView().loadUrl(isAppOrigin(retryUrl) ? retryUrl : startUrl); });
         recovery.addView(retry);
         addContentView(recovery, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));

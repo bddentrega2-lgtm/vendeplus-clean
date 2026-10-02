@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, Home, Search, UserRound, Store, ShoppingBag, X, WifiOff, RefreshCw, Percent, MapPin, LogIn, ShieldCheck, Trash2, CircleCheck, ChevronRight } from "lucide-react";
 import { BuyerAuthResume } from "@/components/buyer/BuyerAuthResume";
 import { confirmNativeLeave, useNativeApp, useNativeBackLayer } from "@/hooks/use-native-app";
+import { requestTimeoutSignal } from "@/lib/client/request-timeout";
 import { mobileBackTarget, readMobile, safeMobileRoute, writeMobile } from "@/lib/mobile/state";
 import { getCart, getCartCount } from "@/lib/cart";
 import { clearCustomerBrowserProfile, getCustomerBrowserProfile, getCustomerIdParts, saveCustomerBrowserProfile } from "@/lib/customer-browser-profile";
@@ -109,7 +110,7 @@ export function NativeExperience() {
           const { data } = await createSupabaseBrowserClient()?.auth.getSession() || { data: null };
           if (data?.session) {
             await syncPanelServerSession(data.session.access_token);
-            const response = await fetch("/api/panel/context", { cache: "no-store", signal: AbortSignal.timeout(10000) });
+            const response = await fetch("/api/panel/context", { cache: "no-store", signal: requestTimeoutSignal(10_000) });
             if (!response.ok && response.status !== 401 && response.status !== 403) throw new Error("context");
             const context = response.ok ? await response.json() : null;
             if (context?.stores?.length && !context.isFounderMode) {

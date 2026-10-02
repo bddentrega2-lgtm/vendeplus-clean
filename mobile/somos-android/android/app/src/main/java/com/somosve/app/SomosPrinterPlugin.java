@@ -1,6 +1,8 @@
 package com.somosve.app;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
+import android.content.pm.PackageManager;
 import android.content.Context;
 import android.content.Intent;
 import android.bluetooth.BluetoothAdapter;
@@ -39,6 +41,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.messaging.FirebaseMessaging;
+import androidx.core.content.ContextCompat;
 
 @CapacitorPlugin(
     name = "SomosPrinter",
@@ -101,6 +104,7 @@ public class SomosPrinterPlugin extends Plugin {
     }
 
     @PluginMethod
+    @SuppressLint("MissingPermission")
     public void getPairedPrinters(PluginCall call) {
         if (!requireBluetooth(call)) return;
 
@@ -207,11 +211,16 @@ public class SomosPrinterPlugin extends Plugin {
                 call.reject("Vincula el telefono y selecciona una impresora primero.", "SETUP_REQUIRED");
                 return;
             }
-            getContext().startForegroundService(intent);
+            secureStore.setAutoPrintEnabled(true);
+            if (!PrintForegroundService.start(getContext())) {
+                secureStore.setAutoPrintEnabled(false);
+                call.reject("Android no permitio iniciar la impresion automatica.", "BACKGROUND_START_BLOCKED");
+                return;
+            }
         } else {
+            secureStore.setAutoPrintEnabled(false);
             getContext().stopService(intent);
         }
-        secureStore.setAutoPrintEnabled(enabled);
         JSObject result = new JSObject();
         result.put("enabled", enabled);
         call.resolve(result);
@@ -366,6 +375,10 @@ public class SomosPrinterPlugin extends Plugin {
     }
 
     private static void writeToPrinter(Context context, String address, byte[] ticket) throws Exception {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            throw new SecurityException("Permiso Bluetooth no autorizado");
+        }
         BluetoothManager manager = context.getSystemService(BluetoothManager.class);
         BluetoothAdapter adapter = manager == null ? null : manager.getAdapter();
         if (adapter == null || !adapter.isEnabled()) throw new Exception("Bluetooth apagado");
@@ -509,7 +522,10 @@ public class SomosPrinterPlugin extends Plugin {
     }
 
     private boolean hasBluetoothPermission() {
-        return Build.VERSION.SDK_INT < Build.VERSION_CODES.S || getPermissionState("bluetooth") == PermissionState.GRANTED;
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true;
+        return getPermissionState("bluetooth") == PermissionState.GRANTED &&
+            ContextCompat.checkSelfPermission(getContext(), Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(getContext(), Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED;
     }
 
     private boolean requireBluetooth(PluginCall call) {

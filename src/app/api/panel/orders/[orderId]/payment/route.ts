@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import {
   assertStoreAccess,
   badRequest,
@@ -8,6 +8,7 @@ import {
 import { isPaymentStatus } from "@/lib/payments";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isMissingColumnError } from "@/lib/supabase/schema-compat";
+import { safeSendPrintWakePush } from "@/lib/printing/firebase-push";
 
 function cleanText(value: unknown, maxLength = 500) {
   return String(value || "").trim().slice(0, maxLength);
@@ -46,7 +47,7 @@ export async function PATCH(
     const supabase = createSupabaseAdminClient();
     const { data: existingOrder, error: existingError } = await supabase
       .from("orders")
-      .select("id, store_id")
+      .select("id, store_id, payment_status")
       .eq("id", orderId)
       .single();
 
@@ -103,6 +104,15 @@ export async function PATCH(
     }
 
     if (error) throw error;
+
+    if (isVerified && existingOrder.payment_status !== "verified") {
+      after(() => safeSendPrintWakePush({
+        supabase,
+        storeId: existingOrder.store_id,
+        orderId,
+        eventType: "paid",
+      }));
+    }
 
     return NextResponse.json({ order: data });
   } catch (error: any) {

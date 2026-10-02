@@ -81,7 +81,9 @@ async function geometry(page) {
 
 async function recordDialog(page, store, width, mode, product, stage) {
   const measured = await geometry(page);
-  const failed = !measured.portal
+  const failed = measured.documentWidth > measured.viewport.width + 1
+    || measured.bodyWidth > measured.viewport.width + 1
+    || !measured.portal
     || measured.bodyOverflow !== "hidden"
     || measured.verticalOverflow
     || Boolean(measured.overlay && (

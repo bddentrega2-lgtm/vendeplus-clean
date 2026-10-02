@@ -82,39 +82,62 @@ test("review endpoint ignores a supplied buyer identity and rejects malformed ra
   assert.equal(calls.length, 8);
 });
 
-test("account deletion requires exact confirmation and deletes only a pure buyer identity", async () => {
-  let verified = buyer, deleted = [];
-  const counts = { store_users: 0, transport_agency_users: 0, commerce_registration_requests: 0 };
+test("account deletion is immediate for buyers and idempotently queued for operational accounts", async () => {
+  let identity = { mode: "user", userId: buyer.id, email: buyer.email, isFounderMode: false };
+  let storeRows = [], pending = null;
+  const inserted = [], deleted = [];
+  const rows = table => table === "store_users" ? storeRows : [];
   const db = {
     from: table => {
-      const query = { then: resolve => Promise.resolve({ count: counts[table], error: null }).then(resolve) };
-      for (const method of ["select", "eq", "in"]) query[method] = () => query;
+      const query = {
+        select: () => query, eq: () => query, in: () => query,
+        maybeSingle: async () => ({ data: table === "account_deletion_requests" ? pending : null, error: null }),
+        insert: async payload => { inserted.push(payload); pending = { id: "request-1", status: "pending", requested_at: "today" }; return { error: null }; },
+        update: () => query,
+        then: resolve => Promise.resolve({ data: rows(table), error: null }).then(resolve),
+      };
       return query;
     },
     auth: { admin: { deleteUser: async (...args) => { deleted.push(args); return { error: null }; } } },
   };
-  const api = load("src/app/api/buyer/account/route.ts", { "next/server": json, "@/lib/buyer/auth-server": { getVerifiedBuyer: async () => verified }, "@/lib/supabase/admin": { createSupabaseAdminClient: () => db }, "@/lib/server/rate-limit": rate });
-  const request = (body, headers = {}) => new Request("https://example.test/api/buyer/account", { method: "DELETE", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+  const api = load("src/app/api/buyer/account/route.ts", { "next/server": json, "@/lib/panel/auth": { getPanelAuthContext: async () => identity }, "@/lib/supabase/admin": { createSupabaseAdminClient: () => db }, "@/lib/server/rate-limit": rate });
+  const request = body => new Request("https://example.test/api/buyer/account", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   assert.equal((await api.DELETE(request({ confirmation: "eliminar" }))).status, 400);
-  assert.equal(deleted.length, 0);
-  counts.store_users = 1;
-  assert.equal((await api.DELETE(request({ confirmation: "ELIMINAR" }))).status, 409);
-  assert.equal(deleted.length, 0);
-  counts.store_users = 0;
   assert.equal((await api.DELETE(request({ confirmation: "ELIMINAR", buyerId: "foreign" }))).status, 200);
   assert.deepEqual(deleted, [[buyer.id, false]]);
-  verified = null;
-  assert.equal((await api.DELETE(request({ confirmation: "ELIMINAR" }))).status, 401);
+
+  storeRows = [{ store_id: "store-a", role: "owner" }];
+  const queued = await api.DELETE(request({ confirmation: "ELIMINAR" }));
+  assert.equal(queued.status, 202);
+  assert.equal((await queued.json()).pending, true);
+  assert.equal(inserted.length, 1);
+  assert.equal(Array.from(inserted[0].store_ids).join(","), "store-a");
+  assert.equal((await api.DELETE(request({ confirmation: "ELIMINAR" }))).status, 202);
+  assert.equal(inserted.length, 1);
   assert.equal(deleted.length, 1);
+
+  identity = { mode: "none", isFounderMode: false };
+  assert.equal((await api.DELETE(request({ confirmation: "ELIMINAR" }))).status, 401);
 });
 
-test("account deletion fails closed when role checks or auth deletion fail", async () => {
-  let roleError = true, deleteError = false;
-  const query = { then: resolve => Promise.resolve({ count: 0, error: roleError ? { message: "db" } : null }).then(resolve) };
-  for (const method of ["select", "eq", "in"]) query[method] = () => query;
-  const db = { from: () => query, auth: { admin: { deleteUser: async () => ({ error: deleteError ? { message: "auth" } : null }) } } };
-  const api = load("src/app/api/buyer/account/route.ts", { "next/server": json, "@/lib/buyer/auth-server": { getVerifiedBuyer: async () => buyer }, "@/lib/supabase/admin": { createSupabaseAdminClient: () => db }, "@/lib/server/rate-limit": rate });
+test("account deletion fails closed for founder, database checks and auth deletion", async () => {
+  let founder = true, roleError = false, deleteError = false;
+  const db = {
+    from: table => {
+      const query = {
+        select: () => query, eq: () => query, in: () => query, update: () => query,
+        maybeSingle: async () => ({ data: null, error: roleError ? { message: "db" } : null }),
+        then: resolve => Promise.resolve({ data: [], error: roleError ? { message: "db" } : null }).then(resolve),
+      };
+      return query;
+    },
+    auth: { admin: { deleteUser: async () => ({ error: deleteError ? { message: "auth" } : null }) } },
+  };
+  const auth = async () => ({ mode: "user", userId: buyer.id, email: buyer.email, isFounderMode: founder });
+  const api = load("src/app/api/buyer/account/route.ts", { "next/server": json, "@/lib/panel/auth": { getPanelAuthContext: auth }, "@/lib/supabase/admin": { createSupabaseAdminClient: () => db }, "@/lib/server/rate-limit": rate });
   const request = () => new Request("https://example.test/api/buyer/account", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirmation: "ELIMINAR" }) });
+  assert.equal((await api.DELETE(request())).status, 409);
+  founder = false; roleError = true;
   assert.equal((await api.DELETE(request())).status, 503);
   roleError = false; deleteError = true;
   assert.equal((await api.DELETE(request())).status, 503);

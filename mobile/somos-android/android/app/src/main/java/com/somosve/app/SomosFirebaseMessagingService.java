@@ -1,8 +1,6 @@
 package com.somosve.app;
 
 import android.content.Context;
-import android.content.Intent;
-
 import com.google.firebase.messaging.FirebaseMessagingService;
 import com.google.firebase.messaging.RemoteMessage;
 
@@ -24,12 +22,11 @@ public class SomosFirebaseMessagingService extends FirebaseMessagingService {
 
     @Override
     public void onMessageReceived(RemoteMessage message) {
-        if ("print_jobs".equals(message.getData().get("type"))) {
-            SomosOrderAlertsPlugin.showRemote(this, message.getData().get("orderId"));
-        }
+        if (!"print_jobs".equals(message.getData().get("type"))) return;
+        SomosOrderAlertsPlugin.showRemote(this, message.getData().get("orderId"));
         PrinterSecureStore store = new PrinterSecureStore(getApplicationContext());
         if (store.autoPrintEnabled() && store.hasToken() && !store.printerAddress().isEmpty()) {
-            startForegroundService(new Intent(this, PrintForegroundService.class));
+            PrintForegroundService.start(this);
         }
     }
 

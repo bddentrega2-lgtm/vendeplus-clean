@@ -1,5 +1,6 @@
 "use client";
 
+import { requestTimeoutSignal } from "@/lib/client/request-timeout";
 import { getPanelAuthHeaders, getSavedPanelToken } from "./client-auth";
 
 export type TableRow = { id: string; name: string; zone: string | null; is_enabled: boolean };
@@ -22,7 +23,7 @@ const snapshots = new Map<string, Entry>();
 const scopeKey = (storeId: string) => `${getSavedPanelToken()}|${storeId}`;
 
 export async function requestTableJson(url: string, options: RequestInit = {}) {
-  const signal = AbortSignal.timeout(15_000);
+  const signal = requestTimeoutSignal(15_000);
   const isRead = !options.method || options.method === "GET";
   try {
     const response = await fetch(url, { ...options, signal });
@@ -30,7 +31,7 @@ export async function requestTableJson(url: string, options: RequestInit = {}) {
     if (!response.ok) throw new Error(data.error || "No se pudo completar la solicitud.");
     return data;
   } catch (error) {
-    if (signal.aborted || error instanceof TypeError) {
+    if (signal?.aborted || error instanceof TypeError) {
       throw new Error(isRead
         ? "No pudimos cargar los datos. Revisa tu conexion e intenta de nuevo."
         : "No pudimos confirmar el cambio. Revisa el estado del pedido antes de reintentar.");
