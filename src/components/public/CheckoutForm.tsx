@@ -634,7 +634,6 @@ export function CheckoutForm({ store }: { store: Store }) {
         ...saveResult.order,
         form: { ...saveResult.order.form, paymentReceiptToken: "" },
         quote: { ...saveResult.order.quote, quoteToken: undefined },
-        tableOrder: saveResult.order.tableOrder ? { ...saveResult.order.tableOrder, storeToken: "" } : null,
       } : saveResult.order;
       try { localStorage.setItem(getOrderKey(store.slug), JSON.stringify(savedOrder)); } catch { /* Server already confirmed; never resend because storage failed. */ }
       if (rememberCustomer) {

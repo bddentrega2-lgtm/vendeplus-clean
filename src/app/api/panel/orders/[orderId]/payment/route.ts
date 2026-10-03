@@ -47,7 +47,7 @@ export async function PATCH(
     const supabase = createSupabaseAdminClient();
     const { data: existingOrder, error: existingError } = await supabase
       .from("orders")
-      .select("id, store_id, payment_status")
+      .select("id, store_id, payment_status, status")
       .eq("id", orderId)
       .single();
 
@@ -69,6 +69,7 @@ export async function PATCH(
       ...(Object.hasOwn(body, "paymentNotes") ? { payment_notes: cleanText(body.paymentNotes, 500) || null } : {}),
       payment_verified_at: isVerified ? new Date().toISOString() : null,
       payment_verified_by: isVerified ? auth.userId || null : null,
+      ...(isVerified && existingOrder.status === "received" ? { status: "accepted" } : {}),
     };
 
     const { data, error } = await supabase
@@ -88,7 +89,10 @@ export async function PATCH(
         payment_verified_at,
         payment_notes,
         payment_bank,
-        payment_verified_by
+        payment_verified_by,
+        status,
+        status_entered_at,
+        status_elapsed_ms
       `
       )
       .single();

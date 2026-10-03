@@ -20,6 +20,27 @@ export function newOrdersSince(orders: AlertOrder[], known: Set<string>, storeId
   return orders.filter(order => order.store_id === storeId && !known.has(order.id) && Number.isFinite(Date.parse(order.created_at)) && Date.parse(order.created_at) >= since);
 }
 
+const ORDER_NOTICE_READ_PREFIX = "somos_order_notice_read_v2_";
+const LEGACY_ORDER_NOTICE_READ_PREFIX = "somos_mobile_v1_private_order_read_";
+
+export function orderNoticeReadKey(accountId: string, storeId: string) {
+  return `${ORDER_NOTICE_READ_PREFIX}${accountId}:${storeId}`;
+}
+
+export function loadOrderNoticeReadIds(accountId: string, storeId: string): { key: string; ids: Set<string> } {
+  const key = orderNoticeReadKey(accountId, storeId);
+  const current = readOrderNoticeIds(key);
+  if (!accountId || !storeId) return { key, ids: current };
+
+  const legacyKey = `${LEGACY_ORDER_NOTICE_READ_PREFIX}${accountId}:${storeId}`;
+  const legacy = readOrderNoticeIds(legacyKey);
+  if (!legacy.size) return { key, ids: current };
+
+  const ids = rememberReadOrderNotices(key, [...legacy], current);
+  try { localStorage.removeItem(legacyKey); } catch { /* Migration is best effort. */ }
+  return { key, ids };
+}
+
 export function readOrderNoticeIds(key: string): Set<string> {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(key) || "[]");

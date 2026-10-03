@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
           .order("name", { ascending: true }),
         supabase
           .from("orders")
-          .select("id, public_code, store_table_id, table_name_snapshot, table_fulfillment_snapshot, customer_name, payment_method, payment_status, payment_reference, total_usd, status, created_at, payment_receipts:order_payment_receipts(order_id)")
+          .select("id, public_code, store_table_id, table_name_snapshot, table_fulfillment_snapshot, customer_name, payment_method, payment_status, payment_reference, total_usd, status, created_at, status_entered_at, status_elapsed_ms, payment_receipts:order_payment_receipts(order_id)")
           .eq("store_id", storeId)
           .eq("payment_receipts.store_id", storeId)
           .is("payment_receipts.deleted_at", null)
@@ -77,6 +77,13 @@ export async function GET(request: NextRequest) {
       : [];
     const availableMethods = availableTablePaymentMethods(store.payment_methods);
 
+    const normalizedOrders = (activeOrders || []).map(({ payment_receipts, ...order }) => ({
+      ...order,
+      has_payment_receipt: Array.isArray(payment_receipts) ? payment_receipts.length > 0 : Boolean(payment_receipts),
+    }));
+    const tableOrders = normalizedOrders.filter(order => order.store_table_id && order.table_fulfillment_snapshot !== "counter_pickup");
+    const counterOrders = normalizedOrders.filter(order => !order.store_table_id || order.table_fulfillment_snapshot === "counter_pickup");
+
     return NextResponse.json({
       enabled: store.table_orders_enabled === true,
       waiterCallsEnabled: store.table_waiter_calls_enabled === true,
@@ -89,10 +96,10 @@ export async function GET(request: NextRequest) {
       ),
       fulfillmentMode: store.table_order_fulfillment_mode === "counter_pickup" ? "counter_pickup" : "table_service",
       tables: tables || [],
-      activeOrders: (activeOrders || []).map(({ payment_receipts, ...order }) => ({
-        ...order,
-        has_payment_receipt: Array.isArray(payment_receipts) ? payment_receipts.length > 0 : Boolean(payment_receipts),
-      })),
+      tableOrders,
+      counterOrders,
+      // Kept for older cached clients during a rolling deployment. New clients use the split collections.
+      activeOrders: normalizedOrders,
     }, { headers: { "Cache-Control": "private, no-store", "Server-Timing": `auth;dur=${authDuration.toFixed(1)}, total;dur=${(performance.now() - startedAt).toFixed(1)}` } });
   } catch (error) {
     return panelErrorResponse(

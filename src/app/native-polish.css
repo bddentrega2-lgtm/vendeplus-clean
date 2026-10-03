@@ -187,18 +187,25 @@ html.somos-native-app .orders-toolbar > div:first-child > div:last-child { gap: 
 html.somos-native-app .orders-toolbar > div:first-child > div:last-child > * { padding-inline: 12px; }
 html.somos-native-app .orders-toolbar [aria-label="Filtros rápidos de modalidad"] { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
 html.somos-native-app .orders-toolbar [aria-label="Filtros rápidos de modalidad"] button { flex-shrink: 0; }
-html.somos-native-app .native-order-card { border-radius: 8px; padding: 14px; box-shadow: none; border: 1px solid var(--app-line); }
-html.somos-native-app .native-order-card > div { grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
-html.somos-native-app .native-order-card > div > div:first-child { grid-column: 1; grid-row: 1; }
-html.somos-native-app .native-order-card h3 { font-size: 15px; white-space: normal; }
-html.somos-native-app .native-order-card > div > p { grid-column: 2; grid-row: 1; font-size: 17px; }
-html.somos-native-app .native-order-card > div > div:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
-html.somos-native-app .native-order-card > div > div:nth-child(4) { grid-column: 1 / -1; flex-wrap: wrap; }
-html.somos-native-app .native-order-card > div > div:nth-child(5) { grid-column: 1 / -1; padding: 0; border-radius: 0; background: transparent !important; }
-html.somos-native-app .native-order-card > div > div:last-child { grid-column: 1 / -1; width: 100%; grid-template-columns: 58px minmax(100px, 1fr) 52px; }
-html.somos-native-app .native-order-card :is(select, button, a) { min-height: 44px; border-radius: 8px; }
-html.somos-native-app .native-order-card > div > div:last-child > * { width: 100%; }
-html.somos-native-app .native-order-card > div > div:last-child > span { min-height: 44px; border-radius: 8px; }
+html.somos-native-app .native-order-card { border-radius: 8px; padding: 10px; box-shadow: none; border: 1px solid var(--app-line); }
+html.somos-native-app .native-order-card > div { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+html.somos-native-app .native-order-card > div > div { grid-column: 1 / -1; min-width: 0; }
+html.somos-native-app .native-order-card h3 { font-size: 14px; white-space: normal; }
+html.somos-native-app .native-order-card select { min-height: 42px; border-radius: 8px; }
+html.somos-native-app .native-order-card button,
+html.somos-native-app .native-order-card a { min-width: 40px; min-height: 40px; border-radius: 8px; }
+html.somos-native-app .native-order-card > div > div:last-child { display: flex; width: 100%; flex-wrap: wrap; gap: 6px; }
+html.somos-native-app .native-order-card > div > div:last-child > * { width: auto; flex-shrink: 0; }
+html.somos-native-app .native-order-card > div > div:last-child > span { min-height: 32px; border-radius: 8px; }
+@media (min-width: 768px) {
+  html.somos-native-app .native-order-card > div { grid-template-columns: minmax(130px, .55fr) minmax(180px, .9fr) minmax(230px, 1.15fr); align-items: center; gap: 12px; }
+  html.somos-native-app .native-order-card > div > div { grid-column: auto; }
+  html.somos-native-app .native-order-card > div > div:last-child { grid-column: 1 / -1; width: auto; justify-content: flex-end; }
+}
+@media (min-width: 1024px) {
+  html.somos-native-app .native-order-card > div { grid-template-columns: minmax(130px, .55fr) minmax(180px, .9fr) minmax(230px, 1.15fr) auto; }
+  html.somos-native-app .native-order-card > div > div:last-child { grid-column: auto; max-width: 340px; }
+}
 html.somos-native-app .catalog-featured .catalog-product-visual > div { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 10px; }
 html.somos-native-app .catalog-featured .catalog-product-visual > div > button { height: 104px; aspect-ratio: auto; }
 html.somos-native-app .catalog-featured .catalog-product-visual > div > div { padding: 0; }

@@ -147,6 +147,8 @@ export function ManualOrderManager() {
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [deliveryReference, setDeliveryReference] = useState("");
+  const [tableId, setTableId] = useState("");
+  const [tableChoices, setTableChoices] = useState<{ storeId: string; eligible: boolean; tables: Array<{ id: string; name: string; zone: string | null }> }>({ storeId: "", eligible: false, tables: [] });
   const [orderDetails, setOrderDetails] = useState("");
   const [deliveryType, setDeliveryType] = useState<FulfillmentType>("delivery");
   const [paymentMethod, setPaymentMethod] = useState("");
@@ -164,6 +166,16 @@ export function ManualOrderManager() {
   const [success, setSuccess] = useState("");
 
   const selectedStore = stores.find((store) => store.id === selectedStoreId);
+  const usePhysicalTables = tableChoices.storeId === selectedStoreId && tableChoices.eligible;
+  useEffect(() => {
+    let active = true;
+    if (deliveryType !== "table" || !selectedStoreId) return;
+    setTableId("");
+    void panelRequest(pin, "/api/panel/kitchen?view=tables", { headers: { "X-Panel-Store-Id": selectedStoreId } })
+      .then(data => { if (active) setTableChoices({ storeId: selectedStoreId, eligible: data.eligible === true, tables: data.tables || [] }); })
+      .catch(() => { if (active) setError("No se pudieron cargar las mesas. Reintenta antes de crear el pedido."); });
+    return () => { active = false; };
+  }, [selectedStoreId, deliveryType, pin]);
 
   const storeProducts = useMemo(
     () =>
@@ -606,6 +618,10 @@ export function ManualOrderManager() {
       setError("Indica el número o nombre de la mesa.");
       return;
     }
+    if (deliveryType === "table" && usePhysicalTables && !tableId) {
+      setError("Selecciona una mesa activa.");
+      return;
+    }
 
     if (!paymentMethod) {
       setError("Selecciona un método de pago.");
@@ -668,6 +684,7 @@ export function ManualOrderManager() {
           deliveryType,
           paymentMethod,
           deliveryReference,
+          tableId: deliveryType === "table" && usePhysicalTables ? tableId : undefined,
           orderDetails,
           originalMessage,
           deliveryUsd: safeDeliveryUsd,
@@ -887,12 +904,18 @@ export function ManualOrderManager() {
             <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
               {deliveryType === "table" ? "Número o nombre de la mesa" : deliveryType === "bar" ? "Referencia en barra" : deliveryType === "pickup" ? "Referencia del retiro" : "Dirección o referencia"}
             </span>
-            <input
+            {deliveryType === "table" && usePhysicalTables ? <select aria-label="Mesa" value={tableId} onChange={event => {
+              setTableId(event.target.value);
+              setDeliveryReference(tableChoices.tables.find(table => table.id === event.target.value)?.name || "");
+            }} className="w-full rounded-lg border px-4 py-3 text-sm font-bold">
+              <option value="">Selecciona una mesa</option>
+              {tableChoices.tables.map(table => <option key={table.id} value={table.id}>{table.name}{table.zone ? ` - ${table.zone}` : ""}</option>)}
+            </select> : <input
               value={deliveryReference}
               onChange={(event) => setDeliveryReference(event.target.value)}
               placeholder={deliveryType === "table" ? "Ej: Mesa 4" : deliveryType === "bar" ? "Ej: Puesto 2 (opcional)" : deliveryType === "pickup" ? "Ej: Retira Carlos (opcional)" : "Dirección y punto de referencia"}
               className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-            />
+            />}
           </label>
 
           {deliveryType === "delivery" && (

@@ -1,7 +1,10 @@
 param([switch]$CreateFreeProject, [switch]$ReadAuthStatus, [switch]$InitializeSchema, [switch]$HardenPermissions, [switch]$Verify, [switch]$SeedCatalog, [switch]$TestBuyerFlow,
-    [ValidateSet('inspect','build','deploy','status','share','start')][string]$PreviewAction,
+    [ValidateSet('inspect','build','deploy','status','share','start','kitchen-test','kitchen-access','kitchen-peak')][string]$PreviewAction,
+    [string]$OperatorEmail,
+    [switch]$ResetPreviewOperatorPassword,
     [switch]$ConfigurePreviewRedirects, [switch]$ReadAuthDiagnostics, [switch]$ApplyReviewObservation, [switch]$ApplyAccountDeletionRequests,
-    [ValidateSet('inspect','complete')][string]$DemoOrderAction)
+    [ValidateSet('inspect','complete')][string]$DemoOrderAction,
+    [ValidateSet('inspect','apply','refresh-functions','test','seed','timing-apply','timing-test','delay-alerts-apply','state-sync-apply','cancellation-apply','orders-audit','realtime-audit','realtime-apply')][string]$KitchenAction)
 
 $ErrorActionPreference = 'Stop'
 
@@ -67,7 +70,7 @@ try {
             $auth = $null
         }
     }
-    if ($InitializeSchema -or $HardenPermissions -or $Verify -or $SeedCatalog -or $TestBuyerFlow -or $PreviewAction -or $ConfigurePreviewRedirects -or $ReadAuthDiagnostics -or $DemoOrderAction -or $ApplyReviewObservation -or $ApplyAccountDeletionRequests) {
+    if ($InitializeSchema -or $HardenPermissions -or $Verify -or $SeedCatalog -or $TestBuyerFlow -or $PreviewAction -or $ConfigurePreviewRedirects -or $ReadAuthDiagnostics -or $DemoOrderAction -or $ApplyReviewObservation -or $ApplyAccountDeletionRequests -or $KitchenAction) {
         $stageRef = 'xpqmmdmixpyqruykkbkf'
         $manifest = Get-Content (Join-Path $workspace 'tmp/buyer-staging/provisioning.dpapi.json') -Raw | ConvertFrom-Json
         if ($manifest.project_ref -ne $stageRef -or $manifest.state -ne 'created') { throw 'Staging project identity not confirmed.' }
@@ -112,7 +115,7 @@ try {
             $child.RedirectStandardInput = $true
             $process = [Diagnostics.Process]::Start($child)
             try {
-                $process.StandardInput.Write((@{ ref = $stageRef; anon = $anon[0].api_key; service = $service[0].api_key } | ConvertTo-Json -Compress))
+                $process.StandardInput.Write((@{ ref = $stageRef; anon = $anon[0].api_key; service = $service[0].api_key; operatorEmail = $OperatorEmail; resetInitialPassword = [bool]$ResetPreviewOperatorPassword } | ConvertTo-Json -Compress))
                 $process.StandardInput.Close()
                 $process.WaitForExit()
                 if ($process.ExitCode -ne 0) { throw "Staging preview action failed ($($process.ExitCode))." }
@@ -125,6 +128,54 @@ try {
                 $details = $_.ErrorDetails.Message
                 if ($details.Length -gt 800) { $details = $details.Substring(0, 800) }
                 throw "Staging SQL failed. Production was not targeted. $details"
+            }
+        }
+        if ($KitchenAction) {
+            if ($KitchenAction -eq 'cancellation-apply') {
+                $null = Invoke-StagingQuery ([IO.File]::ReadAllText((Join-Path $workspace 'supabase/migrations/20261003213000_require_cancellation_reason_all_orders.sql')))
+                Invoke-StagingQuery "select has_function_privilege('service_role','public.cancel_order_with_reason(uuid,uuid,text)','execute') as service_execute, has_function_privilege('authenticated','public.cancel_order_with_reason(uuid,uuid,text)','execute') as authenticated_execute;" | ConvertTo-Json -Depth 4
+            }
+            if ($KitchenAction -eq 'state-sync-apply') {
+                $null = Invoke-StagingQuery ([IO.File]::ReadAllText((Join-Path $workspace 'supabase/migrations/20261003183000_kitchen_state_sync_and_optional_alerts.sql')))
+                Invoke-StagingQuery "select column_name,column_default from information_schema.columns where table_schema='public' and table_name='store_kitchen_settings' and column_name='delay_alerts_enabled';" | ConvertTo-Json -Depth 4
+            }
+            if ($KitchenAction -eq 'orders-audit') {
+                Invoke-StagingQuery "select public_code,status,delivery_type,created_at from public.orders where store_id='51000000-0000-4000-8000-000000000001' and created_at >= date_trunc('day',now()) order by created_at,public_code;" | ConvertTo-Json -Depth 4
+            }
+            if ($KitchenAction -eq 'realtime-audit') {
+                Invoke-StagingQuery "select policyname,roles,cmd,qual from pg_policies where schemaname='realtime' and tablename='messages';" | ConvertTo-Json -Depth 6
+            }
+            if ($KitchenAction -eq 'realtime-apply') {
+                $null = Invoke-StagingQuery ([IO.File]::ReadAllText((Join-Path $workspace 'supabase/migrations/20260710151755_private_transport_order_broadcast.sql')))
+                Invoke-StagingQuery "select policyname,roles,cmd from pg_policies where schemaname='realtime' and tablename='messages';" | ConvertTo-Json -Depth 4
+            }
+            if ($KitchenAction -eq 'delay-alerts-apply') {
+                $null = Invoke-StagingQuery ([IO.File]::ReadAllText((Join-Path $workspace 'supabase/migrations/20261003170000_configurable_order_delay_alerts.sql')))
+                Invoke-StagingQuery "select delay_received_minutes,delay_accepted_minutes,delay_preparing_minutes,delay_ready_minutes,delay_delivering_minutes from public.store_kitchen_settings where store_id='51000000-0000-4000-8000-000000000001';" | ConvertTo-Json -Depth 4
+            }
+            if ($KitchenAction -eq 'timing-apply') {
+                $null = Invoke-StagingQuery ([IO.File]::ReadAllText((Join-Path $workspace 'supabase/migrations/20261003153000_order_status_timing.sql')))
+            }
+            if ($KitchenAction -eq 'timing-test') {
+                Invoke-StagingQuery ([IO.File]::ReadAllText((Join-Path $workspace 'supabase/order_status_timing_test.sql'))) | ConvertTo-Json -Depth 6
+            }
+            if ($KitchenAction -eq 'refresh-functions') {
+                $migration = [IO.File]::ReadAllText((Join-Path $workspace 'supabase/migrations/20261003120000_optional_kitchen_board.sql'))
+                $definitions = [regex]::Matches($migration, '(?s)create function public\.(?:sync_order_kitchen|operate_kitchen_order|broadcast_kitchen_change)\(.*?end \$\$;')
+                if ($definitions.Count -ne 3) { throw 'Expected exactly three kitchen functions.' }
+                $sql = ($definitions | ForEach-Object { $_.Value.Replace('create function public.', 'create or replace function public.') }) -join "`n"
+                $null = Invoke-StagingQuery $sql
+            }
+            if ($KitchenAction -eq 'seed') {
+                $null = Invoke-StagingQuery ([IO.File]::ReadAllText((Join-Path $workspace 'supabase/kitchen_preview_seed.sql')))
+            }
+            if ($KitchenAction -eq 'apply') {
+                $null = Invoke-StagingQuery ([IO.File]::ReadAllText((Join-Path $workspace 'supabase/migrations/20261003120000_optional_kitchen_board.sql')))
+            }
+            if ($KitchenAction -eq 'test') {
+                Invoke-StagingQuery ([IO.File]::ReadAllText((Join-Path $workspace 'supabase/kitchen_transaction_test.sql'))) | ConvertTo-Json -Depth 6
+            } else {
+                Invoke-StagingQuery "select to_regclass('public.order_kitchen_tickets') as kitchen_table, (select jsonb_agg(jsonb_build_object('id',id,'slug',slug,'tables_access',table_orders_access_enabled,'tables_enabled',table_orders_enabled,'operators',(select count(*) from public.store_users u where u.store_id=s.id))) from public.stores s) as stores;" | ConvertTo-Json -Depth 6
             }
         }
         if ($ApplyReviewObservation) {

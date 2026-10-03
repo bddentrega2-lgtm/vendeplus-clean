@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, Bell, RefreshCw, Volume2, Settings, X } from "lucide-react";
-import { nativeOrderAlerts, newOrdersSince, readOrderNoticeIds, rememberReadOrderNotices, setNativeOrderAlertsActive } from "@/lib/mobile/order-alerts";
+import { loadOrderNoticeReadIds, nativeOrderAlerts, newOrdersSince, orderNoticeReadKey, readOrderNoticeIds, rememberReadOrderNotices, setNativeOrderAlertsActive } from "@/lib/mobile/order-alerts";
 import { usePanelAuth } from "./PanelAuthProvider";
 import { PanelAnnouncements } from "./PanelAnnouncements";
 import { getPanelAuthHeaders } from "@/lib/panel/client-auth";
@@ -26,7 +26,7 @@ export function PanelNotifications() {
   const [open, setOpen] = useState<"orders" | "news" | null>(null);
   const [orders, setOrders] = useState<PendingOrder[]>([]);
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
-  const readKey = `somos_mobile_v1_private_order_read_${accountId}:${selectedStoreId}`;
+  const readKey = orderNoticeReadKey(accountId, selectedStoreId);
   const readIdsRef = useRef(new Set<string>());
   const unreadCount = orders.filter(order => !readIds.has(order.id)).length;
   const [loading, setLoading] = useState(true);
@@ -42,8 +42,18 @@ export function PanelNotifications() {
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   useEffect(() => {
-    readIdsRef.current = readOrderNoticeIds(readKey);
+    readIdsRef.current = loadOrderNoticeReadIds(accountId, selectedStoreId).ids;
     setReadIds(readIdsRef.current);
+  }, [accountId, selectedStoreId]);
+
+  useEffect(() => {
+    const syncReadState = (event: StorageEvent) => {
+      if (event.key !== readKey) return;
+      readIdsRef.current = readOrderNoticeIds(readKey);
+      setReadIds(new Set(readIdsRef.current));
+    };
+    window.addEventListener("storage", syncReadState);
+    return () => window.removeEventListener("storage", syncReadState);
   }, [readKey]);
 
   useEffect(() => {

@@ -386,7 +386,7 @@ test("Mesa y Barra actualiza pedidos sin reiniciar la vista y oculta su configur
 
   assert.match(manager, /setIsSetupOpen\(!data\.enabled\)/);
   assert.match(manager, /Editar configuración/);
-  assert.match(manager, /setActiveOrders\(\(current\) =>/);
+  assert.match(manager, /setTableOrders\(\(current\) =>/);
   assert.match(manager, /await load\(true\)/);
   assert.doesNotMatch(manager, /if \(!response\.ok\)[\s\S]{0,160}await load\(\);/);
 });
@@ -533,21 +533,26 @@ test("pedidos usa Realtime con sondeo espaciado solo como respaldo", () => {
     new URL("../src/components/panel/TableOrderNotifier.tsx", import.meta.url),
     "utf8",
   );
+  const sharedRealtime = readFileSync(
+    new URL("../src/lib/panel/store-orders-realtime.ts", import.meta.url),
+    "utf8",
+  );
 
   assert.match(orders, /ORDERS_FALLBACK_POLL_MS = 180_000/);
   assert.match(orders, /ORDERS_DISCONNECTED_POLL_MS = 15_000/);
-  assert.match(orders, /status === "SUBSCRIBED"/);
+  assert.match(orders, /subscribeStoreOrdersRealtime/);
   assert.match(orders, /isRealtimeReady \? ORDERS_FALLBACK_POLL_MS : ORDERS_DISCONNECTED_POLL_MS/);
   assert.match(orders, /visibilityState !== "visible"/);
-  assert.match(orders, /broadcast", \{ event: "order_changed" \}/);
   assert.doesNotMatch(orders, /}, 30_000\)/);
   assert.match(tableNotifier, /TABLE_ORDERS_FALLBACK_POLL_MS = 120_000/);
   assert.match(tableNotifier, /TABLE_ORDERS_DISCONNECTED_POLL_MS = 15_000/);
-  assert.match(tableNotifier, /channel\(`store:\$\{selectedStoreId\}:orders`/);
-  assert.match(tableNotifier, /setIsRealtimeReady\(status === "SUBSCRIBED"\)/);
+  assert.match(tableNotifier, /subscribeStoreOrdersRealtime/);
   assert.match(tableNotifier, /visibilityState === "visible"/);
-  assert.match(tableNotifier, /broadcast", \{ event: "order_changed" \}/);
   assert.doesNotMatch(tableNotifier, /setInterval\([^\n]+, 20_000\)/);
+  assert.match(sharedRealtime, /channel\(topic, \{ config: \{ private: true \} \}\)/);
+  assert.match(sharedRealtime, /broadcast", \{ event: "order_changed" \}/);
+  assert.match(sharedRealtime, /status === "SUBSCRIBED"/);
+  assert.match(sharedRealtime, /attached\.listeners\.size > 0/);
 });
 
 test("panel delivery navega sin pantalla blanca y muta servicios atomicamente", () => {
@@ -781,16 +786,18 @@ test("inicio usa la sede activa para catalogo y metricas", () => {
   assert.match(dashboard, /href={`\/\${primaryStore\.slug}`}/);
 });
 
-test("tarjeta de pedido muestra la sede sin truncado agresivo", () => {
+test("tarjeta de pedido compacta conserva sede y nombres completos como ayuda", () => {
   const manager = readFileSync(
     new URL("../src/components/panel/OrdersManager.tsx", import.meta.url),
     "utf8",
   );
 
-  assert.match(manager, /xl:grid-cols-\[132px_minmax\(0,1fr\)_86px/);
+  assert.match(manager, /lg:grid-cols-\[minmax\(130px,0\.55fr\)_minmax\(180px,0\.9fr\)_minmax\(230px,1\.15fr\)_auto\]/);
+  assert.doesNotMatch(manager, /className="truncate[^"\n]*">\{order.customer_name\}/);
+  assert.match(manager, /title=\{order\.customer_name\}/);
   assert.match(manager, /function getCompactStoreName/);
   assert.match(manager, /replace\(\/\^Pasteler\[ií\]a TDK/);
-  assert.match(manager, /className="line-clamp-2 text-\[11px\]/);
+  assert.match(manager, /className="break-words text-\[10px\]/);
   assert.match(manager, /title=\{order\.stores\?\.name \|\| "Sede"\}/);
 });
 
@@ -1778,10 +1785,10 @@ test("puente Entrega2 separa comercios credito directo y contado validado", () =
   assert.match(ordersManager, /const showDeliverySent = Boolean/);
   assert.match(ordersManager, /entrega2Integration\?\.status \|\| order\.delivery_status/);
   assert.match(ordersManager, /order\.transport_agency_status/);
-  assert.match(ordersManager, /grid-cols-\[58px_104px_48px\]/);
+  assert.match(ordersManager, /lg:max-w-\[320px\] lg:justify-end/);
   assert.match(ordersManager, /showEntrega2Button \|\| showTransportAgencyButton/);
-  assert.match(ordersManager, /w-\[104px\][\s\S]*orderMode\.style/);
-  assert.match(ordersManager, /flex flex-nowrap items-center gap-1/);
+  assert.match(ordersManager, /px-2\.5 text-\[10px\][\s\S]*orderMode\.style/);
+  assert.match(ordersManager, /aria-label=\{`Ver detalle de \$\{order\.public_code\}`\}/);
   assert.doesNotMatch(ordersManager, /mt-1 inline-flex items-center gap-1 rounded-full/);
   assert.doesNotMatch(ordersManager, /Entrega2 App:/);
   assert.doesNotMatch(ordersManager, /Empresa delivery:/);

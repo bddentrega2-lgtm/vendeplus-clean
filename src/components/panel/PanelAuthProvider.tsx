@@ -24,6 +24,7 @@ export type PanelStoreOption = {
   next_payment_due_at?: string | null;
   trial_ends_at?: string | null;
   table_orders_access_enabled?: boolean;
+  table_orders_enabled?: boolean;
 };
 
 type PanelAchievement = {

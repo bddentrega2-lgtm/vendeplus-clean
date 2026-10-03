@@ -3,12 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NewOrderToast, type NewOrderToastData } from "@/components/panel/NewOrderToast";
 import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
-import { getPanelAccessToken } from "@/lib/panel/client-auth";
 import {
   playNewOrderSound,
   unlockOrderNotificationSound,
 } from "@/lib/panel/order-notification-sound";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { subscribeStoreOrdersRealtime } from "@/lib/panel/store-orders-realtime";
 import { TABLE_ORDERS_CHANGED_EVENT } from "@/lib/table-orders";
 import { fetchTableSnapshot } from "@/lib/panel/table-snapshot-client";
 import { hasNativeOrderAlerts } from "@/lib/mobile/order-alerts";
@@ -31,11 +30,15 @@ export function TableOrderNotifier() {
   const hasBaselineRef = useRef(false);
   const requestInFlightRef = useRef<string | null>(null);
   const queuedRefreshRef = useRef<string | null>(null);
+  const refreshRef = useRef<(notifyNew: boolean) => Promise<void>>(async () => {});
   const mountedRef = useRef(true);
   const currentStoreRef = useRef(selectedStoreId);
-  currentStoreRef.current = selectedStoreId;
   const knownCallsRef = useRef(new Set<string>());
   const hasAccess = selectedStore?.table_orders_access_enabled === true;
+
+  useEffect(() => {
+    currentStoreRef.current = selectedStoreId;
+  }, [selectedStoreId]);
 
   const refresh = useCallback(async (notifyNew: boolean) => {
     if (!selectedStoreId || !hasAccess || !mountedRef.current) return;
@@ -46,11 +49,12 @@ export function TableOrderNotifier() {
     requestInFlightRef.current = selectedStoreId;
 
     try {
-      const payload = await fetchTableSnapshot(selectedStoreId, true);
+      // Realtime events must not reuse a snapshot that started before the mutation.
+      const payload = await fetchTableSnapshot(selectedStoreId, true, true);
       if (!mountedRef.current || currentStoreRef.current !== selectedStoreId) return;
-      const orders: TableOrderSummary[] = Array.isArray(payload.activeOrders)
-        ? payload.activeOrders
-        : [];
+      const tableOrders: TableOrderSummary[] = payload.tableOrders || [];
+      const counterOrders: TableOrderSummary[] = payload.counterOrders || [];
+      const orders = [...tableOrders, ...counterOrders];
       const newOrder = notifyNew && hasBaselineRef.current
         ? orders.find((order) => order.id && !knownOrderIdsRef.current.has(order.id))
         : null;
@@ -65,7 +69,7 @@ export function TableOrderNotifier() {
       hasBaselineRef.current = true;
 
       window.dispatchEvent(new CustomEvent(TABLE_ORDERS_CHANGED_EVENT, {
-        detail: { storeId: selectedStoreId, activeOrders: orders, waiterCalls: calls, tables: payload.tables },
+        detail: { storeId: selectedStoreId, tableOrders, counterOrders, waiterCalls: calls, tables: payload.tables },
       }));
 
       if (newOrder) {
@@ -91,11 +95,15 @@ export function TableOrderNotifier() {
         if (queuedRefreshRef.current === selectedStoreId) {
           queuedRefreshRef.current = null;
           // Drain one trailing refresh so the last event in a burst is not lost.
-          if (mountedRef.current && currentStoreRef.current === selectedStoreId) void refresh(true);
+          if (mountedRef.current && currentStoreRef.current === selectedStoreId) void refreshRef.current(true);
         }
       }
     }
   }, [hasAccess, selectedStoreId]);
+
+  useEffect(() => {
+    refreshRef.current = refresh;
+  }, [refresh]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -140,12 +148,8 @@ export function TableOrderNotifier() {
 
   useEffect(() => {
     if (!selectedStoreId || !hasAccess) return;
-    const supabase = createSupabaseBrowserClient();
-    if (!supabase) return;
-
     let active = true;
     let refreshTimer: number | null = null;
-    let channel: ReturnType<typeof supabase.channel> | null = null;
     setIsRealtimeReady(false);
     const scheduleRefresh = () => {
       if (!active) return;
@@ -153,24 +157,16 @@ export function TableOrderNotifier() {
       refreshTimer = window.setTimeout(() => void refresh(true), 120);
     };
 
-    void (async () => {
-      const accessToken = await getPanelAccessToken();
-      if (!active || !accessToken) return;
-      await supabase.realtime.setAuth(accessToken);
-      channel = supabase
-        .channel(`store:${selectedStoreId}:orders`, { config: { private: true } })
-        .on("broadcast", { event: "order_changed" }, scheduleRefresh)
-        .subscribe((status) => {
-          if (!active) return;
-          setIsRealtimeReady(status === "SUBSCRIBED");
-        });
-    })();
+    const unsubscribe = subscribeStoreOrdersRealtime(selectedStoreId, {
+      onOrderChanged: scheduleRefresh,
+      onStatus: connected => { if (active) setIsRealtimeReady(connected); },
+    });
 
     return () => {
       active = false;
       setIsRealtimeReady(false);
       if (refreshTimer) window.clearTimeout(refreshTimer);
-      if (channel) void supabase.removeChannel(channel);
+      unsubscribe();
     };
   }, [hasAccess, refresh, selectedStoreId]);
 

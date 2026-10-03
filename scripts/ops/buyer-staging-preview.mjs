@@ -4,10 +4,10 @@ import { resolve, join } from 'node:path';
 import { parseEnv } from 'node:util';
 
 const mode = process.argv[2];
-if (!['inspect', 'build', 'deploy', 'status', 'share', 'start'].includes(mode)) throw new Error('Unsupported preview action');
+if (!['inspect', 'build', 'deploy', 'status', 'share', 'start', 'kitchen-test', 'kitchen-access', 'kitchen-peak'].includes(mode)) throw new Error('Unsupported preview action');
 const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
-const keys = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+const keys = JSON.parse(Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, ''));
 const ref = 'xpqmmdmixpyqruykkbkf';
 const projectId = 'prj_LPHnsOxowUvGBXYalbdNO3R01PrI';
 const orgId = 'team_Y83WN5EPd5KzLDL9BHzoHkme';
@@ -107,6 +107,23 @@ if (![401, 403].includes(privateResponse.status)) throw new Error('Buyer data no
 console.log(JSON.stringify({ stage: ref, fictionalStores: stores.map(s => s.slug), privateBuyerStatus: privateResponse.status, firebaseEnabled: Boolean(firebasePreview), disabledVariables: Object.keys(appEnv).filter(key => appEnv[key] === ''), productionBefore: before.targets.production.id }));
 
 if (mode === 'inspect') process.exit(0);
+if (mode === 'kitchen-test' || mode === 'kitchen-access' || mode === 'kitchen-peak') {
+  const saved = JSON.parse(await readFile(artifact, 'utf8'));
+  if (saved.stage !== ref || saved.projectId !== projectId || before.targets.production.id !== saved.productionBefore) throw new Error('Unexpected preview identity');
+  const deployment = await api(`/v13/deployments/${new URL(saved.url).host}`);
+  if (deployment.projectId !== projectId || deployment.target === 'production' || deployment.readyState !== 'READY') throw new Error('Preview not ready');
+  if (mode === 'kitchen-access') {
+    const { provisionKitchenOperator } = await import('./kitchen-preview-access.mjs');
+    await provisionKitchenOperator(keys, saved.url);
+  } else if (mode === 'kitchen-peak') {
+    const { simulateKitchenPeak } = await import('../kitchen-peak-simulation.mjs');
+    await simulateKitchenPeak(keys, saved.url);
+  } else {
+    const { testKitchenApi } = await import('../kitchen-api.e2e.mjs');
+    await testKitchenApi(keys, saved.url);
+  }
+  process.exit(0);
+}
 if (mode === 'build' || mode === 'start') {
   await run('cmd.exe', ['/d', '/s', '/c', mode === 'build' ? 'npm.cmd run build' : 'npm.cmd run start -- --hostname 127.0.0.1 --port 3107'], { env, stream: true });
 } else if (mode === 'deploy') {

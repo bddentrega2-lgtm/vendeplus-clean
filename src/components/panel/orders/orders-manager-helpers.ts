@@ -56,6 +56,7 @@ export type OrderIntegration = {
 };
 
 export type OrderRow = {
+  store_id?: string;
   table_cancellation_reason?: string | null;
   table_cancelled_at?: string | null;
   table_cancelled_by?: string | null;
@@ -103,6 +104,8 @@ export type OrderRow = {
   notes: string | null;
   status: string;
   whatsapp_message: string | null;
+  status_entered_at?: string | null;
+  status_elapsed_ms?: Record<string, number> | null;
   created_at: string;
   stores?: {
     name?: string;
@@ -124,6 +127,7 @@ export type OrderRow = {
 
 export const statusOptions = [
   { value: "all", label: "Todos" },
+  { value: "active", label: "Activos" },
   { value: "received", label: "Nuevos" },
   { value: "accepted", label: "Aceptados" },
   { value: "preparing", label: "Preparando" },
@@ -409,7 +413,7 @@ export function isDeliveryAlreadyDelivered(order: OrderRow) {
 export function getStatusOptionsForOrder(order: OrderRow) {
   const cannotCancel = isDeliveryAlreadyDelivered(order);
   return statusOptions.filter(
-    (item) => item.value !== "all" && (!cannotCancel || item.value !== "cancelled")
+    (item) => !["all", "active"].includes(item.value) && (!cannotCancel || item.value !== "cancelled")
   );
 }
 

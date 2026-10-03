@@ -70,6 +70,7 @@ const panelRouteMeta: Record<string, { active: string; title: string; subtitle: 
     title: "Configuración",
     subtitle: "Edita la información principal del negocio.",
   },
+  "/panel/cocina": { active: "/panel/cocina", title: "Cocina", subtitle: "" },
   "/panel/impresion": {
     active: "/panel/impresion",
     title: "Impresion",

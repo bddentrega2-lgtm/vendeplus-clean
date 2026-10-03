@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { normalizeFrequentLocation } from "../src/lib/mobile/frequent-location.ts";
-import { newOrdersSince, readOrderNoticeIds, rememberReadOrderNotices } from "../src/lib/mobile/order-alerts.ts";
+import { loadOrderNoticeReadIds, newOrdersSince, orderNoticeReadKey, readOrderNoticeIds, rememberReadOrderNotices } from "../src/lib/mobile/order-alerts.ts";
 import { getCustomerBrowserProfile, getCustomerIdParts, saveCustomerBrowserProfile, clearCustomerBrowserProfile } from "../src/lib/customer-browser-profile.ts";
 
 test("campana consulta el estado real de pedidos nuevos, no el estado de pago", () => {
@@ -55,20 +55,34 @@ test("perfil conserva cedula en comercios que no la piden y permite borrarla exp
   assert.equal(getCustomerBrowserProfile(), null);
 });
 
-test("campana recuerda solo IDs leidos por cuenta/sede y tolera almacenamiento bloqueado", t => {
+test("campana recuerda solo IDs leidos por cuenta/sede incluso despues de cerrar sesion", t => {
   const values = new Map();
   const oldStorage = globalThis.localStorage;
-  globalThis.localStorage = { getItem: key => values.get(key) || null, setItem: (key, value) => values.set(key, value) };
+  globalThis.localStorage = { getItem: key => values.get(key) || null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
   t.after(() => { if (oldStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = oldStorage; });
-  const key = "somos_mobile_v1_private_order_read_A:store1";
+  const key = orderNoticeReadKey("A", "store1");
+  assert.equal(key.startsWith("somos_mobile_v1_private_"), false, "logout must not erase the read marker");
   rememberReadOrderNotices(key, ["one"], new Set());
   assert.deepEqual([...readOrderNoticeIds(key)], ["one"]);
-  assert.equal(readOrderNoticeIds("somos_mobile_v1_private_order_read_A:store2").size, 0);
-  assert.equal(readOrderNoticeIds("somos_mobile_v1_private_order_read_B:store1").size, 0);
+  for (const storedKey of [...values.keys()]) if (storedKey.startsWith("somos_mobile_v1_private_")) values.delete(storedKey);
+  assert.deepEqual([...readOrderNoticeIds(key)], ["one"]);
+  assert.equal(readOrderNoticeIds(orderNoticeReadKey("A", "store2")).size, 0);
+  assert.equal(readOrderNoticeIds(orderNoticeReadKey("B", "store1")).size, 0);
   const bounded = rememberReadOrderNotices(key, Array.from({ length: 600 }, (_, n) => String(n)), new Set());
   assert.equal(bounded.size, 500);
   values.set(key, '{bad');
   assert.equal(readOrderNoticeIds(key).size, 0);
   globalThis.localStorage.setItem = () => { throw new Error("blocked"); };
   assert.deepEqual([...rememberReadOrderNotices(key, ["two"], new Set(["one"]))], ["one", "two"]);
+});
+
+test("campana migra una sola vez los pedidos leidos del almacenamiento anterior", t => {
+  const values = new Map([["somos_mobile_v1_private_order_read_A:store1", JSON.stringify(["old-order"])]]);
+  const oldStorage = globalThis.localStorage;
+  globalThis.localStorage = { getItem: key => values.get(key) || null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
+  t.after(() => { if (oldStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = oldStorage; });
+  const result = loadOrderNoticeReadIds("A", "store1");
+  assert.deepEqual([...result.ids], ["old-order"]);
+  assert.deepEqual([...readOrderNoticeIds(orderNoticeReadKey("A", "store1"))], ["old-order"]);
+  assert.equal(values.has("somos_mobile_v1_private_order_read_A:store1"), false);
 });

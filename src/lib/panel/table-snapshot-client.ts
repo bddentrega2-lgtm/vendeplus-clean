@@ -9,11 +9,12 @@ export type ActiveTableOrder = {
   id: string; public_code: string; store_table_id: string | null;
   table_name_snapshot: string | null; table_fulfillment_snapshot: "table_service" | "counter_pickup" | null;
   total_usd: number | string; status: string; created_at: string;
+  status_entered_at?: string | null; status_elapsed_ms?: Record<string, number> | null;
   customer_name: string | null; payment_method: string | null; payment_status: string | null;
   payment_reference: string | null; has_payment_receipt: boolean;
 };
 export type TableSnapshot = {
-  tables: TableRow[]; activeOrders: ActiveTableOrder[]; waiterCalls: WaiterCall[];
+  tables: TableRow[]; tableOrders: ActiveTableOrder[]; counterOrders: ActiveTableOrder[]; waiterCalls: WaiterCall[];
   enabled: boolean; waiterCallsEnabled: boolean; waiterCallLabel: string;
   fulfillmentMode: "table_service" | "counter_pickup";
   paymentMethods: string[]; selectedPaymentMethods: string[]; qrToken: string;
@@ -46,7 +47,7 @@ export function getCachedTableSnapshot(storeId: string) {
   return entry?.data && Date.now() - entry.fetchedAt < 30_000 ? entry.data : null;
 }
 
-export async function fetchTableSnapshot(storeId: string, live = false): Promise<TableSnapshot> {
+export async function fetchTableSnapshot(storeId: string, live = false, force = false): Promise<TableSnapshot> {
   const headers = await getPanelAuthHeaders();
   const key = scopeKey(storeId);
   let entry = snapshots.get(key);
@@ -56,9 +57,9 @@ export async function fetchTableSnapshot(storeId: string, live = false): Promise
     snapshots.set(key, entry);
   }
   // Initial screen and notifier share one request; live refreshes never request the QR.
-  const kind = live && entry.data ? "live" : "full";
-  if (entry.full) return entry.full;
-  if (entry[kind]) return entry[kind]!;
+  const kind = live && (entry.data || force) ? "live" : "full";
+  if (!force && entry.full) return entry.full;
+  if (!force && entry[kind]) return entry[kind]!;
   const target = entry;
   const revision = target.revision;
   const sequence = ++target.sequence;
@@ -66,7 +67,19 @@ export async function fetchTableSnapshot(storeId: string, live = false): Promise
     const data = await requestTableJson(`/api/panel/tables?storeId=${encodeURIComponent(storeId)}${kind === "live" ? "&view=live" : ""}`, { headers, cache: "no-store" });
     // An older snapshot must not undo an order already confirmed by the server.
     if ((target.revision !== revision || sequence < target.appliedSequence) && target.data) return target.data;
-    target.data = { ...target.data, ...data } as TableSnapshot;
+    const legacyOrders = Array.isArray(data.activeOrders) ? data.activeOrders as ActiveTableOrder[] : [];
+    const splitData = { ...data };
+    delete splitData.activeOrders;
+    const normalized = {
+      ...splitData,
+      tableOrders: Array.isArray(data.tableOrders)
+        ? data.tableOrders
+        : legacyOrders.filter(order => order.store_table_id && order.table_fulfillment_snapshot !== "counter_pickup"),
+      counterOrders: Array.isArray(data.counterOrders)
+        ? data.counterOrders
+        : legacyOrders.filter(order => !order.store_table_id || order.table_fulfillment_snapshot === "counter_pickup"),
+    };
+    target.data = { ...target.data, ...normalized } as TableSnapshot;
     target.fetchedAt = Date.now();
     target.appliedSequence = sequence;
     return target.data;
@@ -80,7 +93,8 @@ export function applyConfirmedTableOrder(storeId: string, order: Pick<ActiveTabl
   const entry = snapshots.get(scopeKey(storeId));
   if (!entry?.data) return;
   entry.revision++;
-  entry.data = { ...entry.data, activeOrders: entry.data.activeOrders
+  const apply = (orders: ActiveTableOrder[]) => orders
     .map((current) => current.id === order.id ? { ...current, ...order } : current)
-    .filter((current) => !["completed", "cancelled"].includes(current.status)) };
+    .filter((current) => !["completed", "cancelled"].includes(current.status));
+  entry.data = { ...entry.data, tableOrders: apply(entry.data.tableOrders), counterOrders: apply(entry.data.counterOrders) };
 }

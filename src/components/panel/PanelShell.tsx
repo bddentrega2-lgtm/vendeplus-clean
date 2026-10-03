@@ -16,6 +16,7 @@ import {
   BarChart3,
   Boxes,
   ClipboardList,
+  ChefHat,
   ContactRound,
   CreditCard,
   LayoutDashboard,
@@ -37,6 +38,7 @@ const navItems = [
   { href: "/panel", label: "Inicio", icon: LayoutDashboard },
   { href: "/panel/pedidos", label: "Pedidos", icon: ClipboardList },
   { href: "/panel/mesas", label: "Mesa / Barra", icon: UtensilsCrossed, premiumFeature: "table_orders" },
+  { href: "/panel/cocina", label: "Cocina", icon: ChefHat, premiumFeature: "table_orders", kitchenOnly: true },
   { href: "/panel/logros", label: "Logros", icon: Trophy, featured: true },
   { href: "/panel/productos", label: "Productos", icon: Boxes },
   { href: "/panel/catalogo", label: "Categorías", icon: Tags },
@@ -100,6 +102,7 @@ export function PanelShell({
   const visibleNavItems = navItems.filter(
     (item) =>
       (!item.nativeOnly || isNativeApp) &&
+      (!item.kitchenOnly || selectedStore?.table_orders_enabled === true) &&
       (!item.premiumFeature || selectedStore?.table_orders_access_enabled === true)
   );
 
@@ -160,7 +163,7 @@ export function PanelShell({
           <Link href="/eliminar-cuenta" className="mt-3 flex min-h-10 items-center gap-2 px-2 text-xs font-bold text-[#9B2132]"><Trash2 size={16} />Gestionar eliminacion de cuenta</Link>
         </aside>
 
-        <section className={`flex-1 px-4 py-5 sm:px-6 lg:px-8 ${isNativeApp ? "native-panel-workspace min-w-0 px-0 pb-28 pt-0" : ""}`}>
+        <section className={`min-w-0 flex-1 px-4 py-5 sm:px-6 lg:px-8 ${isNativeApp ? "native-panel-workspace px-0 pb-28 pt-0" : ""}`}>
           <header className={isNativeApp ? "sticky top-0 z-30 border-b border-white/10 bg-[#1F464C] px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] text-white shadow-md" : "rounded-[36px] bg-[#2E3A79] p-6 text-white shadow-2xl shadow-[#2E3A79]/20"}>
             <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
               <div className="flex min-w-0 flex-1 items-start justify-between gap-3">

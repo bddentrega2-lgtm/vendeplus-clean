@@ -576,6 +576,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    let includeTiming = true;
     const buildQuery = (includePaymentFields: boolean) => {
       const client = supabase as any;
       const selectColumns = compact
@@ -585,7 +586,7 @@ export async function GET(request: NextRequest) {
           : baseOrdersSelect;
       let query = client
         .from("orders")
-        .select(selectColumns)
+        .select(`${selectColumns}${includeTiming ? ', status_entered_at, status_elapsed_ms' : ''}`)
         .order("created_at", { ascending: false });
 
       if (auth.storeIds !== null) {
@@ -596,7 +597,9 @@ export async function GET(request: NextRequest) {
         query = query.eq("store_id", requestedStoreId);
       }
 
-      if (status && status !== "all") {
+      if (status === "active") {
+        query = query.not("status", "in", "(completed,cancelled)");
+      } else if (status && status !== "all") {
         query = query.eq("status", status);
       }
 
@@ -668,7 +671,9 @@ export async function GET(request: NextRequest) {
       let { data, error } = await query.eq("id", orderId).maybeSingle();
 
       if (error) {
-        const fallbackResult = await buildQuery(false).eq("id", orderId).maybeSingle();
+        const timingMissing = /status_entered_at|status_elapsed_ms/.test(error.message || '');
+        if (timingMissing) includeTiming = false;
+        const fallbackResult = await buildQuery(timingMissing).eq("id", orderId).maybeSingle();
         data = fallbackResult.data ? withPaymentFallback(fallbackResult.data) : null;
         error = fallbackResult.error;
       }
@@ -679,7 +684,7 @@ export async function GET(request: NextRequest) {
         includeEvents: true,
       });
 
-      return NextResponse.json({ order: order || null });
+      return NextResponse.json({ order: order || null, serverTime: new Date().toISOString() });
     }
 
     query = applyDateFilter(query);
@@ -687,7 +692,9 @@ export async function GET(request: NextRequest) {
     let { data, error } = await query.range(offset, to);
 
     if (error) {
-      let fallbackQuery = buildQuery(false);
+      const timingMissing = /status_entered_at|status_elapsed_ms/.test(error.message || '');
+      if (timingMissing) includeTiming = false;
+      let fallbackQuery = buildQuery(timingMissing);
 
       fallbackQuery = applyDateFilter(fallbackQuery);
 
@@ -718,6 +725,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       orders: ordersWithTransport,
+      serverTime: new Date().toISOString(),
       page: {
         limit,
         offset,
@@ -751,7 +759,7 @@ export async function POST(request: NextRequest) {
         ? body.deliveryType
         : "delivery";
     const paymentMethod = cleanText(body.paymentMethod);
-    const deliveryReference = cleanText(body.deliveryReference);
+    let deliveryReference = cleanText(body.deliveryReference);
     const orderDetails = cleanText(body.orderDetails);
     const originalMessage = cleanText(body.originalMessage);
     const requestedItems = normalizeManualItems(body.items);
@@ -781,6 +789,18 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (storeError) throw storeError;
+    let manualTable: { id: string; name: string; zone: string | null } | null = null;
+    if (deliveryType === "table" && body.tableId) {
+      const { data: enabledStore, error: enabledError } = await supabase.from("stores")
+        .select("table_orders_access_enabled,table_orders_enabled").eq("id", storeId).single();
+      if (enabledError) throw enabledError;
+      if (!enabledStore.table_orders_access_enabled || !enabledStore.table_orders_enabled) return badRequest("Mesa no esta activa para este comercio.");
+      const result = await supabase.from("store_tables").select("id,name,zone").eq("id", body.tableId).eq("store_id", storeId).eq("is_enabled", true).maybeSingle();
+      if (result.error) throw result.error;
+      if (!result.data) return badRequest("Selecciona una mesa activa de este comercio.");
+      manualTable = result.data;
+      deliveryReference = manualTable.name;
+    }
     if (isStoreSubscriptionPastDue(store as any)) {
       return badRequest("La suscripcion de este comercio esta vencida. Elige un plan en Suscripcion para volver a crear pedidos.");
     }
@@ -939,7 +959,7 @@ export async function POST(request: NextRequest) {
     const orderId = randomUUID();
     const publicCode = createManualPublicCode();
     const effectiveCustomerName = customerName || (deliveryType === "table" ? "Cliente de mesa" : "Cliente de barra");
-    const storedDeliveryType: "delivery" | "pickup" = deliveryType === "delivery" ? "delivery" : "pickup";
+    const storedDeliveryType: "delivery" | "pickup" | "table" = manualTable ? "table" : deliveryType === "delivery" ? "delivery" : "pickup";
     const serviceModeLabel = deliveryType === "table" ? "Mesa" : deliveryType === "bar" ? "Barra" : null;
     const whatsappMessage = buildManualMessage({
       publicCode,
@@ -965,6 +985,10 @@ export async function POST(request: NextRequest) {
       customer_phone: customerPhone || "",
       customer_phone_normalized: normalizePhone(customerPhone) || null,
       delivery_type: storedDeliveryType,
+      store_table_id: manualTable?.id || null,
+      table_name_snapshot: manualTable?.name || null,
+      table_zone_snapshot: manualTable?.zone || null,
+      table_fulfillment_snapshot: manualTable ? "table_service" : null,
       payment_method: paymentMethod,
       payment_status: getInitialPaymentStatus(paymentMethod),
       payment_currency: getSuggestedPaymentCurrency(paymentMethod) || null,
@@ -1068,7 +1092,7 @@ export async function PATCH(request: NextRequest) {
   try {
     const auth = await requirePanelAuth(request);
     const authDuration = performance.now() - startedAt;
-    const respond = (order: unknown) => NextResponse.json({ order }, { headers: {
+    const respond = (order: unknown) => NextResponse.json({ order, serverTime: new Date().toISOString() }, { headers: {
       "Cache-Control": "private, no-store",
       "Server-Timing": `auth;dur=${authDuration.toFixed(1)}, total;dur=${(performance.now() - startedAt).toFixed(1)}`,
     } });
@@ -1112,15 +1136,20 @@ export async function PATCH(request: NextRequest) {
       return badRequest("No puedes cancelar un pedido ya entregado por la empresa delivery.");
     }
 
+    const cancellationReason = status === "cancelled"
+      ? tableCancellationReason(body.cancellationReason, body.cancellationDetail)
+      : null;
+    if (status === "cancelled" && !cancellationReason) {
+      return badRequest("Selecciona el motivo de cancelación.");
+    }
+
     if (existingOrder.delivery_type === "table") {
-      const reason = tableCancellationReason(body.cancellationReason, body.cancellationDetail);
-      if (status === "cancelled" && !reason) return badRequest("Selecciona el motivo de cancelación.");
       const result = await supabase.rpc("update_table_order_status_v2", {
         p_store_id: existingOrder.store_id,
         p_order_id: id,
         p_expected_status: body.expectedStatus || existingOrder.status,
         p_status: status,
-        p_reason: reason,
+        p_reason: cancellationReason,
         p_actor: auth.userId || "Acceso del comercio",
       });
       if (result.error) {
@@ -1138,6 +1167,7 @@ export async function PATCH(request: NextRequest) {
           supabase,
           orderId: id,
           storeId: existingOrder.store_id,
+          cancellationReason,
         })
       : await (async () => {
           const result = await supabase

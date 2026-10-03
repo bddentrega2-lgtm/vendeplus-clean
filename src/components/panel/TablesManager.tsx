@@ -12,7 +12,10 @@ import {
   Download,
   Edit3,
   Loader2,
+  Maximize,
+  Minimize,
   Plus,
+  Power,
   QrCode,
   Save,
   Settings2,
@@ -25,16 +28,20 @@ import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
 import { getPanelAuthHeaders } from "@/lib/panel/client-auth";
 import { formatUsd } from "@/lib/currency";
 import { TABLE_ASSISTANCE_LABELS, TABLE_ORDERS_CHANGED_EVENT } from "@/lib/table-orders";
+import { useKitchen } from "@/hooks/use-kitchen";
+import { useNativeBackLayer } from "@/hooks/use-native-app";
+import { KitchenOrderAction } from "@/components/panel/KitchenOrderAction";
 import { useTableCancellation } from "@/components/panel/orders/use-table-cancellation";
 import { PaymentReviewDialog } from "@/components/panel/orders/PaymentReviewDialog";
 import { formatOrderAge, getPaymentStatusLabel, type OrderRow } from "@/components/panel/orders/orders-manager-helpers";
+import { OrderStatusTime } from "@/components/panel/orders/OrderStatusTime";
 import { applyConfirmedTableOrder, fetchTableSnapshot, getCachedTableSnapshot, requestTableJson, type TableSnapshot, type TableRow, type WaiterCall, type ActiveTableOrder as ActiveOrder } from "@/lib/panel/table-snapshot-client";
 
 const OrderDetail = dynamic(() => import("@/components/panel/OrdersManager").then((module) => module.OrderDetail), { ssr: false });
 
 const statusLabels: Record<string, string> = {
   received: "Enviado",
-  accepted: "Aprobado",
+  accepted: "Aceptado",
   preparing: "En preparación",
   ready: "Listo para entregar",
   delivering: "En entrega",
@@ -49,9 +56,12 @@ const nextStatusAction: Record<string, { status: string; label: string }> = {
 };
 
 export function TablesManager() {
+  const kitchen = useKitchen();
+  const kitchenTickets = useMemo(() => new Map(kitchen.tickets.map(ticket => [ticket.order_id, ticket])), [kitchen.tickets]);
   const { selectedStoreId, selectedStore } = usePanelAuth();
   const [tables, setTables] = useState<TableRow[]>([]);
-  const [activeOrders, setActiveOrders] = useState<ActiveOrder[]>([]);
+  const [tableOrders, setTableOrders] = useState<ActiveOrder[]>([]);
+  const [counterOrders, setCounterOrders] = useState<ActiveOrder[]>([]);
   const [waiterCallsEnabled, setWaiterCallsEnabled] = useState(false);
   const [waiterCallLabel, setWaiterCallLabel] = useState(TABLE_ASSISTANCE_LABELS[0]);
   const [customAssistanceLabel, setCustomAssistanceLabel] = useState(false);
@@ -85,7 +95,41 @@ export function TablesManager() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isSetupOpen, setIsSetupOpen] = useState(false);
+  const boardRef = useRef<HTMLDivElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [expandedFallback, setExpandedFallback] = useState(false);
+  const expanded = fullscreen || expandedFallback;
+  useNativeBackLayer(expanded && !selectedOrder && !paymentOrderId, () => { void toggleFullscreen(); });
   const setupVisibilityInitialized = useRef(false);
+
+  useEffect(() => {
+    const changed = () => setFullscreen(document.fullscreenElement === boardRef.current);
+    document.addEventListener('fullscreenchange', changed);
+    return () => document.removeEventListener('fullscreenchange', changed);
+  }, []);
+
+  useEffect(() => {
+    if (!expandedFallback) return;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !document.querySelector('dialog[open]') && !selectedOrderRef.current) setExpandedFallback(false);
+    };
+    document.addEventListener('keydown', escape);
+    return () => { document.body.style.overflow = overflow; document.removeEventListener('keydown', escape); };
+  }, [expandedFallback]);
+
+  async function toggleFullscreen() {
+    if (fullscreen) {
+      try { await document.exitFullscreen(); } catch { setError('No se pudo salir de pantalla completa. Intenta de nuevo.'); }
+    } else if (expandedFallback) setExpandedFallback(false);
+    else {
+      try {
+        if (!boardRef.current?.requestFullscreen) { setExpandedFallback(true); return; }
+        await boardRef.current.requestFullscreen();
+      } catch { setExpandedFallback(true); }
+    }
+  }
 
   const hasPremiumAccess = selectedStore?.table_orders_access_enabled === true;
   const qrUrl = useMemo(() => {
@@ -104,7 +148,8 @@ export function TablesManager() {
     if (!background) setIsLoading(!cached);
     const applySnapshot = (data: TableSnapshot) => {
       setTables(data.tables || []);
-      setActiveOrders(data.activeOrders || []);
+      setTableOrders(data.tableOrders || []);
+      setCounterOrders(data.counterOrders || []);
       setWaiterCalls(data.waiterCalls || []);
       if (!background) {
       setEnabled(Boolean(data.enabled));
@@ -138,7 +183,8 @@ export function TablesManager() {
     setupVisibilityInitialized.current = false;
     setSelectedOrder(null);
     setPaymentOrderId("");
-    setActiveOrders([]);
+    setTableOrders([]);
+    setCounterOrders([]);
     setWaiterCalls([]);
     pendingOrdersRef.current = new Set();
     setPendingOrderIds(new Set());
@@ -155,10 +201,11 @@ export function TablesManager() {
 
   useEffect(() => {
     const refreshActiveOrders = (event: Event) => {
-      const detail = (event as CustomEvent<{ storeId?: string; activeOrders?: ActiveOrder[]; waiterCalls?: WaiterCall[]; tables?: TableRow[] }>).detail;
+      const detail = (event as CustomEvent<{ storeId?: string; tableOrders?: ActiveOrder[]; counterOrders?: ActiveOrder[]; waiterCalls?: WaiterCall[]; tables?: TableRow[] }>).detail;
       if (detail?.storeId !== selectedStoreId) return;
-      if (detail.activeOrders) {
-        setActiveOrders(detail.activeOrders);
+      if (detail.tableOrders) {
+        setTableOrders(detail.tableOrders);
+        setCounterOrders(detail.counterOrders || []);
         setWaiterCalls(detail.waiterCalls || []);
         if (detail.tables) setTables(detail.tables);
       } else void load(true);
@@ -271,7 +318,7 @@ export function TablesManager() {
     const storeId = selectedStoreId;
     const pendingKey = `${storeId}:${orderId}`;
     if (pendingOrdersRef.current.has(pendingKey)) return;
-    const order = activeOrders.find((item) => item.id === orderId);
+    const order = [...tableOrders, ...counterOrders].find((item) => item.id === orderId);
     if (!order) return;
     const cancellation = status === "cancelled" ? await requestCancellation() : undefined;
     if (cancellation === null) return;
@@ -288,7 +335,12 @@ export function TablesManager() {
       if (currentStoreRef.current !== storeId) return;
       if (!data.order || data.order.id !== orderId) throw new Error("No se pudo confirmar el estado. Actualiza el pedido.");
       applyConfirmedTableOrder(storeId, data.order);
-      setActiveOrders((current) =>
+      setTableOrders((current) =>
+        ["completed", "cancelled"].includes(data.order.status)
+          ? current.filter((order) => order.id !== orderId)
+          : current.map((order) => order.id === orderId ? { ...order, ...data.order } : order)
+      );
+      setCounterOrders((current) =>
         ["completed", "cancelled"].includes(data.order.status)
           ? current.filter((order) => order.id !== orderId)
           : current.map((order) => order.id === orderId ? { ...order, ...data.order } : order)
@@ -324,12 +376,12 @@ export function TablesManager() {
   useEffect(() => {
     const selected = selectedOrderRef.current;
     if (!selected) return;
-    const summary = activeOrders.find((order) => order.id === selected.id);
+    const summary = [...tableOrders, ...counterOrders].find((order) => order.id === selected.id);
     const changed = summary
       ? summary.status !== selected.status || summary.payment_status !== selected.payment_status
       : !["completed", "cancelled"].includes(selected.status);
     if (changed) void openOrder(selected.id);
-  }, [activeOrders, openOrder]);
+  }, [tableOrders, counterOrders, openOrder]);
 
   async function attendCall(call: WaiterCall) {
     setIsSaving(true);
@@ -355,7 +407,8 @@ export function TablesManager() {
       if (currentStoreRef.current !== storeId) return;
       if (data.order?.id !== orderId || data.order.payment_status !== "verified") throw new Error("No se pudo confirmar el pago. Actualiza el pedido.");
       applyConfirmedTableOrder(storeId, data.order);
-      setActiveOrders((current) => current.map((order) => order.id === orderId ? { ...order, ...data.order } : order));
+      setTableOrders((current) => current.map((order) => order.id === orderId ? { ...order, ...data.order } : order));
+      setCounterOrders((current) => current.map((order) => order.id === orderId ? { ...order, ...data.order } : order));
     } catch (error) {
       if (currentStoreRef.current === storeId) void load(true);
       throw error;
@@ -368,7 +421,7 @@ export function TablesManager() {
   function renderOrder(order: ActiveOrder, counter = false) {
     const pending = pendingOrderIds.has(`${selectedStoreId}:${order.id}`);
     const next = nextStatusAction[order.status];
-    return <section key={order.id} className="min-w-0 border-t border-[#25262B]/10 py-3">
+    return <section key={order.id} className="min-w-0 border-t border-[#25262B]/10 py-2.5">
       <div className="flex flex-wrap justify-between gap-2 text-xs font-black">
         <span>{order.public_code}</span>
         <span className="flex items-center gap-1 text-[#746f69]" title={new Date(order.created_at).toLocaleString("es-VE")}>
@@ -377,23 +430,25 @@ export function TablesManager() {
       </div>
       <p className="mt-1 break-words text-sm font-black">{order.customer_name || "Cliente sin nombre"}</p>
       <p className="text-xs font-bold">{order.payment_method || "Pago por confirmar"} · {formatUsd(Number(order.total_usd || 0))}</p>
-      <div className="mt-1 flex items-center justify-between gap-2">
+      <div className="mt-1 flex items-center gap-2">
         <p className="text-xs font-bold">{statusLabels[order.status] || order.status} · {getPaymentStatusLabel(order.payment_status)}</p>
+      </div>
+      <OrderStatusTime order={order} now={now} thresholds={kitchen.eligible && kitchen.settings.delay_alerts_enabled ? kitchen.settings.delay_thresholds : null} />
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <button type="button" onClick={() => setPaymentOrderId(order.id)} title="Revisar pago" aria-label={`Revisar pago de ${order.public_code}`}
           className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-[#25262B]/15 bg-white text-[#2E3A79] hover:bg-[#F8F3E8]">
-          <Eye size={18} />
+          <Eye size={17} />
         </button>
-      </div>
-      <div className="mt-3 grid gap-2">
-        <button type="button" className="vp-button-soft w-full" onClick={() => void openOrder(order.id)} disabled={Boolean(openingOrderId)}>
-          {openingOrderId === order.id ? <Loader2 size={16} className="animate-spin" /> : <ClipboardList size={16} />} Comanda y pago
+        {kitchen.eligible && kitchen.settings.enabled ? <KitchenOrderAction iconOnly order={order} ticket={kitchenTickets.get(order.id)} now={kitchen.now} pending={kitchen.isPending(order.id)} onSend={() => void kitchen.operate(order.id, 'send')} /> : null}
+        <button type="button" title="Comanda y pago" aria-label={`Comanda y pago de ${order.public_code}`} className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[#F8F3E8] text-[#2E3A79] disabled:opacity-50" onClick={() => void openOrder(order.id)} disabled={Boolean(openingOrderId)}>
+          {openingOrderId === order.id ? <Loader2 size={16} className="animate-spin" /> : <ClipboardList size={17} />}
         </button>
-        {next ? <button type="button" className="vp-button-primary w-full disabled:cursor-not-allowed disabled:opacity-50" disabled={pending}
+        {next ? <button type="button" className="vp-button-primary min-w-40 flex-1 disabled:cursor-not-allowed disabled:opacity-50" disabled={pending}
           onClick={() => void updateOrderStatus(order.id, next.status)}>
           {pending ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} {pending ? "Guardando..." : counter && order.status === "ready" ? "Marcar retirado" : next.label}
         </button> : null}
-        <button type="button" className="vp-button-soft w-full text-red-700" disabled={pending} onClick={() => void updateOrderStatus(order.id, "cancelled")}>
-          <X size={16} /> Cancelar pedido
+        <button type="button" title="Cancelar pedido" aria-label={`Cancelar ${order.public_code}`} className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-red-50 text-red-700 disabled:opacity-50" disabled={pending} onClick={() => void updateOrderStatus(order.id, "cancelled")}>
+          <X size={17} />
         </button>
       </div>
     </section>;
@@ -424,18 +479,29 @@ export function TablesManager() {
   }
 
   const activeOrdersByTable = new Map<string, ActiveOrder[]>();
-  for (const order of activeOrders) {
+  for (const order of tableOrders) {
     if (!order.store_table_id) continue;
     const current = activeOrdersByTable.get(order.store_table_id) || [];
     activeOrdersByTable.set(order.store_table_id, [...current, order]);
   }
-  const counterOrders = activeOrders.filter(
-    (order) => order.table_fulfillment_snapshot === "counter_pickup" || !order.store_table_id
-  );
-  const paymentOrder = activeOrders.find((order) => order.id === paymentOrderId);
+  const orderedTables = [...tables].sort((left, right) => {
+    const leftOrders = activeOrdersByTable.get(left.id) || [];
+    const rightOrders = activeOrdersByTable.get(right.id) || [];
+    if (Boolean(leftOrders.length) !== Boolean(rightOrders.length)) return rightOrders.length ? 1 : -1;
+    if (leftOrders.length && rightOrders.length) {
+      const oldestLeft = Math.min(...leftOrders.map((order) => new Date(order.created_at).getTime()));
+      const oldestRight = Math.min(...rightOrders.map((order) => new Date(order.created_at).getTime()));
+      return oldestLeft - oldestRight;
+    }
+    if (left.is_enabled !== right.is_enabled) return left.is_enabled ? -1 : 1;
+    return tables.indexOf(left) - tables.indexOf(right);
+  });
+  const occupiedTables = orderedTables.filter((table) => (activeOrdersByTable.get(table.id) || []).length > 0);
+  const availableTables = orderedTables.filter((table) => (activeOrdersByTable.get(table.id) || []).length === 0);
+  const paymentOrder = [...tableOrders, ...counterOrders].find((order) => order.id === paymentOrderId);
 
   return (
-    <div className="space-y-6">
+    <div ref={boardRef} data-tables-board className={`min-w-0 space-y-6 ${fullscreen ? 'h-screen overflow-y-auto bg-[#F5F7F8] p-4' : expandedFallback ? 'fixed inset-0 z-[70] overflow-y-auto bg-[#F5F7F8] p-4' : ''}`}>
       {cancellationDialog}
       {paymentOrder ? <PaymentReviewDialog key={paymentOrder.id} order={paymentOrder} pin="" onClose={() => setPaymentOrderId("")}
         onVerify={() => verifyPayment(paymentOrder.id)} /> : null}
@@ -444,7 +510,7 @@ export function TablesManager() {
       {error ? <p className="rounded-2xl bg-red-50 p-3 text-sm font-black text-red-700">{error}</p> : null}
       {notice ? <p className="rounded-2xl bg-green-50 p-3 text-sm font-black text-green-700">{notice}</p> : null}
 
-      <section className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] bg-white p-4 shadow-lg ring-1 ring-[#25262B]/10">
+      <section className={`flex flex-wrap items-center justify-between gap-3 rounded-[24px] bg-white p-4 shadow-lg ring-1 ring-[#25262B]/10 ${expanded ? 'sticky top-0 z-10' : ''}`}>
         <div className="flex min-w-0 items-center gap-3">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#F8F3E8] text-[#2E3A79]">
             <Settings2 size={19} />
@@ -456,6 +522,10 @@ export function TablesManager() {
             </p>
           </div>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+        <button type="button" title={expanded ? 'Salir de pantalla completa' : 'Pantalla completa'} aria-label={expanded ? 'Salir de pantalla completa' : 'Pantalla completa'} onClick={() => void toggleFullscreen()} className="grid h-11 w-11 place-items-center rounded-lg border border-[#25262B]/20 bg-white">
+          {expanded ? <Minimize size={20} /> : <Maximize size={20} />}
+        </button>
         <button
           type="button"
           onClick={() => setIsSetupOpen((current) => !current)}
@@ -465,6 +535,7 @@ export function TablesManager() {
           {isSetupOpen ? "Ocultar" : "Editar configuración"}
           <ChevronDown size={17} className={isSetupOpen ? "rotate-180 transition-transform" : "transition-transform"} />
         </button>
+        </div>
       </section>
 
       {isSetupOpen ? <section className="grid gap-5 lg:grid-cols-[1fr_320px]">
@@ -568,29 +639,31 @@ export function TablesManager() {
         </div>
       </section> : null}
 
-      {counterOrders.length ? (
-        <section className="rounded-[28px] bg-white p-5 shadow-lg ring-1 ring-[#25262B]/10">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-xl font-black">Retiro en barra</h2>
-              <p className="mt-1 text-sm font-bold text-[#746f69]">Pedidos que el cliente retirará cuando estén listos.</p>
-            </div>
-            <span className="rounded-full bg-amber-50 px-3 py-1 text-sm font-black text-amber-800">
-              {counterOrders.length}
-            </span>
-          </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {counterOrders.map((order) => renderOrder(order, true))}
-          </div>
-        </section>
-      ) : null}
+      {kitchen.error ? <p role="alert" className="border-l-4 border-red-500 bg-red-50 p-3 text-sm">{kitchen.error}</p> : null}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {tables.map((table) => {
+      {counterOrders.length ? <section aria-labelledby="counter-orders-title">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 id="counter-orders-title" className="text-lg font-black">Pedidos en barra</h2>
+          <span className="rounded-full bg-[#E8F7F1] px-3 py-1 text-xs font-black text-[#146B60]">{counterOrders.length}</span>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {counterOrders.map((order) => <article key={order.id} className="min-w-0 rounded-xl bg-white px-3 shadow-md ring-1 ring-[#25262B]/10">{renderOrder(order, true)}</article>)}
+        </div>
+      </section> : null}
+
+      {occupiedTables.length ? <section aria-labelledby="occupied-tables-title">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 id="occupied-tables-title" className="text-lg font-black">Mesas con pedidos</h2>
+          <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-black text-amber-800">
+            {occupiedTables.length} {occupiedTables.length === 1 ? "activa" : "activas"}
+          </span>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {occupiedTables.map((table) => {
           const tableOrders = activeOrdersByTable.get(table.id) || [];
           const isEditing = editingId === table.id;
           return (
-            <article key={table.id} className="min-h-56 rounded-[28px] bg-white p-5 shadow-lg ring-1 ring-[#25262B]/10">
+            <article key={table.id} className="min-w-0 rounded-xl bg-white p-3 shadow-md ring-1 ring-[#25262B]/10">
               {isEditing ? (
                 <div className="space-y-3">
                   <input className="vp-input" value={editingName} onChange={(event) => setEditingName(event.target.value)} maxLength={40} />
@@ -613,11 +686,11 @@ export function TablesManager() {
               ) : (
                 <>
                   <div className="flex items-start justify-between gap-3">
-                    <div><h3 className="text-lg font-black">{table.name}</h3><p className="text-xs font-bold text-[#746f69]">{table.zone || "Sin zona"}</p></div>
+                    <div><h3 className="text-base font-black">{table.name}</h3><p className="text-[11px] font-bold text-[#746f69]">{table.zone || "Sin zona"}</p></div>
                     <button type="button" className="grid h-9 w-9 place-items-center rounded-full bg-[#F8F3E8] text-[#2E3A79]" onClick={() => { setEditingId(table.id); setEditingName(table.name); setEditingZone(table.zone || ""); }} aria-label={`Editar ${table.name}`}><Edit3 size={16} /></button>
                   </div>
-                  <div className={`mt-4 rounded-2xl p-3 ${!table.is_enabled ? "bg-gray-100 text-gray-600" : tableOrders.length ? "bg-amber-50 text-amber-800" : "bg-green-50 text-green-700"}`}>
-                    <p className="text-sm font-black">
+                  <div className={`mt-2 rounded-lg px-2 py-1.5 ${!table.is_enabled ? "bg-gray-100 text-gray-600" : tableOrders.length ? "bg-amber-50 text-amber-800" : "bg-green-50 text-green-700"}`}>
+                    <p className="text-xs font-black">
                       {!table.is_enabled
                         ? "Desactivada"
                         : tableOrders.length
@@ -626,7 +699,7 @@ export function TablesManager() {
                     </p>
                   </div>
                   {tableOrders.length ? (
-                    <div className="mt-4 grid gap-3">
+                    <div className="mt-2 grid gap-2">
                       {tableOrders.map((order) => renderOrder(order))}
                     </div>
                   ) : (
@@ -639,7 +712,51 @@ export function TablesManager() {
             </article>
           );
         })}
-      </section>
+        </div>
+      </section> : null}
+
+      {availableTables.length ? <section aria-labelledby="available-tables-title">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 id="available-tables-title" className="text-lg font-black">Mesas sin pedidos</h2>
+          <span className="text-xs font-bold text-[#746f69]">{availableTables.length} sin pedidos</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+          {availableTables.map((table) => {
+            const isEditing = editingId === table.id;
+            return (
+              <article key={table.id} className={`min-w-0 rounded-2xl bg-white p-3 shadow-md ring-1 ${table.is_enabled ? "ring-[#25262B]/10" : "opacity-70 ring-[#25262B]/15"}`}>
+                {isEditing ? (
+                  <div className="space-y-2">
+                    <input className="vp-input px-3 py-2 text-sm" value={editingName} onChange={(event) => setEditingName(event.target.value)} maxLength={40} />
+                    <input className="vp-input px-3 py-2 text-sm" value={editingZone} onChange={(event) => setEditingZone(event.target.value)} placeholder="Zona opcional" maxLength={40} />
+                    <div className="flex items-center gap-1">
+                      <button type="button" className="grid h-9 w-9 place-items-center rounded-lg bg-[#073B4C] text-white" onClick={() => updateTable(table.id, { name: editingName, zone: editingZone })} aria-label={`Guardar ${table.name}`} title="Guardar"><Check size={16} /></button>
+                      <button type="button" className="grid h-9 w-9 place-items-center rounded-lg bg-[#F8F3E8] text-[#2E3A79]" onClick={() => setEditingId("")} aria-label="Cancelar edición" title="Cancelar"><X size={16} /></button>
+                      <button type="button" className="ml-auto grid h-9 w-9 place-items-center rounded-lg bg-red-50 text-red-700 disabled:opacity-60" onClick={() => deleteTable(table)} disabled={isSaving} aria-label={`Eliminar ${table.name}`} title={`Eliminar ${table.name}`}><Trash2 size={16} /></button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex min-w-0 items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h3 className="truncate text-sm font-black" title={table.name}>{table.name}</h3>
+                        <p className="truncate text-[11px] font-bold text-[#746f69]" title={table.zone || "Sin zona"}>{table.zone || "Sin zona"}</p>
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        <button type="button" className="grid h-8 w-8 place-items-center rounded-lg bg-[#F8F3E8] text-[#2E3A79]" onClick={() => { setEditingId(table.id); setEditingName(table.name); setEditingZone(table.zone || ""); }} aria-label={`Editar ${table.name}`} title={`Editar ${table.name}`}><Edit3 size={14} /></button>
+                        <button type="button" className={`grid h-8 w-8 place-items-center rounded-lg disabled:opacity-60 ${table.is_enabled ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-600"}`} onClick={() => updateTable(table.id, { isEnabled: !table.is_enabled })} disabled={isSaving} aria-label={`${table.is_enabled ? "Desactivar" : "Activar"} ${table.name}`} title={table.is_enabled ? "Desactivar mesa" : "Activar mesa"}><Power size={14} /></button>
+                      </div>
+                    </div>
+                    <p className={`mt-3 truncate rounded-lg px-2 py-1.5 text-[11px] font-black ${table.is_enabled ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-600"}`}>
+                      {table.is_enabled ? "Sin pedidos activos" : "Desactivada"}
+                    </p>
+                  </>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      </section> : null}
 
       <section className="rounded-[28px] bg-white p-5 shadow-lg ring-1 ring-[#25262B]/10">
         <h2 className="text-xl font-black">Nueva mesa</h2>

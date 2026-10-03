@@ -168,7 +168,7 @@ function snapshotHarness() {
     '@/lib/client/request-timeout': { requestTimeoutSignal: () => new AbortController().signal },
     './client-auth': { getSavedPanelToken: () => token, getPanelAuthHeaders: async () => ({ authorization: token }) },
   }, { fetch: (url) => new Promise(resolve => requests.push({ url, resolve })) });
-  const snapshot = { enabled:true, qrToken:'private-qr', tables:[], waiterCalls:[], activeOrders:[{id:'one',status:'accepted'},{id:'two',status:'accepted'}] };
+  const snapshot = { enabled:true, qrToken:'private-qr', tables:[], waiterCalls:[], tableOrders:[{id:'one',status:'accepted'},{id:'two',status:'accepted'}], counterOrders:[] };
   return { client, requests, snapshot, setToken: (value) => { token = value; } };
 }
 test('Mesa comparte carga inicial, cache aislada por sesion/comercio y live sin QR', async () => {
@@ -189,6 +189,20 @@ test('Mesa comparte carga inicial, cache aislada por sesion/comercio y live sin 
   h.requests[1].resolve(Response.json(liveSnapshot));await live;
   assert.equal(h.client.getCachedTableSnapshot('a').qrToken,'private-qr');
 });
+test('evento en vivo no reutiliza una lectura iniciada antes del cambio de estado', async () => {
+  const h = snapshotHarness();
+  const stale = h.client.fetchTableSnapshot('a');
+  await new Promise(setImmediate);
+  const fresh = h.client.fetchTableSnapshot('a', true, true);
+  await new Promise(setImmediate);
+  assert.equal(h.requests.length, 2);
+  assert.match(h.requests[1].url, /view=live/);
+  h.requests[1].resolve(Response.json({ ...h.snapshot, qrToken: undefined, tableOrders: [{ id: 'one', status: 'ready' }] }));
+  await fresh;
+  h.requests[0].resolve(Response.json(h.snapshot));
+  await stale;
+  assert.equal(h.client.getCachedTableSnapshot('a').tableOrders[0].status, 'ready');
+});
 test('resumen atrasado no revierte estado confirmado ni revive pedido cerrado', async () => {
   const h=snapshotHarness();
   const initial=h.client.fetchTableSnapshot('a');await new Promise(setImmediate);h.requests[0].resolve(Response.json(h.snapshot));await initial;
@@ -197,13 +211,13 @@ test('resumen atrasado no revierte estado confirmado ni revive pedido cerrado', 
   h.client.applyConfirmedTableOrder('a',{id:'two',status:'completed'});
   h.requests[1].resolve(Response.json(h.snapshot));
   const result=await old;
-  assert.equal(result.activeOrders.length,1);assert.equal(result.activeOrders[0].status,'preparing');
+  assert.equal(result.tableOrders.length,1);assert.equal(result.tableOrders[0].status,'preparing');
 });
 test('fallo de red libera solicitud para reintentar sin borrar ultimo resumen', async () => {
   const h=snapshotHarness();const initial=h.client.fetchTableSnapshot('a');await new Promise(setImmediate);
   h.requests[0].resolve(Response.json(h.snapshot));await initial;
   const fail=h.client.fetchTableSnapshot('a',true);await new Promise(setImmediate);h.requests[1].resolve(Response.json({error:'Sin conexion'},{status:503}));await assert.rejects(fail,/Sin conexion/);
-  assert.equal(h.client.getCachedTableSnapshot('a').activeOrders.length,2);
+  assert.equal(h.client.getCachedTableSnapshot('a').tableOrders.length,2);
   const retry=h.client.fetchTableSnapshot('a',true);await new Promise(setImmediate);assert.equal(h.requests.length,3);h.requests[2].resolve(Response.json(h.snapshot));await retry;
 });
 
@@ -221,7 +235,7 @@ test('espera de red limitada libera resumen compartido y permite reintentar', as
   }, {
     fetch: async (_, { signal }) => {
       calls++;
-      if (!hang) return Response.json({ activeOrders: [], tables: [] });
+      if (!hang) return Response.json({ tableOrders: [], counterOrders: [], tables: [] });
       return new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
     },
   });
@@ -272,6 +286,8 @@ test('consulta live no pide QR y mantiene aislamiento y medicion del servidor', 
     for(const table of ['orders','store_tables','table_waiter_calls'])assert.ok(queried.some(row=>row[0]===table&&row[1]==='store_id'&&row[2]==='store-a'));
     const body=await r.json();
     assert.deepEqual(body.activeOrders,[{id:'with',has_payment_receipt:true},{id:'without',has_payment_receipt:false}]);
+    assert.deepEqual(body.tableOrders,[]);
+    assert.deepEqual(body.counterOrders,[{id:'with',has_payment_receipt:true},{id:'without',has_payment_receipt:false}]);
     assert.ok(queried.some(row=>row[0]==='orders'&&row[1]==='payment_receipts.store_id'&&row[2]==='store-a'));
     if(live)assert.equal(body.qrToken,undefined);
   }
@@ -330,21 +346,21 @@ test('rafaga de diez eventos conserva un refresco final sin diez consultas paral
     '@/lib/panel/client-auth':{},
     '@/lib/panel/order-notification-sound':{playNewOrderSound:()=>{},unlockOrderNotificationSound:()=>{}},
     '@/lib/mobile/order-alerts':{},
-    '@/lib/supabase/client':{},
+    '@/lib/panel/store-orders-realtime':{subscribeStoreOrdersRealtime:()=>()=>{}},
     '@/lib/table-orders':{TABLE_ORDERS_CHANGED_EVENT:'changed'},
     '@/lib/panel/table-snapshot-client':{fetchTableSnapshot:()=>new Promise(resolve=>requests.push(resolve))},
   },{window:{dispatchEvent:e=>events.push(e)},CustomEvent:class{constructor(type,options){this.type=type;this.detail=options.detail;}}});
   module.TableOrderNotifier();
-  const unmount=effects[0]();effects[1]();
+  effects[0]();effects[1]();const unmount=effects[2]();effects[3]();
   assert.equal(requests.length,1);
   for(let i=0;i<10;i++)await callbacks[0](true);
   assert.equal(requests.length,1);
-  requests[0]({activeOrders:[{id:'first'}]});await new Promise(setImmediate);
+  requests[0]({tableOrders:[{id:'first'}],counterOrders:[]});await new Promise(setImmediate);
   assert.equal(requests.length,2,'exactly one trailing request');
-  requests[1]({activeOrders:[{id:'first'},{id:'last'}]});await new Promise(setImmediate);
-  assert.equal(events.at(-1).detail.activeOrders.length,2);
+  requests[1]({tableOrders:[{id:'first'},{id:'last'}],counterOrders:[]});await new Promise(setImmediate);
+  assert.equal(events.at(-1).detail.tableOrders.length,2);
   const pending=callbacks[0](true);await callbacks[0](true);unmount();
-  requests[2]({activeOrders:[]});await pending;
+  requests[2]({tableOrders:[],counterOrders:[]});await pending;
   assert.equal(requests.length,3,'unmounted component never starts trailing request');
   assert.equal(events.length,2,'unmounted component never broadcasts stale data');
 });

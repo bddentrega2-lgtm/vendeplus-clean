@@ -1,12 +1,16 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useKitchen } from "@/hooks/use-kitchen";
+import { KitchenOrderAction } from "@/components/panel/KitchenOrderAction";
+import { OrderStatusTime } from "@/components/panel/orders/OrderStatusTime";
 import { useNativeBackLayer, useNativeTextState } from "@/hooks/use-native-app";
 import Link from "next/link";
 import {
   CheckCircle2,
   CircleDollarSign,
   Clipboard,
+  Eye,
   SlidersHorizontal,
   Loader2,
   Lock,
@@ -46,7 +50,7 @@ import {
   type NewOrderToastData,
 } from "@/components/panel/NewOrderToast";
 import { PanelAccessGate, PanelModuleSkeleton } from "@/components/panel/PanelLoadingState";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { subscribeStoreOrdersRealtime } from "@/lib/panel/store-orders-realtime";
 import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
 import {
   apiRequest,
@@ -140,7 +144,7 @@ export function OrderDetail({
     : null;
 
   async function updateStatus(nextStatus: string) {
-    const cancellation = order.delivery_type === "table" && nextStatus === "cancelled"
+    const cancellation = nextStatus === "cancelled"
       ? await requestCancellation() : undefined;
     if (cancellation === null) return;
     setIsSaving(true);
@@ -592,13 +596,16 @@ export function OrderDetail({
 }
 
 export function OrdersManager() {
+  const kitchen = useKitchen();
+  const refreshKitchen = kitchen.refresh;
+  const kitchenTickets = useMemo(() => new Map(kitchen.tickets.map(ticket => [ticket.order_id, ticket])), [kitchen.tickets]);
   const { requestCancellation, cancellationDialog } = useTableCancellation();
   const { isFounderMode, stores: panelStores, accountId, selectedStoreId: activeStoreId } = usePanelAuth();
   const filterKey = `private_orders_${accountId}_${activeStoreId}_`;
   const [pin, setPin] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [orders, setOrders] = useState<OrderRow[]>([]);
-  const [selectedStatus, setSelectedStatus] = useNativeTextState(filterKey + "status", "all");
+  const [selectedStatus, setSelectedStatus] = useNativeTextState(filterKey + "status", "active");
   const [selectedStoreId, setSelectedStoreId] = useState("all");
   const [selectedPaymentStatus, setSelectedPaymentStatus] = useState("all");
   const [selectedDate, setSelectedDate] = useNativeTextState(filterKey + "date", "today");
@@ -614,6 +621,7 @@ export function OrdersManager() {
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => shouldShowPanelInitialAccessGate());
   const [isLoading, setIsLoading] = useState(() => hasSavedPanelAuth());
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasLoadedOrders, setHasLoadedOrders] = useState(false);
   const [hasMoreOrders, setHasMoreOrders] = useState(false);
   const [nextOrdersOffset, setNextOrdersOffset] = useState(0);
   const [savingPaymentId, setSavingPaymentId] = useState<string | null>(null);
@@ -621,16 +629,21 @@ export function OrdersManager() {
   const [savingStatusOrderId, setSavingStatusOrderId] = useState<string | null>(null);
   const [loadingDetailOrderId, setLoadingDetailOrderId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [operationError, setOperationError] = useState("");
   const [newOrderToast, setNewOrderToast] = useState<NewOrderToastData | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const serverOffsetRef = useRef(0);
   const [realtimeStoreIds, setRealtimeStoreIds] = useState<string[]>([]);
   const [isRealtimeReady, setIsRealtimeReady] = useState(false);
   const requestCacheRef = useRef(new Map<string, { expiresAt: number; data: any }>());
   const inflightRequestsRef = useRef(new Map<string, Promise<any>>());
   const authScopeRef = useRef("");
   const latestRequestIdRef = useRef(0);
+  const mutationRevisionRef = useRef(0);
   const hasLoadedOrdersRef = useRef(false);
   const canFilterStores = !isFounderMode && panelStores.length > 1;
+  const isRefreshing = isLoading && hasLoadedOrders && !isLoadingMore;
+  const isUpdatingResults = isRefreshing || search.trim() !== debouncedSearch;
 
   const { currentFilters, filterSignature } = useOrderFilters({
     storeId: selectedStoreId,
@@ -648,6 +661,7 @@ export function OrdersManager() {
     options: { force?: boolean; append?: boolean; offset?: number; notifyNew?: boolean } = {}
   ) => {
     const requestId = ++latestRequestIdRef.current;
+    const mutationRevision = mutationRevisionRef.current;
     const append = Boolean(options.append);
     const offset = Math.max(0, Number(options.offset || 0));
     if (append) setIsLoadingMore(true);
@@ -682,7 +696,7 @@ export function OrdersManager() {
             currentPin,
             `/api/panel/orders${queryString}`,
             options.force ? { cache: "no-store" } : undefined
-          );
+          ).then((result) => ({ ...result, clockOffset: Number.isFinite(Date.parse(result.serverTime)) ? Date.parse(result.serverTime) - Date.now() : 0 }));
           inflightRequestsRef.current.set(cacheKey, request);
         }
         try {
@@ -697,8 +711,10 @@ export function OrdersManager() {
         }
       }
 
-      if (requestId !== latestRequestIdRef.current) return;
+      if (requestId !== latestRequestIdRef.current || mutationRevision !== mutationRevisionRef.current) return;
 
+      serverOffsetRef.current = data.clockOffset || 0;
+      setNow(Date.now() + serverOffsetRef.current);
       const nextOrders = Array.isArray(data.orders) ? data.orders : [];
       setOrders((current) => {
         if (!append) {
@@ -724,7 +740,10 @@ export function OrdersManager() {
         const seen = new Set(current.map((order) => order.id));
         return [...current, ...nextOrders.filter((order: OrderRow) => !seen.has(order.id))];
       });
-      if (!append) hasLoadedOrdersRef.current = true;
+      if (!append) {
+        hasLoadedOrdersRef.current = true;
+        setHasLoadedOrders(true);
+      }
       setHasMoreOrders(Boolean(data.page?.hasMore));
       setNextOrdersOffset(Number(data.page?.nextOffset || offset + nextOrders.length));
       setRealtimeStoreIds(
@@ -819,14 +838,14 @@ export function OrdersManager() {
   }, [currentFilters, invalidateOrderCache, loadOrders, pin]);
 
   const changeOrderStatus = useCallback(async (order: OrderRow, nextStatus: string) => {
-    const cancellation = order.delivery_type === "table" && nextStatus === "cancelled"
+    const cancellation = nextStatus === "cancelled"
       ? await requestCancellation() : undefined;
     if (cancellation === null) return;
     setSavingStatusOrderId(order.id);
-    setError("");
+    setOperationError("");
 
     try {
-      await apiRequest(pin, "/api/panel/orders", {
+      const result = await apiRequest(pin, "/api/panel/orders", {
         method: "PATCH",
         body: JSON.stringify({
           id: order.id,
@@ -836,25 +855,35 @@ export function OrdersManager() {
         }),
       });
 
+      if (result.order?.id !== order.id) throw new Error("No se pudo confirmar el estado. Actualiza el pedido.");
+      mutationRevisionRef.current++;
+      const confirmed = {
+        status: result.order.status,
+        status_entered_at: result.order.status_entered_at ?? null,
+        status_elapsed_ms: result.order.status_elapsed_ms ?? {},
+      };
+      if (Number.isFinite(Date.parse(result.serverTime))) serverOffsetRef.current = Date.parse(result.serverTime) - Date.now();
+      setNow(Date.now() + serverOffsetRef.current);
       setOrders((currentOrders) =>
         currentOrders.map((currentOrder) =>
-          currentOrder.id === order.id ? { ...currentOrder, status: nextStatus } : currentOrder
+          currentOrder.id === order.id ? { ...currentOrder, ...confirmed } : currentOrder
         )
       );
       setSelectedOrder((currentOrder) =>
-        currentOrder?.id === order.id ? { ...currentOrder, status: nextStatus } : currentOrder
+        currentOrder?.id === order.id ? { ...currentOrder, ...confirmed } : currentOrder
       );
       invalidateOrderCache();
+      refreshKitchen();
     } catch (error: any) {
-      setError(error.message || "No se pudo actualizar el estado.");
+      setOperationError(error.message || "No se pudo actualizar el estado.");
     } finally {
       setSavingStatusOrderId(null);
     }
-  }, [invalidateOrderCache, pin, requestCancellation]);
+  }, [invalidateOrderCache, pin, requestCancellation, refreshKitchen]);
 
   const markPaymentVerified = useCallback(async (order: OrderRow) => {
     setSavingPaymentId(order.id);
-    setError("");
+    setOperationError("");
 
     try {
       const paymentCurrency =
@@ -874,6 +903,7 @@ export function OrdersManager() {
       });
 
       const verifiedAt = new Date().toISOString();
+      mutationRevisionRef.current++;
       setOrders((currentOrders) =>
         currentOrders.map((currentOrder) =>
           currentOrder.id === order.id
@@ -897,12 +927,13 @@ export function OrdersManager() {
           : currentOrder
       );
       invalidateOrderCache();
+      refreshKitchen();
     } catch (error: any) {
-      setError(error.message || "No se pudo marcar el pago como verificado.");
+      setOperationError(error.message || "No se pudo marcar el pago como verificado.");
     } finally {
       setSavingPaymentId(null);
     }
-  }, [invalidateOrderCache, pin]);
+  }, [invalidateOrderCache, pin, refreshKitchen]);
 
   useEffect(() => {
     let active = true;
@@ -941,7 +972,7 @@ export function OrdersManager() {
   }, []);
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 60000);
+    const timer = window.setInterval(() => setNow(Date.now() + serverOffsetRef.current), 15000);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -993,12 +1024,9 @@ export function OrdersManager() {
   useEffect(() => {
     if (!isUnlocked || !realtimeStoreIds.length) return;
 
-    const supabase = createSupabaseBrowserClient();
-    if (!supabase) return;
-
     let active = true;
     let refreshTimer: number | null = null;
-    const channels: ReturnType<typeof supabase.channel>[] = [];
+    const unsubscribers: Array<() => void> = [];
     const subscribedStores = new Set<string>();
     setIsRealtimeReady(false);
 
@@ -1011,34 +1039,23 @@ export function OrdersManager() {
       }, 120);
     };
 
-    void (async () => {
-      const accessToken = await getPanelAccessToken();
-      if (!active || !accessToken) return;
-
-      await supabase.realtime.setAuth(accessToken);
-
-      for (const storeId of realtimeStoreIds) {
-        const channel = supabase
-          .channel(`store:${storeId}:orders`, { config: { private: true } })
-          .on("broadcast", { event: "order_changed" }, refreshOrders)
-          .on("broadcast", { event: "transport_order_changed" }, refreshOrders)
-          .subscribe((status) => {
-            if (!active) return;
-            if (status === "SUBSCRIBED") subscribedStores.add(storeId);
-            if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) {
-              subscribedStores.delete(storeId);
-            }
-            setIsRealtimeReady(subscribedStores.size > 0);
-          });
-        channels.push(channel);
-      }
-    })();
+    for (const storeId of realtimeStoreIds) {
+      unsubscribers.push(subscribeStoreOrdersRealtime(storeId, {
+        onOrderChanged: refreshOrders,
+        onTransportOrderChanged: refreshOrders,
+        onStatus: connected => {
+          if (!active) return;
+          if (connected) subscribedStores.add(storeId); else subscribedStores.delete(storeId);
+          setIsRealtimeReady(subscribedStores.size > 0);
+        },
+      }));
+    }
 
     return () => {
       active = false;
       setIsRealtimeReady(false);
       if (refreshTimer) window.clearTimeout(refreshTimer);
-      for (const channel of channels) void supabase.removeChannel(channel);
+      for (const unsubscribe of unsubscribers) unsubscribe();
     };
     // The API remains the source of truth; Broadcast only invalidates the list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1078,6 +1095,8 @@ export function OrdersManager() {
 
   return (
     <div className="native-orders space-y-5">
+      {operationError || error ? <p role="alert" className="border-l-4 border-red-500 bg-red-50 p-3 text-sm">{operationError || error}</p> : null}
+      {kitchen.error && kitchen.eligible ? <p role="alert" className="border-l-4 border-red-500 bg-red-50 p-3 text-sm">{kitchen.error}</p> : null}
       {cancellationDialog}
       <NewOrderToast notification={newOrderToast} onClose={() => setNewOrderToast(null)} />
       <section className="orders-toolbar rounded-2xl bg-white p-4 shadow-lg shadow-[#2E3A79]/[0.05] ring-1 ring-[#25262B]/[0.06]">
@@ -1168,7 +1187,8 @@ export function OrdersManager() {
           </select>
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-2" aria-label="Filtros rápidos de modalidad">
+        <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-3 sm:flex-nowrap">
+        <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1" aria-label="Filtros rápidos de modalidad">
           {[
             { value: "all", label: "Todos" },
             { value: "delivery", label: "Delivery" },
@@ -1191,9 +1211,20 @@ export function OrdersManager() {
             </button>
           ))}
         </div>
+        <label className="ml-auto flex shrink-0 items-center gap-2 text-xs font-black text-[#25262B]">
+          <span>Activos</span>
+          <button type="button" role="switch" aria-label="Mostrar solo pedidos activos" aria-checked={selectedStatus === "active"}
+            onClick={() => setSelectedStatus(selectedStatus === "active" ? "all" : "active")}
+            className={`relative h-7 w-12 rounded-full transition ${selectedStatus === "active" ? "bg-[#146B60]" : "bg-gray-300"}`}>
+            <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${selectedStatus === "active" ? "left-6" : "left-1"}`} />
+          </button>
+        </label>
+        </div>
+        {isUpdatingResults ? <span role="status" className="mt-2 inline-flex items-center gap-1.5 text-xs font-black text-[#2E3A79]"><Loader2 size={14} className="animate-spin" /> Actualizando resultados...</span> : null}
 
         {showAdvancedFilters && (
-        <div className="mt-3 grid gap-3 xl:grid-cols-3">
+        <div className="mt-3">
+        <div className="grid gap-3 xl:grid-cols-3">
           <select
             value={selectedStatus}
             onChange={(event) => {
@@ -1240,11 +1271,12 @@ export function OrdersManager() {
           </select>
 
         </div>
+        </div>
         )}
       </section>
 
-      <section className="grid gap-2">
-        {isLoading && (
+      <section className={`grid gap-2 transition-opacity ${isUpdatingResults ? "pointer-events-none opacity-55" : ""}`} aria-busy={isUpdatingResults || isLoading}>
+        {isLoading && !hasLoadedOrders && (
           <div className="rounded-[32px] bg-white p-5 text-sm font-black text-[#746f69]">
             Cargando pedidos...
           </div>
@@ -1318,12 +1350,15 @@ export function OrdersManager() {
                   : "ring-[#25262B]/[0.06]",
               ].join(" ")}
             >
-              <div className="grid gap-2 xl:grid-cols-[132px_minmax(0,1fr)_86px_150px_180px_auto] xl:items-center">
+              <div className="grid min-w-0 gap-2 lg:grid-cols-[minmax(130px,0.55fr)_minmax(180px,0.9fr)_minmax(230px,1.15fr)_auto] lg:items-center lg:gap-3">
                 <div className="min-w-0">
-                  <h3 className="break-words text-sm font-black leading-tight [overflow-wrap:anywhere]">{order.public_code}</h3>
+                  <div className="flex min-w-0 items-start justify-between gap-2 lg:block">
+                    <h3 className="break-words text-sm font-black leading-tight [overflow-wrap:anywhere]">{order.public_code}</h3>
+                    <p className="shrink-0 text-sm font-black lg:mt-1">{formatUsd(Number(order.total_usd || 0))}</p>
+                  </div>
                   {canFilterStores ? (
                     <p
-                      className="line-clamp-2 text-[11px] font-black leading-4 text-[#2E3A79]"
+                      className="break-words text-[10px] font-black leading-4 text-[#2E3A79] [overflow-wrap:anywhere]"
                       title={order.stores?.name || "Sede"}
                     >
                       {getCompactStoreName(order.stores?.name)}
@@ -1337,20 +1372,44 @@ export function OrdersManager() {
                 </div>
 
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-black">{order.customer_name}</p>
-                  <p className="truncate text-[11px] font-bold text-[#746f69]">
+                  <p className="break-words text-sm font-black [overflow-wrap:anywhere]" title={order.customer_name}>{order.customer_name}</p>
+                  <p className="text-[11px] font-bold text-[#746f69]">
                     {formatDate(order.created_at)} · {formatOrderAge(order.created_at, now)}
                   </p>
                   {order.delivery_notes ? (
-                    <p className="truncate text-[11px] font-bold text-[#2E3A79]">
+                    <p className="break-words text-[11px] font-bold text-[#2E3A79] [overflow-wrap:anywhere]" title={`Tarifa: ${order.delivery_notes}`}>
                       Tarifa: {order.delivery_notes}
                     </p>
                   ) : null}
                 </div>
 
-                <p className="text-sm font-black">{formatUsd(Number(order.total_usd || 0))}</p>
+                <div className="min-w-0">
+                  <div className="flex min-w-0 items-center gap-2">
+                  {hasAgencyHandoff ? (
+                    <div className="min-w-0 flex-1 rounded-lg bg-indigo-50 px-3 py-1.5 text-sm font-bold text-indigo-700">
+                      {transportStatusLabels[transportAgencyStatus] || "Empresa delivery"}
+                    </div>
+                  ) : (
+                    <select
+                      value={order.status}
+                      onChange={(event) => changeOrderStatus(order, event.target.value)}
+                      disabled={isSavingStatus}
+                      className="h-9 min-w-0 flex-1 rounded-lg border border-[#25262B]/20 bg-white py-1.5 pl-2 pr-6 text-sm font-bold outline-none focus:border-[#2E3A79] disabled:opacity-60"
+                      aria-label={`Cambiar estado de ${order.public_code}`}
+                    >
+                      {getStatusOptionsForOrder(order).map((item) => (
+                        <option key={item.value} value={item.value}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {kitchen.eligible && kitchen.settings.enabled && order.store_id === activeStoreId ? <KitchenOrderAction iconOnly order={order} ticket={kitchenTickets.get(order.id)} now={kitchen.now} pending={kitchen.isPending(order.id)} onSend={() => void kitchen.operate(order.id, 'send')} /> : null}
+                  </div>
+                  <OrderStatusTime order={order} now={now} thresholds={kitchen.eligible && kitchen.settings.delay_alerts_enabled ? kitchen.settings.delay_thresholds : null} />
+                </div>
 
-                <div className="flex flex-nowrap items-center gap-1">
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5 lg:max-w-[320px] lg:justify-end">
                   {paymentStatus === "verified" ? (
                     <span className="inline-flex h-7 items-center gap-1 whitespace-nowrap rounded-full bg-emerald-100 px-2 text-[10px] font-black text-emerald-800">
                       <CheckCircle2 size={12} />
@@ -1388,48 +1447,19 @@ export function OrdersManager() {
                       </button>
                     </>
                   )}
-                </div>
-
-                <div className="rounded-2xl bg-[#F8F3E8] p-2">
-                  <p className="mb-1 text-[10px] font-black uppercase tracking-[0.12em] text-[#746f69]">
-                    Estado
-                  </p>
-                  {hasAgencyHandoff ? (
-                    <div className="rounded-xl bg-white px-3 py-2 text-[11px] font-black text-indigo-700">
-                      {transportStatusLabels[transportAgencyStatus] || "Empresa delivery"}
-                    </div>
-                  ) : (
-                    <select
-                      value={order.status}
-                      onChange={(event) => changeOrderStatus(order, event.target.value)}
-                      disabled={isSavingStatus}
-                      className="w-full rounded-xl border border-[#25262B]/10 bg-white px-3 py-2 text-[11px] font-black outline-none focus:border-[#2E3A79] disabled:opacity-60"
-                      aria-label={`Cambiar estado de ${order.public_code}`}
-                    >
-                      {getStatusOptionsForOrder(order).map((item) => (
-                        <option key={item.value} value={item.value}>
-                          {item.label}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-
-                <div className="grid w-fit grid-cols-[58px_104px_48px] items-center gap-2 lg:justify-self-end">
 
                   {whatsappUrl && (
                     <a
                       href={whatsappUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex h-8 w-[58px] items-center justify-center gap-1.5 rounded-full bg-green-100 text-[11px] font-black text-green-700"
+                      className="inline-flex h-7 w-9 items-center justify-center rounded-full bg-green-100 text-green-700"
                       aria-label="Abrir WhatsApp"
+                      title="Abrir WhatsApp"
                     >
                       <Send size={14} />
-                      WA
                     </a>
                   )}
-                  {!whatsappUrl ? <span className="h-8 w-[58px]" aria-hidden="true" /> : null}
 
                   {order.delivery_type === "delivery" &&
                   (showEntrega2Button || showTransportAgencyButton) ? (
@@ -1439,7 +1469,7 @@ export function OrdersManager() {
                       disabled={isSendingDelivery}
                       title="Enviar a la empresa delivery"
                       aria-label="Enviar a la empresa delivery"
-                      className="inline-flex h-8 w-[104px] items-center justify-center gap-1.5 rounded-full bg-[#2E3A79] text-[11px] font-black text-white disabled:opacity-60"
+                      className="inline-flex h-7 items-center justify-center gap-1 px-2.5 rounded-full bg-[#2E3A79] text-[10px] font-black text-white disabled:opacity-60"
                     >
                       {isSendingDelivery ? (
                         <Loader2 size={16} className="animate-spin" />
@@ -1452,7 +1482,7 @@ export function OrdersManager() {
                     <button
                       type="button"
                       disabled
-                      className="inline-flex h-8 w-[104px] items-center justify-center gap-1.5 rounded-full bg-green-100 text-[11px] font-black text-green-700 ring-1 ring-green-200"
+                      className="inline-flex h-7 items-center justify-center gap-1 rounded-full bg-green-100 px-2.5 text-[10px] font-black text-green-700 ring-1 ring-green-200"
                       title="Pedido ya solicitado a la empresa delivery"
                     >
                       <Motorbike size={16} />
@@ -1460,7 +1490,7 @@ export function OrdersManager() {
                     </button>
                   ) : (
                     <span
-                      className={`inline-flex h-8 w-[104px] items-center justify-center gap-1.5 whitespace-nowrap rounded-full text-[11px] font-black ${orderMode.style}`}
+                      className={`inline-flex h-7 items-center justify-center gap-1 whitespace-nowrap rounded-full px-2.5 text-[10px] font-black ${orderMode.style}`}
                       title={orderMode.label}
                     >
                       <orderMode.Icon size={14} aria-hidden="true" />
@@ -1472,9 +1502,11 @@ export function OrdersManager() {
                     type="button"
                     onClick={() => void openOrderDetail(order)}
                     disabled={isLoadingDetail}
-                    className="h-8 w-12 rounded-full bg-[#FFB547] text-[11px] font-black text-[#25262B]"
+                    className="grid h-7 w-9 place-items-center rounded-full bg-[#FFB547] text-[#25262B] disabled:opacity-60"
+                    aria-label={`Ver detalle de ${order.public_code}`}
+                    title="Ver detalle"
                   >
-                    {isLoadingDetail ? "..." : "Ver"}
+                    {isLoadingDetail ? <Loader2 size={13} className="animate-spin" /> : <Eye size={14} />}
                   </button>
                 </div>
               </div>
