@@ -4,6 +4,7 @@ import { GoogleAuth } from "google-auth-library";
 type SupabaseAdminClient = ReturnType<typeof import("@/lib/supabase/admin").createSupabaseAdminClient>;
 type PushDevice = { id: string; fcm_token: string | null };
 type ServiceAccount = { type: string; project_id: string; client_email: string; private_key: string };
+type PrintWakeEvent = "received" | "paid" | "manual";
 
 const FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
 const INVALID_TOKEN_CODES = new Set(["UNREGISTERED", "INVALID_ARGUMENT", "SENDER_ID_MISMATCH"]);
@@ -37,7 +38,7 @@ export async function sendPrintWakePush({
   supabase: SupabaseAdminClient;
   storeId: string;
   orderId: string;
-  eventType?: "received" | "paid";
+  eventType?: PrintWakeEvent;
   fetchImpl?: typeof fetch;
   credentials?: ReturnType<typeof readCredentials>;
 }) {
@@ -49,12 +50,14 @@ export async function sendPrintWakePush({
     .eq("store_id", storeId)
     .maybeSingle();
   if (settingsError) throw settingsError;
-  if (!settings?.is_enabled) return { configured: true, attempted: 0, sent: 0, invalidated: 0 };
-  const triggerMode = ["received", "paid", "both"].includes(settings.trigger_mode)
-    ? settings.trigger_mode
-    : "received";
-  if (triggerMode !== "both" && triggerMode !== eventType) {
-    return { configured: true, attempted: 0, sent: 0, invalidated: 0 };
+  if (eventType !== "manual") {
+    if (!settings?.is_enabled) return { configured: true, attempted: 0, sent: 0, invalidated: 0 };
+    const triggerMode = ["received", "paid", "both"].includes(settings.trigger_mode)
+      ? settings.trigger_mode
+      : "received";
+    if (triggerMode !== "both" && triggerMode !== eventType) {
+      return { configured: true, attempted: 0, sent: 0, invalidated: 0 };
+    }
   }
 
   const { data, error } = await supabase
@@ -96,7 +99,7 @@ export async function sendPrintWakePush({
   return { configured: true, attempted: devices.length, sent, invalidated: invalidIds.length };
 }
 
-export async function safeSendPrintWakePush(input: { supabase: SupabaseAdminClient; storeId: string; orderId: string; eventType?: "received" | "paid" }) {
+export async function safeSendPrintWakePush(input: { supabase: SupabaseAdminClient; storeId: string; orderId: string; eventType?: PrintWakeEvent }) {
   try { return await sendPrintWakePush(input); }
   catch { return { configured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON), attempted: 0, sent: 0, invalidated: 0 }; }
 }

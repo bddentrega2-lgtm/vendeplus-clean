@@ -1318,9 +1318,9 @@ export function OrdersManager() {
                   : "ring-[#25262B]/[0.06]",
               ].join(" ")}
             >
-              <div className="grid gap-2 lg:grid-cols-[92px_1fr_86px_150px_180px_auto] lg:items-center">
+              <div className="grid gap-2 xl:grid-cols-[132px_minmax(0,1fr)_86px_150px_180px_auto] xl:items-center">
                 <div className="min-w-0">
-                  <h3 className="truncate text-sm font-black">{order.public_code}</h3>
+                  <h3 className="break-words text-sm font-black leading-tight [overflow-wrap:anywhere]">{order.public_code}</h3>
                   {canFilterStores ? (
                     <p
                       className="line-clamp-2 text-[11px] font-black leading-4 text-[#2E3A79]"

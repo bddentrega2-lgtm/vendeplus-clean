@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { assertStoreAccess, badRequest, panelErrorResponse, requirePanelAuth } from "@/lib/panel/access";
+import { safeSendPrintWakePush } from "@/lib/printing/firebase-push";
 
 export async function POST(request: NextRequest, context: { params: Promise<{ orderId: string }> }) {
   try {
@@ -17,6 +18,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ or
     if (!device) return badRequest("Vincula primero la app Somos.");
     const { error } = await supabase.from("order_print_jobs").insert({ store_id: storeId, order_id: orderId, event_type: "manual", status: "pending" });
     if (error) throw error;
+    after(() => safeSendPrintWakePush({ supabase, storeId, orderId, eventType: "manual" }));
     return NextResponse.json({ queued: true });
   } catch (error) {
     return panelErrorResponse(error, "No se pudo enviar la comanda a impresion.");

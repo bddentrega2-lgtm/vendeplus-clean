@@ -3,7 +3,11 @@
 ## Continuidad entre sesiones
 
 * Al comenzar una sesion, leer `SESSION_HANDOFF.md` si existe.
+* Leer tambien el archivo mas reciente de `docs/session-memory/` para recuperar decisiones, errores y aprendizajes reutilizables.
 * Antes de solicitar un reinicio o dejar una tarea pendiente, actualizar `SESSION_HANDOFF.md` con cambios, validaciones, errores y el siguiente paso exacto.
+* Al cerrar una sesion de trabajo, crear o actualizar un archivo en `docs/session-memory/` usando `YYYY-MM-DD-tema.md` y la plantilla de esa carpeta.
+* `SESSION_HANDOFF.md` representa el estado operativo vigente. Los archivos de `docs/session-memory/` son un historial de aprendizajes y no deben contradecir el estado vigente.
+* Nunca guardar en estas memorias contrasenas, tokens, claves API, secretos, codigos temporales, datos bancarios ni datos personales innecesarios.
 * No asumir que una tarea termino porque se reinicio el equipo o cambio la conversacion.
 
 ## Rol principal

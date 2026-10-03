@@ -45,8 +45,8 @@ test("Firebase pilot is production-package-only and keeps the official origin", 
   assert.match(script, /com\.somosve\.app/);
   assert.match(script, /Remove-Item Env:SOMOS_ANDROID_BUYER_STAGING/);
   assert.match(script, /origin = 'https:\/\/www\.somos-ve\.com'/);
-  assert.match(script, /versionCode = 14/);
-  assert.match(script, /versionName = '1\.5\.0'/);
+  assert.match(script, /versionCode = 15/);
+  assert.match(script, /versionName = '1\.5\.1'/);
   assert.match(script, /lintDebug assembleDebug testDebugUnitTest/);
 });
 
@@ -65,8 +65,8 @@ test("Play candidate is one-shot, private by default and compatible with the sup
   assert.match(service, /START_NOT_STICKY/);
   assert.doesNotMatch(service, /scheduleWithFixedDelay|START_STICKY/);
   assert.match(firebase, /if \(!"print_jobs"\.equals/);
-  assert.match(gradle, /productionVersionCode = 14/);
-  assert.match(gradle, /productionVersionName = "1\.5\.0"/);
+  assert.match(gradle, /productionVersionCode = 15/);
+  assert.match(gradle, /productionVersionName = "1\.5\.1"/);
   assert.match(gradle, /finalizedBy\('writeReleaseMetadata'\)/);
 });
 
@@ -84,4 +84,18 @@ test("every account can reach a deletion path without deleting business records"
   assert.match(panel, /href="\/eliminar-cuenta"/);
   assert.match(migration, /unique index[\s\S]*where status = 'pending'/);
   assert.match(migration, /revoke all[\s\S]*anon, authenticated/);
+});
+
+test("release preserves optional hardware and native 16 KB compatibility checks", () => {
+  const manifest = read("mobile/somos-android/android/app/src/main/AndroidManifest.xml");
+  const gradle = read("mobile/somos-android/android/app/build.gradle");
+  const verifier = read("scripts/ops/verify-android-apk.ps1");
+  for (const feature of ["bluetooth", "bluetooth_le", "location", "location.gps", "location.network"]) {
+    assert.match(manifest, new RegExp(`android:name="android\\.hardware\\.${feature.replaceAll(".", "\\.")}"\\s+android:required="false"`));
+  }
+  assert.match(gradle, /androidx\.datastore:datastore-preferences:1\.2\.1/);
+  assert.match(verifier, /zipalign\.exe[\s\S]*-c -P 16 4/);
+  assert.match(verifier, /\$alignment -lt 16384/);
+  assert.match(verifier, /0x6474e552/);
+  assert.match(verifier, /\(\(\$virtualAddress \+ \$memorySize\) % 16384\)/);
 });

@@ -72,6 +72,25 @@ test("disabled automatic printing never queries devices or sends push", async ()
   assert.equal(calls.some(call => call.table === "print_agent_devices"), false);
 });
 
+test("manual printing wakes the app even when automatic printing is disabled", async () => {
+  const { supabase, calls } = database({ enabled: false, devices: [{ id: "device-a", fcm_token: "token" }] });
+  let requests = 0;
+  const result = await push.sendPrintWakePush({
+    supabase,
+    storeId: "store-a",
+    orderId: "order-a",
+    eventType: "manual",
+    credentials,
+    fetchImpl: async () => {
+      requests += 1;
+      return { ok: true, json: async () => ({}) };
+    },
+  });
+  assert.deepEqual(plain(result), { configured: true, attempted: 1, sent: 1, invalidated: 0 });
+  assert.equal(requests, 1);
+  assert.ok(calls.some(call => call.table === "print_agent_devices"));
+});
+
 test("payment verification wakes only stores configured to print paid orders", async () => {
   const devices = [{ id: "device-a", fcm_token: "token" }];
   const skipped = database({ triggerMode: "paid", devices });
@@ -111,6 +130,23 @@ test("payment verification queues a paid wake only on the first verified transit
   assert.match(paymentRoute, /eventType: "paid"/);
   assert.match(settings, /Imprimir al verificar el pago/);
   assert.match(settings, /received && paid \? "both" : paid \? "paid" : "received"/);
+});
+
+test("manual print and retry wake the app while the print center remains store-scoped", () => {
+  const manualRoute = readFileSync(new URL("../src/app/api/panel/printing/orders/[orderId]/route.ts", import.meta.url), "utf8");
+  const statusRoute = readFileSync(new URL("../src/app/api/panel/printing/status/route.ts", import.meta.url), "utf8");
+  assert.match(manualRoute, /after\(\(\) => safeSendPrintWakePush/);
+  assert.match(manualRoute, /eventType: "manual"/);
+  assert.match(statusRoute, /requirePanelAuth\(request\)/);
+  assert.match(statusRoute, /assertStoreAccess\(auth, storeId\)/);
+  assert.ok((statusRoute.match(/\.eq\("store_id", storeId\)/g) || []).length >= 6);
+  assert.match(statusRoute, /job\.status !== "failed"/);
+  assert.match(statusRoute, /new Date\(job\.created_at\)\.getTime\(\) < recoveryCutoffMs/);
+  assert.match(statusRoute, /\.gte\("created_at", recoveryCutoff\)/);
+  assert.match(statusRoute, /status: "pending"[\s\S]*attempts: 0/);
+  assert.match(statusRoute, /eventType: "manual"/);
+  assert.match(statusRoute, /error_message: publicPrintError\(last_error\)/);
+  assert.doesNotMatch(statusRoute, /error_message:\s*last_error/);
 });
 
 test("order replay cannot send another push and Android deduplicates remote order IDs", () => {

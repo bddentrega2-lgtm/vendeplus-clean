@@ -1,4 +1,4 @@
-param([string]$JavaHome = 'C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot')
+param([string]$JavaHome = 'C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot', [switch]$Incremental)
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $mobile = Join-Path $workspace 'mobile/somos-android'
@@ -36,7 +36,8 @@ try {
     } finally { Pop-Location }
     Push-Location $android
     try {
-        & .\gradlew.bat clean lintRelease testReleaseUnitTest bundleRelease --console=plain
+        $cleanTask = if ($Incremental) { @() } else { @('clean') }
+        & .\gradlew.bat @cleanTask lintRelease testReleaseUnitTest bundleRelease assembleRelease --console=plain --no-daemon
         if ($LASTEXITCODE -ne 0) { throw 'Android release build failed.' }
     } finally { Pop-Location }
 
@@ -52,9 +53,15 @@ try {
     [void][IO.Directory]::CreateDirectory($folder)
     $target = Join-Path $folder 'somos-internal-release.aab'
     Copy-Item -LiteralPath $source -Destination $target -Force
+    $apkSource = Join-Path $android 'app/build/outputs/apk/release/app-release.apk'
+    if (-not (Test-Path -LiteralPath $apkSource -PathType Leaf)) { throw 'Signed release APK was not generated.' }
+    $apkTarget = Join-Path $folder ("somos-{0}-android.apk" -f $releaseMetadata.versionName)
+    Copy-Item -LiteralPath $apkSource -Destination $apkTarget -Force
     $manifest = [ordered]@{
         artifact = $target
         sha256 = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
+        apk = $apkTarget
+        apkSha256 = (Get-FileHash -LiteralPath $apkTarget -Algorithm SHA256).Hash
         package = $releaseMetadata.packageName
         versionCode = [int]$releaseMetadata.versionCode
         versionName = [string]$releaseMetadata.versionName

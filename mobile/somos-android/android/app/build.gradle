@@ -6,8 +6,8 @@ def releaseKeyAlias = System.getenv('SOMOS_ANDROID_KEY_ALIAS')
 def releaseStorePassword = System.getenv('SOMOS_ANDROID_STORE_PASSWORD')
 def releaseKeyPassword = System.getenv('SOMOS_ANDROID_KEY_PASSWORD')
 def releaseSigningReady = [releaseKeystorePath, releaseKeyAlias, releaseStorePassword, releaseKeyPassword].every { it }
-def productionVersionCode = 14
-def productionVersionName = "1.5.0"
+def productionVersionCode = 15
+def productionVersionName = "1.5.1"
 
 android {
     namespace = "com.somosve.app"
@@ -61,6 +61,11 @@ dependencies {
     implementation project(':capacitor-android')
     implementation platform('com.google.firebase:firebase-bom:34.4.0')
     implementation 'com.google.firebase:firebase-messaging'
+    constraints {
+        implementation('androidx.datastore:datastore-preferences:1.2.1') {
+            because 'Firebase transitive DataStore 1.1.7 has native RELRO segments incompatible with 16 KB pages.'
+        }
+    }
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

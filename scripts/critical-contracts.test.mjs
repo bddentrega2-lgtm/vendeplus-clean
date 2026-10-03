@@ -787,7 +787,7 @@ test("tarjeta de pedido muestra la sede sin truncado agresivo", () => {
     "utf8",
   );
 
-  assert.match(manager, /lg:grid-cols-\[92px_1fr_86px/);
+  assert.match(manager, /xl:grid-cols-\[132px_minmax\(0,1fr\)_86px/);
   assert.match(manager, /function getCompactStoreName/);
   assert.match(manager, /replace\(\/\^Pasteler\[ií\]a TDK/);
   assert.match(manager, /className="line-clamp-2 text-\[11px\]/);

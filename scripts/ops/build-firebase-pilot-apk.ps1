@@ -34,14 +34,14 @@ try {
     $source = Join-Path $android 'app/build/outputs/apk/debug/app-debug.apk'
     $folder = Join-Path $workspace 'tmp/firebase-pilot'
     [void][IO.Directory]::CreateDirectory($folder)
-    $target = Join-Path $folder 'somos-1.5.0-print-candidate.apk'
+    $target = Join-Path $folder 'somos-1.5.1-print-candidate.apk'
     Copy-Item -LiteralPath $source -Destination $target -Force
     $manifest = [ordered]@{
         apk = $target
         sha256 = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
         package = 'com.somosve.app'
-        versionCode = 14
-        versionName = '1.5.0'
+        versionCode = 15
+        versionName = '1.5.1'
         origin = 'https://www.somos-ve.com'
         firebase = 'configured-client'
         createdAt = [DateTime]::UtcNow.ToString('o')

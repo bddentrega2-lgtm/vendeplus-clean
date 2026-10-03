@@ -233,7 +233,7 @@ export function PanelShell({
                   >
                     <Icon size={18} />
                   </span>
-                  <span className="leading-tight">{item.label}</span>
+                  <span className="min-w-0 break-words leading-tight [overflow-wrap:anywhere]">{item.label}</span>
                 </Link>
               );
             })}
