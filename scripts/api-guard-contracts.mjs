@@ -5,6 +5,13 @@ import { join, relative, sep } from "node:path";
 const API_ROOT = join(process.cwd(), "src", "app", "api");
 
 const PUBLIC_SERVICE_ROLE_ROUTES = {
+  "src/app/api/catalog/product-options/route.ts": [
+    /\.eq\("slug", storeSlug\)/,
+    /\.eq\("is_active", true\)/,
+    /isStoreSubscriptionPastDue\(store\)/,
+    /\.eq\("store_id", store\.id\)/,
+    /\.eq\("is_available", true\)/,
+  ],
   "src/app/api/marketplace/directory/route.ts": [/getPublicStores\(\)/, /getStoreRatingSummaries\(ids\)/],
   "src/app/api/marketplace/ratings/route.ts": [/getPublicStores\(\)/, /stores\.some\(store => store\.id === id\)/],
   "src/app/api/auth/panel-session/route.ts": [/supabase\.auth\.getUser\(token\)/],

@@ -1,6 +1,7 @@
 ﻿import type { Category, Product, ProductVariant, Store } from "@/types";
 import { getStoreBySlug as getFallbackStoreBySlug, stores as fallbackStores } from "@/data/stores";
-import { createSupabasePublicClient } from "@/lib/supabase/server";
+import "server-only";
+import { hasSupabaseEnv } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isMissingColumnError } from "@/lib/supabase/schema-compat";
 import type { ProductOptionGroup } from "@/types";
@@ -12,8 +13,14 @@ import { getStoreOpenState } from "@/lib/business-hours";
 import { getEntrega2AppBrand, loadTransportAgencyDeliverySettings } from "@/lib/transport";
 import { DEFAULT_STORE_COVER_IMAGE, normalizePublicBrandText } from "@/lib/brand-copy";
 import { isSubscriptionPastDue } from "@/lib/subscription-status";
+import { safeBrandColor } from "@/lib/brand-colors";
 
 type AnyRecord = Record<string, any>;
+
+// Billing eligibility stays server-side; mapStore only returns storefront fields.
+function createStorefrontServerClient() {
+  return hasSupabaseEnv() ? createSupabaseAdminClient() : null;
+}
 
 const defaultPaymentMethods = ["Pago móvil", "Transferencia", "Efectivo", "Binance"];
 
@@ -249,9 +256,9 @@ function mapStore(
     paymentDetails: toRecord(row.payment_details),
     logoUrl: row.logo_url || fallback?.logoUrl || "",
     coverImageUrl: row.cover_image_url || fallback?.coverImageUrl || fallback?.heroImageUrl || "",
-    primaryColor: row.primary_color || fallback?.primaryColor || "#1F464C",
-    accentColor: row.accent_color || fallback?.accentColor || "#F27533",
-    buttonTextColor: row.button_text_color || fallback?.buttonTextColor || "#042332",
+    primaryColor: safeBrandColor(row.primary_color, "#1F464C"),
+    accentColor: safeBrandColor(row.accent_color, "#F27533"),
+    buttonTextColor: safeBrandColor(row.button_text_color, "#042332"),
     deliverySettings: mapStoreDeliverySettings(row),
     businessHours: toRecord(row.business_hours),
     manualOpenStatus: row.manual_open_status || "auto",
@@ -263,7 +270,7 @@ function mapStore(
       openingHoursText: row.opening_hours,
     }),
     planType: row.plan_type || "monthly",
-    serviceFeeUsd: Number(row.monthly_price_usd ?? (row.plan_type === "per_service" ? 0.1 : 0)),
+    serviceFeeUsd: row.plan_type === "per_service" ? Number(row.monthly_price_usd ?? 0.1) : 0,
     serviceFeePayer: row.service_fee_payer === "customer" ? "customer" : "merchant",
     serviceFeeBillingCycle: "monthly",
     requestCustomerIdNumber: row.request_customer_id_number === true,
@@ -1007,7 +1014,7 @@ async function hydrateStoresDeliveryRelations(rows: AnyRecord[]): Promise<AnyRec
 }
 
 async function getMarketplaceEligibleStoreIds(
-  supabase: ReturnType<typeof createSupabasePublicClient>,
+  supabase: ReturnType<typeof createStorefrontServerClient>,
   storeIds: string[]
 ) {
   if (!supabase || !storeIds.length) return new Set<string>();
@@ -1030,7 +1037,7 @@ async function getMarketplaceEligibleStoreIds(
 }
 
 export async function getPublicStores(): Promise<Store[]> {
-  const supabase = createSupabasePublicClient();
+  const supabase = createStorefrontServerClient();
 
   if (!supabase) return allowDemoFallbacks() ? fallbackStores : [];
 
@@ -1225,7 +1232,7 @@ export async function getPublicTransportAgencyMarketplaceBySlug(slug: string): P
 }
 
 export async function getPublicStoreShellBySlug(slug: string): Promise<Store | null> {
-  const supabase = createSupabasePublicClient();
+  const supabase = createStorefrontServerClient();
 
   if (!supabase) {
     const fallback = allowDemoFallbacks() ? getFallbackStoreBySlug(slug) || null : null;
@@ -1295,7 +1302,7 @@ export async function getPublicStoreShellBySlug(slug: string): Promise<Store | n
 }
 
 export async function getPublicStoreBySlug(slug: string): Promise<Store | null> {
-  const supabase = createSupabasePublicClient();
+  const supabase = createStorefrontServerClient();
 
   if (!supabase) {
     return allowDemoFallbacks() ? getFallbackStoreBySlug(slug) || null : null;
@@ -1380,13 +1387,14 @@ export async function getPublicStoreBySlug(slug: string): Promise<Store | null> 
 }
 
 export async function getUnavailableStoreContactBySlug(slug: string) {
-  const supabase = createSupabasePublicClient();
+  const supabase = createStorefrontServerClient();
   if (!supabase) return null;
 
   const { data } = await supabase
     .from("stores")
     .select("slug, name, whatsapp, is_active, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
     .eq("slug", slug)
+    .eq("is_active", true)
     .maybeSingle();
 
   if (!data) return null;

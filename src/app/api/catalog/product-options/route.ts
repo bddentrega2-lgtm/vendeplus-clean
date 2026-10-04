@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isStoreSubscriptionPastDue, mapOptionGroups } from "@/lib/supabase/catalog";
 import { createSupabasePublicClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest) {
     return badRequest("Falta el producto.");
   }
 
-  const { data: store, error: storeError } = await supabase
+  const { data: store, error: storeError } = await createSupabaseAdminClient()
     .from("stores")
     .select("id, is_active, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
     .eq("slug", storeSlug)

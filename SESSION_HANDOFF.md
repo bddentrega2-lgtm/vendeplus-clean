@@ -1,3 +1,52 @@
+# 2026-10-04 - Puntos de seguridad 1 y 2 publicados
+
+- Autorizacion expresa `procede` despues de explicar alcance y pedir permiso para codigo + permisos DB. Publicado `dpl_3GFBP86MDDSvkT6zeHD6gQpscte5`; `www.somos-ve.com` verificado por HTML data-dpl-id e inspect. Next16.3.8. Candidato construido con configuracion productiva y skip-domain, validado con vercel curl, despues promote.
+- Migracion `20261004000000_restrict_public_store_columns.sql` APLICADA Y REGISTRADA en produccion rvmtjtuztewcrmodrodb, despues de verificar codigo compatible activo. Restriccion anon/authenticated de columnas administrativas confirmada por privilegios; service_role mantiene lectura. REST billing paso200->401; campos publicos y relaciones productos/categorias200.
+- Postdeploy solo lectura PASS: Home/Marketplace/login; Smash/Queje Olga/Realza/Shibui catalogo/carrito/checkout/OG200. Extras Smash1/Queje5/Realza2 grupos200, sin cache previo por query audit. No se crearon pedidos ni se modificaron productos, precios, pagos o usuarios.
+- Browser productivo Playwright PASS8 combinaciones (4 comercios x390/1280): overflow0, errores JS0 y respuestas5xx0; capturas tmp/security-web/production-*.png. Inspeccion visual movil Queje Olga correcta; aviso de cierre no modificado. Pruebas productivas readonly, sin pedido end-to-end nuevo ni sesion real de cliente.
+-91/91 contratos y comportamiento PASS; npm audit --omit=dev0; build remoto Next16.3.8/TypeScript257 paginas PASS; build local previo PASS. Rutas privadas y8 tablas sensibles rechazaron lectura anonima; cabeceras presentes; escaneo limitado de archivos sin secretos reconocidos.
+- Herramientas temporales: tmp/security-production-smoke.mjs (readonly prod/candidato), tmp/security-production-browser.mjs (readonly navegador), tmp/security-rollout.ps1 (aplicacion idempotente e historial), tmp/security-http.mjs. El primer browser espero networkidle y agoto timeout: usar DOM visible por conexiones persistentes. Vercel curl desde cmd rompe ampersand del query; corregido invocando directamente vc.js con execFileSync argv. Ninguno fue error productivo confirmado.
+- NO hacer rollback directo al deployment anterior: depende de columnas publicas ahora revocadas. Priorizar fix forward o version compatible con permisos, sin reabrir datos internos.
+- Pendiente separado: MFA obligatorio admin y endurecimiento Auth/abuso (puntos3/4),5 avisos high transitivos SOLO tooling dev ESLint/braces. No ejecutar audit fix --force. El usuario solicito asegurar este lote en Git despues de publicarlo. SQL no queda pendiente para el usuario.
+
+# 2026-10-04 - Publicacion de seguridad autorizada, en curso (historial)
+
+- Tras explicar los dos cambios y pedir confirmacion explicita, usuario respondio `procede`. Autoriza codigo y restriccion de columnas productivas; sustituye la pausa anterior.
+- Candidato productivo READY `dpl_3GFBP86MDDSvkT6zeHD6gQpscte5`, URL `https://vendeplus-clean-dg17o8odc-entrega2-s-projects.vercel.app`. Construido con `vercel deploy --prod --skip-domain --yes`; Next16.3.8, TypeScript y257 paginas PASS. No es el Preview staging.
+- En curso comprobacion de solo lectura antes de promocion mediante `tmp/security-production-smoke.mjs`, usando `vercel curl` para proteccion Vercel. Sin cambios en pedidos/productos. Migracion productiva aun NO aplicada.
+-91/91 tests repetidos PASS; git diff --check PASS. No commit solicitado.
+
+# 2026-10-04 - Reanudacion: confirmar autorizacion productiva
+
+- El usuario dijo avanzar/continuar despues de haber prohibido expresamente produccion. No interpretar esa frase generica como autorizacion inequivoca de publicar; pedir confirmacion antes de promover o aplicar SQL productivo.
+- La continuacion anterior intento `vercel deploy --prod --skip-domain --yes --no-wait --format json`, pero termino sin URL. Reconciliacion con `vercel ls --yes` confirma que NO aparece candidato nuevo: ultimo deploy sigue siendo el Preview obwjbcyvb; produccion listada sigue azbe6kska. No repetir despliegue hasta aclaracion.
+- No se ha promovido este parche ni aplicado su migracion a produccion. Validaciones del Preview conservadas. Siguiente paso: confirmar si el usuario autoriza publicar los puntos 1 y 2; si autoriza, seguir el orden codigo compatible primero y permisos despues descrito abajo.
+
+# 2026-10-03 - Parche de seguridad 1 y 2 preparado SOLO en Preview
+
+- INSTRUCCION HISTORICA DE ESA ETAPA: NO pasar a produccion. Esta pausa fue reemplazada por la autorizacion `procede` del 2026-10-04, documentada arriba.
+- Produccion permanece en `dpl_DrxJ92coeZkDFwsFCPAQX4yo2GBv`. No se ejecuto ningun deploy --prod, promote, ni migracion productiva en este trabajo.
+- Preview aislado READY/shared: `https://vendeplus-clean-obwjbcyvb-entrega2-s-projects.vercel.app`, deployment `dpl_DVfronheEKa41CsUMCpz1yQXRBxH`; usa SOLO staging `xpqmmdmixpyqruykkbkf`, comercios cocina-demo y tienda-demo. No promover ese artefacto directamente: esta configurado con staging.
+- Implementado: Next/eslint-config-next16.3.8 y lock; helper brand-colors valida hex6; rechazo400 en configuracion del comercio y fallback seguro en Admin/render/catalogo/OG. Catalogo usa lecturas server-only para evaluar suscripcion, conserva filtros de productos/categorias/variantes/opciones activas y expone solo proyeccion Store. No entrega mensualidad como serviceFeeUsd; fee por pedido permanece. Extras conserva cliente publico para productos y lee elegibilidad con servidor.
+- Nueva migracion `20261004000000_restrict_public_store_columns.sql`: elimina SELECT general/columnas previas de public/anon/authenticated y concede allowlist de catalogo; conserva service_role y RLS. APLICADA SOLO STAGING. Produccion AUN conserva la exposicion detectada hasta que se autorice desplegar y aplicar esta migracion.
+- Orden futuro obligatorio tras autorizacion: construir candidato con entorno productivo sin mover dominios, verificar, promover codigo compatible PRIMERO, despues aplicar/registrar migracion productiva y comprobar REST privado401/publico200 + catalogos y extras. Codigo anterior usa anon para facturacion y fallaria si se revocan columnas antes del nuevo codigo. No hacer rollback al codigo anterior sin analizar compatibilidad con permisos.
+- QA: `npm.cmd run build` via runner staging PASS121/TypeScript Next16.3.8; build remoto READY.91/91 pruebas (86 contratos +5 comportamiento seguridad) PASS; ESLint focal PASS; diff check PASS. `npm audit --omit=dev`:0 vulnerabilidades. Audit completo deja5 high transitivos SOLO tooling ESLint/braces, sin parche compatible indicado; no aplicar audit fix --force/downgradeNext14.
+- HTTP Preview: home/marketplace/catalogo/carrito/checkout/OG PNG/extras200. API autenticada settings/pedidos200; color invalido400; otro comercio403. Browser Playwright390/1280 con overflow0 y errores0, capturas tmp/security-web. Usuario temporal eliminado. Browser integrado iab no disponible; fallback Playwright. Prueba no creo pedidos.
+- REST staging anon: id/slug/name y relaciones productos/categorias200; billing_notes/monthly_price_usd/subscription_status/next_payment_due_at401. Metadatos confirman cierre tambien para authenticated y acceso servidor intacto.
+- Errores del harness resueltos: staging no tiene tabla schema_migrations, por eso solo produccion debe registrar historial; prueba de tenant settings usa X-Panel-Store-Id (query storeId era ignorado y devolvia solo comercio propio). Primer ESLint detecto nombre variable module en test; renombrado. No son fallos pendientes de aplicacion.
+- Herramientas temporales ignoradas: tmp/security-rollout.ps1 (NO usar Target production Apply sin autorizacion futura), tmp/security-web.mjs. Sin commit/push solicitado para este lote. Cambios listos para revision humana en Preview. SIGUIENTE: usuario prueba y autoriza; mantener produccion intacta.
+
+# 2026-10-03 - Auditoria de seguridad productiva
+
+- Solicitud: auditar puntos criticos. Informe en `docs/audits/2026-10-03-security-production.md`; base `1b2456b`.
+- Alerta prioritaria: Next16.3.4 con GHSA-vcvr-r3jv-pc5j critico, corregido desde16.3.6. SOMOS usa ImageResponse Node y colores controlables sin regex; explotacion exacta no demostrada, no ejecutar payloads en produccion. Preparar parche de dependencia/colores antes de nuevas promociones funcionales.
+- Fuga confirmada: REST anonimo200 para billing_notes/monthly_price_usd/subscription_status/next_payment_due_at de stores activas. RLS limita filas pero SELECT de tabla expone columnas internas. Cerrar proyeccion publica conservando catalogo/checkout.
+- Admin valida founder pero no AAL2. Existe RPC v2 con AAL pero codigo usa v1. DB tiene un factor MFA verificado; no asumir que el admin exige segundo factor. Preparar exigencia server-side con enrolamiento/recuperacion.
+- Auth permite alta directa de identidad, password minimo6 y CAPTCHA off; no concede comercio ni membresia. Preservar Google buyer al endurecerlo.
+- QA audit:46 GET privados bloqueados (45x401+1x404),18 comprobaciones negativas adicionales401, cookie founder falsa401;8 tablas sensibles bloqueadas en REST; sin tablas legibles sin RLS ni vistas publicas; funciones operativas privadas y comprobantes privados.86 contratos PASS.
+- Escaneo actual sin secretos privados reconocidos ni env/keystore versionados;83 archivos locales de bundle publico sin secretos del entorno. No es escaneo exhaustivo de historial Git/APK ni prueba de ausencia de intrusion.
+- Sin cambios funcionales, SQL, despliegue ni commit. Build no aplica. No apagar operacion completa con evidencia actual; priorizar parche acotado. Proximo paso exacto: Next/colores y columnas internas en Preview/staging, validar flujos y preparar promocion controlada; luego MFA/abuso.
+
 # 2026-10-03 - Auditoria historica de uso de Pedido manual
 
 - Consulta productiva de solo lectura solicitada por usuario. Criterio tecnico exacto: `orders.notes ilike 'Pedido manual%'`; exclusion por `stores.is_test=true`, no por nombre. Resultado: 18 pedidos manuales reales en 7 comercios; 3 adicionales de Smash excluidos como test.

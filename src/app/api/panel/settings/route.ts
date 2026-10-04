@@ -12,6 +12,7 @@ import { loadTransportAgencyDeliverySettings } from "@/lib/transport";
 import { assertAchievementFeature, loadStoreAchievements } from "@/lib/achievements";
 import { normalizeBusinessType } from "@/lib/business-types";
 import { revalidatePath } from "next/cache";
+import { isBrandColor } from "@/lib/brand-colors";
 import { loadServiceFeeBalances, type ServiceFeeStore } from "@/lib/billing/service-fees";
 
 function optionalNumber(value: unknown) {
@@ -446,6 +447,10 @@ export async function PATCH(request: NextRequest) {
     );
 
     const payload = normalizeStorePayload(body);
+
+    if (![payload.primary_color, payload.accent_color, payload.button_text_color].every(isBrandColor)) {
+      return badRequest("Selecciona colores validos en formato #RRGGBB.");
+    }
 
     if (!payload.name) {
       return badRequest("El nombre del comercio es obligatorio.");

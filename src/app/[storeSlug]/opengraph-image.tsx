@@ -2,6 +2,7 @@ import { ImageResponse } from "next/og";
 import sharp from "sharp";
 import { getPublicStoreShellBySlug } from "@/lib/supabase/catalog";
 import { buildPublicUrl } from "@/lib/public-url";
+import { safeBrandColor } from "@/lib/brand-colors";
 
 export const runtime = "nodejs";
 export const alt = "Catálogo Somos";
@@ -70,8 +71,8 @@ export default async function StoreOpenGraphImage({
   const imageUrl = await loadPngDataUrl(
     store?.logoUrl || store?.coverImageUrl || store?.heroImageUrl
   );
-  const primaryColor = store?.primaryColor || "#1F464C";
-  const accentColor = store?.accentColor || "#F27533";
+  const primaryColor = safeBrandColor(store?.primaryColor, "#1F464C");
+  const accentColor = safeBrandColor(store?.accentColor, "#F27533");
 
   return new ImageResponse(
     (

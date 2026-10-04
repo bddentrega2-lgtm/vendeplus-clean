@@ -1,5 +1,6 @@
 import { DEFAULT_PRODUCT_LIMIT, PER_SERVICE_FEE_USD } from "@/lib/plans";
 import { normalizeBusinessType } from "@/lib/business-types";
+import { safeBrandColor } from "@/lib/brand-colors";
 
 export const adminStoreSelect = `
   id,
@@ -145,9 +146,9 @@ export function normalizeAdminStorePayload(body: any) {
     payment_methods: normalizePaymentMethods(body.payment_methods),
     usd_to_bs: Number(body.usd_to_bs || 600),
     whatsapp_message_note: cleanText(body.whatsapp_message_note) || null,
-    primary_color: cleanText(body.primary_color) || "#1F464C",
-    accent_color: cleanText(body.accent_color) || "#F27533",
-    button_text_color: cleanText(body.button_text_color) || "#042332",
+    primary_color: safeBrandColor(body.primary_color, "#1F464C"),
+    accent_color: safeBrandColor(body.accent_color, "#F27533"),
+    button_text_color: safeBrandColor(body.button_text_color, "#042332"),
     accepts_delivery: body.accepts_delivery === true,
     accepts_pickup: body.accepts_pickup !== false,
     is_active: body.is_active !== false,
