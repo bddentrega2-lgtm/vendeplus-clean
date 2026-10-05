@@ -1,3 +1,12 @@
+# 2026-10-05 - Checkout publicado desde rama aislada
+
+- Usuario autorizo `procede`. Produccion `www.somos-ve.com` confirmada READY en `dpl_H1YyhEHKF5oHu4cBN9jeuZ7vN9ic` tras candidato validado/promote. Fuente `../.printing-release-20261004`, rama `fix/checkout-payment-copy-20261005`, commit `c24ec2d` sobre base7027975, respaldado en GitHub por solicitud del usuario. Build remoto263 PASS y browser productivo readonly PASS para pagos/mesa/barra/copia/overflow; sin pedidos reales ni SQL. Leer handoff de esa rama para detalle.
+- ESTA fuente de referidos aun NO contiene ese parche. Integrarlo antes de cualquier publicacion futura para no reintroducir Tasa usada, foto del billete, efectivo con comprobante ni pago en caja para mesa. Referidos sigue solo Preview. No requiere APK nueva para estos textos.
+
+# 2026-10-05 - Puntero: ajuste de checkout aislado de referidos (historial)
+
+- Ultimo ajuste solicitado (tasa usada, captura solo pagos digitales, mensajes mesa/barra, Tu pedido es, Copiar todos pago movil) esta en `../.printing-release-20261004`, rama `fix/checkout-payment-copy-20261005` sobre `7027975`. Leer alli SESSION_HANDOFF.md antes de continuar. Cambios solo locales, sin commit ni deploy; build263 y 42 pruebas PASS. No esta aplicado al codigo de esta rama de referidos. Al integrar en el futuro, portar el parche acotado para evitar regresiones; no desplegar referidos por accidente.
+
 # 2026-10-05 - Respaldo Git sin cambiar produccion
 
 - Estado web ya desplegado (impresion multicomercios, campanita y asistencia) asegurado en rama `checkpoint/somos-production-printing-assistance-20261005`, commit `7027975`, subida a GitHub. Se creo desde el worktree aislado `.printing-release-20261004`; build Next 16.3.8 de 263 paginas PASS con entorno local del repo raiz y 18 pruebas focales PASS. Sin merge a `main`, Vercel CLI, SQL ni despliegue en esta operacion.
