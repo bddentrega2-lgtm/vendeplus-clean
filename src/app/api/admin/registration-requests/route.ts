@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from("commerce_registration_requests")
       .select(
-        "id, request_code, store_name, representative_name, representative_id_number, email, whatsapp, business_type, weekly_order_volume, status, activation_error, access_email_sent_at, reviewed_at, created_at, store_id, logo_path, service_cities(name, state_name)",
+        "id, request_code, store_name, representative_name, representative_id_number, email, whatsapp, business_type, weekly_order_volume, status, activation_error, access_email_sent_at, reviewed_at, created_at, store_id, logo_path, setup_base_usd, setup_discount_percent, setup_due_usd, setup_payment_status, setup_payment_reference, setup_payment_proof_path, setup_payment_reported_at, setup_payment_confirmed_at, setup_paid_usd, affiliate_code_id, service_cities(name, state_name)",
         { count: "exact" }
       )
       .order("created_at", { ascending: false })
@@ -99,20 +99,22 @@ export async function GET(request: NextRequest) {
     if (rowsResult.error) throw rowsResult.error;
 
     const rows = rowsResult.data || [];
-    const logoPaths = rows.map((entry: any) => entry.logo_path).filter(Boolean);
-    const { data: signedLogos, error: signedLogoError } = logoPaths.length
-      ? await supabase.storage.from(REGISTRATION_BUCKET).createSignedUrls(logoPaths, 60 * 60)
+    const assetPaths = [...new Set(rows.flatMap((entry: any) => [entry.logo_path, entry.setup_payment_proof_path]).filter(Boolean))];
+    const { data: signedLogos, error: signedLogoError } = assetPaths.length
+      ? await supabase.storage.from(REGISTRATION_BUCKET).createSignedUrls(assetPaths, 60 * 60)
       : { data: [], error: null };
     if (signedLogoError) throw signedLogoError;
     const logoUrls = new Map(
-      (signedLogos || []).map((entry: any, index: number) => [logoPaths[index], entry.signedUrl || null])
+      (signedLogos || []).map((entry: any, index: number) => [assetPaths[index], entry.signedUrl || null])
     );
 
     return NextResponse.json({
       requests: rows.map((entry: any) => ({
         ...entry,
         logo_url: logoUrls.get(entry.logo_path) || null,
+        setup_payment_proof_url: logoUrls.get(entry.setup_payment_proof_path) || null,
         logo_path: undefined,
+        setup_payment_proof_path: undefined,
       })),
       summary: counts,
       pagination: {
@@ -139,7 +141,7 @@ export async function PATCH(request: NextRequest) {
     registrationId = cleanText(body.id);
     const action = cleanText(body.action);
     if (!registrationId) return badRequest("Falta la solicitud.");
-    if (!["approve", "reject", "resend_access"].includes(action)) {
+    if (!["approve", "reject", "resend_access", "report_payment", "confirm_payment", "waive_payment"].includes(action)) {
       return badRequest("Accion no soportada.");
     }
 
@@ -171,6 +173,33 @@ export async function PATCH(request: NextRequest) {
       .single();
     if (currentError) throw currentError;
 
+    if (["report_payment", "confirm_payment", "waive_payment"].includes(action)) {
+      if (!["pending", "activation_error"].includes(current.status)) return conflict("La solicitud ya fue procesada.");
+      if (["confirmed", "waived"].includes(current.setup_payment_status)) return conflict("El pago ya fue confirmado.");
+      const reference = cleanText(body.reference).slice(0, 120);
+      if (action === "report_payment" && current.setup_payment_status === "reported") return conflict("El pago ya fue reportado. Confirma o rechaza la solicitud.");
+      if (action === "report_payment" && !reference) return badRequest("Indica la referencia del pago reportado.");
+      if (action === "confirm_payment" && (!reference && !current.setup_payment_reference)) return badRequest("Indica la referencia del pago verificado.");
+      if (action === "waive_payment" && Number(current.setup_due_usd) !== 0) return badRequest("Solo se exonera un total de US$0.");
+      if (action === "confirm_payment" && Number(current.setup_due_usd) <= 0) return badRequest("Este pago debe registrarse como exonerado.");
+      if (action === "confirm_payment" && Number(body.paidUsd) !== Number(current.setup_due_usd)) return badRequest("El importe confirmado debe coincidir con el total inicial.");
+      const now = new Date().toISOString();
+      const values = action === "report_payment"
+        ? { setup_payment_status: "reported", setup_payment_reference: reference, setup_payment_reported_at: now, updated_at: now }
+        : { setup_payment_status: action === "waive_payment" ? "waived" : "confirmed",
+            setup_payment_reference: action === "waive_payment" ? null : reference || current.setup_payment_reference,
+            setup_payment_confirmed_at: now, setup_payment_confirmed_by: auth.userId,
+            setup_paid_usd: action === "waive_payment" ? null : Number(body.paidUsd),
+            updated_at: now };
+      const { data, error } = await supabase.from("commerce_registration_requests")
+        .update(values).eq("id", registrationId).eq("setup_payment_status", current.setup_payment_status)
+        .in("status", ["pending", "activation_error"])
+        .select("id, setup_payment_status").maybeSingle();
+      if (error) throw error;
+      if (!data) return conflict("El pago fue actualizado por otra persona. Recarga la solicitud.");
+      return NextResponse.json({ request: data, message: action === "report_payment" ? "Pago reportado; falta verificarlo." : action === "waive_payment" ? "Configuracion exonerada." : "Pago inicial confirmado." });
+    }
+
     if (action === "resend_access") {
       if (current.status !== "approved" || !current.auth_user_id || !current.store_id) {
         return conflict("La solicitud aun no tiene una cuenta aprobada.");
@@ -184,6 +213,9 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ message: "Correo de acceso reenviado." });
     }
 
+    if (!["confirmed", "waived"].includes(current.setup_payment_status)) {
+      return conflict("Confirma el pago inicial o la exoneracion antes de aprobar.");
+    }
     const { data: locked, error: lockError } = await supabase
       .from("commerce_registration_requests")
       .update({ status: "activating", activation_error: null, updated_at: new Date().toISOString() })

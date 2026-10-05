@@ -95,6 +95,7 @@ Object.assign(appEnv, {
   NEXT_PUBLIC_SUPABASE_ANON_KEY: keys.anon,
   SUPABASE_SERVICE_ROLE_KEY: keys.service,
   NEXT_PUBLIC_ALLOW_DEMO_FALLBACKS: 'false',
+  FOUNDER_EMAILS: process.env.SOMOS_AFFILIATE_PREVIEW_FOUNDER === '1' ? 'preview-admin@somos.test' : '',
 });
 if (firebasePreview) appEnv.FIREBASE_SERVICE_ACCOUNT_JSON = firebasePreviewRaw;
 const env = { ...process.env, ...appEnv, VERCEL_ENV: 'preview' };

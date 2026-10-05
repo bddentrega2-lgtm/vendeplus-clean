@@ -62,6 +62,20 @@ export async function PATCH(request: NextRequest) {
 
     const status = action === "reject" ? "rejected" : "approved";
 
+    if (status === "approved" && (payment as any).plan_type === "per_service") {
+      const { error: approvalError } = await supabase.rpc("approve_per_service_fee_payment", {
+        p_payment_id: paymentId,
+        p_actor: auth.userId,
+        p_notes: cleanText(body.reviewNotes),
+      });
+      if (approvalError) throw approvalError;
+      const { data: approved, error: readError } = await supabase.from("store_subscription_payments")
+        .select("*, stores(id, name, slug, subscription_ends_at, next_payment_due_at)")
+        .eq("id", paymentId).single();
+      if (readError) throw readError;
+      return NextResponse.json({ payment: approved, message: "Pago de fee aprobado y conciliado por pedido." });
+    }
+
     if (status === "approved") {
       const planType = cleanText((payment as any).plan_type) || "monthly";
       const baseDate = new Date();

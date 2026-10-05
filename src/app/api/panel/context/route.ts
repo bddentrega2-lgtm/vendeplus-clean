@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     if (!auth.isFounderMode) {
       query = auth.storeIds?.length
         ? query.in("id", auth.storeIds)
-        : query.eq("id", "__no_authorized_store__");
+        : query.eq("id", "00000000-0000-0000-0000-000000000000");
     }
 
     const requestedStoreId = String(request.headers.get("x-panel-store-id") || "").trim();

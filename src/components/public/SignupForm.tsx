@@ -10,11 +10,14 @@ import {
   WEEKLY_ORDER_VOLUME_OPTIONS,
 } from "@/lib/commerce-registration";
 import { buildSomosWhatsAppUrl } from "@/lib/whatsapp";
+import { normalizeAffiliateCode } from "@/lib/affiliates";
 
 type SuccessState = {
   requestCode: string;
   message: string;
   whatsappUrl: string;
+  dueUsd: number;
+  paymentUrl: string;
 };
 
 export function SignupForm() {
@@ -28,6 +31,8 @@ export function SignupForm() {
   const [cityId, setCityId] = useState("");
   const [cities, setCities] = useState<Array<{ id: string; name: string; state_name: string }>>([]);
   const [referralCode, setReferralCode] = useState("");
+  const [codePreview, setCodePreview] = useState<{ valid: boolean; kind?: "affiliate" | "store"; discountPercent?: number; dueUsd?: number } | null>(null);
+  const [checkingCode, setCheckingCode] = useState(false);
   const [weeklyOrderVolume, setWeeklyOrderVolume] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
@@ -38,6 +43,21 @@ export function SignupForm() {
     const referral = new URLSearchParams(window.location.search).get("ref");
     if (referral) setReferralCode(referral);
   }, []);
+
+  useEffect(() => {
+    const code = normalizeAffiliateCode(referralCode);
+    if (!code) { setCodePreview(null); setCheckingCode(false); return; }
+    const controller = new AbortController();
+    setCheckingCode(true);
+    const timer = window.setTimeout(() => {
+      fetch(`/api/affiliate-code?code=${encodeURIComponent(code)}`, { signal: controller.signal })
+        .then((response) => response.json())
+        .then((data) => { if (!controller.signal.aborted) setCodePreview(data); })
+        .catch(() => { if (!controller.signal.aborted) setCodePreview(null); })
+        .finally(() => { if (!controller.signal.aborted) setCheckingCode(false); });
+    }, 300);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [referralCode]);
 
   useEffect(() => {
     fetch("/api/cities")
@@ -102,6 +122,8 @@ export function SignupForm() {
       if (!response.ok) throw new Error(data.error || "No se pudo enviar la solicitud.");
 
       const requestCode = String(data.request?.request_code || "");
+      const dueUsd = Number(data.request?.setup_due_usd ?? 20);
+      const paymentUrl = `${window.location.origin}/registro/pago?sol=${encodeURIComponent(requestCode)}`;
       const volumeLabel = getWeeklyOrderVolume(weeklyOrderVolume).label;
       const officialWhatsappUrl = buildSomosWhatsAppUrl([
         "Hola Somos, quiero enviar mi solicitud de comercio.",
@@ -112,15 +134,19 @@ export function SignupForm() {
         `Pedidos por WhatsApp: ${volumeLabel}`,
         `WhatsApp: ${whatsapp.trim()}`,
         `Correo: ${email.trim()}`,
+        referralCode.trim() ? `Codigo: ${referralCode.trim()}` : "",
+        `Configuracion: US$${dueUsd.toFixed(2)}`,
+        dueUsd > 0 ? `Reportar pago: ${paymentUrl}` : "Configuracion exonerada, pendiente de aprobacion.",
       ].filter(Boolean).join("\n"));
 
       setSuccess({
         requestCode,
         message: data.message || "Solicitud guardada.",
         whatsappUrl: officialWhatsappUrl,
+        dueUsd,
+        paymentUrl,
       });
       setCaptchaToken("");
-      window.location.assign(officialWhatsappUrl);
     } catch (submitError: any) {
       setError(submitError.message || "No se pudo enviar la solicitud.");
     } finally {
@@ -137,13 +163,14 @@ export function SignupForm() {
           </div>
           <h1 className="mt-5 text-3xl font-black">Solicitud recibida</h1>
           <p className="mt-2 text-sm font-bold leading-relaxed text-[#746f69]">
-            {success.message} Tu cuenta todavía no ha sido creada. Cuando Somos apruebe la solicitud,
+            {success.message} Tu cuenta todavía no ha sido creada. Cuando Somos confirme el pago y apruebe la solicitud,
             recibirás por correo el acceso para configurar tu catálogo.
           </p>
           {success.requestCode ? (
             <p className="mt-4 text-lg font-black text-[#2E3A79]">{success.requestCode}</p>
           ) : null}
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            {success.dueUsd > 0 ? <Link href={success.paymentUrl} className="inline-flex items-center justify-center rounded-lg bg-[#007A69] px-5 py-4 text-sm font-black text-white sm:col-span-2">Reportar pago inicial de US${success.dueUsd.toFixed(2)}</Link> : null}
             <a
               href={success.whatsappUrl}
               className="inline-flex items-center justify-center gap-2 rounded-full bg-[#25D366] px-5 py-4 text-sm font-black text-[#143D42] sm:col-span-2"
@@ -169,21 +196,22 @@ export function SignupForm() {
           <div className="grid h-14 w-14 place-items-center rounded-3xl bg-[#FFB547] text-[#25262B]">
             <Store size={25} />
           </div>
-          <h1 className="mt-6 text-4xl font-black">Vende sin pagar mensualidad</h1>
+          <h1 className="mt-6 text-4xl font-black">Registra tu comercio</h1>
           <p className="mt-3 text-sm font-bold leading-relaxed text-white/70">
             Envía tus datos a Somos. Revisaremos la solicitud antes de habilitar tu cuenta y tu catálogo.
           </p>
           <div className="mt-5 rounded-[26px] bg-[#FFB547] p-5 text-[#25262B]">
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-[#2E3A79]">Una sola tarifa clara</p>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-[#2E3A79]">Suscripción y configuración</p>
             <div className="mt-2 flex items-end gap-2">
-              <span className="text-4xl font-black">$0.10</span>
-              <span className="pb-1 text-xs font-black opacity-65">por pedido recibido</span>
+              <span className="text-4xl font-black">$20</span>
+              <span className="pb-1 text-xs font-black opacity-65">pago único</span>
             </div>
+            <p className="mt-2 text-xs font-bold">Después, $0.10 por pedido recibido.</p>
           </div>
           <div className="mt-5 grid gap-3">
             {[
               "Sin mensualidad ni comisión porcentual",
-              "Acceso habilitado después de la revisión de Somos",
+              "Acceso habilitado después de confirmar el pago y aprobar la solicitud",
               "Pagos directos a tu cuenta",
               "Mantienes tus precios reales",
               "Tus clientes siguen siendo tuyos",
@@ -249,19 +277,28 @@ export function SignupForm() {
                   {WEEKLY_ORDER_VOLUME_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
               </Field>
-              <Field label="Código de referido (opcional)" wide>
-                <input value={referralCode} onChange={(event) => setReferralCode(event.target.value)} placeholder="Comercio que te invitó" className={inputClass} />
+              <Field label="Codigo de aliado o comercio (opcional)" wide>
+                <input value={referralCode} onChange={(event) => { setReferralCode(event.target.value); setCodePreview(null); }} placeholder="Codigo de invitacion" className={inputClass} />
               </Field>
+            </div>
+
+            <div className="mt-4 border-t border-[#25262B]/10 pt-4 text-sm font-bold">
+              <div className="flex justify-between"><span>Suscripcion y configuracion (pago unico)</span><span>US$20.00</span></div>
+              {codePreview?.valid && Number(codePreview.discountPercent) > 0 ? <div className="mt-2 flex justify-between text-emerald-700"><span>Descuento ({codePreview.discountPercent}%)</span><span>-US${(20 - Number(codePreview.dueUsd)).toFixed(2)}</span></div> : null}
+              <div className="mt-3 flex justify-between border-t border-[#25262B]/10 pt-3 text-base font-black"><span>Total inicial</span><span>US${Number(codePreview?.valid ? codePreview.dueUsd : 20).toFixed(2)}</span></div>
+              {checkingCode ? <p className="mt-2 text-xs text-[#746f69]">Validando codigo...</p> : null}
+              {codePreview?.kind === "store" ? <p className="mt-2 text-xs text-[#746f69]">Codigo de comercio valido. No cambia el pago inicial.</p> : null}
+              {referralCode.trim() && codePreview?.valid === false ? <p className="mt-2 text-xs text-red-700">Codigo no disponible o no valido.</p> : null}
             </div>
 
             {error ? <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm font-black text-red-700 ring-1 ring-red-100">{error}</p> : null}
             <AuthCaptcha action="commerce_signup" onToken={setCaptchaToken} />
-            <button type="submit" disabled={isSaving} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B] disabled:opacity-60">
+            <button type="submit" disabled={isSaving || (Boolean(referralCode.trim()) && (checkingCode || !codePreview?.valid))} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B] disabled:opacity-60">
               {isSaving ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
               Enviar solicitud
             </button>
             <p className="mt-3 text-center text-xs font-bold leading-5 text-[#746f69]">
-              Guardaremos tu solicitud y abriremos el WhatsApp oficial de Somos. La cuenta se crea únicamente después de la aprobación.
+              Guardaremos tu solicitud. Luego podrás enviarla por WhatsApp y reportar el pago. La cuenta se crea después de la aprobación.
             </p>
             <p className="mt-4 text-center text-xs font-bold text-[#746f69]">
               ¿Ya tienes cuenta? <Link href="/panel/login" className="font-black text-[#2E3A79]">Inicia sesión</Link>

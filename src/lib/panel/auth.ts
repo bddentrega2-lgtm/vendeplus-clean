@@ -187,6 +187,21 @@ export async function getPanelAuthContext(
     }
 
     if (!storeUsers?.length) {
+      const { data: affiliate, error: affiliateError } = await supabase.from("affiliate_codes")
+        .select("id").eq("beneficiary_user_id", userId).limit(1).maybeSingle();
+      if (affiliateError) throw affiliateError;
+      if (affiliate) {
+        return {
+          isAuthorized: true,
+          mode: "user",
+          method: token ? "auth" : "cookie",
+          isFounderMode: false,
+          userId,
+          email: userEmail,
+          storeIds: [],
+          role: "affiliate",
+        };
+      }
       return {
         isAuthorized: false,
         mode: "user",

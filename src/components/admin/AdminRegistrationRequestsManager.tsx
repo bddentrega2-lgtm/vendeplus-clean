@@ -33,6 +33,11 @@ type RegistrationRequest = {
   created_at: string;
   store_id: string | null;
   logo_url: string | null;
+  setup_due_usd: number;
+  setup_discount_percent: number;
+  setup_payment_status: string;
+  setup_payment_reference: string | null;
+  setup_payment_proof_url: string | null;
   service_cities?: { name?: string; state_name?: string } | null;
 };
 
@@ -116,9 +121,24 @@ export function AdminRegistrationRequestsManager() {
     { label: "Rechazadas", value: data?.summary?.rejected || 0 },
   ], [data]);
 
-  async function runAction(entry: RegistrationRequest, action: "approve" | "reject" | "resend_access") {
-    const actionLabel = action === "approve" ? "aprobar" : action === "reject" ? "rechazar" : "reenviar el acceso de";
+  async function runAction(entry: RegistrationRequest, action: "approve" | "reject" | "resend_access" | "report_payment" | "confirm_payment" | "waive_payment") {
+    const actionLabel = action === "approve" ? "aprobar" : action === "reject" ? "rechazar" : action === "confirm_payment" ? "confirmar el pago de" : action === "waive_payment" ? "exonerar" : action === "report_payment" ? "reportar el pago de" : "reenviar el acceso de";
     if (!window.confirm(`¿Confirmas ${actionLabel} ${entry.store_name}?`)) return;
+    if (action === "reject" && entry.setup_payment_status === "confirmed" && !window.confirm("Este comercio ya tiene un pago confirmado. Si rechazas la solicitud, deberas conciliar la devolucion por separado. ¿Continuar?")) return;
+    let reference = "";
+    let paidUsd: number | undefined;
+    if (action === "report_payment" || action === "confirm_payment") {
+      const input = window.prompt("Referencia del pago:", entry.setup_payment_reference || "");
+      if (input === null) return;
+      reference = input.trim();
+      if (!reference) { setError("Indica la referencia del pago."); return; }
+    }
+    if (action === "confirm_payment") {
+      const input = window.prompt("Importe verificado en USD:", Number(entry.setup_due_usd).toFixed(2));
+      if (input === null) return;
+      paidUsd = Number(input);
+      if (!Number.isFinite(paidUsd) || paidUsd !== Number(entry.setup_due_usd)) { setError("El importe debe coincidir con el total inicial."); return; }
+    }
 
     setActiveId(entry.id);
     setMessage("");
@@ -128,7 +148,7 @@ export function AdminRegistrationRequestsManager() {
         method: "PATCH",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: entry.id, action }),
+        body: JSON.stringify({ id: entry.id, action, reference, paidUsd }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "No se pudo procesar la solicitud.");
@@ -196,6 +216,9 @@ export function AdminRegistrationRequestsManager() {
                   <p className="text-sm font-bold text-[#746f69]">{entry.email} · {entry.whatsapp}</p>
                   <p className="text-sm font-bold text-[#746f69]">{businessTypeLabel(entry.business_type)} · {entry.service_cities?.name || "Ciudad"}, {entry.service_cities?.state_name || ""}</p>
                   <p className="mt-1 text-sm font-black text-[#25262B]">{volumeInfo.label} por semana</p>
+                  <p className="mt-2 text-sm font-black text-[#2E3A79]">{entry.setup_payment_status === "legacy" ? "Registro anterior al cobro inicial" : `Configuracion: US$${Number(entry.setup_due_usd).toFixed(2)} ${Number(entry.setup_discount_percent) ? `(${entry.setup_discount_percent}% de descuento)` : ""} · ${entry.setup_payment_status === "confirmed" ? "Pago confirmado" : entry.setup_payment_status === "waived" ? "Exonerado" : entry.setup_payment_status === "reported" ? "Pago reportado, sin confirmar" : "Pago pendiente"}`}</p>
+                  {entry.setup_payment_reference ? <p className="text-xs font-bold text-[#746f69]">Referencia: {entry.setup_payment_reference}</p> : null}
+                  {entry.setup_payment_proof_url ? <a href={entry.setup_payment_proof_url} target="_blank" rel="noopener noreferrer" className="text-xs font-black text-[#007A69] underline">Ver comprobante</a> : null}
                   {entry.activation_error ? <p className="mt-2 text-xs font-black text-amber-800">{entry.activation_error}</p> : null}
                   {entry.access_email_sent_at ? <p className="mt-2 text-xs font-bold text-emerald-700">Acceso enviado: {formatDate(entry.access_email_sent_at)}</p> : null}
                 </div>
@@ -203,7 +226,13 @@ export function AdminRegistrationRequestsManager() {
                   <a href={`https://wa.me/${entry.whatsapp}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#25D366] px-3 py-2 text-xs font-black text-[#143D42]"><MessageCircle size={15} /> WhatsApp</a>
                   {["pending", "activation_error"].includes(entry.status) ? (
                     <>
-                      <button type="button" disabled={isWorking} onClick={() => runAction(entry, "approve")} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#2E3A79] px-3 py-2 text-xs font-black text-white disabled:opacity-50">{isWorking ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} Aprobar</button>
+                      {!['confirmed', 'waived'].includes(entry.setup_payment_status) ? (
+                        Number(entry.setup_due_usd) > 0 ? <>
+                          {entry.setup_payment_status !== "reported" ? <button type="button" disabled={isWorking} onClick={() => runAction(entry, "report_payment")} className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-black text-amber-900">Reportar pago</button> : null}
+                          <button type="button" disabled={isWorking} onClick={() => runAction(entry, "confirm_payment")} className="rounded-lg bg-emerald-100 px-3 py-2 text-xs font-black text-emerald-800">Confirmar pago</button>
+                        </> : <button type="button" disabled={isWorking} onClick={() => runAction(entry, "waive_payment")} className="rounded-lg bg-emerald-100 px-3 py-2 text-xs font-black text-emerald-800">Aprobar exoneracion</button>
+                      ) : null}
+                      <button type="button" disabled={isWorking || !['confirmed', 'waived'].includes(entry.setup_payment_status)} onClick={() => runAction(entry, "approve")} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#2E3A79] px-3 py-2 text-xs font-black text-white disabled:opacity-50">{isWorking ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} Aprobar</button>
                       <button type="button" disabled={isWorking} onClick={() => runAction(entry, "reject")} className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-100 px-3 py-2 text-xs font-black text-red-700 disabled:opacity-50"><XCircle size={15} /> Rechazar</button>
                     </>
                   ) : null}

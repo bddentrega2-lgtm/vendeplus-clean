@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { PanelShell } from "@/components/panel/PanelShell";
 import { isSubscriptionPastDue } from "@/lib/subscription-status";
 import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
@@ -88,7 +88,7 @@ const panelRouteMeta: Record<string, { active: string; title: string; subtitle: 
   },
 };
 
-const routesWithoutPanelShell = new Set(["/panel/login"]);
+const routesWithoutPanelShell = new Set(["/panel/login", "/panel/update-password"]);
 const routesAllowedWhenExpired = new Set(["/panel/suscripcion"]);
 const routeFeatureRequirements: Record<string, string> = {
   "/panel/estadisticas": "full_stats",
@@ -133,7 +133,11 @@ function LockedFeatureBlock({ achievementTitle }: { achievementTitle: string }) 
 
 export function PanelFrame({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { isBootstrapping, isRevalidating, contextError, refreshSession, revalidateSession, accountId, selectedStoreId, selectedStore, achievementFeatures, achievements } = usePanelAuth();
+  const router = useRouter();
+  const { isBootstrapping, isRevalidating, contextError, refreshSession, revalidateSession, accountId, selectedStoreId, selectedStore, isFounderMode, achievementFeatures, achievements } = usePanelAuth();
+  useEffect(() => {
+    if (!isBootstrapping && !contextError && accountId && !selectedStoreId && !isFounderMode && pathname !== "/panel/update-password") router.replace("/aliados");
+  }, [isBootstrapping, contextError, accountId, selectedStoreId, isFounderMode, pathname, router]);
   useEffect(() => {
     if (!isBootstrapping && !contextError && accountId && selectedStoreId && safeMobileRoute(pathname)) writeMobile("private_route", pathname);
   }, [isBootstrapping, contextError, accountId, selectedStoreId, pathname]);
@@ -153,6 +157,8 @@ export function PanelFrame({ children }: { children: React.ReactNode }) {
   }
 
   if (contextError && !accountId) return <main className="grid min-h-screen place-content-center gap-4 p-6 text-center"><p role="alert">{contextError}</p><button type="button" onClick={() => void refreshSession()} className="min-h-12 rounded-lg bg-[#143D42] px-5 text-white">Reintentar</button><Link href="/panel/login">Ingresar</Link></main>;
+
+  if (accountId && !selectedStoreId && !isFounderMode) return <main className="grid min-h-screen place-items-center bg-[#F8F3E8] text-sm font-bold">Abriendo tus referidos...</main>;
 
   const isExpired = isStorePastDue(selectedStore);
   const requiredFeature = routeFeatureRequirements[pathname];

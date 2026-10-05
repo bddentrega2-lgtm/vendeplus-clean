@@ -20,6 +20,7 @@ const navItems = [
   { href: "/admin", label: "Resumen", icon: LayoutDashboard },
   { href: "/admin/comercios", label: "Comercios", icon: Building2 },
   { href: "/admin/solicitudes", label: "Solicitudes", icon: ClipboardList },
+  { href: "/admin/aliados", label: "Aliados", icon: Megaphone },
   { href: "/admin/comercios/nuevo", label: "Crear comercio", icon: PlusCircle },
   { href: "/admin/usuarios", label: "Usuarios", icon: UserRoundPlus },
   { href: "/admin/planes", label: "Planes", icon: Tags },

@@ -1,6 +1,7 @@
 param([switch]$CreateFreeProject, [switch]$ReadAuthStatus, [switch]$InitializeSchema, [switch]$HardenPermissions, [switch]$Verify, [switch]$SeedCatalog, [switch]$TestBuyerFlow,
     [ValidateSet('inspect','build','deploy','status','share','start','kitchen-test','kitchen-access','kitchen-peak')][string]$PreviewAction,
     [string]$OperatorEmail,
+    [switch]$AffiliatePreview,
     [switch]$ResetPreviewOperatorPassword,
     [switch]$ConfigurePreviewRedirects, [switch]$ReadAuthDiagnostics, [switch]$ApplyReviewObservation, [switch]$ApplyAccountDeletionRequests,
     [ValidateSet('inspect','complete')][string]$DemoOrderAction,
@@ -112,6 +113,7 @@ try {
             $child.WorkingDirectory = $workspace
             $child.UseShellExecute = $false
             $child.CreateNoWindow = $true
+            if ($AffiliatePreview) { $child.EnvironmentVariables['SOMOS_AFFILIATE_PREVIEW_FOUNDER'] = '1' }
             $child.RedirectStandardInput = $true
             $process = [Diagnostics.Process]::Start($child)
             try {
