@@ -6,8 +6,8 @@ def releaseKeyAlias = System.getenv('SOMOS_ANDROID_KEY_ALIAS')
 def releaseStorePassword = System.getenv('SOMOS_ANDROID_STORE_PASSWORD')
 def releaseKeyPassword = System.getenv('SOMOS_ANDROID_KEY_PASSWORD')
 def releaseSigningReady = [releaseKeystorePath, releaseKeyAlias, releaseStorePassword, releaseKeyPassword].every { it }
-def productionVersionCode = 15
-def productionVersionName = "1.5.1"
+def productionVersionCode = 17
+def productionVersionName = "1.5.3"
 
 android {
     namespace = "com.somosve.app"

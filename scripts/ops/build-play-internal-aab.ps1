@@ -36,8 +36,11 @@ try {
     } finally { Pop-Location }
     Push-Location $android
     try {
-        $cleanTask = if ($Incremental) { @() } else { @('clean') }
-        & .\gradlew.bat @cleanTask lintRelease testReleaseUnitTest bundleRelease assembleRelease --console=plain --no-daemon
+        if ($Incremental) {
+            & .\gradlew.bat lintRelease testReleaseUnitTest bundleRelease assembleRelease --console=plain --no-daemon
+        } else {
+            & .\gradlew.bat clean lintRelease testReleaseUnitTest bundleRelease assembleRelease --console=plain --no-daemon
+        }
         if ($LASTEXITCODE -ne 0) { throw 'Android release build failed.' }
     } finally { Pop-Location }
 
