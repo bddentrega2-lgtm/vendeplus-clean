@@ -3,6 +3,8 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { requestTimeoutSignal } from "@/lib/client/request-timeout";
 import { bindMobileAccount, clearMobilePrivateState, isNativeApp, readMobile, writeMobile } from "@/lib/mobile/state";
+import { getNativePrinter } from "@/lib/mobile/printer-plugin";
+import { nativeOrderAlerts } from "@/lib/mobile/order-alerts";
 import { clearPanelReadCache } from "@/lib/panel/client-fetch-cache";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
@@ -75,6 +77,8 @@ export function PanelAuthProvider({ children }: { children: React.ReactNode }) {
   const accountRef = useRef("");
 
   function resetContext() {
+    const printer = getNativePrinter();
+    if (printer?.setActiveStore) void printer.setActiveStore({ storeId: "" }).catch(() => undefined);
     setStores([]); setSelectedStoreId(""); setIsFounderMode(false);
     setAchievementFeatures({}); setAchievements([]); setAccountId("");
     accountRef.current = "";
@@ -112,6 +116,12 @@ export function PanelAuthProvider({ children }: { children: React.ReactNode }) {
       if (data.userId !== userId) throw new Error("La sesion cambio. Vuelve a ingresar.");
     }
     if (version !== requestVersion.current) return;
+    const printer = getNativePrinter();
+    if (printer?.setActiveStore) {
+      const active = await printer.setActiveStore({ storeId: data.isFounderMode ? "" : nextStoreId });
+      if (version !== requestVersion.current) return;
+      if (active.paired) void printer.registerPush().catch(() => undefined);
+    }
     accountRef.current = userId;
     setHasSession(true);
     setAccountId(userId);
@@ -123,12 +133,28 @@ export function PanelAuthProvider({ children }: { children: React.ReactNode }) {
     setAchievementFeatures(data.achievementFeatures || {});
     setAchievements(Array.isArray(data.achievements) ? data.achievements : []);
     setContextError("");
+    const activeStore = availableStores.find((store: PanelStoreOption) => store.id === nextStoreId);
+    const alerts = nativeOrderAlerts();
+    if (!data.isFounderMode && activeStore?.table_orders_access_enabled && activeStore.table_orders_enabled && alerts?.pushToken) {
+      void (async () => {
+        const { token } = await alerts.pushToken!();
+        if (version !== requestVersion.current) return;
+        const response = await fetch("/api/panel/push-devices", {
+          method: "POST",
+          headers: { ...await getPanelAuthHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+        if (!response.ok) throw new Error("No se pudo registrar el telefono para avisos.");
+      })().catch(() => undefined);
+    }
   }
 
   async function refreshSession() {
     setIsBootstrapping(true);
     setContextError("");
     try {
+      const printer = getNativePrinter();
+      if (printer?.setActiveStore) await printer.setActiveStore({ storeId: "" }).catch(() => undefined);
       await primePanelAuthSession();
       setHasSession(Boolean(getSavedPanelToken()));
       await loadPanelContext();
@@ -178,6 +204,8 @@ export function PanelAuthProvider({ children }: { children: React.ReactNode }) {
     }).data.subscription;
     return () => {
       requestVersion.current += 1;
+      const printer = getNativePrinter();
+      if (printer?.setActiveStore) void printer.setActiveStore({ storeId: "" }).catch(() => undefined);
       window.removeEventListener("somos:resume", resume);
       subscription?.unsubscribe();
       if (timer) clearTimeout(timer);

@@ -54,7 +54,7 @@ test("push targets only eligible store devices and invalidates rejected tokens",
   for (const request of requests) {
     assert.equal(request.url, "https://fcm.googleapis.com/v1/projects/somos-test/messages:send");
     assert.equal(request.options.headers.Authorization, "Bearer access-token");
-    assert.deepEqual(plain(request.body.message.data), { type: "print_jobs", orderId: "order-a" });
+    assert.deepEqual(plain(request.body.message.data), { type: "print_jobs", orderId: "order-a", storeId: "store-a" });
     assert.equal(request.body.message.android.priority, "high");
     assert.equal(JSON.stringify(request.body).includes("customer"), false);
   }
@@ -157,6 +157,21 @@ test("order replay cannot send another push and Android deduplicates remote orde
   assert.match(android, /getSharedPreferences\("somos_remote_orders"/);
   assert.match(android, /if \(ids\.contains\(id\)\) return/);
   assert.match(service, /"print_jobs"\.equals\(message\.getData\(\)\.get\("type"\)\)/);
+  assert.match(service, /messageStoreId\.equals\(store\.activeStoreId\(\)\)/);
+});
+
+test("one phone moves its push token between stores and can unlink only the active store", () => {
+  const pushRoute = readFileSync(new URL("../src/app/api/printing-agent/push-token/route.ts", import.meta.url), "utf8");
+  const devicesRoute = readFileSync(new URL("../src/app/api/panel/printing/devices/route.ts", import.meta.url), "utf8");
+  const manager = readFileSync(new URL("../src/components/panel/PrintingManager.tsx", import.meta.url), "utf8");
+  const android = readFileSync(new URL("../mobile/somos-android/android/app/src/main/java/com/somosve/app/SomosPrinterPlugin.java", import.meta.url), "utf8");
+  assert.match(pushRoute, /\.eq\("fcm_token", token\)\s*\.neq\("id", device\.id\)/);
+  assert.match(pushRoute, /\.eq\("id", device\.id\)\s*\.eq\("store_id", device\.store_id\)/);
+  assert.match(devicesRoute, /assertStoreManager\(auth, storeId\)/);
+  assert.match(devicesRoute, /\.eq\("id", deviceId\)\s*\.eq\("store_id", storeId\)/);
+  assert.match(manager, /status\.activeStoreId !== selectedStoreId \|\| status\.deviceId !== nativeDeviceId/);
+  assert.match(manager, /await plugin\.clearPairing\(\)/);
+  assert.match(android, /if \(secureStore\.autoPrintEnabled\(\) && secureStore\.hasToken\(\)/);
 });
 
 test("staging deployment keeps Firebase opt-in and redacts its raw credential", () => {

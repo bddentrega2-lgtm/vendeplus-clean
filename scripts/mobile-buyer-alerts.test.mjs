@@ -5,14 +5,14 @@ import { normalizeFrequentLocation } from "../src/lib/mobile/frequent-location.t
 import { loadOrderNoticeReadIds, newOrdersSince, orderNoticeReadKey, readOrderNoticeIds, rememberReadOrderNotices } from "../src/lib/mobile/order-alerts.ts";
 import { getCustomerBrowserProfile, getCustomerIdParts, saveCustomerBrowserProfile, clearCustomerBrowserProfile } from "../src/lib/customer-browser-profile.ts";
 
-test("campana consulta el estado real de pedidos nuevos, no el estado de pago", () => {
+test("campana consulta pedidos recientes sin excluir los que cambiaron de estado", () => {
   const read = path => readFileSync(new URL(path, import.meta.url), "utf8");
   const notifications = read("../src/components/panel/PanelNotifications.tsx");
-  const creation = read("../src/app/api/orders/route.ts");
-  const listing = read("../src/app/api/panel/orders/route.ts");
-  assert.match(creation, /\bstatus: "received"/);
-  assert.match(listing, /query\.eq\("status", status\)/);
-  assert.match(notifications, /new URLSearchParams\(\{ storeId: selectedStoreId, status: "received", compact: "true", limit: "10" \}\)/);
+  const listing = read("../src/app/api/panel/order-notifications/route.ts");
+  assert.match(notifications, /\/api\/panel\/order-notifications\?/);
+  assert.match(listing, /select\("id,store_id,public_code,customer_name,status,created_at"\)/);
+  assert.doesNotMatch(listing, /\.eq\("status",/);
+  assert.match(listing, /assertStoreAccess\(auth, storeId/);
 });
 
 test("ubicacion frecuente guarda solo direccion y coordenadas validas", () => {
@@ -38,6 +38,7 @@ test("avisos: no repetir conocidos, historicos, fechas invalidas u otra sede", (
   const fresh = { id: "new", store_id: "A", created_at: new Date(now + 10).toISOString() };
   const orders = [fresh, { ...fresh, id: "known" }, { ...fresh, id: "other", store_id: "B" }, { ...fresh, id: "old", created_at: new Date(now - 60000).toISOString() }, { ...fresh, id: "invalid", created_at: "invalid" }];
   assert.deepEqual(newOrdersSince(orders, new Set(["known"]), "A", now), [fresh]);
+  assert.deepEqual(newOrdersSince(orders, new Set(["known"]), "all", now).map(order => order.id), ["new", "other"]);
 });
 
 test("perfil conserva cedula en comercios que no la piden y permite borrarla explicitamente", t => {

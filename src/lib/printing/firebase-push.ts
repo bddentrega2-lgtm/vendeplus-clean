@@ -81,7 +81,7 @@ export async function sendPrintWakePush({
     const response = await fetchImpl(`https://fcm.googleapis.com/v1/projects/${encodeURIComponent(credentials.account.project_id)}/messages:send`, {
       method: "POST",
       headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ message: { token: device.fcm_token, data: { type: "print_jobs", orderId }, android: { priority: "high" } } }),
+      body: JSON.stringify({ message: { token: device.fcm_token, data: { type: "print_jobs", orderId, storeId }, android: { priority: "high" } } }),
     });
     if (response.ok) { sent += 1; continue; }
     const payload = await response.json().catch(() => ({}));
@@ -102,4 +102,65 @@ export async function sendPrintWakePush({
 export async function safeSendPrintWakePush(input: { supabase: SupabaseAdminClient; storeId: string; orderId: string; eventType?: PrintWakeEvent }) {
   try { return await sendPrintWakePush(input); }
   catch { return { configured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON), attempted: 0, sent: 0, invalidated: 0 }; }
+}
+
+export async function sendTableAssistancePush({
+  supabase, storeId, tableId, requestedAt, tableName, fetchImpl = fetch, credentials = readCredentials(),
+}: {
+  supabase: SupabaseAdminClient;
+  storeId: string;
+  tableId: string;
+  requestedAt: string;
+  tableName: string;
+  fetchImpl?: typeof fetch;
+  credentials?: ReturnType<typeof readCredentials>;
+}) {
+  if (!credentials) return { configured: false, attempted: 0, sent: 0 };
+  const cutoff = new Date(Date.now() - 45 * 24 * 60 * 60_000).toISOString();
+  const { data: devices, error: deviceError } = await supabase.from("panel_push_devices")
+    .select("fcm_token,user_id").eq("store_id", storeId).gte("updated_at", cutoff).limit(100);
+  if (deviceError) throw deviceError;
+  if (!devices?.length) return { configured: true, attempted: 0, sent: 0 };
+
+  const userIds = [...new Set(devices.map((device) => device.user_id))];
+  const { data: members, error: memberError } = await supabase.from("store_users")
+    .select("user_id").eq("store_id", storeId).in("user_id", userIds);
+  if (memberError) throw memberError;
+  const authorized = new Set((members || []).map((member) => member.user_id));
+  const targets = devices.filter((device) => authorized.has(device.user_id));
+  if (!targets.length) return { configured: true, attempted: 0, sent: 0 };
+  const accessToken = await credentials.auth.getAccessToken();
+  if (!accessToken) throw new Error("Firebase access token was unavailable.");
+
+  const results = await Promise.all(targets.map(async (device) => {
+    try {
+      const response = await fetchImpl(`https://fcm.googleapis.com/v1/projects/${encodeURIComponent(credentials.account.project_id)}/messages:send`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ message: {
+          token: device.fcm_token,
+          data: { type: "table_assistance", storeId, tableId, requestedAt, tableName: tableName.slice(0, 60) },
+          android: { priority: "high" },
+        } }),
+        signal: AbortSignal.timeout(8_000),
+      });
+      if (response.ok) return { sent: true, invalid: false, token: device.fcm_token };
+      const payload = await response.json().catch(() => ({}));
+      return { sent: false, invalid: INVALID_TOKEN_CODES.has(firebaseErrorCode(payload)), token: device.fcm_token };
+    } catch { return { sent: false, invalid: false, token: device.fcm_token }; }
+  }));
+  const invalidTokens = results.filter((result) => result.invalid).map((result) => result.token);
+  if (invalidTokens.length) {
+    const { error } = await supabase.from("panel_push_devices").delete()
+      .eq("store_id", storeId).in("fcm_token", invalidTokens);
+    if (error) throw error;
+  }
+  return { configured: true, attempted: targets.length, sent: results.filter((result) => result.sent).length };
+}
+
+export async function safeSendTableAssistancePush(input: {
+  supabase: SupabaseAdminClient; storeId: string; tableId: string; requestedAt: string; tableName: string;
+}) {
+  try { return await sendTableAssistancePush(input); }
+  catch { return { configured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON), attempted: 0, sent: 0 }; }
 }

@@ -23,8 +23,10 @@ public class SomosFirebaseMessagingService extends FirebaseMessagingService {
     @Override
     public void onMessageReceived(RemoteMessage message) {
         if (!"print_jobs".equals(message.getData().get("type"))) return;
-        SomosOrderAlertsPlugin.showRemote(this, message.getData().get("orderId"));
         PrinterSecureStore store = new PrinterSecureStore(getApplicationContext());
+        String messageStoreId = message.getData().get("storeId");
+        if (messageStoreId == null || !messageStoreId.equals(store.activeStoreId()) || !store.hasToken()) return;
+        SomosOrderAlertsPlugin.showRemote(this, message.getData().get("orderId"));
         if (store.autoPrintEnabled() && store.hasToken() && !store.printerAddress().isEmpty()) {
             PrintForegroundService.start(this);
         }
