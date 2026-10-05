@@ -84,8 +84,32 @@ public class SomosPrinterPlugin extends Plugin {
         result.put("enabled", adapter != null && adapter.isEnabled());
         result.put("permission", hasBluetoothPermission());
         result.put("paired", secureStore.hasToken());
+        result.put("activeStoreId", secureStore.activeStoreId());
+        result.put("deviceId", secureStore.deviceId());
+        result.put("legacyPairing", secureStore.hasLegacyToken());
         result.put("printerAddress", secureStore.printerAddress());
         result.put("printerName", secureStore.printerName());
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void setActiveStore(PluginCall call) {
+        String storeId = call.getString("storeId", "").trim();
+        if (!storeId.isEmpty() && !storeId.matches("^[0-9a-fA-F-]{36}$")) {
+            call.reject("Comercio invalido", "INVALID_STORE");
+            return;
+        }
+        if (!storeId.equals(secureStore.activeStoreId())) {
+            getContext().stopService(new Intent(getContext(), PrintForegroundService.class));
+            secureStore.activateStore(storeId);
+            if (secureStore.autoPrintEnabled() && secureStore.hasToken() && !secureStore.printerAddress().isEmpty()) {
+                PrintForegroundService.start(getContext());
+            }
+        }
+        JSObject result = new JSObject();
+        result.put("activeStoreId", storeId);
+        result.put("paired", secureStore.hasToken());
+        result.put("deviceId", secureStore.deviceId());
         call.resolve(result);
     }
 
@@ -160,12 +184,18 @@ public class SomosPrinterPlugin extends Plugin {
     @PluginMethod
     public void savePairingToken(PluginCall call) {
         String token = call.getString("token", "").trim();
+        String storeId = call.getString("storeId", "").trim();
+        String deviceId = call.getString("deviceId", "").trim();
         if (!token.matches("^sdp_[A-Za-z0-9_-]{40,}$")) {
             call.reject("El token del equipo no es valido.", "INVALID_TOKEN");
             return;
         }
+        if (!storeId.equals(secureStore.activeStoreId()) || storeId.isEmpty() || !deviceId.matches("^[0-9a-fA-F-]{36}$")) {
+            call.reject("La vinculacion no corresponde al comercio activo.", "STORE_MISMATCH");
+            return;
+        }
         try {
-            secureStore.saveToken(token);
+            secureStore.saveToken(storeId, deviceId, token);
             JSObject result = new JSObject();
             result.put("saved", true);
             call.resolve(result);
@@ -176,6 +206,7 @@ public class SomosPrinterPlugin extends Plugin {
 
     @PluginMethod
     public void clearPairing(PluginCall call) {
+        getContext().stopService(new Intent(getContext(), PrintForegroundService.class));
         secureStore.clearPairing();
         JSObject result = new JSObject();
         result.put("cleared", true);
@@ -246,9 +277,11 @@ public class SomosPrinterPlugin extends Plugin {
 
     static QueueResult processPendingJobs(Context context) throws Exception {
             PrinterSecureStore store = new PrinterSecureStore(context);
+            String activeStoreId = store.activeStoreId();
             String token = store.readToken();
-            if (token.isEmpty()) throw new Exception("Telefono no vinculado");
+            if (activeStoreId.isEmpty() || token.isEmpty()) throw new Exception("Telefono no vinculado");
             JSONObject response = requestJobs(context, "POST", token, null);
+            if (!activeStoreId.equals(store.activeStoreId())) return new QueueResult(0, 0);
             JSONArray jobs = response.optJSONArray("jobs");
             JSONObject settings = response.optJSONObject("settings");
             if (jobs == null || jobs.length() == 0) {
@@ -260,11 +293,15 @@ public class SomosPrinterPlugin extends Plugin {
             boolean includePrices = settings != null && settings.optBoolean("include_prices", false);
             int printed = 0;
             for (int index = 0; index < jobs.length(); index++) {
+                if (!activeStoreId.equals(store.activeStoreId())) break;
                 JSONObject job = jobs.getJSONObject(index);
                 String jobId = job.getString("id");
                 try {
                     byte[] ticket = buildOrderTicket(job.getJSONObject("order"), width, includePrices);
-                    for (int copy = 0; copy < copies; copy++) writeToPrinter(context, store.printerAddress(), ticket);
+                    for (int copy = 0; copy < copies; copy++) {
+                        if (!activeStoreId.equals(store.activeStoreId())) return new QueueResult(printed, jobs.length());
+                        writeToPrinter(context, store.printerAddress(), ticket);
+                    }
                     requestJobs(context, "PATCH", token, new JSONObject().put("jobId", jobId).put("status", "printed"));
                     printed++;
                 } catch (Exception error) {

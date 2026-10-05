@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getStoreIdByTableOrderToken } from "@/lib/server/table-order-tokens";
 import { checkDistributedRateLimit, getClientIp } from "@/lib/server/rate-limit";
+import { safeSendTableAssistancePush } from "@/lib/printing/firebase-push";
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,6 +17,9 @@ export async function POST(request: NextRequest) {
     const supabase = createSupabaseAdminClient();
     const storeId = await getStoreIdByTableOrderToken(supabase, body.token);
     if (!storeId) return NextResponse.json({ error: "QR no válido." }, { status: 404 });
+    const { data: previous, error: previousError } = await supabase.from("table_waiter_calls")
+      .select("requested_at,resolved_at").eq("store_id", storeId).eq("table_id", body.tableId).maybeSingle();
+    if (previousError) throw previousError;
     const { data, error } = await supabase.rpc("request_table_waiter", { p_store_id: storeId, p_table_id: body.tableId });
     if (error) {
       if (error.code === "P0001") return NextResponse.json({ error: error.message === "La llamada al mesero no esta disponible."
@@ -24,6 +28,14 @@ export async function POST(request: NextRequest) {
     }
     const call = Array.isArray(data) ? data[0] : data;
     if (!call?.requested_at) throw new Error("No call returned");
+    if (previous?.requested_at !== call.requested_at) {
+      after(async () => {
+        const { data: table } = await supabase.from("store_tables").select("name")
+          .eq("store_id", storeId).eq("id", body.tableId).maybeSingle();
+        await safeSendTableAssistancePush({ supabase, storeId, tableId: body.tableId,
+          requestedAt: call.requested_at, tableName: table?.name || "Mesa" });
+      });
+    }
     return NextResponse.json({ requestedAt: call.requested_at });
   } catch {
     return NextResponse.json({ error: "No se pudo pedir asistencia. Intenta nuevamente." }, { status: 500 });

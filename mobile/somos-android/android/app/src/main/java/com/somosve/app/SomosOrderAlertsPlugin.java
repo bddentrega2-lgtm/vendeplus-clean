@@ -20,6 +20,8 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
+import com.google.firebase.FirebaseApp;
+import com.google.firebase.messaging.FirebaseMessaging;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
@@ -28,6 +30,7 @@ import java.util.Set;
 })
 public class SomosOrderAlertsPlugin extends Plugin {
     private static final String CHANNEL = "somos_orders_v1";
+    private static final String ASSISTANCE_CHANNEL = "somos_assistance_v1";
     private final LinkedHashSet<String> delivered = new LinkedHashSet<>();
 
     private static void createChannel(Context context) {
@@ -40,6 +43,25 @@ public class SomosOrderAlertsPlugin extends Plugin {
     }
 
     private void createChannel() { createChannel(getContext()); }
+
+    private static void createAssistanceChannel(Context context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        NotificationChannel channel = new NotificationChannel(ASSISTANCE_CHANNEL, "Asistencia en mesas", NotificationManager.IMPORTANCE_HIGH);
+        channel.enableVibration(true);
+        channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
+            new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build());
+        context.getSystemService(NotificationManager.class).createNotificationChannel(channel);
+    }
+
+    @PluginMethod public void pushToken(PluginCall call) {
+        if (FirebaseApp.getApps(getContext()).isEmpty()) { call.reject("Avisos no configurados"); return; }
+        FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
+            if (!task.isSuccessful() || task.getResult() == null) { call.reject("No se pudo activar los avisos"); return; }
+            JSObject result = new JSObject();
+            result.put("token", task.getResult());
+            call.resolve(result);
+        });
+    }
 
     private boolean allowed() {
         if (!NotificationManagerCompat.from(getContext()).areNotificationsEnabled()) return false;
@@ -82,6 +104,15 @@ public class SomosOrderAlertsPlugin extends Plugin {
         createChannel();
         String id = call.getString("id", "");
         if (id.isEmpty() || id.length() > 300) { call.reject("Aviso invalido"); return; }
+        if ("assistance".equals(call.getString("kind", ""))) {
+            if (!NotificationManagerCompat.from(getContext()).areNotificationsEnabled()) {
+                call.reject("Notificaciones desactivadas");
+                return;
+            }
+            showRemoteAssistance(getContext(), id, call.getString("tableName", "Mesa"));
+            call.resolve();
+            return;
+        }
         if (!allowed()) { call.reject("Notificaciones desactivadas"); return; }
         if (delivered.contains(id)) { call.resolve(); return; }
         boolean test = Boolean.TRUE.equals(call.getBoolean("test", false));
@@ -134,6 +165,37 @@ public class SomosOrderAlertsPlugin extends Plugin {
             .setContentIntent(content).setAutoCancel(true).setOnlyAlertOnce(true);
         try {
             NotificationManagerCompat.from(context).notify("somos-remote-order:" + id, 32, notification.build());
+            ids.add(id);
+            while (ids.size() > 100) ids.remove(ids.iterator().next());
+            preferences.edit().putStringSet("delivered", ids).apply();
+        } catch (SecurityException ignored) {}
+    }
+
+    static synchronized void showRemoteAssistance(Context context, String id, String tableName) {
+        if (id == null || id.isEmpty() || id.length() > 300) return;
+        createAssistanceChannel(context);
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = context.getSystemService(NotificationManager.class).getNotificationChannel(ASSISTANCE_CHANNEL);
+            if (channel == null || channel.getImportance() == NotificationManager.IMPORTANCE_NONE) return;
+        }
+        SharedPreferences preferences = context.getSharedPreferences("somos_assistance_alerts", Context.MODE_PRIVATE);
+        LinkedHashSet<String> ids = new LinkedHashSet<>(preferences.getStringSet("delivered", java.util.Collections.emptySet()));
+        if (ids.contains(id)) return;
+        Intent intent = new Intent(context, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent content = PendingIntent.getActivity(context, 33, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        String safeTable = tableName == null || tableName.trim().isEmpty() ? "Revisa las mesas" : tableName.trim();
+        if (safeTable.length() > 60) safeTable = safeTable.substring(0, 60);
+        NotificationCompat.Builder notification = new NotificationCompat.Builder(context, ASSISTANCE_CHANNEL)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("Solicitud de asistencia")
+            .setContentText(safeTable)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setDefaults(NotificationCompat.DEFAULT_SOUND | NotificationCompat.DEFAULT_VIBRATE)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setContentIntent(content).setAutoCancel(true).setOnlyAlertOnce(true);
+        try {
+            NotificationManagerCompat.from(context).notify("somos-assistance:" + id, 33, notification.build());
             ids.add(id);
             while (ids.size() > 100) ids.remove(ids.iterator().next());
             preferences.edit().putStringSet("delivered", ids).apply();

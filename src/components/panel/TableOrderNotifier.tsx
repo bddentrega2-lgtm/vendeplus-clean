@@ -11,6 +11,7 @@ import { subscribeStoreOrdersRealtime } from "@/lib/panel/store-orders-realtime"
 import { TABLE_ORDERS_CHANGED_EVENT } from "@/lib/table-orders";
 import { fetchTableSnapshot } from "@/lib/panel/table-snapshot-client";
 import { hasNativeOrderAlerts } from "@/lib/mobile/order-alerts";
+import { nativeOrderAlerts } from "@/lib/mobile/order-alerts";
 
 type TableOrderSummary = {
   id: string;
@@ -83,9 +84,13 @@ export function TableOrderNotifier() {
           ].join(" · "),
         });
       } else if (newCall) {
-        void playNewOrderSound();
+        const tableName = payload.tables?.find((table: { id: string }) => table.id === newCall.table_id)?.name || "Mesa";
+        const native = nativeOrderAlerts();
+        if (native) void native.show({ id: `${selectedStoreId}:${newCall.table_id}:${newCall.requested_at}`,
+          kind: "assistance", tableName }).catch(() => void playNewOrderSound());
+        else void playNewOrderSound();
         setNotification({ id: `${newCall.table_id}:${newCall.requested_at}`, title: "Solicitud de asistencia",
-          subtitle: payload.tables?.find((table: { id: string }) => table.id === newCall.table_id)?.name || "Mesa" });
+          subtitle: tableName });
       }
     } catch {
       // El siguiente evento o sondeo vuelve a intentarlo sin interrumpir el panel.

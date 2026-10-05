@@ -10,9 +10,17 @@ export async function POST(request: NextRequest) {
     if (!/^[A-Za-z0-9_:\-]{40,4096}$/.test(token)) {
       return NextResponse.json({ error: "Token de notificacion invalido." }, { status: 400 });
     }
-    const { error } = await createSupabaseAdminClient()
+    const supabase = createSupabaseAdminClient();
+    const now = new Date().toISOString();
+    const { error: clearError } = await supabase
       .from("print_agent_devices")
-      .update({ fcm_token: token, fcm_token_updated_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .update({ fcm_token: null, fcm_token_updated_at: null, updated_at: now })
+      .eq("fcm_token", token)
+      .neq("id", device.id);
+    if (clearError) throw clearError;
+    const { error } = await supabase
+      .from("print_agent_devices")
+      .update({ fcm_token: token, fcm_token_updated_at: now, updated_at: now })
       .eq("id", device.id)
       .eq("store_id", device.store_id)
       .is("revoked_at", null);

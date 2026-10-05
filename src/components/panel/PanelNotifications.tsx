@@ -10,7 +10,12 @@ import { getPanelAuthHeaders } from "@/lib/panel/client-auth";
 import { useNativeBackLayer } from "@/hooks/use-native-app";
 import styles from "./PanelNotifications.module.css";
 
-type PendingOrder = { id: string; store_id: string; public_code: string; customer_name: string; created_at: string };
+type RecentOrder = { id: string; store_id: string; public_code: string; customer_name: string; status: string; created_at: string };
+
+const statusLabels: Record<string, string> = {
+  received: "Recibido", accepted: "Aceptado", preparing: "En preparación", ready: "Listo",
+  delivering: "En camino", completed: "Completado", cancelled: "Cancelado",
+};
 
 export function PanelNotifications() {
   const { accountId, selectedStoreId } = usePanelAuth();
@@ -24,7 +29,7 @@ export function PanelNotifications() {
   const started = useRef(0);
   const alertKey = `somos_order_alerts_${accountId}`;
   const [open, setOpen] = useState<"orders" | "news" | null>(null);
-  const [orders, setOrders] = useState<PendingOrder[]>([]);
+  const [orders, setOrders] = useState<RecentOrder[]>([]);
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const readKey = orderNoticeReadKey(accountId, selectedStoreId);
   const readIdsRef = useRef(new Set<string>());
@@ -123,13 +128,13 @@ export function PanelNotifications() {
       if (busy || document.visibilityState === "hidden") return;
       busy = true;
       try {
-        const params = new URLSearchParams({ storeId: selectedStoreId, status: "received", compact: "true", limit: "10" });
-        const response = await fetch(`/api/panel/orders?${params}`, { headers: await getPanelAuthHeaders(), cache: "no-store", signal: abort.signal });
+        const params = new URLSearchParams({ storeId: selectedStoreId });
+        const response = await fetch(`/api/panel/order-notifications?${params}`, { headers: await getPanelAuthHeaders(), cache: "no-store", signal: abort.signal });
         if (!response.ok) throw new Error("orders");
         const data = await response.json();
         if (!Array.isArray(data.orders)) throw new Error("orders");
         if (active) {
-          const current: PendingOrder[] = data.orders.filter((order: PendingOrder) => selectedStoreId === "all" || order.store_id === selectedStoreId);
+          const current: RecentOrder[] = data.orders.filter((order: RecentOrder) => selectedStoreId === "all" || order.store_id === selectedStoreId);
           if (!seenOrders.current) {
             const serverTime = Date.parse(response.headers.get("date") || "");
             started.current = Number.isFinite(serverTime) ? serverTime : Date.now();
@@ -177,8 +182,8 @@ export function PanelNotifications() {
         <Bell size={20} />
         {!error && open !== "orders" && unreadCount > 0 ? <span className={styles.badge} aria-label={`${unreadCount} pedidos sin revisar`}>{unreadCount}</span> : null}
       </button>
-      {open === "orders" ? <section id="panel-order-notifications" aria-label="Pedidos pendientes" className={styles.popover}>
-        <header className={styles.heading}><h2>Pedidos pendientes</h2><button type="button" className={styles.close} aria-label="Cerrar pedidos" onClick={close}><X size={18} /></button></header>
+      {open === "orders" ? <section id="panel-order-notifications" aria-label="Pedidos recientes" className={styles.popover}>
+        <header className={styles.heading}><h2>Pedidos recientes</h2><button type="button" className={styles.close} aria-label="Cerrar pedidos" onClick={close}><X size={18} /></button></header>
         {alertsSupported ? <div className={styles.alertSettings}>
           <label><input type="checkbox" checked={alertsEnabled} disabled={alertBusy} onChange={() => void toggleAlerts()} />Sonido y notificacion</label>
           <p>Solo con el panel abierto. Segundo plano no disponible.</p>
@@ -190,7 +195,7 @@ export function PanelNotifications() {
           }}><Volume2 size={16} />Probar</button><button type="button" title="Ajustes de notificaciones de Android" aria-label="Ajustes de notificaciones de Android" onClick={() => void nativeOrderAlerts()?.settings().catch(() => setAlertMessage("No pudimos abrir los ajustes."))}><Settings size={18} /></button></div>
           {alertMessage ? <p role="status">{alertMessage}</p> : null}
         </div> : null}
-        {loading ? <p role="status" className={styles.message}>Cargando pedidos...</p> : error ? <div role="alert" className={styles.message}>No pudimos consultar los pedidos.<button type="button" className={styles.action} onClick={() => { setLoading(true); setRetry(value => value + 1); }}><RefreshCw size={16} />Reintentar</button></div> : orders.length ? <ul>{orders.map(order => <li key={order.id} className={styles.order}><strong>{order.public_code}</strong><span>{order.customer_name || "Cliente"}</span><span>{new Date(order.created_at).toLocaleString("es-VE", { timeZone: "America/Caracas", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span></li>)}</ul> : <p className={styles.message}>No tienes pedidos pendientes.</p>}
+        {loading ? <p role="status" className={styles.message}>Cargando pedidos...</p> : error ? <div role="alert" className={styles.message}>No pudimos consultar los pedidos.<button type="button" className={styles.action} onClick={() => { setLoading(true); setRetry(value => value + 1); }}><RefreshCw size={16} />Reintentar</button></div> : orders.length ? <ul>{orders.map(order => <li key={order.id} className={styles.order}><strong>{order.public_code}</strong><span>{order.customer_name || "Cliente"}</span><span>{statusLabels[order.status] || order.status}</span><span>{new Date(order.created_at).toLocaleString("es-VE", { timeZone: "America/Caracas", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span></li>)}</ul> : <p className={styles.message}>No hay pedidos recientes.</p>}
         <Link href="/panel/pedidos" onClick={close} className={styles.action}>Ver pedidos<ArrowRight size={16} /></Link>
       </section> : null}
       <PanelAnnouncements isOpen={open === "news"} onToggle={() => setOpen("news")} onClose={close} />

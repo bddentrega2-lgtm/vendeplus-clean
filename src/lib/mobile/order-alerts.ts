@@ -1,7 +1,8 @@
 type AlertPlugin = {
   status(): Promise<{ granted: boolean }>;
   enable(): Promise<{ granted: boolean }>;
-  show(value: { id: string; test?: boolean }): Promise<void>;
+  pushToken?(): Promise<{ token: string }>;
+  show(value: { id: string; test?: boolean; kind?: "assistance"; tableName?: string }): Promise<void>;
   clear(): Promise<void>;
   settings(): Promise<void>;
 };
@@ -17,7 +18,7 @@ export function hasNativeOrderAlerts() { return nativeActive; }
 
 export type AlertOrder = { id: string; store_id: string; created_at: string };
 export function newOrdersSince(orders: AlertOrder[], known: Set<string>, storeId: string, since: number) {
-  return orders.filter(order => order.store_id === storeId && !known.has(order.id) && Number.isFinite(Date.parse(order.created_at)) && Date.parse(order.created_at) >= since);
+  return orders.filter(order => (storeId === "all" || order.store_id === storeId) && !known.has(order.id) && Number.isFinite(Date.parse(order.created_at)) && Date.parse(order.created_at) >= since);
 }
 
 const ORDER_NOTICE_READ_PREFIX = "somos_order_notice_read_v2_";

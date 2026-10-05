@@ -13,24 +13,13 @@ import {
   RotateCcw,
   Save,
   Smartphone,
+  Unlink2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getPanelAuthHeaders } from "@/lib/panel/client-auth";
 import { usePanelAuth } from "@/components/panel/PanelAuthProvider";
+import { getNativePrinter, type NativePrinter } from "@/lib/mobile/printer-plugin";
 
-type NativePrinter = { name: string; address: string; type: number };
-type NativePlugin = {
-  getStatus: () => Promise<{ supported: boolean; enabled: boolean; permission: boolean; paired: boolean; printerAddress: string; printerName: string }>;
-  requestPermissions: () => Promise<{ granted: boolean }>;
-  getPairedPrinters: () => Promise<{ printers: NativePrinter[] }>;
-  selectPrinter: (input: { address: string; name: string }) => Promise<{ saved: boolean }>;
-  savePairingToken: (input: { token: string }) => Promise<{ saved: boolean }>;
-  clearPairing: () => Promise<{ cleared: boolean }>;
-  printTest: (input: { address: string }) => Promise<{ sent: boolean }>;
-  processQueue: () => Promise<{ processed: number; claimed?: number }>;
-  setAutoPrint: (input: { enabled: boolean }) => Promise<{ enabled: boolean }>;
-  registerPush: () => Promise<{ registered: boolean }>;
-};
 
 type PrintSettings = { is_enabled: boolean; trigger_mode: string; paper_width_mm: number; copies: number; include_prices: boolean };
 type PrintDevice = {
@@ -56,12 +45,6 @@ type PrintJob = {
   updated_at: string;
 };
 type PrintSummary = { pending: number; failed: number; last_printed_at?: string | null };
-
-function nativePlugin(): NativePlugin | null {
-  if (typeof window === "undefined") return null;
-  const capacitor = (window as typeof window & { Capacitor?: { Plugins?: { SomosPrinter?: NativePlugin } } }).Capacitor;
-  return capacitor?.Plugins?.SomosPrinter || null;
-}
 
 async function responseJson(response: Response) {
   const data = await response.json().catch(() => ({}));
@@ -94,7 +77,7 @@ const eventLabels = { received: "Pedido recibido", paid: "Pago verificado", manu
 const statusLabels = { pending: "Pendiente", processing: "Imprimiendo", printed: "Impresa", failed: "Error" } as const;
 
 export function PrintingManager() {
-  const { selectedStoreId } = usePanelAuth();
+  const { selectedStoreId, selectedStore, isFounderMode } = usePanelAuth();
   const [settings, setSettings] = useState<PrintSettings>({ is_enabled: false, trigger_mode: "received", paper_width_mm: 58, copies: 1, include_prices: false });
   const [devices, setDevices] = useState<PrintDevice[]>([]);
   const [jobs, setJobs] = useState<PrintJob[]>([]);
@@ -103,6 +86,9 @@ export function PrintingManager() {
   const [selectedAddress, setSelectedAddress] = useState("");
   const [isNative, setIsNative] = useState(false);
   const [nativePaired, setNativePaired] = useState(false);
+  const [nativeDeviceId, setNativeDeviceId] = useState("");
+  const [legacyPairing, setLegacyPairing] = useState(false);
+  const [supportsStorePairing, setSupportsStorePairing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
@@ -111,20 +97,29 @@ export function PrintingManager() {
   const headers = useCallback(async (json = false) => ({ ...(await getPanelAuthHeaders()), ...(json ? { "Content-Type": "application/json" } : {}) }), []);
 
   const loadNative = useCallback(async () => {
-    const plugin = nativePlugin();
+    const plugin = getNativePrinter();
     setIsNative(Boolean(plugin));
     if (!plugin) return;
+    setSupportsStorePairing(Boolean(plugin.setActiveStore));
+    if (!plugin.setActiveStore || isFounderMode || !selectedStoreId) {
+      setNativePaired(false);
+      setNativeDeviceId("");
+      return;
+    }
+    await plugin.setActiveStore({ storeId: selectedStoreId });
     let status = await plugin.getStatus();
+    setLegacyPairing(Boolean(status.legacyPairing));
     if (!status.permission) {
       const permission = await plugin.requestPermissions();
       if (!permission.granted) throw new Error("Autoriza dispositivos cercanos para usar la impresora.");
       status = await plugin.getStatus();
     }
-    setNativePaired(status.paired);
+    setNativePaired(status.paired && status.activeStoreId === selectedStoreId);
+    setNativeDeviceId(status.deviceId || "");
     setSelectedAddress(status.printerAddress || "");
-    if (status.paired) void plugin.registerPush().catch(() => undefined);
+    if (status.paired && status.activeStoreId === selectedStoreId) void plugin.registerPush().catch(() => undefined);
     if (status.enabled) setPrinters((await plugin.getPairedPrinters()).printers || []);
-  }, []);
+  }, [isFounderMode, selectedStoreId]);
 
   const load = useCallback(async (silent = false) => {
     if (!selectedStoreId) return;
@@ -153,6 +148,7 @@ export function PrintingManager() {
   useEffect(() => { void load(); }, [load]);
 
   const selectedPrinter = useMemo(() => printers.find((printer) => printer.address === selectedAddress), [printers, selectedAddress]);
+  const pairedHere = nativePaired && devices.some((device) => device.id === nativeDeviceId);
   const printOnReceived = settings.is_enabled && ["received", "both"].includes(settings.trigger_mode);
   const printOnVerifiedPayment = settings.is_enabled && ["paid", "both"].includes(settings.trigger_mode);
 
@@ -173,31 +169,57 @@ export function PrintingManager() {
   };
 
   const pairThisPhone = async () => {
-    const plugin = nativePlugin();
-    if (!plugin) return;
+    const plugin = getNativePrinter();
+    if (!plugin?.setActiveStore || !selectedStoreId || isFounderMode) return;
     setBusy("pair"); setError(""); setNotice("");
     try {
+      if (!window.confirm(`Vincular este telefono para imprimir los pedidos de ${selectedStore?.name || "este comercio"}?`)) return;
+      await plugin.setActiveStore({ storeId: selectedStoreId });
       const codeData = await responseJson(await fetch("/api/panel/printing/devices", { method: "POST", headers: await headers(true), body: "{}" }));
       const pairData = await responseJson(await fetch("/api/printing-agent/pair", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: codeData.code, deviceName: "Somos Android", platform: "android", appVersion: "0.1.0" }),
       }));
-      await plugin.savePairingToken({ token: pairData.token });
+      if (pairData.device?.store_id !== selectedStoreId || !pairData.device?.id) throw new Error("La vinculacion no corresponde al comercio activo.");
+      await plugin.savePairingToken({ token: pairData.token, storeId: selectedStoreId, deviceId: pairData.device.id });
       void plugin.registerPush().catch(() => undefined);
+      if (settings.is_enabled && selectedAddress) void plugin.setAutoPrint({ enabled: true }).catch(() => undefined);
       setNativePaired(true);
+      setNativeDeviceId(pairData.device.id);
       setNotice("Este telefono quedo vinculado al comercio.");
       await load(true);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "No se pudo vincular el telefono."); }
     finally { setBusy(""); }
   };
 
+  const unpairThisPhone = async () => {
+    const plugin = getNativePrinter();
+    if (!plugin?.setActiveStore || !pairedHere || !selectedStoreId || !nativeDeviceId || isFounderMode) return;
+    if (!window.confirm(`Desvincular este telefono de ${selectedStore?.name || "este comercio"}? Dejara de imprimir sus comandas. Los otros comercios no cambiaran.`)) return;
+    setBusy("unpair"); setError(""); setNotice("");
+    try {
+      const status = await plugin.getStatus();
+      if (status.activeStoreId !== selectedStoreId || status.deviceId !== nativeDeviceId) throw new Error("El comercio activo cambio. Actualiza e intenta de nuevo.");
+      await responseJson(await fetch("/api/panel/printing/devices", {
+        method: "DELETE", headers: await headers(true), body: JSON.stringify({ deviceId: nativeDeviceId }),
+      }));
+      await plugin.clearPairing();
+      setNativePaired(false);
+      setNativeDeviceId("");
+      setNotice(`Este telefono ya no esta vinculado a ${selectedStore?.name || "este comercio"}.`);
+      await load(true);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "No se pudo desvincular el telefono."); }
+    finally { setBusy(""); }
+  };
+
   const choosePrinter = async (address: string) => {
     const printer = printers.find((item) => item.address === address);
-    if (!printer || !nativePlugin()) return;
+    if (!printer || !getNativePrinter()) return;
     setBusy("printer"); setError("");
     try {
-      await nativePlugin()!.selectPrinter({ address, name: printer.name });
+      await getNativePrinter()!.selectPrinter({ address, name: printer.name });
       setSelectedAddress(address);
+      if (pairedHere && settings.is_enabled) await getNativePrinter()!.setAutoPrint({ enabled: true });
       setNotice(`${printer.name} guardada en este telefono.`);
     } catch (caught) { setError(friendlyNativeError(caught, "No se pudo guardar la impresora.")); }
     finally { setBusy(""); }
@@ -213,20 +235,20 @@ export function PrintingManager() {
   };
 
   const testPrinter = async () => {
-    if (!selectedAddress || !nativePlugin()) return;
+    if (!selectedAddress || !getNativePrinter()) return;
     setBusy("test"); setError(""); setNotice("");
     try {
-      await nativePlugin()!.printTest({ address: selectedAddress });
+      await getNativePrinter()!.printTest({ address: selectedAddress });
       setNotice("Ticket enviado. Confirma que haya salido en la impresora.");
     } catch (caught) { setError(friendlyNativeError(caught, "No se pudo imprimir.")); }
     finally { setBusy(""); }
   };
 
   const processQueue = async () => {
-    if (!nativePlugin()) return;
+    if (!getNativePrinter() || !pairedHere) return;
     setBusy("queue"); setError(""); setNotice("");
     try {
-      const result = await nativePlugin()!.processQueue();
+      const result = await getNativePrinter()!.processQueue();
       setNotice(result.processed > 0 ? `${result.processed} comanda(s) impresa(s).` : "No hay comandas pendientes.");
       await load(true);
     } catch (caught) { setError(friendlyNativeError(caught, "No se pudo consultar la cola.")); }
@@ -256,7 +278,7 @@ export function PrintingManager() {
         body: JSON.stringify({ isEnabled: settings.is_enabled, triggerMode: settings.trigger_mode, paperWidthMm: settings.paper_width_mm, copies: settings.copies, includePrices: settings.include_prices }),
       }));
       setSettings(data.settings);
-      if (nativePlugin()) await nativePlugin()!.setAutoPrint({ enabled: data.settings.is_enabled === true });
+      if (getNativePrinter() && pairedHere) await getNativePrinter()!.setAutoPrint({ enabled: data.settings.is_enabled === true });
       setNotice("Configuracion de impresion guardada.");
     } catch (caught) { setError(caught instanceof Error ? caught.message : "No se pudo guardar."); }
     finally { setBusy(""); }
@@ -284,10 +306,10 @@ export function PrintingManager() {
 
       <section className="border-y border-[#25262B]/10 bg-white px-4 py-5 sm:rounded-lg sm:border">
         <div className="flex items-start gap-3"><Smartphone className="mt-0.5 text-[#0F5A5E]" /><div><h2 className="text-lg font-black">App Somos</h2><p className="text-sm font-semibold text-[#746f69]">Vincula el telefono que permanecera junto a la impresora.</p></div></div>
-        {!isNative ? <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm font-bold text-amber-900">Abre esta pantalla desde la app Android de Somos.</p> : (
-          <button onClick={pairThisPhone} disabled={busy !== "" || nativePaired} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#0F5A5E] px-4 text-sm font-black text-white disabled:opacity-50">
-            {nativePaired ? <Check size={18} /> : busy === "pair" ? <Loader2 size={18} className="animate-spin" /> : <Link2 size={18} />}{nativePaired ? "Telefono vinculado" : "Vincular este telefono"}
-          </button>
+        {!isNative ? <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm font-bold text-amber-900">Abre esta pantalla desde la app Android de Somos.</p> : isFounderMode ? <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm font-bold text-amber-900">La impresion automatica esta pausada en admin.</p> : !supportsStorePairing ? <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm font-bold text-amber-900">Actualiza la app para vincular la impresion por comercio.</p> : (
+          <><div className="mt-4 flex flex-wrap gap-2"><button onClick={pairThisPhone} disabled={busy !== "" || pairedHere} className="inline-flex min-h-11 min-w-0 items-center gap-2 rounded-lg bg-[#0F5A5E] px-4 text-left text-sm font-black text-white disabled:opacity-50">
+            {pairedHere ? <Check size={18} className="shrink-0" /> : busy === "pair" ? <Loader2 size={18} className="shrink-0 animate-spin" /> : <Link2 size={18} className="shrink-0" />}{pairedHere ? `Telefono vinculado a ${selectedStore?.name || "este comercio"}` : `Vincular este telefono a ${selectedStore?.name || "este comercio"}`}
+          </button>{pairedHere ? <button onClick={unpairThisPhone} disabled={busy !== ""} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-red-200 px-4 text-sm font-bold text-red-700 disabled:opacity-50"><Unlink2 size={18} />Desvincular</button> : null}</div>{legacyPairing && !pairedHere ? <p className="mt-2 text-xs font-semibold text-amber-800">Confirma esta vinculacion para evitar imprimir pedidos de otro comercio.</p> : null}</>
         )}
         {devices.length ? <div className="mt-4 divide-y divide-[#25262B]/10 border-t border-[#25262B]/10">{devices.map((device) => {
           const state = deviceState(device.last_seen_at);
@@ -334,7 +356,7 @@ export function PrintingManager() {
         <label className="mt-4 flex items-center gap-3 text-sm font-bold"><input type="checkbox" checked={printOnVerifiedPayment} onChange={(event) => updatePrintTrigger("paid", event.target.checked)} className="h-5 w-5 accent-[#0F5A5E]" />Imprimir al verificar el pago</label>
         <div className="mt-5 flex flex-wrap gap-2">
           <button onClick={saveSettings} disabled={busy !== ""} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#0F5A5E] px-5 text-sm font-black text-white disabled:opacity-50">{busy === "save" ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}Guardar</button>
-          {isNative && nativePaired ? <button onClick={processQueue} disabled={busy !== "" || !selectedAddress} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[#0F5A5E] px-4 text-sm font-black text-[#0F5A5E] disabled:opacity-50">{busy === "queue" ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />}Imprimir pendientes</button> : null}
+          {isNative && pairedHere ? <button onClick={processQueue} disabled={busy !== "" || !selectedAddress} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[#0F5A5E] px-4 text-sm font-black text-[#0F5A5E] disabled:opacity-50">{busy === "queue" ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />}Imprimir pendientes</button> : null}
         </div>
       </section>
     </div>

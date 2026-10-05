@@ -19,25 +19,30 @@ final class PrinterSecureStore {
     private static final String PREFS = "somos_printer";
     private static final String TOKEN = "device_token";
     private static final String TOKEN_IV = "device_token_iv";
+    private static final String ACTIVE_STORE = "active_store_id";
     private final SharedPreferences preferences;
 
     PrinterSecureStore(Context context) {
         preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 
-    void saveToken(String token) throws Exception {
+    void saveToken(String storeId, String deviceId, String token) throws Exception {
+        if (!storeId.equals(activeStoreId()) || storeId.isEmpty()) throw new IllegalStateException("Comercio no activo");
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey());
         byte[] encrypted = cipher.doFinal(token.getBytes(StandardCharsets.UTF_8));
         preferences.edit()
-            .putString(TOKEN, Base64.encodeToString(encrypted, Base64.NO_WRAP))
-            .putString(TOKEN_IV, Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP))
+            .putString(scoped(TOKEN, storeId), Base64.encodeToString(encrypted, Base64.NO_WRAP))
+            .putString(scoped(TOKEN_IV, storeId), Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP))
+            .putString(scoped("device_id", storeId), deviceId)
             .apply();
     }
 
     String readToken() throws Exception {
-        String encrypted = preferences.getString(TOKEN, "");
-        String iv = preferences.getString(TOKEN_IV, "");
+        String storeId = activeStoreId();
+        if (storeId.isEmpty()) return "";
+        String encrypted = preferences.getString(scoped(TOKEN, storeId), "");
+        String iv = preferences.getString(scoped(TOKEN_IV, storeId), "");
         if (encrypted.isEmpty() || iv.isEmpty()) return "";
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), new GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)));
@@ -50,16 +55,35 @@ final class PrinterSecureStore {
 
     String printerAddress() { return preferences.getString("printer_address", ""); }
     String printerName() { return preferences.getString("printer_name", ""); }
-    void setAutoPrintEnabled(boolean enabled) { preferences.edit().putBoolean("auto_print", enabled).apply(); }
-    boolean autoPrintEnabled() { return preferences.getBoolean("auto_print", false); }
+    void activateStore(String storeId) { preferences.edit().putString(ACTIVE_STORE, storeId).commit(); }
+    String activeStoreId() { return preferences.getString(ACTIVE_STORE, ""); }
+    String deviceId() {
+        String storeId = activeStoreId();
+        return storeId.isEmpty() ? "" : preferences.getString(scoped("device_id", storeId), "");
+    }
+    boolean hasLegacyToken() { return preferences.contains(TOKEN) && preferences.contains(TOKEN_IV); }
+    void setAutoPrintEnabled(boolean enabled) {
+        String storeId = activeStoreId();
+        if (!storeId.isEmpty()) preferences.edit().putBoolean(scoped("auto_print", storeId), enabled).apply();
+    }
+    boolean autoPrintEnabled() {
+        String storeId = activeStoreId();
+        return !storeId.isEmpty() && preferences.getBoolean(scoped("auto_print", storeId), false);
+    }
 
     void clearPairing() {
-        preferences.edit().remove(TOKEN).remove(TOKEN_IV).apply();
+        String storeId = activeStoreId();
+        if (!storeId.isEmpty()) preferences.edit()
+            .remove(scoped(TOKEN, storeId)).remove(scoped(TOKEN_IV, storeId))
+            .remove(scoped("device_id", storeId)).remove(scoped("auto_print", storeId)).apply();
     }
 
     boolean hasToken() {
-        return preferences.contains(TOKEN) && preferences.contains(TOKEN_IV);
+        String storeId = activeStoreId();
+        return !storeId.isEmpty() && preferences.contains(scoped(TOKEN, storeId)) && preferences.contains(scoped(TOKEN_IV, storeId));
     }
+
+    private String scoped(String key, String storeId) { return key + "_" + storeId; }
 
     private SecretKey getOrCreateKey() throws Exception {
         KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
