@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { Camera, CheckCircle2, Circle, Copy, Home, MessageCircle, UtensilsCrossed } from "lucide-react";
+import { CheckCircle2, Circle, Copy, Home, MessageCircle, ReceiptText, UtensilsCrossed } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { SavedOrder, Store } from "@/types";
 import { formatBaseCurrency, formatBs } from "@/lib/currency";
 import { buildPaymentInfo } from "@/lib/payment-display";
 import { getOrderKey } from "@/components/public/CheckoutForm";
 import { getTablePaymentInstructions, isInPersonTablePaymentMethod } from "@/lib/table-orders";
-import { paymentStatusLabels, type PaymentStatus } from "@/lib/payments";
+import { isCashPaymentMethod, paymentStatusLabels, type PaymentStatus } from "@/lib/payments";
 import { WaiterCallButton } from "@/components/public/WaiterCallButton";
 import { getTableOrderContext } from "@/lib/table-orders";
 import { isNativeApp } from "@/lib/mobile/state";
@@ -24,6 +24,12 @@ export function ConfirmationClient({ store }: { store: Store }) {
   const [tablePaymentStatus, setTablePaymentStatus] = useState("pending");
   const showPricesInBs = store.showPricesInBs !== false;
   const baseCurrency = store.baseCurrency || "USD";
+  const isCashPayment = isCashPaymentMethod(order?.form.paymentMethod);
+  const cashPaymentInstructions = order?.form.deliveryType === "pickup"
+    ? "Paga en efectivo al retirar tu pedido."
+    : order?.form.deliveryType === "delivery"
+      ? "Paga en efectivo al recibir tu pedido."
+      : "Coordina el pago en efectivo con el comercio.";
 
   useEffect(() => {
     try {
@@ -100,10 +106,11 @@ export function ConfirmationClient({ store }: { store: Store }) {
   async function copyPaymentData() {
     if (!paymentInfo) return;
     setPaymentCopyError("");
-    setPaymentCopyPreview(paymentInfo.copyText);
+    const text = paymentInfo.quickCopyText || paymentInfo.copyText;
+    setPaymentCopyPreview(text);
 
     try {
-      await navigator.clipboard.writeText(paymentInfo.copyText);
+      await navigator.clipboard.writeText(text);
       setPaymentCopied(true);
       window.setTimeout(() => setPaymentCopied(false), 1800);
     } catch {
@@ -171,12 +178,12 @@ export function ConfirmationClient({ store }: { store: Store }) {
                     );
                   })}
                 </div>
-                <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-amber-900 ring-1 ring-amber-200">
-                  <Camera className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
+                {order.tableOrder.fulfillmentMode === "counter_pickup" && !["completed", "cancelled"].includes(tableStatus) ? <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-amber-900 ring-1 ring-amber-200">
+                  <ReceiptText className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
                   <p className="text-xs font-black leading-relaxed">
-                    Haz una captura de esta pantalla para confirmar tu pedido cuando esté listo.
+                    Muestra este pedido al personal cuando lo retires en la barra.
                   </p>
-                </div>
+                </div> : null}
                 {tableStatus === "cancelled" ? (
                   <p className="mt-3 rounded-xl bg-red-50 p-2 text-center text-xs font-black text-red-700">
                     El pedido fue cancelado. Consulta al personal.
@@ -190,7 +197,7 @@ export function ConfirmationClient({ store }: { store: Store }) {
                       : `Tu pedido está listo. Te lo llevaremos a ${order.tableOrder.tableName}.`}
                   </p>
                 ) : null}
-                <p className="mt-3 text-sm font-bold">Pago: {paymentStatusLabels[tablePaymentStatus as PaymentStatus] || "Pendiente"}</p>
+                <p className="mt-3 text-sm font-bold">{paymentStatusLabels[tablePaymentStatus as PaymentStatus] || "Pago pendiente"}</p>
                 {!["completed", "cancelled"].includes(tableStatus) && tablePaymentStatus !== "verified" && isInPersonTablePaymentMethod(order.form.paymentMethod)
                   ? <p className="mt-2 text-sm font-bold">{getTablePaymentInstructions(order.form.paymentMethod, order.tableOrder.fulfillmentMode)}</p> : null}
                 {tableStatus !== "cancelled" ? <WaiterCallButton context={order.tableOrder} /> : null}
@@ -200,7 +207,9 @@ export function ConfirmationClient({ store }: { store: Store }) {
             <div className="mt-5 space-y-3">
               {order.form.deliveryType !== "table" ? (
                 <div className="rounded-2xl bg-green-50 p-3 text-sm font-black leading-relaxed text-green-700">
-                  Siguiente paso: revisa los datos de pago y envia la referencia o captura por WhatsApp si ya pagaste.
+                  {isCashPayment
+                    ? cashPaymentInstructions
+                    : "Siguiente paso: revisa los datos de pago y envía la referencia o captura por WhatsApp si ya pagaste."}
                 </div>
               ) : null}
               <div className="flex justify-between gap-4 rounded-2xl bg-[#FFF8F0] p-3 text-sm">
@@ -264,7 +273,7 @@ export function ConfirmationClient({ store }: { store: Store }) {
             {paymentInfo && order.form.deliveryType !== "table" ? (
               <div className="mt-5 rounded-[26px] bg-[#2E3A79] p-4 text-white">
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-[#FFB547]">
-                  Datos para realizar el pago
+                  {isCashPayment ? "Pago en efectivo" : "Datos para realizar el pago"}
                 </p>
                 <h3 className="mt-1 text-xl font-black">{paymentInfo.title}</h3>
 
@@ -302,7 +311,7 @@ export function ConfirmationClient({ store }: { store: Store }) {
                 </div>
 
                 <p className="mt-3 text-sm font-semibold leading-relaxed text-white/75">
-                  {paymentInfo.help}
+                  {isCashPayment ? cashPaymentInstructions : paymentInfo.help}
                 </p>
 
                 {!paymentInfo.hasConfiguredData ? (
@@ -311,14 +320,14 @@ export function ConfirmationClient({ store }: { store: Store }) {
                   </p>
                 ) : null}
 
-                <button
+                {!isCashPayment ? <button
                   type="button"
                   onClick={copyPaymentData}
                   className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
                 >
                   <Copy size={18} />
-                  {paymentCopied ? "Datos copiados" : "Copiar datos de pago"}
-                </button>
+                  {paymentCopied ? "Datos copiados" : paymentInfo.quickCopyText ? "Copiar todos" : "Copiar datos de pago"}
+                </button> : null}
 
                 {paymentCopyError ? (
                   <p className="mt-3 rounded-2xl bg-white/10 p-3 text-xs font-black text-white">
@@ -348,7 +357,7 @@ export function ConfirmationClient({ store }: { store: Store }) {
                     rel="noopener noreferrer"
                     className="vp-button-mango w-full"
                   >
-                    <MessageCircle size={18} /> Enviar comprobante por WhatsApp
+                    <MessageCircle size={18} /> {isCashPayment ? "Contactar al comercio por WhatsApp" : "Enviar comprobante por WhatsApp"}
                   </a>
                   <button type="button" onClick={copyMessage} className="vp-button-soft w-full">
                     <Copy size={18} /> {copied ? "Copiado" : "Copiar pedido"}

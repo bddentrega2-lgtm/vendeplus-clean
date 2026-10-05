@@ -14,6 +14,7 @@ export type PaymentDisplayInfo = {
   lines: PaymentDisplayLine[];
   help: string;
   copyText: string;
+  quickCopyText: string;
   hasConfiguredData: boolean;
 };
 
@@ -60,8 +61,6 @@ export function buildPaymentInfo({
   const method = paymentMethod || "Pago";
   const key = getPaymentDetailsKey(method);
   const details = (store.paymentDetails || {}) as Record<string, any>;
-  const exchangeRate =
-    store.usdToBs || totals.totalBs / Math.max(totals.totalUsd, 1);
   const baseCurrency = store.baseCurrency || "USD";
   const lines: PaymentDisplayLine[] = [];
   let help = "Después de pagar, envía la referencia o captura al comercio por WhatsApp.";
@@ -73,7 +72,6 @@ export function buildPaymentInfo({
     addLine(lines, "Cedula/RIF", firstValue(data, ["idNumber", "cedula", "cédula", "rif", "document", "documento"]), true);
     addLine(lines, "Titular", firstValue(data, ["holder", "titular", "name", "nombre"]), true);
     addLine(lines, "Monto", formatBs(totals.totalBs), true);
-    addLine(lines, "Tasa usada", formatBs(exchangeRate));
   } else if (key === "transferencia") {
     const data = details.transferencia || {};
     addLine(lines, "Banco", firstValue(data, ["bank", "banco"]));
@@ -81,7 +79,6 @@ export function buildPaymentInfo({
     addLine(lines, "Cedula/RIF", firstValue(data, ["idNumber", "cedula", "cédula", "rif", "document", "documento"]), true);
     addLine(lines, "Titular", firstValue(data, ["holder", "titular", "name", "nombre"]));
     addLine(lines, "Monto", formatBs(totals.totalBs), true);
-    addLine(lines, "Tasa usada", formatBs(exchangeRate));
   } else if (key === "zelle") {
     const data = details.zelle || {};
     addLine(lines, "Correo", firstValue(data, ["contact", "email", "correo", "phone", "telefono"]), true);
@@ -100,19 +97,25 @@ export function buildPaymentInfo({
     help = "Pago en efectivo al retirar o recibir.";
   }
 
-  addLine(lines, "Referencia", paymentReference);
+  if (key !== "efectivo") addLine(lines, "Referencia", paymentReference);
 
   const hasConfiguredData =
-    key === "efectivo"
-      ? Boolean(details.efectivo?.note || customerPaymentNote)
-      : lines.some((line) => !["Monto", "Tasa usada", "Total", "Referencia"].includes(line.label));
+    key === "efectivo" ||
+    lines.some((line) => !["Monto", "Total", "Referencia"].includes(line.label));
+
+  const quickCopyLines = ["Banco", "Cedula/RIF", "Telefono", "Monto"].map(
+    (label) => lines.find((line) => line.label === label)
+  );
+  const quickCopyText = key === "pagoMovil" && quickCopyLines.every(Boolean)
+    ? quickCopyLines.map((line) => `${line!.label}: ${line!.value}`).join("\n")
+    : "";
 
   const copyLines = [
     method,
     ...lines.map((line) => `${line.label}: ${line.value}`),
     orderId ? "" : null,
     orderId ? `Pedido: ${orderId}` : null,
-    hasConfiguredData
+    key === "efectivo" ? help : hasConfiguredData
       ? "Por favor envía la referencia o captura por WhatsApp."
       : "El comercio confirmará los datos de pago por WhatsApp.",
   ];
@@ -123,6 +126,7 @@ export function buildPaymentInfo({
     lines,
     help: hasConfiguredData ? help : "El comercio te confirmará los datos de pago por WhatsApp.",
     copyText: copyLines.filter(Boolean).join("\n"),
+    quickCopyText,
     hasConfiguredData,
   };
 }

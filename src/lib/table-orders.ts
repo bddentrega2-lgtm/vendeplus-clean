@@ -26,10 +26,14 @@ export function normalizeTableAssistanceLabel(value: unknown): string | null {
 }
 
 export function getTablePaymentInstructions(method: string, fulfillmentMode?: string) {
-  if (fulfillmentMode === "table_service" && /punto/i.test(method)) {
-    return "El personal llevará el punto de venta a tu mesa. Confirmaremos el pago antes de preparar tu pedido.";
+  if (fulfillmentMode === "table_service") {
+    return /punto/i.test(method)
+      ? "El personal llevará el punto de venta a tu mesa para realizar el pago."
+      : "El personal recibirá el pago en efectivo en tu mesa.";
   }
-  return "Paga en caja antes de la preparación. El personal confirmará tu pago.";
+  return /punto/i.test(method)
+    ? "Paga con punto de venta en caja. El personal confirmará tu pago."
+    : "Paga en efectivo en caja. El personal confirmará tu pago.";
 }
 
 export function isPrepaidTablePaymentMethod(method?: string | null) {

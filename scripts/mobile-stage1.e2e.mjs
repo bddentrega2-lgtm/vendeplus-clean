@@ -118,7 +118,7 @@ try {
     await button.waitFor();
     const payment = page.locator("select").filter({ has: page.locator('option[value="Efectivo"]') });
     await payment.selectOption("Efectivo");
-    await page.getByText(/Paga en caja antes de la/).waitFor();
+    await page.getByText(/El personal recibirá el pago en efectivo en tu mesa/).waitFor();
     assert.equal(await button.isEnabled(), true, "Comercio de pruebas debe estar abierto");
     await button.evaluate((element) => element.scrollIntoView({ block: "center" }));
     await button.evaluate((element) => { element.click(); element.click(); });

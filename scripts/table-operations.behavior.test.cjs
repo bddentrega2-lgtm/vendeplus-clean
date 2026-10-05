@@ -18,12 +18,39 @@ function load(file, mocks = {}, globals = {}) {
   return module.exports;
 }
 const helpers = load('src/lib/table-orders.ts');
-test('punto en mesa se lleva al cliente; barra y efectivo conservan pago en caja', () => {
+const payments = load('src/lib/payments.ts');
+const paymentDisplay = load('src/lib/payment-display.ts', {
+  '@/lib/payments': payments,
+  '@/lib/currency': load('src/lib/currency.ts'),
+});
+
+test('copiar todos contiene los cuatro datos de pago movil y el total exacto en bolivares', () => {
+  const input = {
+    store: { paymentDetails: { pagoMovil: { bank: '0102 Banco de prueba', idNumber: 'V-12345678', phone: '04121234567', holder: 'Titular QA' } } },
+    paymentMethod: 'Pago móvil', totals: { totalUsd: 12.5, totalBs: 1234.56 }, orderId: 'QA-123', paymentReference: '998877',
+  };
+  const info = paymentDisplay.buildPaymentInfo(input);
+  assert.equal(info.quickCopyText, 'Banco: 0102 Banco de prueba\nCedula/RIF: V-12345678\nTelefono: 04121234567\nMonto: Bs. 1.234,56');
+  assert.doesNotMatch(info.quickCopyText, /Titular|Referencia|Pedido|Tasa/);
+  assert.equal(info.lines.some(line => line.label === 'Tasa usada'), false);
+  input.store.paymentDetails.pagoMovil.phone = '';
+  assert.equal(paymentDisplay.buildPaymentInfo(input).quickCopyText, '', 'no inventa datos bancarios faltantes');
+});
+
+test('efectivo no solicita referencia, captura ni datos bancarios faltantes', () => {
+  const info = paymentDisplay.buildPaymentInfo({ store: {}, paymentMethod: 'Efectivo', totals: { totalUsd: 12.5, totalBs: 1234.56 }, paymentReference: 'dato anterior' });
+  assert.equal(info.hasConfiguredData, true);
+  assert.equal(info.quickCopyText, '');
+  assert.doesNotMatch(info.copyText, /captura|referencia|dato anterior/i);
+  assert.match(info.help, /efectivo/);
+});
+test('efectivo y punto se cobran en mesa; barra indica pago en caja sin bloquear preparacion', () => {
   assert.match(helpers.getTablePaymentInstructions('Punto de venta', 'table_service'), /llevará el punto de venta a tu mesa/);
   assert.doesNotMatch(helpers.getTablePaymentInstructions('Punto de venta', 'table_service'), /Paga en caja/);
-  assert.match(helpers.getTablePaymentInstructions('Punto de venta', 'counter_pickup'), /Paga en caja/);
-  assert.match(helpers.getTablePaymentInstructions('Efectivo', 'table_service'), /Paga en caja/);
-  assert.match(helpers.getTablePaymentInstructions('Punto de venta', 'table_service'), /antes de preparar/);
+  assert.match(helpers.getTablePaymentInstructions('Punto de venta', 'counter_pickup'), /punto de venta en caja/);
+  assert.match(helpers.getTablePaymentInstructions('Efectivo', 'table_service'), /efectivo en tu mesa/);
+  assert.match(helpers.getTablePaymentInstructions('Efectivo', 'counter_pickup'), /efectivo en caja/);
+  assert.doesNotMatch(helpers.getTablePaymentInstructions('Efectivo', 'table_service'), /caja|antes de preparar/);
 });
 test('texto de asistencia personalizado tiene limite y valida tipos', () => {
   assert.equal(helpers.TABLE_ASSISTANCE_LABELS[0], 'Pedir asistencia');
@@ -55,11 +82,15 @@ test('motivo cerrado y detalle libre validado', () => {
 async function waiterScenario({ allowed = true, storeId = 'store-a', rpcError = null, body = { token: '00000000-0000-4000-8000-000000000002', tableId: '00000000-0000-4000-8000-000000000001', storeId: 'attacker-store' } } = {}) {
   const calls = [];
   const route = load('src/app/api/table-orders/waiter/route.ts', {
-    '@/lib/supabase/admin': { createSupabaseAdminClient: () => ({ rpc: async (name, args) => {
+    '@/lib/supabase/admin': { createSupabaseAdminClient: () => ({ from: () => {
+      const q = { select: () => q, eq: () => q, maybeSingle: async () => ({ data: null, error: null }) };
+      return q;
+    }, rpc: async (name, args) => {
       calls.push([name, args]); return { data: { requested_at: '2026-09-22T12:00:00Z' }, error: rpcError };
     } }) },
     '@/lib/server/table-order-tokens': { getStoreIdByTableOrderToken: async () => storeId },
     '@/lib/server/rate-limit': { getClientIp: () => '127.0.0.1', checkDistributedRateLimit: async () => ({ allowed }) },
+    '@/lib/printing/firebase-push': { safeSendTableAssistancePush: async () => {} },
   });
   const response = await route.POST(new Request('http://localhost/api/table-orders/waiter', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -88,7 +119,8 @@ test('errores operativos visibles, errores internos ocultos', async () => {
 test('efectivo de mesa queda pendiente y no exige comprobante; telefono sigue obligatorio', () => {
   const source = fs.readFileSync(path.join(root, 'src/app/api/orders/route.ts'), 'utf8');
   assert.match(source, /requestedDeliveryType === "table" \? "pending" : getInitialPaymentStatus/);
-  assert.match(source, /!inPersonTablePayment && \["reference", "image"\]/);
+  assert.match(source, /acceptsPaymentProof && \["reference", "image"\]/);
+  assert.match(source, /const acceptsPaymentProof = !isCashPaymentMethod\(order.form.paymentMethod\) && !inPersonTablePayment/);
   assert.match(source, /customerPhone/);
   assert.match(source, /tablePaymentMethods.includes\(paymentMethod\)/);
 });
@@ -365,16 +397,24 @@ test('rafaga de diez eventos conserva un refresco final sin diez consultas paral
   assert.equal(events.length,2,'unmounted component never broadcasts stale data');
 });
 
-test('pedido de mesa omite delivery, mientras retiro conserva consultas y validacion', async () => {
+test('servidor exime efectivo de comprobante, exige prueba digital y conserva validacion de retiro', async () => {
   const delivery=load('src/lib/delivery.ts');
-  for(const mode of ['table','pickup']){
+  const scenarios = [
+    { mode: 'pickup', paymentMethod: 'Efectivo', proofMode: 'image', pickupEnabled: false, expected: 400 },
+    ...['table', 'pickup'].flatMap(mode => ['image', 'reference'].flatMap(proofMode => [
+      { mode, paymentMethod: 'Efectivo', proofMode, pickupEnabled: true, expected: 200 },
+      { mode, paymentMethod: 'Pago movil', proofMode, pickupEnabled: true, expected: 400 },
+    ])),
+    { mode: 'pickup', paymentMethod: 'Pago movil', proofMode: 'reference', pickupEnabled: true, reference: '123456', expected: 200 },
+  ];
+  for(const { mode, paymentMethod, proofMode, pickupEnabled, reference = '', expected } of scenarios){
     const reads=[];let agencyReads=0,persisted=null;
-    const store={id:'store-a',name:'QA',is_active:true,usd_to_bs:100,accepts_delivery:false,accepts_pickup:true,table_orders_access_enabled:true,table_orders_enabled:true,payment_methods:['Efectivo'],table_payment_methods:['Efectivo']};
-    const db={from(table){reads.push(table);const result={data:table==='stores'?store:table==='store_tables'?{id:'table-a',name:'Mesa 1'}:table==='products'?[{id:'product-a',store_id:'store-a',name:'QA',price_usd:3,is_available:true}]:table==='store_delivery_settings'?{delivery_enabled:true,pickup_enabled:false}:[],error:null};const q={select(){return q},eq(){return q},in(){return q},order(){return q},single:async()=>result,maybeSingle:async()=>result,then:resolve=>Promise.resolve(result).then(resolve)};return q;}};
+    const store={id:'store-a',name:'QA',is_active:true,usd_to_bs:100,accepts_delivery:false,accepts_pickup:true,table_orders_access_enabled:true,table_orders_enabled:true,payment_methods:['Efectivo','Pago movil'],table_payment_methods:['Efectivo','Pago movil'],payment_proof_mode:proofMode,payment_proof_required:true};
+    const db={from(table){reads.push(table);const result={data:table==='stores'?store:table==='store_tables'?{id:'table-a',name:'Mesa 1'}:table==='products'?[{id:'product-a',store_id:'store-a',name:'QA',price_usd:3,is_available:true}]:table==='store_delivery_settings'?{delivery_enabled:true,pickup_enabled:pickupEnabled}:[],error:null};const q={select(){return q},eq(){return q},in(){return q},order(){return q},single:async()=>result,maybeSingle:async()=>result,then:resolve=>Promise.resolve(result).then(resolve)};return q;}};
     const route=load('src/app/api/orders/route.ts',{
       crypto:require('node:crypto'),
       '@/lib/plans':{getStoreServiceFeeUsd:()=>0.1},
-      '@/lib/payments':{getInitialPaymentStatus:()=> 'pending',getSuggestedPaymentCurrency:()=> 'USD',isCashPaymentMethod:()=>true},
+      '@/lib/payments':payments,
       '@/lib/whatsapp':{buildOrderMessage:()=>'',buildWhatsAppUrl:()=>''},
       '@/lib/supabase/admin':{createSupabaseAdminClient:()=>db},
       '@/lib/supabase/catalog':{isStoreSubscriptionPastDue:()=>false},
@@ -393,11 +433,18 @@ test('pedido de mesa omite delivery, mientras retiro conserva consultas y valida
       '@/lib/buyer/auth-server':{getVerifiedBuyer:async()=>null},
       '@/lib/printing/firebase-push':{safeSendPrintWakePush:async()=>({sent:0})},
     });
-    const r=await route.POST(new Request('http://localhost/api/orders',{method:'POST',body:JSON.stringify({storeId:'store-a',idempotencyKey:'00000000-0000-4000-8000-000000000001',order:{items:[{productId:'product-a',quantity:1,unitPriceUsd:0}],form:{customerName:'QA',customerPhone:'12025550100',paymentMethod:'Efectivo',deliveryType:mode},quote:{},tableOrder:{storeToken:'qr',tableId:'table-a'}}})}));
-    assert.equal(r.status,mode==='table'?200:400);
+    const cash = payments.isCashPaymentMethod(paymentMethod);
+    const r=await route.POST(new Request('http://localhost/api/orders',{method:'POST',body:JSON.stringify({storeId:'store-a',idempotencyKey:'00000000-0000-4000-8000-000000000001',order:{items:[{productId:'product-a',quantity:1,unitPriceUsd:0}],form:{customerName:'QA',customerPhone:'12025550100',paymentMethod,deliveryType:mode,paymentReference:cash?'stale':reference,paymentReceiptToken:cash?'stale-token':''},quote:{},tableOrder:{storeToken:'qr',tableId:'table-a'}}})}));
+    const body = await r.json();
+    assert.equal(r.status,expected,JSON.stringify({ mode, paymentMethod, proofMode, body }));
     assert.equal(agencyReads,mode==='table'?0:1);
     for(const table of ['store_delivery_settings','store_delivery_zones','store_delivery_distance_rates'])assert.equal(reads.includes(table),mode!=='table');
-    if(mode==='table'){assert.equal(persisted.total_usd,3);assert.equal(persisted.delivery_usd,0);assert.equal(persisted.payment_status,'pending');assert.equal(persisted.store_table_id,'table-a');}
-    else assert.equal(persisted,null,'disabled pickup cannot create order');
+    if(expected===200){
+      assert.equal(persisted.total_usd,3);assert.equal(persisted.delivery_usd,0);
+      assert.equal(persisted.payment_status, cash ? (mode==='table'?'pending':'cash_on_delivery') : 'review');
+      if(mode==='table')assert.equal(persisted.store_table_id,'table-a');
+      if(cash){assert.equal(persisted.payment_reference,null);assert.equal(body.order.form.paymentReceiptToken,'');assert.equal(body.order.form.paymentReference,'');}
+    } else assert.equal(persisted,null,'no guarda pedido sin requisito digital o con retiro deshabilitado');
+    assert.equal(reads.includes('order_payment_receipts'),false,'efectivo no intenta vincular un capture anterior');
   }
 });

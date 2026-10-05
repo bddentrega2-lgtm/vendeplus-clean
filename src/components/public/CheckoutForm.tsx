@@ -3,7 +3,7 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Loader2, MessageCircle, Navigation, ShieldCheck, Upload } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Copy, Loader2, MessageCircle, Navigation, ShieldCheck, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CheckoutFormData, DeliveryLocation, DeliveryQuote, SavedOrder, Store } from "@/types";
 import { clearCart, getCart, getCartSubtotal } from "@/lib/cart";
@@ -150,6 +150,7 @@ export function CheckoutForm({ store }: { store: Store }) {
   const [isCalculating, setIsCalculating] = useState(false);
   const [error, setError] = useState("");
   const [copiedPaymentLine, setCopiedPaymentLine] = useState("");
+  const [paymentCopyError, setPaymentCopyError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
   const [receiptName, setReceiptName] = useState("");
@@ -456,6 +457,7 @@ export function CheckoutForm({ store }: { store: Store }) {
     : store.paymentMethods;
   const isCashPayment = isCashPaymentMethod(form.paymentMethod);
   const inPersonTablePayment = Boolean(tableOrder && form.deliveryType === "table" && isInPersonTablePaymentMethod(form.paymentMethod));
+  const acceptsPaymentProof = !isCashPayment && !inPersonTablePayment;
   const paymentInfo = form.paymentMethod
     ? buildPaymentInfo({
         store,
@@ -479,6 +481,10 @@ export function CheckoutForm({ store }: { store: Store }) {
     : null;
 
   function updateField<K extends keyof CheckoutFormData>(field: K, value: CheckoutFormData[K]) {
+    if (field === "paymentMethod") {
+      setPaymentCopyError("");
+      setCopiedPaymentLine("");
+    }
     setForm((current) => ({ ...current, [field]: value }));
   }
 
@@ -499,16 +505,16 @@ export function CheckoutForm({ store }: { store: Store }) {
       return "Escribe la cédula del cliente.";
     }
     if (!form.paymentMethod.trim()) return "Selecciona un método de pago.";
-    if (!inPersonTablePayment && store.paymentProofMode === "reference" && form.paymentReference.trim()) {
+    if (acceptsPaymentProof && store.paymentProofMode === "reference" && form.paymentReference.trim()) {
       if (form.paymentReference.replace(/\D/g, "").length < 4) {
         return "La referencia debe tener al menos 4 dígitos.";
       }
     }
-    if (!inPersonTablePayment && store.paymentProofMode === "reference" && store.paymentProofRequired && !form.paymentReference.trim()) {
+    if (acceptsPaymentProof && store.paymentProofMode === "reference" && store.paymentProofRequired && !form.paymentReference.trim()) {
       return "Escribe la referencia de pago.";
     }
-    if (!inPersonTablePayment && store.paymentProofMode === "image" && store.paymentProofRequired && !form.paymentReceiptToken) {
-      return "Sube la captura de pago o foto del billete.";
+    if (acceptsPaymentProof && store.paymentProofMode === "image" && store.paymentProofRequired && !form.paymentReceiptToken) {
+      return "Sube la captura de pago.";
     }
     if (tableOrder && !availablePaymentMethods.includes(form.paymentMethod)) {
       return "Selecciona un método de pago previo disponible para pedidos en mesa.";
@@ -539,11 +545,12 @@ export function CheckoutForm({ store }: { store: Store }) {
 
     const orderId = createOrderId();
     const totals = { subtotalUsd, deliveryUsd, serviceFeeUsd, totalUsd, totalBs };
+    const orderForm = acceptsPaymentProof ? form : { ...form, paymentReference: "", paymentReceiptToken: "" };
     const whatsappMessage = buildOrderMessage({
       orderId,
       store,
       items,
-      form,
+      form: orderForm,
       location: form.deliveryType === "delivery" ? location : null,
       quote,
       totals,
@@ -559,7 +566,7 @@ export function CheckoutForm({ store }: { store: Store }) {
       storeName: store.name,
       createdAt: new Date().toISOString(),
       items,
-      form,
+      form: orderForm,
       location: form.deliveryType === "delivery" ? location : null,
       quote,
       totals,
@@ -572,9 +579,14 @@ export function CheckoutForm({ store }: { store: Store }) {
   }
 
   async function copyPaymentLine(label: string, value: string) {
-    await navigator.clipboard.writeText(value);
-    setCopiedPaymentLine(`${label}-${value}`);
-    window.setTimeout(() => setCopiedPaymentLine(""), 1800);
+    setPaymentCopyError("");
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedPaymentLine(`${label}-${value}`);
+      window.setTimeout(() => setCopiedPaymentLine(""), 1800);
+    } catch {
+      setPaymentCopyError("No se pudo copiar automáticamente. Puedes seleccionar y copiar los datos.");
+    }
   }
 
   async function uploadPaymentReceipt(file?: File) {
@@ -964,13 +976,29 @@ export function CheckoutForm({ store }: { store: Store }) {
                     )}
                   </div>
 
+                  {paymentInfo.quickCopyText ? (
+                    <button
+                      type="button"
+                      onClick={() => copyPaymentLine("all", paymentInfo.quickCopyText)}
+                      className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#FFB547] px-4 py-3 text-sm font-black text-[#25262B]"
+                    >
+                      <Copy size={18} />
+                      {copiedPaymentLine === `all-${paymentInfo.quickCopyText}` ? "Datos copiados" : "Copiar todos"}
+                    </button>
+                  ) : null}
+                  {paymentCopyError ? (
+                    <div className="mt-3 text-sm">
+                      <p role="alert">{paymentCopyError}</p>
+                      {paymentInfo.quickCopyText ? <textarea aria-label="Datos de pago para copiar" readOnly rows={4} value={paymentInfo.quickCopyText} className="mt-2 w-full rounded-lg bg-white p-3 text-[#25262B]" /> : null}
+                    </div>
+                  ) : null}
                   {!paymentInfo.hasConfiguredData && paymentInfo.lines.length > 0 ? (
                     <p className="mt-3 rounded-2xl bg-white/10 p-3 text-xs font-black text-white">
                       No hay datos de pago guardados para este método. Confírmalos por WhatsApp con el comercio.
                     </p>
                   ) : null}
 
-                  {store.paymentProofMode === "reference" ? (
+                  {acceptsPaymentProof && store.paymentProofMode === "reference" ? (
                     <label className="mt-4 block">
                       <span className="text-xs font-black uppercase tracking-[0.14em] text-white/70">
                         Referencia de pago {store.paymentProofRequired ? "· obligatoria" : "· opcional"}
@@ -984,10 +1012,10 @@ export function CheckoutForm({ store }: { store: Store }) {
                       />
                     </label>
                   ) : null}
-                  {store.paymentProofMode === "image" ? (
+                  {acceptsPaymentProof && store.paymentProofMode === "image" ? (
                     <div className="mt-4 rounded-3xl bg-emerald-50 p-3 ring-2 ring-emerald-300">
                       <p className="text-xs font-black uppercase tracking-[0.14em] text-emerald-900">
-                        Subir captura de pago o foto del billete {store.paymentProofRequired ? "· obligatorio" : "· opcional"}
+                        Subir captura de pago {store.paymentProofRequired ? "· obligatorio" : "· opcional"}
                       </p>
                       <input
                         ref={receiptInputRef}
@@ -1042,7 +1070,7 @@ export function CheckoutForm({ store }: { store: Store }) {
           <aside className="min-w-0 lg:sticky lg:top-5 lg:self-start">
             <section className="rounded-[36px] bg-[#25262B] p-3 text-white shadow-2xl shadow-[#25262B]/25">
               <div className="rounded-[30px] bg-white p-5 text-[#25262B]">
-                <h2 className="text-xl font-black">Revisa tu pedido</h2>
+                <h2 className="text-xl font-black">Tu pedido es</h2>
                 <div className="mt-4 space-y-3">
                   {items.map((item, index) => (
                     <div key={`${item.productId}-${index}`} className="flex justify-between gap-3 text-sm">
@@ -1075,9 +1103,6 @@ export function CheckoutForm({ store }: { store: Store }) {
                     </div>
                   ) : null}
                   {serviceFeeUsd > 0 ? <div className="flex justify-between"><span className="font-bold text-[#746f69]">Fee</span><span className="font-black">{formatBaseCurrency(serviceFeeUsd, baseCurrency)}</span></div> : null}
-                  {showPricesInBs ? (
-                    <div className="flex justify-between"><span className="font-bold text-[#746f69]">Tasa usada</span><span className="font-black">{formatBs(store.usdToBs || 600)}</span></div>
-                  ) : null}
                   {form.deliveryType === "delivery" ? (
                     <p className="rounded-2xl bg-[#FFF8F0] p-3 text-xs font-black text-[#746f69]">
                       {quoteMessage || quoteLabel} {quote.source === "fallback" ? "· estimado aproximado" : ""}

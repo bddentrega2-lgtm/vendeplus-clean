@@ -471,7 +471,8 @@ export async function POST(request: NextRequest) {
     }
 
     const inPersonTablePayment = requestedDeliveryType === "table" && isInPersonTablePaymentMethod(order.form.paymentMethod);
-    if (inPersonTablePayment) {
+    const acceptsPaymentProof = !isCashPaymentMethod(order.form.paymentMethod) && !inPersonTablePayment;
+    if (!acceptsPaymentProof) {
       order.form.paymentReference = "";
       order.form.paymentReceiptToken = "";
     }
@@ -770,9 +771,9 @@ export async function POST(request: NextRequest) {
       routeUrl: order.routeUrl,
     });
     const orderDbId = randomUUID();
-    const paymentReference = inPersonTablePayment ? "" : cleanText(order.form.paymentReference);
-    const paymentReceiptToken = inPersonTablePayment ? "" : cleanText(order.form.paymentReceiptToken, 60);
-    const paymentProofMode = !inPersonTablePayment && ["reference", "image"].includes((store as any).payment_proof_mode)
+    const paymentReference = acceptsPaymentProof ? cleanText(order.form.paymentReference) : "";
+    const paymentReceiptToken = acceptsPaymentProof ? cleanText(order.form.paymentReceiptToken, 60) : "";
+    const paymentProofMode = acceptsPaymentProof && ["reference", "image"].includes((store as any).payment_proof_mode)
       ? (store as any).payment_proof_mode
       : "disabled";
     const paymentProofRequired = (store as any).payment_proof_required === true;
@@ -798,10 +799,10 @@ export async function POST(request: NextRequest) {
       pendingReceipt = receiptResult.data;
     }
     if (paymentProofMode === "image" && paymentReceiptToken && !pendingReceipt) {
-      return requestBadRequest("La captura o foto ya no está disponible. Súbela nuevamente.");
+      return requestBadRequest("La captura de pago ya no está disponible. Súbela nuevamente.");
     }
     if (paymentProofMode === "image" && paymentProofRequired && !pendingReceipt) {
-      return requestBadRequest("Sube la captura de pago o foto del billete.");
+      return requestBadRequest("Sube la captura de pago.");
     }
     const initialPaymentStatus = requestedDeliveryType === "table" ? "pending" : getInitialPaymentStatus(order.form.paymentMethod);
     const orderPayload = {
