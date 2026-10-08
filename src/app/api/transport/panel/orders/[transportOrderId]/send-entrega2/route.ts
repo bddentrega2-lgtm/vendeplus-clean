@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getEntrega2DispatchBlockMessage } from "@/lib/entrega2-contract";
 import {
   getEntrega2CreatedByUserId,
   getEntrega2DefaultVehicleType,
@@ -9,6 +10,7 @@ import {
 } from "@/lib/integrations/entrega2";
 import { attachApiResponseHeaders, createApiRequestContext, logApiError, logApiEvent } from "@/lib/server/observability";
 import {
+  advanceEntrega2OrderDeliveryStatus,
   completeEntrega2Dispatch,
   markEntrega2DispatchForReconciliation,
 } from "@/lib/server/entrega2-dispatch";
@@ -321,16 +323,12 @@ export async function POST(
 
     if (existingError) throw existingError;
 
-    if (existingIntegration && !["error", "failed"].includes(existingIntegration.status)) {
-      const needsReconciliation = existingIntegration.status === "reconcile_required";
+    const dispatchBlockMessage = getEntrega2DispatchBlockMessage(existingIntegration?.status);
+    if (dispatchBlockMessage) {
       return attachApiResponseHeaders(
         NextResponse.json(
           {
-            error: needsReconciliation
-              ? "El resultado del envio necesita conciliacion antes de reintentar."
-              : isParticular
-                ? "Este particular ya fue enviado a Entrega2 App."
-                : "Este pedido ya fue enviado a Entrega2 App.",
+            error: dispatchBlockMessage,
           },
           { status: 409 }
         ),
@@ -390,7 +388,7 @@ export async function POST(
         supabase,
         pendingResult.data.id,
         {
-          external_id: entrega2ExternalId,
+          external_id: externalOrderId,
           status: entrega2Status,
           last_payload: entrega2Response.payload,
           last_error: null,
@@ -399,10 +397,7 @@ export async function POST(
       );
 
       if (isCommerceOrder) {
-        await supabase
-          .from("orders")
-          .update({ delivery_status: entrega2Status })
-          .eq("id", order.order_id);
+        await advanceEntrega2OrderDeliveryStatus(supabase, order.order_id, integration.status);
       }
 
       await insertTransportOrderEvent(supabase, {

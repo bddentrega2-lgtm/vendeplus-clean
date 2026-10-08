@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CheckCircle2, Circle, Copy, Home, MessageCircle, ReceiptText, UtensilsCrossed } from "lucide-react";
+import { CheckCircle2, Circle, Copy, Home, MessageCircle, ReceiptText, Truck, UtensilsCrossed } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { SavedOrder, Store } from "@/types";
 import { formatBaseCurrency, formatBs } from "@/lib/currency";
@@ -12,6 +12,25 @@ import { isCashPaymentMethod, paymentStatusLabels, type PaymentStatus } from "@/
 import { WaiterCallButton } from "@/components/public/WaiterCallButton";
 import { getTableOrderContext } from "@/lib/table-orders";
 import { isNativeApp } from "@/lib/mobile/state";
+import { entrega2StatusLabels, getEntrega2DisplayStatus } from "@/lib/entrega2-contract";
+
+type DeliveryTracking = {
+  orderStatus: string;
+  deliveryStatus: string | null;
+  entrega2Status: string | null;
+  entrega2CreatedAt: string | null;
+  updatedAt: string | null;
+};
+
+const orderStatusLabels: Record<string, string> = {
+  received: "Recibido", accepted: "Aceptado", preparing: "En preparación",
+  ready: "Listo", delivering: "En camino", completed: "Completado", cancelled: "Cancelado",
+};
+const entrega2Steps = [
+  ["sent", entrega2StatusLabels.sent], ["accepted", entrega2StatusLabels.accepted],
+  ["picking_up", entrega2StatusLabels.picking_up],
+  ["delivering", entrega2StatusLabels.delivering], ["completed", entrega2StatusLabels.completed],
+] as const;
 
 export function ConfirmationClient({ store }: { store: Store }) {
   const [order, setOrder] = useState<SavedOrder | null>(null);
@@ -22,6 +41,10 @@ export function ConfirmationClient({ store }: { store: Store }) {
   const [paymentCopyError, setPaymentCopyError] = useState("");
   const [tableStatus, setTableStatus] = useState("received");
   const [tablePaymentStatus, setTablePaymentStatus] = useState("pending");
+  const [deliveryTracking, setDeliveryTracking] = useState<DeliveryTracking | null>(null);
+  const sentDeliveryLabel = deliveryTracking?.entrega2Status === "sent"
+    ? getEntrega2DisplayStatus("sent", deliveryTracking.entrega2CreatedAt, deliveryTracking.orderStatus)
+    : null;
   const showPricesInBs = store.showPricesInBs !== false;
   const baseCurrency = store.baseCurrency || "USD";
   const isCashPayment = isCashPaymentMethod(order?.form.paymentMethod);
@@ -84,6 +107,43 @@ export function ConfirmationClient({ store }: { store: Store }) {
       document.removeEventListener("visibilitychange", refreshStatus);
     };
   }, [order]);
+
+  useEffect(() => {
+    if (!order?.databaseId || order.form.deliveryType !== "delivery") return;
+
+    let active = true;
+    let busy = false;
+    let closed = false;
+    const refreshStatus = async () => {
+      if (closed || busy || document.visibilityState !== "visible") return;
+      busy = true;
+      try {
+        const params = new URLSearchParams({
+          orderId: order.databaseId || "", storeSlug: store.slug, code: order.id,
+        });
+        const response = await fetch(`/api/orders/delivery-status?${params}`, { cache: "no-store" });
+        if (!response.ok) return;
+        const payload = await response.json() as DeliveryTracking;
+        if (active) {
+          setDeliveryTracking(payload);
+          closed = payload.orderStatus === "cancelled" || ["completed", "cancelled"].includes(payload.entrega2Status || "");
+        }
+      } catch {
+        // Keep the last known status during temporary connection issues.
+      } finally {
+        busy = false;
+      }
+    };
+
+    void refreshStatus();
+    const intervalId = window.setInterval(refreshStatus, 10000);
+    document.addEventListener("visibilitychange", refreshStatus);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", refreshStatus);
+    };
+  }, [order, store.slug]);
 
   const paymentInfo = order
     ? buildPaymentInfo({
@@ -202,6 +262,43 @@ export function ConfirmationClient({ store }: { store: Store }) {
                   ? <p className="mt-2 text-sm font-bold">{getTablePaymentInstructions(order.form.paymentMethod, order.tableOrder.fulfillmentMode)}</p> : null}
                 {tableStatus !== "cancelled" ? <WaiterCallButton context={order.tableOrder} /> : null}
               </div>
+            ) : null}
+
+            {order.form.deliveryType === "delivery" && deliveryTracking ? (
+              <section className="mt-5 border-t border-[#25262B]/10 pt-5" aria-label="Seguimiento del pedido">
+                <div className="flex items-center gap-2 text-[#2E3A79]">
+                  <Truck size={19} aria-hidden="true" />
+                  <h3 className="text-base font-black">Seguimiento del pedido</h3>
+                </div>
+                <p className="mt-2 text-sm font-bold text-[#746f69]">
+                  Comercio: {orderStatusLabels[deliveryTracking.orderStatus] || "En proceso"}
+                </p>
+                {deliveryTracking.orderStatus === "cancelled" ? (
+                  <p className="mt-3 text-sm font-black text-red-700">Pedido cancelado. Comunícate con el comercio.</p>
+                ) : sentDeliveryLabel && sentDeliveryLabel !== entrega2StatusLabels.sent ? (
+                  <p className="mt-3 text-sm font-bold text-[#746f69]">Delivery: {sentDeliveryLabel}</p>
+                ) : deliveryTracking.entrega2Status === "issue" ? (
+                  <p className="mt-3 text-sm font-black text-amber-800">Delivery: {entrega2StatusLabels.issue}. Comunícate con el comercio.</p>
+                ) : deliveryTracking.entrega2Status === "cancelled" ? (
+                  <p className="mt-3 text-sm font-black text-red-700">Delivery: {entrega2StatusLabels.cancelled}. Comunícate con el comercio.</p>
+                ) : deliveryTracking.entrega2Status && !["sending", "error", "failed", "reconcile_required"].includes(deliveryTracking.entrega2Status) ? (
+                  <div className="mt-4 space-y-2" aria-label="Estado de Entrega2">
+                    {entrega2Steps.map(([status, label], index) => {
+                      const currentStatus = deliveryTracking.entrega2Status === "assigned" ? "accepted"
+                        : deliveryTracking.entrega2Status === "delivered" ? "completed"
+                        : deliveryTracking.entrega2Status;
+                      const activeIndex = entrega2Steps.findIndex(([value]) => value === currentStatus);
+                      const done = activeIndex >= index;
+                      return <div key={status} className="flex items-center gap-3 text-sm">
+                        {done ? <CheckCircle2 size={18} className="shrink-0 text-green-600" aria-hidden="true" /> : <Circle size={18} className="shrink-0 text-[#2E3A79]/30" aria-hidden="true" />}
+                        <span className={done ? "font-black text-[#25262B]" : "font-bold text-[#746f69]"}>{label}</span>
+                      </div>;
+                    })}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm font-bold text-[#746f69]">El comercio coordina la entrega.</p>
+                )}
+              </section>
             ) : null}
 
             <div className="mt-5 space-y-3">

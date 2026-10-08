@@ -325,20 +325,54 @@ test('consulta live no pide QR y mantiene aislamiento y medicion del servidor', 
   }
 });
 
-test('guardia delivery sigue bloqueando cambios con consulta unificada', async () => {
+test('guardia delivery bloquea cancelacion manual mientras transporte esta activo', async () => {
  for(const active of [false,true]){
   let mutations=0;const reads=[];
-  const db={from(table){assert.equal(table,'orders');const q={select(value){reads.push(value);return q},eq(){return q},not(field,operator,filter){assert.equal(field,'active_transport_orders.status');assert.match(filter,/agency_rejected,cancelled,delivery_failed/);return q},single:async()=>({data:{id:'one',store_id:'store-a',status:'accepted',delivery_type:'table',customer_id:null,active_transport_orders:active?[{id:'transport'}]:[]},error:null})};return q},rpc:async(name,args)=>{mutations++;assert.equal(name,'update_table_order_status_v2');assert.equal(args.p_expected_status,'accepted');return{data:{id:'one',status:'preparing'},error:null}}};
+   const db={from(table){assert.equal(table,'orders');const q={select(value){reads.push(value);return q},eq(){return q},not(field,operator,filter){assert.equal(field,'active_transport_orders.status');assert.match(filter,/agency_rejected,cancelled,delivery_failed/);return q},single:async()=>({data:{id:'one',store_id:'store-a',status:'accepted',delivery_type:'table',customer_id:null,active_transport_orders:active?[{id:'transport'}]:[]},error:null})};return q},rpc:async(name,args)=>{mutations++;assert.equal(name,'update_table_order_status_v2');assert.equal(args.p_expected_status,'accepted');return{data:{id:'one',status:'preparing'},error:null}}};
   const mocks={
-   '@/lib/supabase/admin':{createSupabaseAdminClient:()=>db},crypto:{},
-   '@/lib/panel/access':{requirePanelAuth:async()=>({userId:'qa'}),assertStoreAccess:(_,id)=>assert.equal(id,'store-a'),badRequest:(error)=>Response.json({error},{status:400}),panelErrorResponse:(e)=>{throw e}},
-   '@/lib/table-orders':helpers,
+    '@/lib/supabase/admin':{createSupabaseAdminClient:()=>db},crypto:{},
+    '@/lib/panel/access':{requirePanelAuth:async()=>({userId:'qa'}),assertStoreAccess:(_,id)=>assert.equal(id,'store-a'),badRequest:(error)=>Response.json({error},{status:400}),panelErrorResponse:(e)=>{throw e}},
+    '@/lib/table-orders':helpers,
+    '@/lib/entrega2-contract':{getEntrega2TerminalOrderStatus:()=>null,isCurrentEntrega2Delivery:()=>false},
   };
   for(const name of ['@/lib/payments','@/lib/supabase/catalog','@/lib/customers/normalize-phone','@/lib/customers/customer-metrics','@/lib/customers/upsert-customer-from-order','@/lib/time/venezuela','@/lib/plans','@/lib/server/create-order-atomic','@/lib/server/cancel-order-with-inventory'])mocks[name]={};
   const route=load('src/app/api/panel/orders/route.ts',mocks,{performance});
-  const response=await route.PATCH(new Request('http://localhost/api/panel/orders',{method:'PATCH',body:JSON.stringify({id:'one',status:'preparing',expectedStatus:'accepted'})}));
+   const response=await route.PATCH(new Request('http://localhost/api/panel/orders',{method:'PATCH',body:JSON.stringify({id:'one',status:active?'cancelled':'preparing',expectedStatus:'accepted',cancellationReason:'Pedido duplicado'})}));
   assert.equal(response.status,active?400:200);assert.equal(mutations,active?0:1);assert.equal(reads.length,1);
  }
+});
+
+test('pedido cancelado por Entrega2 no se puede reabrir manualmente', async () => {
+  let mutations=0;
+  const db={from(table){assert.equal(table,'orders');const q={select(){return q},eq(){return q},not(){return q},single:async()=>({data:{id:'one',store_id:'store-a',status:'cancelled',delivery_type:'delivery',delivery_provider:'entrega2',active_transport_orders:[],order_integrations:[{provider:'entrega2',status:'cancelled'}]},error:null})};return q},rpc:async()=>{mutations++;throw Error('Unexpected mutation')}};
+  const mocks={
+    '@/lib/supabase/admin':{createSupabaseAdminClient:()=>db},crypto:{},
+    '@/lib/panel/access':{requirePanelAuth:async()=>({userId:'qa'}),assertStoreAccess:(_,id)=>assert.equal(id,'store-a'),badRequest:error=>Response.json({error},{status:400}),panelErrorResponse:e=>{throw e}},
+    '@/lib/table-orders':helpers,
+    '@/lib/entrega2-contract':load('src/lib/entrega2-contract.ts'),
+  };
+  for(const name of ['@/lib/payments','@/lib/supabase/catalog','@/lib/customers/normalize-phone','@/lib/customers/customer-metrics','@/lib/customers/upsert-customer-from-order','@/lib/time/venezuela','@/lib/plans','@/lib/server/create-order-atomic','@/lib/server/cancel-order-with-inventory'])mocks[name]={};
+  const route=load('src/app/api/panel/orders/route.ts',mocks,{performance});
+  const response=await route.PATCH(new Request('http://localhost/api/panel/orders',{method:'PATCH',body:JSON.stringify({id:'one',status:'received'})}));
+  assert.equal(response.status,400);
+  assert.match((await response.json()).error,/Entrega2 ya cerr/i);
+  assert.equal(mutations,0);
+});
+
+test('historial Entrega2 no bloquea estado de otra empresa delivery', async () => {
+  let updatedStatus=null;
+  const db={from(table){assert.equal(table,'orders');const q={select(){return q},eq(){return q},not(){return q},update(value){updatedStatus=value.status;return q},single:async()=>({data:updatedStatus?{id:'one',status:updatedStatus}:{id:'one',store_id:'store-a',status:'received',delivery_type:'delivery',delivery_provider:'transport_agency',selected_transport_agency:{slug:'otra-empresa'},active_transport_orders:[],order_integrations:[{provider:'entrega2',status:'cancelled'}]},error:null})};return q}};
+  const mocks={
+    '@/lib/supabase/admin':{createSupabaseAdminClient:()=>db},crypto:{},
+    '@/lib/panel/access':{requirePanelAuth:async()=>({userId:'qa'}),assertStoreAccess:(_,id)=>assert.equal(id,'store-a'),badRequest:error=>Response.json({error},{status:400}),panelErrorResponse:e=>{throw e}},
+    '@/lib/table-orders':helpers,
+    '@/lib/entrega2-contract':load('src/lib/entrega2-contract.ts'),
+  };
+  for(const name of ['@/lib/payments','@/lib/supabase/catalog','@/lib/customers/normalize-phone','@/lib/customers/customer-metrics','@/lib/customers/upsert-customer-from-order','@/lib/time/venezuela','@/lib/plans','@/lib/server/create-order-atomic','@/lib/server/cancel-order-with-inventory'])mocks[name]={};
+  const route=load('src/app/api/panel/orders/route.ts',mocks,{performance});
+  const response=await route.PATCH(new Request('http://localhost/api/panel/orders',{method:'PATCH',body:JSON.stringify({id:'one',status:'preparing'})}));
+  assert.equal(response.status,200);
+  assert.equal(updatedStatus,'preparing');
 });
 
 test('verificar pago solo modifica campos enviados y conserva datos omitidos', async () => {

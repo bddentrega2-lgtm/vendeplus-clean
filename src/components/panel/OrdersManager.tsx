@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { formatBs, formatUsd } from "@/lib/currency";
 import { getSuggestedPaymentCurrency } from "@/lib/payments";
+import { getEntrega2DisplayStatus, getEntrega2TerminalOrderStatus } from "@/lib/entrega2-contract";
 import { useTableCancellation } from "@/components/panel/orders/use-table-cancellation";
 import { PaymentReviewDialog } from "@/components/panel/orders/PaymentReviewDialog";
 import {
@@ -60,16 +61,18 @@ import {
   dateOptions,
   formatDate,
   formatOrderAge,
+  getActiveDeliveryStatusLabel,
   getCurrentTransportOrder,
   getDeliverySummary,
   getEntrega2Integration,
+  entrega2StatusLabels,
+  entrega2StatusStyles,
   getGpsUrl,
   getOrderPaymentStatus,
   getPaymentDetailsLines,
   getPaymentStatusLabel,
   getRouteUrl,
   getStatusOptionsForOrder,
-  getTransportAgencyIntegration,
   getWhatsappMessageUrl,
   getWhatsappUrl,
   groupOrderItemOptions,
@@ -138,6 +141,8 @@ export function OrderDetail({
     `Hola, para confirmar tu pedido ${order.public_code}, por favor envíanos la referencia del pago o captura. Gracias.`
   );
   const currentTransportOrder = getCurrentTransportOrder(order);
+  const entrega2Integration = getEntrega2Integration(order);
+  const terminalEntrega2Status = getEntrega2TerminalOrderStatus(entrega2Integration?.status);
   const hasAgencyHandoff = hasActiveTransportAgencyHandoff(order);
   const agencyWhatsappUrl = currentTransportOrder?.agency_whatsapp_snapshot
     ? `https://wa.me/${String(currentTransportOrder.agency_whatsapp_snapshot).replace(/[^0-9]/g, "")}`
@@ -367,7 +372,7 @@ export function OrderDetail({
                     </p>
                   </div>
                   <span className="rounded-full bg-[#F8F3E8] px-3 py-1 text-xs font-black text-[#2E3A79]">
-                    {transportStatusLabels[currentTransportOrder.status] || currentTransportOrder.status}
+                    {entrega2Integration ? getEntrega2DisplayStatus(entrega2Integration.status, entrega2Integration.created_at, order.status) : transportStatusLabels[currentTransportOrder.status] || currentTransportOrder.status}
                   </span>
                 </div>
                 <div className="mt-4 space-y-2 text-sm font-bold text-[#746f69]">
@@ -405,6 +410,20 @@ export function OrderDetail({
                     <Send size={16} />
                     Contactar empresa
                   </a>
+                ) : null}
+              </section>
+            ) : null}
+
+            {entrega2Integration ? (
+              <section className="rounded-[32px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.06]">
+                <h3 className="text-xl font-black">Estado con Entrega2</h3>
+                <p className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-black ${entrega2StatusStyles[entrega2Integration.status] || "bg-zinc-100 text-zinc-700"}`}>
+                  {getEntrega2DisplayStatus(entrega2Integration.status, entrega2Integration.created_at, order.status)}
+                </p>
+                {entrega2Integration.updated_at ? (
+                  <p className="mt-3 text-sm font-bold text-[#746f69]">
+                    Última actualización: {formatDate(entrega2Integration.updated_at)}
+                  </p>
                 ) : null}
               </section>
             ) : null}
@@ -507,10 +526,14 @@ export function OrderDetail({
             <section className="rounded-[32px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.06]">
               <h3 className="text-xl font-black">Estado</h3>
 
-              <select
+              {terminalEntrega2Status ? (
+                <p className="mt-4 rounded-2xl bg-[#F8F3E8] px-4 py-3 text-sm font-black text-[#2E3A79]">
+                  {entrega2StatusLabels[terminalEntrega2Status]}
+                </p>
+              ) : <select
                 value={status}
                 onChange={(event) => updateStatus(event.target.value)}
-                disabled={hasAgencyHandoff || isSaving}
+                disabled={isSaving}
                 className="mt-4 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-black outline-none"
               >
                 {getStatusOptionsForOrder(order).map((item) => (
@@ -518,11 +541,11 @@ export function OrderDetail({
                       {item.label}
                     </option>
                   ))}
-              </select>
+              </select>}
 
               {hasAgencyHandoff ? (
                 <p className="mt-2 rounded-2xl bg-indigo-50 p-3 text-xs font-black text-indigo-700">
-                  La empresa delivery ya recibió este pedido. Desde ahora el estado operativo lo actualiza la empresa delivery.
+                  Puedes continuar preparando el pedido. Para cancelarlo, cancela primero el servicio con la empresa delivery.
                 </p>
               ) : null}
 
@@ -1290,43 +1313,14 @@ export function OrdersManager() {
 
         {visibleOrders.map((order) => {
           const whatsappUrl = getWhatsappUrl(order.customer_phone);
-          const entrega2Integration = getEntrega2Integration(order);
-          const transportAgencyIntegration = getTransportAgencyIntegration(order);
-          const currentTransportOrder = getCurrentTransportOrder(order);
-          const transportAgencyStatus =
-            currentTransportOrder?.status ||
-            transportAgencyIntegration?.status ||
-            "";
-          const hasAgencyHandoff = hasActiveTransportAgencyHandoff(order);
+          const activeDeliveryStatusLabel = getActiveDeliveryStatusLabel(order);
           const showEntrega2Button = canSendToEntrega2(order);
           const showTransportAgencyButton = canSendToTransportAgency(order);
-          const legacyEntrega2Status =
-            entrega2Integration?.status || order.delivery_status || "";
-          const showDeliverySent = Boolean(
-            order.delivery_type === "delivery" &&
-              (
-                (
-                  order.delivery_provider === "entrega2" &&
-                  !showEntrega2Button &&
-                  legacyEntrega2Status &&
-                  !["pending", "sending", "error", "failed", "reconcile_required"].includes(
-                    legacyEntrega2Status
-                  )
-                ) ||
-                (
-                  order.delivery_provider === "transport_agency" &&
-                  (currentTransportOrder ||
-                    transportAgencyIntegration ||
-                    order.transport_agency_status) &&
-                  !showTransportAgencyButton
-                )
-              )
-          );
           const isSendingDelivery = sendingDeliveryId === order.id;
           const isSavingPayment = savingPaymentId === order.id;
           const isSavingStatus = savingStatusOrderId === order.id;
           const isLoadingDetail = loadingDetailOrderId === order.id;
-          const isNewOrder = order.status === "received";
+          const isNewOrder = order.status === "received" && !activeDeliveryStatusLabel;
           const paymentStatus = getOrderPaymentStatus(order);
           const orderMode = order.delivery_type === "table" &&
             order.table_fulfillment_snapshot !== "counter_pickup"
@@ -1385,9 +1379,9 @@ export function OrdersManager() {
 
                 <div className="min-w-0">
                   <div className="flex min-w-0 items-center gap-2">
-                  {hasAgencyHandoff ? (
-                    <div className="min-w-0 flex-1 rounded-lg bg-indigo-50 px-3 py-1.5 text-sm font-bold text-indigo-700">
-                      {transportStatusLabels[transportAgencyStatus] || "Empresa delivery"}
+                  {activeDeliveryStatusLabel ? (
+                    <div className="min-w-0 flex-1 break-words rounded-lg bg-indigo-50 px-3 py-1.5 text-sm font-bold leading-snug text-indigo-700" title={activeDeliveryStatusLabel}>
+                      {activeDeliveryStatusLabel}
                     </div>
                   ) : (
                     <select
@@ -1476,16 +1470,6 @@ export function OrdersManager() {
                       ) : (
                         <Motorbike size={16} />
                       )}
-                      Delivery
-                    </button>
-                  ) : order.delivery_type === "delivery" && showDeliverySent ? (
-                    <button
-                      type="button"
-                      disabled
-                      className="inline-flex h-7 items-center justify-center gap-1 rounded-full bg-green-100 px-2.5 text-[10px] font-black text-green-700 ring-1 ring-green-200"
-                      title="Pedido ya solicitado a la empresa delivery"
-                    >
-                      <Motorbike size={16} />
                       Delivery
                     </button>
                   ) : (

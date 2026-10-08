@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { Eye, Loader2, MessageCircle, ReceiptText, RefreshCcw, Send, X } from "lucide-react";
 import { transportStatusLabels } from "@/components/transport/transport-panel-helpers";
+import { getEntrega2DisplayStatus } from "@/lib/entrega2-contract";
 
 type LoadOrders = (overrides?: Record<string, string>) => Promise<void>;
 
@@ -37,8 +38,8 @@ const statusActionsByCurrent: Record<string, Array<readonly [string, string]>> =
   pending_agency: [["agency_accepted", "Aceptar"], ["agency_rejected", "Rechazar"]],
   sent_to_agency: [["agency_accepted", "Aceptar"], ["agency_rejected", "Rechazar"]],
   agency_received: [["agency_accepted", "Aceptar"], ["agency_rejected", "Rechazar"]],
-  agency_accepted: [["pickup_pending", "Por retirar"], ["picked_up", "Retirado"], ["delivered", "Entregado"], ["issue_reported", "Reportar novedad"]],
-  driver_assigned: [["pickup_pending", "Por retirar"], ["picked_up", "Retirado"], ["delivered", "Entregado"], ["issue_reported", "Reportar novedad"]],
+  agency_accepted: [["pickup_pending", "Retirando"], ["picked_up", "Retirado"], ["delivered", "Entregado"], ["issue_reported", "Reportar novedad"]],
+  driver_assigned: [["pickup_pending", "Retirando"], ["picked_up", "Retirado"], ["delivered", "Entregado"], ["issue_reported", "Reportar novedad"]],
   pickup_pending: [["picked_up", "Retirado"], ["delivered", "Entregado"], ["issue_reported", "Reportar novedad"]],
   picked_up: [["on_the_way", "En camino"], ["delivered", "Entregado"], ["issue_reported", "Reportar novedad"]],
   on_the_way: [["delivered", "Entregado"], ["delivery_failed", "Entrega fallida"], ["issue_reported", "Reportar novedad"]],
@@ -47,19 +48,10 @@ const statusActionsByCurrent: Record<string, Array<readonly [string, string]>> =
 
 const closedStatuses = ["delivered", "agency_rejected", "cancelled", "delivery_failed"];
 
-function entrega2StatusLabel(status: unknown) {
-  const normalized = String(status || "");
-  const labels: Record<string, string> = {
-    sending: "Enviando",
-    sent: "Enviado",
-    accepted: "Aceptado",
-    delivering: "En camino",
-    completed: "Completado",
-    error: "Error",
-    failed: "Error",
-    reconcile_required: "Revisar antes de reenviar",
-  };
-  return labels[normalized] || normalized || "Registrado";
+function entrega2StatusLabel(status: unknown, createdAt: string | null, entry: any) {
+  const orderStatus = entry.status === "delivered" ? "completed"
+    : entry.status === "cancelled" ? "cancelled" : entry.orders?.status;
+  return getEntrega2DisplayStatus(String(status || ""), createdAt, orderStatus);
 }
 
 function formatTime(value: unknown) {
@@ -353,7 +345,9 @@ export function TransportOrdersTab({
                   driverWhatsappDispatchEnabled && assignedDriver
                     ? buildDriverCommandUrl(entry, assignedDriver)
                     : "";
-                const statusLabel = transportStatusLabels[entry.status] || entry.status;
+                const statusLabel = entrega2
+                  ? entrega2StatusLabel(entrega2.status, entrega2.created_at, entry)
+                  : transportStatusLabels[entry.status] || entry.status;
 
                 return (
                   <div
@@ -423,8 +417,8 @@ export function TransportOrdersTab({
                           type="button"
                           onClick={() => void onSendParticularToEntrega2(entry.id)}
                           disabled={isSendingEntrega2 || Boolean(entrega2 && !["error", "failed"].includes(entrega2.status))}
-                          title={entrega2 ? `Entrega2 App: ${entrega2StatusLabel(entrega2.status)}` : "Enviar a Entrega2 App"}
-                          aria-label={entrega2 ? `Entrega2 App: ${entrega2StatusLabel(entrega2.status)}` : "Enviar a Entrega2 App"}
+                          title={entrega2 ? `Entrega2 App: ${entrega2StatusLabel(entrega2.status, entrega2.created_at, entry)}` : "Enviar a Entrega2 App"}
+                          aria-label={entrega2 ? `Entrega2 App: ${entrega2StatusLabel(entrega2.status, entrega2.created_at, entry)}` : "Enviar a Entrega2 App"}
                           className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#2E3A79] text-white hover:bg-[#243061] disabled:bg-[#D8DEEA] disabled:text-[#52647A]"
                         >
                           {isSendingEntrega2 ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
@@ -656,11 +650,11 @@ function OrderDetailModal({
                       type="button"
                       onClick={() => void onSendParticularToEntrega2(entry.id)}
                       disabled={isSendingEntrega2 || Boolean(entrega2 && !["error", "failed"].includes(entrega2.status))}
-                      aria-label={entrega2 ? `Entrega2 App: ${entrega2StatusLabel(entrega2.status)}` : "Enviar a Entrega2 App"}
+                      aria-label={entrega2 ? `Entrega2 App: ${entrega2StatusLabel(entrega2.status, entrega2.created_at, entry)}` : "Enviar a Entrega2 App"}
                       className="inline-flex items-center gap-2 rounded-full bg-[#2E3A79] px-4 py-2 text-xs font-black text-white disabled:bg-[#D8DEEA] disabled:text-[#52647A]"
                     >
                       {isSendingEntrega2 ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                      {entrega2 ? `Entrega2 App: ${entrega2StatusLabel(entrega2.status)}` : "Enviar a Entrega2 App"}
+                      {entrega2 ? `Entrega2 App: ${entrega2StatusLabel(entrega2.status, entrega2.created_at, entry)}` : "Enviar a Entrega2 App"}
                     </button>
                   ) : null}
                   {mapsUrl ? (

@@ -1,4 +1,6 @@
 import { formatBs, formatUsd } from "@/lib/currency";
+import { getEntrega2DispatchBlockMessage, getEntrega2DisplayStatus, getEntrega2TerminalOrderStatus, isCurrentEntrega2Delivery } from "@/lib/entrega2-contract";
+export { entrega2StatusLabels } from "@/lib/entrega2-contract";
 import {
   getPaymentDetailsKey,
   paymentStatusLabels,
@@ -52,6 +54,7 @@ export type OrderIntegration = {
   external_id: string | null;
   status: string;
   last_error: string | null;
+  created_at: string | null;
   updated_at: string | null;
 };
 
@@ -92,6 +95,7 @@ export type OrderRow = {
   delivery_address?: string | null;
   transport_agency_id?: string | null;
   transport_agency_name?: string | null;
+  selected_transport_agency?: { slug: string | null } | null;
   transport_agency_fee_usd?: number | string | null;
   transport_agency_status?: string | null;
   total_usd: number | string;
@@ -155,27 +159,17 @@ export const paymentStatusStyles: Record<string, string> = {
   cancelled: "bg-zinc-100 text-zinc-600",
 };
 
-export const entrega2StatusLabels: Record<string, string> = {
-  sending: "Enviando",
-  sent: "Enviado",
-  accepted: "Aceptado",
-  assigned: "Asignado",
-  delivering: "En camino",
-  delivered: "Entregado",
-  completed: "Completado",
-  error: "Error",
-  failed: "Error",
-  reconcile_required: "Revisar antes de reenviar",
-};
-
 export const entrega2StatusStyles: Record<string, string> = {
   sending: "bg-blue-100 text-blue-700",
   sent: "bg-indigo-100 text-indigo-700",
   accepted: "bg-indigo-100 text-indigo-700",
   assigned: "bg-indigo-100 text-indigo-700",
+  picking_up: "bg-amber-100 text-amber-800",
   delivering: "bg-purple-100 text-purple-700",
   delivered: "bg-green-100 text-green-700",
   completed: "bg-green-100 text-green-700",
+  cancelled: "bg-zinc-100 text-zinc-700",
+  issue: "bg-amber-100 text-amber-800",
   error: "bg-red-100 text-red-700",
   failed: "bg-red-100 text-red-700",
   reconcile_required: "bg-amber-100 text-amber-800",
@@ -188,7 +182,7 @@ export const transportStatusLabels: Record<string, string> = {
   agency_accepted: "Aceptado",
   agency_rejected: "Rechazado",
   driver_assigned: "Repartidor asignado",
-  pickup_pending: "Pendiente por retirar",
+  pickup_pending: "Retirando",
   picked_up: "Retirado",
   on_the_way: "En camino",
   delivered: "Entregado",
@@ -327,6 +321,7 @@ export function buildPaymentDataText(order: OrderRow) {
 }
 
 export function getEntrega2Integration(order: OrderRow) {
+  if (!isCurrentEntrega2Delivery(order)) return undefined;
   return (order.order_integrations || []).find(
     (integration) => integration.provider === "entrega2"
   );
@@ -339,6 +334,11 @@ export function getTransportAgencyIntegration(order: OrderRow) {
 }
 
 export function getCurrentTransportOrder(order: OrderRow) {
+  if (order.delivery_provider === "transport_agency" && order.transport_agency_id) {
+    return (order.transport_orders || []).find(
+      (transportOrder) => transportOrder.agency_id === order.transport_agency_id
+    ) || null;
+  }
   return (order.transport_orders || [])[0] || null;
 }
 
@@ -367,6 +367,7 @@ export function canSendToTransportAgency(order: OrderRow) {
   if (order.delivery_type !== "delivery") return false;
   if (order.delivery_provider !== "transport_agency") return false;
   if (!order.transport_agency_id) return false;
+  if (getEntrega2DispatchBlockMessage(getEntrega2Integration(order)?.status)) return false;
   if (transportOrder && !["agency_rejected", "cancelled", "delivery_failed"].includes(transportOrder.status)) {
     return false;
   }
@@ -396,6 +397,25 @@ export function hasActiveTransportAgencyHandoff(order: OrderRow) {
   );
 }
 
+export function getActiveDeliveryStatusLabel(order: OrderRow) {
+  const integration = getEntrega2Integration(order);
+  const entrega2Status = integration?.status;
+  const terminalStatus = getEntrega2TerminalOrderStatus(entrega2Status);
+  if (order.delivery_type === "delivery" && terminalStatus) {
+    return getEntrega2DisplayStatus(terminalStatus, integration?.created_at, order.status);
+  }
+  if (order.delivery_type === "delivery" && entrega2Status &&
+      !["sending", "error", "failed", "reconcile_required", "cancelled", "completed"].includes(entrega2Status)) {
+    return getEntrega2DisplayStatus(entrega2Status, integration?.created_at, order.status);
+  }
+
+  if (!hasActiveTransportAgencyHandoff(order)) return null;
+
+  const transportStatus = getCurrentTransportOrder(order)?.status ||
+    getTransportAgencyIntegration(order)?.status || order.transport_agency_status || "";
+  return transportStatusLabels[transportStatus] || transportStatus || "Empresa delivery";
+}
+
 export function isDeliveryAlreadyDelivered(order: OrderRow) {
   const entrega2Integration = getEntrega2Integration(order);
   const transportAgencyIntegration = getTransportAgencyIntegration(order);
@@ -411,7 +431,7 @@ export function isDeliveryAlreadyDelivered(order: OrderRow) {
 }
 
 export function getStatusOptionsForOrder(order: OrderRow) {
-  const cannotCancel = isDeliveryAlreadyDelivered(order);
+  const cannotCancel = isDeliveryAlreadyDelivered(order) || hasActiveTransportAgencyHandoff(order);
   return statusOptions.filter(
     (item) => !["all", "active"].includes(item.value) && (!cannotCancel || item.value !== "cancelled")
   );

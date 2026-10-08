@@ -70,7 +70,7 @@ export const transportStatusLabels: Record<string, string> = {
   agency_accepted: "Aceptado",
   agency_rejected: "Rechazado",
   driver_assigned: "Repartidor asignado",
-  pickup_pending: "Pendiente por retirar",
+  pickup_pending: "Retirando",
   picked_up: "Retirado",
   on_the_way: "En camino",
   delivered: "Entregado",

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getEntrega2DispatchBlockMessage } from "@/lib/entrega2-contract";
 import {
   getEntrega2CreatedByUserId,
   getEntrega2DefaultVehicleType,
@@ -21,6 +22,7 @@ import {
   logApiEvent,
 } from "@/lib/server/observability";
 import {
+  advanceEntrega2OrderDeliveryStatus,
   completeEntrega2Dispatch,
   markEntrega2DispatchForReconciliation,
 } from "@/lib/server/entrega2-dispatch";
@@ -145,17 +147,12 @@ async function sendCommerceOrderToEntrega2App(params: {
 
   if (existingError) throw existingError;
 
-  if (
-    existingIntegration &&
-    !["error", "failed"].includes(existingIntegration.status)
-  ) {
-    const needsReconciliation = existingIntegration.status === "reconcile_required";
+  const dispatchBlockMessage = getEntrega2DispatchBlockMessage(existingIntegration?.status);
+  if (dispatchBlockMessage) {
     return attachApiResponseHeaders(
       NextResponse.json(
         {
-          error: needsReconciliation
-            ? "El resultado del envio necesita conciliacion antes de reintentar."
-            : "Este pedido ya fue enviado a Entrega2 App.",
+          error: dispatchBlockMessage,
         },
         { status: 409 }
       ),
@@ -216,7 +213,7 @@ async function sendCommerceOrderToEntrega2App(params: {
       supabase,
       pendingResult.data.id,
       {
-        external_id: entrega2ExternalId,
+          external_id: externalOrderId,
         status: entrega2Status,
         last_payload: entrega2Response.payload,
         last_error: null,
@@ -224,10 +221,7 @@ async function sendCommerceOrderToEntrega2App(params: {
       }
     );
 
-    await supabase
-      .from("orders")
-      .update({ delivery_status: entrega2Status })
-      .eq("id", order.id);
+    await advanceEntrega2OrderDeliveryStatus(supabase, order.id, integration.status);
 
     logApiEvent(apiContext, "entrega2_order_sent", {
       orderId: order.id,
@@ -546,6 +540,22 @@ export async function POST(
       }
 
       const agencyPhone = agency.whatsapp_phone || agency.contact_phone;
+      // Check Entrega2 before an upsert can reopen a cancelled transport service.
+      if (cleanText(agency.slug).toLowerCase() === "entrega2") {
+        const { data: sentIntegration, error: sentError } = await supabase
+          .from("order_integrations")
+          .select("status")
+          .eq("order_id", order.id)
+          .eq("provider", getEntrega2Provider())
+          .maybeSingle();
+        if (sentError) throw sentError;
+        const blockMessage = getEntrega2DispatchBlockMessage(sentIntegration?.status);
+        if (blockMessage) {
+          return attachApiResponseHeaders(
+            NextResponse.json({ error: blockMessage }, { status: 409 }), apiContext, "send-delivery"
+          );
+        }
+      }
       const transportOrder = await upsertTransportOrderFromOrder({
         supabase,
         order,

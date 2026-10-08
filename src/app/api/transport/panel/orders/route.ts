@@ -88,6 +88,7 @@ const transportOrdersSummarySelect = `
     external_id,
     status,
     last_error,
+    created_at,
     updated_at,
     transport_order_id,
     particular_request_id

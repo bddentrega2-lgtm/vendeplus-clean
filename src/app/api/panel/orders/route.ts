@@ -17,6 +17,7 @@ import { getStoreServiceFeeUsd } from "@/lib/plans";
 import { createOrderAtomic } from "@/lib/server/create-order-atomic";
 import { cancelOrderWithInventory } from "@/lib/server/cancel-order-with-inventory";
 import { tableCancellationReason } from "@/lib/table-orders";
+import { getEntrega2TerminalOrderStatus, isCurrentEntrega2Delivery } from "@/lib/entrega2-contract";
 
 const allowedStatuses = [
   "received",
@@ -69,6 +70,7 @@ const ordersSelect = `
   delivery_address,
   transport_agency_id,
   transport_agency_name,
+  selected_transport_agency:transport_agencies!orders_transport_agency_id_fkey(slug),
   transport_agency_fee_usd,
   transport_agency_status,
   total_usd,
@@ -176,6 +178,7 @@ const compactOrdersSelect = `
   delivery_status,
   delivery_notes,
   transport_agency_id,
+  selected_transport_agency:transport_agencies!orders_transport_agency_id_fkey(slug),
   transport_agency_status,
   total_usd,
   status,
@@ -185,9 +188,12 @@ const compactOrdersSelect = `
   ),
   order_integrations (
     provider,
-    status
+    status,
+    created_at
   ),
   transport_orders (
+    id,
+    agency_id,
     status
   )
 `;
@@ -355,7 +361,7 @@ async function attachOrderIntegrations(supabase: any, orders: any[]) {
     const orderIds = orders.map((order) => order.id).filter(Boolean);
     const { data, error } = await supabase
       .from("order_integrations")
-      .select("order_id, provider, external_id, status, last_error, updated_at")
+      .select("order_id, provider, external_id, status, last_error, created_at, updated_at")
       .in("order_id", orderIds);
 
     if (error) return orders;
@@ -1112,7 +1118,7 @@ export async function PATCH(request: NextRequest) {
 
     const { data: existingOrder, error: existingError } = await supabase
       .from("orders")
-      .select("id, store_id, customer_id, customer_name, customer_phone, customer_phone_normalized, status, delivery_type, delivery_status, transport_agency_status, created_at, active_transport_orders:transport_orders(id)")
+      .select("id, store_id, customer_id, customer_name, customer_phone, customer_phone_normalized, status, delivery_type, delivery_provider, delivery_status, transport_agency_status, created_at, selected_transport_agency:transport_agencies!orders_transport_agency_id_fkey(slug), active_transport_orders:transport_orders(id), order_integrations(provider,status)")
       .eq("id", id)
       .not("active_transport_orders.status", "in", "(agency_rejected,cancelled,delivery_failed)")
       .single();
@@ -1125,8 +1131,20 @@ export async function PATCH(request: NextRequest) {
       "No tienes permiso para operar este pedido."
     );
 
-    if (existingOrder.active_transport_orders?.length) {
-      return badRequest("La empresa delivery ya recibio este pedido. El estado operativo lo actualiza la empresa delivery.");
+    const terminalEntrega2Status = isCurrentEntrega2Delivery(existingOrder) && existingOrder.order_integrations
+      ?.filter((integration: { provider: string }) => integration.provider === "entrega2")
+      .map((integration: { status: string }) => getEntrega2TerminalOrderStatus(integration.status))
+      .find(Boolean);
+    if (terminalEntrega2Status && status !== terminalEntrega2Status) {
+      return badRequest("Entrega2 ya cerró este delivery. El estado del pedido no se puede cambiar manualmente.");
+    }
+
+    if (existingOrder.active_transport_orders?.length && status === "cancelled") {
+      return badRequest("Cancela primero el servicio con la empresa delivery.");
+    }
+    if (existingOrder.active_transport_orders?.length && status === "completed" &&
+        !(await isOrderDeliveredByExternalDelivery(supabase, existingOrder))) {
+      return badRequest("El pedido se completará cuando la empresa confirme la entrega.");
     }
 
     if (

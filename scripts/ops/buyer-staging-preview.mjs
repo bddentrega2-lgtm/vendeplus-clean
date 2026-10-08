@@ -21,6 +21,10 @@ const link = JSON.parse(await readFile('.vercel/project.json', 'utf8'));
 if (link.projectId !== projectId || link.orgId !== orgId) throw new Error('Wrong Vercel project');
 const cli = resolve(process.env.APPDATA, 'npm/node_modules/vercel/dist/vc.js');
 const artifact = 'tmp/buyer-staging/preview-deployment.json';
+const previewWebhookSecret = String(process.env.SOMOS_ENTREGA2_PREVIEW_WEBHOOK_SECRET || '');
+if (previewWebhookSecret && (previewWebhookSecret.length < 32 || previewWebhookSecret.length > 256 || /\s/.test(previewWebhookSecret))) {
+  throw new Error('Invalid preview webhook secret');
+}
 const firebasePreviewRaw = process.env.SOMOS_FIREBASE_PREVIEW === '1' ? String(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '') : '';
 let firebasePreview = null;
 if (firebasePreviewRaw) {
@@ -32,6 +36,7 @@ if (firebasePreviewRaw) {
 const redact = value => String(value)
   .replaceAll(keys.anon, '[anon-redacted]')
   .replaceAll(keys.service, '[service-redacted]')
+  .replaceAll(previewWebhookSecret, previewWebhookSecret ? '[webhook-redacted]' : '')
   .replaceAll(firebasePreviewRaw, firebasePreviewRaw ? '[firebase-redacted]' : '');
 function run(command, args, { env = process.env, input, stream = false } = {}) {
   return new Promise((done, fail) => {
@@ -96,6 +101,7 @@ Object.assign(appEnv, {
   SUPABASE_SERVICE_ROLE_KEY: keys.service,
   NEXT_PUBLIC_ALLOW_DEMO_FALLBACKS: 'false',
 });
+if (previewWebhookSecret) appEnv.ENTREGA2_WEBHOOK_SECRET = previewWebhookSecret;
 if (firebasePreview) appEnv.FIREBASE_SERVICE_ACCOUNT_JSON = firebasePreviewRaw;
 const env = { ...process.env, ...appEnv, VERCEL_ENV: 'preview' };
 const response = await fetch(`${appEnv.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/stores?select=id,slug&order=slug&limit=5`, { headers: { apikey: keys.service, Authorization: `Bearer ${keys.service}` } });

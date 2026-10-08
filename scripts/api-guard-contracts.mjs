@@ -37,6 +37,12 @@ const PUBLIC_SERVICE_ROLE_ROUTES = {
     /checkDistributedRateLimit/,
     /sharp\(input\)/,
   ],
+  "src/app/api/orders/delivery-status/route.ts": [
+    /UUID\.test\(orderId\)/,
+    /SLUG\.test\(storeSlug\)/,
+    /\.eq\("store_id", store\.id\)/,
+    /\.eq\("public_code", publicCode\)/,
+  ],
   "src/app/api/orders/route.ts": [
     /checkDistributedRateLimit/,
     /createOrderAtomic/,

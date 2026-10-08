@@ -1782,9 +1782,8 @@ test("puente Entrega2 separa comercios credito directo y contado validado", () =
   assert.match(ordersManager, /\? \{ label: "Delivery", Icon: Motorbike/);
   assert.match(ordersManager, /<Motorbike size=\{16\} \/>/);
   assert.match(ordersManager, /const entrega2Integration = getEntrega2Integration\(order\)/);
-  assert.match(ordersManager, /const showDeliverySent = Boolean/);
-  assert.match(ordersManager, /entrega2Integration\?\.status \|\| order\.delivery_status/);
-  assert.match(ordersManager, /order\.transport_agency_status/);
+  assert.match(ordersManager, /const activeDeliveryStatusLabel = getActiveDeliveryStatusLabel\(order\)/);
+  assert.match(ordersManager, /const terminalEntrega2Status = getEntrega2TerminalOrderStatus\(entrega2Integration\?\.status\)/);
   assert.match(ordersManager, /lg:max-w-\[320px\] lg:justify-end/);
   assert.match(ordersManager, /showEntrega2Button \|\| showTransportAgencyButton/);
   assert.match(ordersManager, /px-2\.5 text-\[10px\][\s\S]*orderMode\.style/);
@@ -1795,8 +1794,8 @@ test("puente Entrega2 separa comercios credito directo y contado validado", () =
   assert.doesNotMatch(ordersManager, /<Truck size=\{16\} \/>/);
   assert.match(commerceMarketplace, /Cobro \{connection\.delivery_billing_mode === "credit" \? "credito" : "contado"\}/);
   assert.match(tab, /Boolean\(particular\(entry\) \|\| entry\.order_id\)/);
-  assert.match(tab, /aria-label=\{entrega2 \? `Entrega2 App: \$\{entrega2StatusLabel\(entrega2\.status\)\}` : "Enviar a Entrega2 App"\}/);
-  assert.match(tab, /reconcile_required: "Revisar antes de reenviar"/);
+  assert.match(tab, /aria-label=\{entrega2 \? `Entrega2 App: \$\{entrega2StatusLabel\(entrega2\.status, entrega2\.created_at, entry\)\}` : "Enviar a Entrega2 App"\}/);
+  assert.match(tab, /import \{ getEntrega2DisplayStatus \} from "@\/lib\/entrega2-contract"/);
   assert.match(entrega2Integration, /export const ENTREGA2_QUOTE_TIMEOUT_MS = 4_500/);
   assert.match(bridge, /quoteEntrega2Delivery\(/);
   assert.match(bridge, /calculateEntrega2FallbackQuote\(/);
@@ -1827,7 +1826,8 @@ test("comprobantes de pago son privados, configurables y se eliminan a los 30 di
   const upload = read("src/app/api/orders/payment-receipt/route.ts");
   const cleanup = read("src/app/api/cron/payment-receipts-cleanup/route.ts");
   const migration = read("supabase/migrations/20260908193000_payment_proofs_and_agency_archiving.sql");
-  assert.match(checkout, /Subir captura de pago o foto del billete/);
+  assert.match(checkout, /Subir captura de pago/);
+  assert.doesNotMatch(checkout, /foto del billete/);
   assert.match(checkout, /bg-emerald-600/);
   assert.match(checkout, /Imagen cargada · Cambiar/);
   assert.match(checkout, /paymentProofRequired/);

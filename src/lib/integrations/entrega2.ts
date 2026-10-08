@@ -1,8 +1,12 @@
 import "server-only";
+import { timingSafeEqual } from "node:crypto";
 import {
   canAdvanceEntrega2OrderStatus as canAdvanceNormalizedEntrega2OrderStatus,
+  normalizeEntrega2OrderStatus,
   type Entrega2OrderStatus,
 } from "@/lib/entrega2-contract";
+
+export { normalizeEntrega2OrderStatus };
 
 const PROVIDER = "entrega2";
 export const ENTREGA2_QUOTE_TIMEOUT_MS = 4_500;
@@ -48,9 +52,13 @@ export function getEntrega2WebhookSecret() {
 
 export function isValidEntrega2Webhook(headers: Headers) {
   const expectedSecret = getEntrega2WebhookSecret();
-  const receivedSecret = headers.get("x-vendeplus-webhook-secret")?.trim() || "";
-
-  return Boolean(expectedSecret && receivedSecret && expectedSecret === receivedSecret);
+  const authorization = headers.get("authorization")?.trim() || "";
+  const bearerSecret = /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() || "";
+  const receivedSecret = headers.get("x-vendeplus-webhook-secret")?.trim() || bearerSecret;
+  if (!expectedSecret || !receivedSecret) return false;
+  const expected = Buffer.from(expectedSecret);
+  const received = Buffer.from(receivedSecret);
+  return expected.length === received.length && timingSafeEqual(expected, received);
 }
 
 function getEntrega2Config() {
@@ -212,38 +220,6 @@ function recordEntrega2QuoteSuccess() {
 
 export function getEntrega2DefaultVehicleType() {
   return "tapp";
-}
-
-export function normalizeEntrega2OrderStatus(value: unknown) {
-  const status = String(value || "").trim().toLowerCase();
-
-  if (!status) return null;
-
-  const map: Record<string, string> = {
-    accepted: "accepted",
-    aceptado: "accepted",
-    asignado: "accepted",
-    assigned: "accepted",
-    confirmado: "accepted",
-    pendiente: "sent",
-    retirando: "delivering",
-    llevando: "delivering",
-    pickup: "delivering",
-    picked_up: "delivering",
-    collected: "delivering",
-    en_camino: "delivering",
-    on_route: "delivering",
-    delivering: "delivering",
-    con_novedad: "issue",
-    delivered: "completed",
-    entregado: "completed",
-    completed: "completed",
-    cancelled: "cancelled",
-    canceled: "cancelled",
-    cancelado: "cancelled",
-  };
-
-  return map[status] || null;
 }
 
 export function canAdvanceEntrega2OrderStatus(
