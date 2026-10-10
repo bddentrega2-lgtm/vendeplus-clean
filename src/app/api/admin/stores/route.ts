@@ -85,8 +85,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  let stage = "authorization";
   try {
     await requireAdminAuth(request);
+    stage = "validation";
     const body = await request.json();
     const payload = normalizeAdminStorePayload(body);
     const accessEmail = normalizeAccessEmail(body.access_email);
@@ -98,12 +100,20 @@ export async function POST(request: NextRequest) {
       return badRequest("El nombre del comercio es obligatorio.");
     }
 
+    if (!payload.whatsapp || payload.whatsapp.length < 10) {
+      return badRequest("Indica el WhatsApp receptor del comercio.");
+    }
+
     if (!payload.slug) {
       return badRequest("El slug del comercio es obligatorio.");
     }
 
     if (!payload.city_id) {
       return badRequest("Selecciona la ciudad del comercio.");
+    }
+
+    if (!["monthly", "per_service", "trial", "founder"].includes(String(body.plan_type || ""))) {
+      return badRequest("Selecciona el modelo comercial del comercio.");
     }
 
     if (payload.plan_type === "founder" && payload.is_test !== true) {
@@ -118,6 +128,15 @@ export async function POST(request: NextRequest) {
       return badRequest("Las claves de acceso no coinciden.");
     }
 
+    if (!Number.isFinite(Number(body.usd_to_bs)) || Number(body.usd_to_bs) <= 0) {
+      return badRequest("Indica una tasa USD a Bs valida.");
+    }
+
+    if (!payload.payment_methods.length) {
+      return badRequest("Indica al menos un metodo de pago del comercio.");
+    }
+
+    stage = "store lookup";
     const supabase = createSupabaseAdminClient();
     if (payload.city_id) {
       const { data: city, error: cityError } = await supabase.from("service_cities")
@@ -136,6 +155,7 @@ export async function POST(request: NextRequest) {
       return conflict("Ya existe un comercio con ese slug.");
     }
 
+    stage = "store insert";
     const { data, error } = await supabase
       .from("stores")
       .insert(payload)
@@ -146,6 +166,7 @@ export async function POST(request: NextRequest) {
 
     if (accessEmail) {
       try {
+        stage = "access user";
         const access = await ensureStoreAccessUser({
           supabase,
           storeId: data.id,
@@ -170,13 +191,31 @@ export async function POST(request: NextRequest) {
           { status: 201 }
         );
       } catch (accessError) {
-        await supabase.from("stores").delete().eq("id", data.id);
+        const { error: rollbackError } = await supabase.from("stores").delete().eq("id", data.id);
+        if (rollbackError) {
+          stage = "store rollback";
+          throw rollbackError;
+        }
         throw accessError;
       }
     }
 
     return NextResponse.json({ store: data }, { status: 201 });
   } catch (error) {
+    if (!(error instanceof Error && error.name === "PanelAccessError")) {
+      const failure = error as { code?: string; status?: number; message?: string };
+      console.error("Admin store creation failed", {
+        stage,
+        code: failure?.code || "unknown",
+        status: failure?.status || 500,
+      });
+      if (
+        stage === "access user" &&
+        (failure?.code === "weak_password" || /password.*(weak|easy to guess)/i.test(failure?.message || ""))
+      ) {
+        return badRequest("La clave elegida es demasiado facil de adivinar. Usa una clave unica y mas segura.");
+      }
+    }
     return adminErrorResponse(error, "Error creando comercio.");
   }
 }

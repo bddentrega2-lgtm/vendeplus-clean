@@ -1,7 +1,7 @@
 export const MOBILE_PREFIX = "somos_mobile_v1_";
 const PRIVATE_PREFIX = `${MOBILE_PREFIX}private_`;
 const reserved = new Set(["api", "auth", "admin", "panel", "transporte", "registro", "prototipos", "_next"]);
-const panelRoutes = new Set(["/panel", "/panel/inicio", "/panel/pedidos", "/panel/pedidos/nuevo", "/panel/productos", "/panel/catalogo", "/panel/opciones", "/panel/mesas", "/panel/cocina", "/panel/clientes", "/panel/estadisticas", "/panel/delivery", "/panel/configuracion", "/panel/suscripcion", "/panel/impresion", "/panel/logros"]);
+const panelRoutes = new Set(["/panel", "/panel/inicio", "/panel/pedidos", "/panel/pedidos/nuevo", "/panel/productos", "/panel/catalogo", "/panel/opciones", "/panel/mesas", "/panel/cocina", "/panel/clientes", "/panel/estadisticas", "/panel/delivery", "/panel/configuracion", "/panel/suscripcion", "/panel/impresion"]);
 
 export function isNativeApp() {
   return typeof window !== "undefined" && Boolean((window as Window & { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.());

@@ -19,7 +19,8 @@ export function createSupabaseBrowserClient() {
   browserClient = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       autoRefreshToken: true,
-      detectSessionInUrl: true,
+      // Callback pages exchange the PKCE code explicitly.
+      detectSessionInUrl: false,
       flowType: "pkce",
       persistSession: true,
     },

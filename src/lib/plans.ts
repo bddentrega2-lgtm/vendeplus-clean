@@ -6,7 +6,7 @@ export type PlanId =
 
 export const TRIAL_DAYS = 15;
 export const PER_SERVICE_FEE_USD = 0.1;
-export const DEFAULT_PRODUCT_LIMIT = 30;
+export const DEFAULT_PRODUCT_LIMIT = 50;
 
 export type Plan = {
   id: PlanId;
@@ -25,8 +25,8 @@ const trialPlan: Plan = {
   priceUsd: 0,
   billingLabel: "15 dias",
   storeLimit: 1,
-  productLimit: 30,
-  features: ["1 comercio", "30 productos iniciales", "Pedidos recibidos y ordenados", "Delivery, clientes y estadisticas basicas"],
+  productLimit: 50,
+  features: ["1 comercio", "50 productos", "Pedidos recibidos y ordenados", "Delivery, clientes y estadisticas completas"],
 };
 
 const monthlyPlan: Plan = {
@@ -35,10 +35,10 @@ const monthlyPlan: Plan = {
   priceUsd: 20,
   billingLabel: "al mes por tienda, pago adelantado",
   storeLimit: 1,
-  productLimit: 30,
+  productLimit: 50,
   features: [
     "1 tienda",
-    "30 productos iniciales, ampliables con logros",
+    "50 productos",
     "Pedidos recibidos y ordenados",
     "Delivery configurable",
     "Clientes, reportes y estadisticas base",
@@ -52,16 +52,16 @@ const perServicePlan: Plan = {
   priceUsd: PER_SERVICE_FEE_USD,
   billingLabel: "por pedido recibido",
   storeLimit: 1,
-  productLimit: 30,
+  productLimit: 50,
   serviceFeeUsd: PER_SERVICE_FEE_USD,
   features: [
     "Sin mensualidad fija",
     "$0.10 por pedido recibido",
     "Corte mensual con lo acumulado",
     "Ideal para bajo volumen",
-    "30 productos iniciales, ampliables con logros",
+    "50 productos",
     "Delivery, clientes y estadisticas basicas incluidos",
-    "Mejoras avanzadas desbloqueables con logros",
+    "Estadisticas completas y personalizacion incluidas",
   ],
 };
 
@@ -86,7 +86,7 @@ export function getStoreProductLimit(store?: {
   product_limit?: number | null;
 } | null) {
   const configured = Number(store?.product_limit);
-  if (Number.isInteger(configured) && configured > 0) return configured;
+  if (Number.isInteger(configured) && configured > 0) return Math.max(DEFAULT_PRODUCT_LIMIT, configured);
   return getPlan(store?.plan_type).productLimit;
 }
 

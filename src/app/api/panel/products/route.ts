@@ -407,7 +407,7 @@ export async function POST(request: NextRequest) {
 
     const productLimit = getStoreProductLimit(store as any);
     if (payload.is_available && (productCount || 0) >= productLimit) {
-      return badRequest(`Puedes publicar hasta ${productLimit} productos. Guarda este producto como inactivo o completa el logro para ampliar el límite.`);
+      return badRequest(`Puedes publicar hasta ${productLimit} productos. Guarda este producto como inactivo o consulta con Somos para ampliar el límite.`);
     }
 
     let { data, error } = await supabase
@@ -491,7 +491,7 @@ export async function PATCH(request: NextRequest) {
       if (countError) throw countError;
       const productLimit = getStoreProductLimit(store as any);
       if ((activeCount || 0) >= productLimit) {
-        return badRequest(`Puedes publicar hasta ${productLimit} productos. Desactiva otro o completa el logro para ampliar el límite.`);
+        return badRequest(`Puedes publicar hasta ${productLimit} productos. Desactiva otro o consulta con Somos para ampliar el límite.`);
       }
     }
 

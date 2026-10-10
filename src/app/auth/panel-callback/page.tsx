@@ -33,7 +33,10 @@ export default function PanelOAuthCallbackPage() {
         window.location.replace(nextPath);
       } catch (error: any) {
         if (!isMounted) return;
-        setMessage(error.message || "No se pudo completar el inicio con Google.");
+        const message = String(error?.message || "");
+        setMessage(/PKCE|code verifier/i.test(message)
+          ? "No se pudo continuar el acceso de Google. Reintenta desde esta misma pestaña."
+          : message || "No se pudo completar el inicio con Google.");
         window.setTimeout(() => {
           window.location.replace("/panel/login");
         }, 1200);

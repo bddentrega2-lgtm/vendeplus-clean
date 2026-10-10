@@ -30,11 +30,6 @@ const panelRouteMeta: Record<string, { active: string; title: string; subtitle: 
     title: "Mesa / Barra",
     subtitle: "Administra pedidos, mesas, pagos y el QR único del comercio.",
   },
-  "/panel/logros": {
-    active: "/panel/logros",
-    title: "Logros",
-    subtitle: "Completa metas y desbloquea nuevas funciones permanentemente.",
-  },
   "/panel/productos": {
     active: "/panel/productos",
     title: "Productos",
@@ -90,10 +85,6 @@ const panelRouteMeta: Record<string, { active: string; title: string; subtitle: 
 
 const routesWithoutPanelShell = new Set(["/panel/login"]);
 const routesAllowedWhenExpired = new Set(["/panel/suscripcion"]);
-const routeFeatureRequirements: Record<string, string> = {
-  "/panel/estadisticas": "full_stats",
-};
-
 type PanelStoreSubscriptionState = {
   id?: string | null;
   subscription_status?: string | null;
@@ -127,13 +118,9 @@ function ExpiredPanelBlock() {
   );
 }
 
-function LockedFeatureBlock({ achievementTitle }: { achievementTitle: string }) {
-  return <section className="rounded-[34px] bg-white p-6 text-center shadow-xl ring-1 ring-[#25262B]/[0.06]"><div className="mx-auto grid h-14 w-14 place-items-center rounded-3xl bg-[#FFB547]/20 text-2xl">🏆</div><h2 className="mt-4 text-2xl font-black">Esta función es un logro</h2><p className="mx-auto mt-2 max-w-xl text-sm font-bold leading-relaxed text-[#746f69]">Completa “{achievementTitle}” para desbloquearla permanentemente.</p><Link href="/panel/logros" className="mt-5 inline-flex rounded-full bg-[#FFB547] px-6 py-3 text-sm font-black text-[#25262B]">Ver mi progreso</Link></section>;
-}
-
 export function PanelFrame({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { isBootstrapping, isRevalidating, contextError, refreshSession, revalidateSession, accountId, selectedStoreId, selectedStore, achievementFeatures, achievements } = usePanelAuth();
+  const { isBootstrapping, isRevalidating, contextError, refreshSession, revalidateSession, accountId, selectedStoreId, selectedStore } = usePanelAuth();
   useEffect(() => {
     if (!isBootstrapping && !contextError && accountId && selectedStoreId && safeMobileRoute(pathname)) writeMobile("private_route", pathname);
   }, [isBootstrapping, contextError, accountId, selectedStoreId, pathname]);
@@ -155,13 +142,6 @@ export function PanelFrame({ children }: { children: React.ReactNode }) {
   if (contextError && !accountId) return <main className="grid min-h-screen place-content-center gap-4 p-6 text-center"><p role="alert">{contextError}</p><button type="button" onClick={() => void refreshSession()} className="min-h-12 rounded-lg bg-[#143D42] px-5 text-white">Reintentar</button><Link href="/panel/login">Ingresar</Link></main>;
 
   const isExpired = isStorePastDue(selectedStore);
-  const requiredFeature = routeFeatureRequirements[pathname];
-  const requiredAchievement = requiredFeature
-    ? achievements.find((item) => item.feature === requiredFeature)
-    : null;
-  const lockedAchievementTitle = requiredFeature && !achievementFeatures[requiredFeature]
-    ? requiredAchievement?.title || "el logro requerido"
-    : "";
   const shouldBlockContent = isExpired && !routesAllowedWhenExpired.has(pathname);
 
   const checking = isRevalidating || Boolean(contextError);
@@ -171,7 +151,7 @@ export function PanelFrame({ children }: { children: React.ReactNode }) {
     <PanelShell active={meta.active} title={meta.title} subtitle={meta.subtitle}>
       <TableOrderNotifier />
       <div key={`${accountId}:${selectedStoreId}`}>
-        {shouldBlockContent ? <ExpiredPanelBlock /> : lockedAchievementTitle ? <LockedFeatureBlock achievementTitle={lockedAchievementTitle} /> : children}
+        {shouldBlockContent ? <ExpiredPanelBlock /> : children}
       </div>
     </PanelShell></div></>
   );

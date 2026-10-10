@@ -80,7 +80,7 @@ const initialDraft: StoreDraft = {
   delivery_estimate: "25-40 min",
   pickup_estimate: "15-25 min",
   payment_methods: "Pago movil, Transferencia, Efectivo, Binance",
-  usd_to_bs: "600",
+  usd_to_bs: "",
   whatsapp_message_note: "",
   primary_color: "#1F464C",
   accent_color: "#F27533",
@@ -92,8 +92,8 @@ const initialDraft: StoreDraft = {
   is_active: true,
   is_test: false,
   table_orders_access_enabled: false,
-  plan_type: "monthly",
-  product_limit: "30",
+  plan_type: "",
+  product_limit: "50",
   service_fee_usd: "0",
   service_fee_payer: "merchant",
   trial_started_at: "",
@@ -102,7 +102,7 @@ const initialDraft: StoreDraft = {
   subscription_started_at: "",
   subscription_ends_at: "",
   next_payment_due_at: "",
-  monthly_price_usd: "20",
+  monthly_price_usd: "0",
   billing_notes: "",
   last_payment_at: "",
   access_email: "",
@@ -262,7 +262,7 @@ function mapStoreToDraft(store: any): StoreDraft {
     is_test: store.is_test === true,
     table_orders_access_enabled: store.table_orders_access_enabled === true,
     plan_type: store.plan_type || "trial",
-    product_limit: String(store.product_limit ?? "30"),
+    product_limit: String(Math.max(50, Number(store.product_limit || 50))),
     service_fee_usd: String(
       store.plan_type === "per_service"
         ? store.monthly_price_usd ?? (store.plan_type === "per_service" ? PER_SERVICE_FEE_USD : 0)
@@ -317,29 +317,12 @@ function Field({
 const inputClass =
   "w-full rounded-2xl border border-[#25262B]/10 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-[#25262B]";
 
-type AdminAchievement = {
-  key: string;
-  title: string;
-  reward: string;
-  unlocked: boolean;
-  source: "earned" | "inherited" | "admin" | null;
-  progress: { current: number; target: number; detail?: string };
-};
-
-type AdminMonthlyChallenge = {
-  key: string;
-  title: string;
-  reward: string;
-  unlocked: boolean;
-  source: "earned" | "admin" | null;
-  rewardStatus: "active" | "revoked" | null;
-  progress: { current: number; target: number; detail?: string };
-};
-
 export function AdminStoreForm({ storeId }: { storeId?: string }) {
   const router = useRouter();
   const isEditing = Boolean(storeId);
-  const [draft, setDraft] = useState<StoreDraft>(initialDraft);
+  const [draft, setDraft] = useState<StoreDraft>(() => isEditing
+    ? initialDraft
+    : { ...initialDraft, payment_methods: "Pago movil, Transferencia, Efectivo" });
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => hasSavedPanelAuth());
   const [isLoading, setIsLoading] = useState(false);
@@ -349,15 +332,33 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [createdStoreId, setCreatedStoreId] = useState("");
-  const [achievements, setAchievements] = useState<AdminAchievement[]>([]);
-  const [monthlyChallenges, setMonthlyChallenges] = useState<AdminMonthlyChallenge[]>([]);
-  const [updatingAchievement, setUpdatingAchievement] = useState("");
   const [cities, setCities] = useState<Array<{ id: string; name: string; state_name: string }>>([]);
+  const [isLoadingRate, setIsLoadingRate] = useState(false);
+  const [rateError, setRateError] = useState("");
 
   useEffect(() => {
     fetch("/api/cities").then((response) => response.json())
       .then((data) => setCities(data.cities || [])).catch(() => setCities([]));
   }, []);
+
+  useEffect(() => {
+    if (isEditing || !isUnlocked) return;
+    let active = true;
+    setIsLoadingRate(true);
+    adminRequest("/api/panel/exchange-rate?currency=USD", "")
+      .then((data) => {
+        if (active && Number(data.rate) > 0) {
+          setDraft((current) => current.usd_to_bs ? current : { ...current, usd_to_bs: String(data.rate) });
+        }
+      })
+      .catch(() => {
+        if (active) setRateError("No se pudo consultar la tasa. Ingresala antes de guardar.");
+      })
+      .finally(() => {
+        if (active) setIsLoadingRate(false);
+      });
+    return () => { active = false; };
+  }, [isEditing, isUnlocked]);
 
   function updateField(field: keyof StoreDraft, value: string | boolean) {
     setDraft((current) => {
@@ -378,6 +379,20 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
         if (value === "trial" || value === "founder") next.monthly_price_usd = "0";
         next.subscription_status = value === "trial" ? "trial" : "active";
         if (value === "per_service" && !current.service_fee_payer) next.service_fee_payer = "merchant";
+        if (!isEditing && value === "trial") {
+          const startedAt = todayDateInput();
+          const endsAt = addDaysToDateInput(startedAt, 15);
+          next.trial_started_at = startedAt;
+          next.trial_ends_at = endsAt;
+          next.next_payment_due_at = endsAt;
+        } else if (!isEditing) {
+          next.trial_started_at = "";
+          next.trial_ends_at = "";
+          next.next_payment_due_at = "";
+        }
+      }
+      if (field === "is_test" && value === false && current.plan_type === "founder") {
+        next.plan_type = "";
       }
       return next;
     });
@@ -389,13 +404,8 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
 
     try {
       if (isEditing) {
-        const [data, achievementData] = await Promise.all([
-          adminRequest(`/api/admin/stores/${storeId}`, ""),
-          adminRequest(`/api/admin/stores/${storeId}/achievements`, ""),
-        ]);
+        const data = await adminRequest(`/api/admin/stores/${storeId}`, "");
         setDraft(mapStoreToDraft(data.store));
-        setAchievements(achievementData.achievements || []);
-        setMonthlyChallenges(achievementData.monthlyChallenges || []);
       } else {
         await adminRequest("/api/admin/summary", "");
       }
@@ -410,49 +420,15 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
     }
   }, [isEditing, storeId]);
 
-  async function updateAchievement(achievement: AdminAchievement, action: "grant" | "revoke") {
-    if (!storeId) return;
-    if (action === "revoke" && !window.confirm(`¿Quitar la recompensa “${achievement.reward}”? Su progreso volverá a cero y deberá cumplir nuevamente la meta.`)) return;
-    setUpdatingAchievement(achievement.key);
-    setError("");
-    setMessage("");
-    try {
-      const data = await adminRequest(`/api/admin/stores/${storeId}/achievements`, "", {
-        method: "PATCH",
-        body: JSON.stringify({ achievementKey: achievement.key, action }),
-      });
-      setAchievements(data.achievements || []);
-      setMessage(data.message || "Recompensa habilitada.");
-      if (achievement.key === "orders_100_product_limit") {
-        setDraft((current) => ({ ...current, product_limit: action === "grant" ? "50" : "30" }));
-      }
-    } catch (nextError: any) {
-      setError(nextError.message || "No se pudo actualizar la recompensa.");
-    } finally {
-      setUpdatingAchievement("");
-    }
-  }
-
-  async function updateMonthlyChallenge(challenge: AdminMonthlyChallenge) {
-    if (!storeId || !challenge.rewardStatus) return;
-    const action = challenge.rewardStatus === "active" ? "revoke_monthly" : "activate_monthly";
-    if (action === "revoke_monthly" && !window.confirm(`¿Retirar temporalmente “${challenge.reward}”?`)) return;
-    setUpdatingAchievement(challenge.key);
-    setError(""); setMessage("");
-    try {
-      const data = await adminRequest(`/api/admin/stores/${storeId}/achievements`, "", { method: "PATCH", body: JSON.stringify({ monthlyChallengeKey: challenge.key, action }) });
-      setMonthlyChallenges(data.monthlyChallenges || []);
-      setMessage(data.message || "Recompensa mensual actualizada.");
-    } catch (nextError: any) {
-      setError(nextError.message || "No se pudo actualizar la recompensa mensual.");
-    } finally {
-      setUpdatingAchievement("");
-    }
-  }
-
   async function saveStore() {
     if (!isEditing && draft.access_email && draft.access_password !== draft.access_password_confirmation) {
       setError("Las claves de acceso no coinciden.");
+      setMessage("");
+      return;
+    }
+
+    if (!isEditing && !(Number(draft.usd_to_bs) > 0)) {
+      setError("Indica una tasa USD a Bs valida.");
       setMessage("");
       return;
     }
@@ -472,9 +448,9 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
           access_password: isEditing ? "" : draft.access_password,
           access_password_confirmation: isEditing ? "" : draft.access_password_confirmation,
           access_role: isEditing ? "owner" : draft.access_role,
-          usd_to_bs: Number(draft.usd_to_bs || 600),
+          usd_to_bs: Number(draft.usd_to_bs),
           monthly_price_usd: Number(draft.monthly_price_usd || 0),
-          product_limit: Number(draft.product_limit || 30),
+          product_limit: Number(draft.product_limit || 50),
           service_fee_usd: Number(draft.service_fee_usd || 0),
         }),
       });
@@ -503,7 +479,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
       subscription_ends_at: source.subscription_ends_at,
       next_payment_due_at: source.next_payment_due_at,
       monthly_price_usd: Number(source.monthly_price_usd || 0),
-      product_limit: Number(source.product_limit || 30),
+      product_limit: Number(source.product_limit || 50),
       service_fee_usd: Number(source.service_fee_usd || 0),
       billing_notes: source.billing_notes,
       last_payment_at: source.last_payment_at,
@@ -702,6 +678,113 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
     );
   }
 
+  if (!isEditing) {
+    return (
+      <section className="mx-auto max-w-4xl border border-[#25262B]/10 bg-white p-5 text-[#25262B] sm:p-7">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#25262B]/10 pb-5">
+          <div>
+            <p className="text-xs font-bold uppercase text-[#746f69]">Admin / Comercios</p>
+            <h1 className="mt-1 text-2xl font-black">Crear comercio</h1>
+          </div>
+          <Link href="/admin/comercios" className="text-sm font-bold text-[#1F464C]">Volver</Link>
+        </div>
+
+        <form className="space-y-6 pt-5" onSubmit={(event) => { event.preventDefault(); void saveStore(); }}>
+          <div>
+            <h2 className="text-base font-black">Datos del comercio</h2>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <Field label="Nombre">
+                <input required value={draft.name} onChange={(event) => updateField("name", event.target.value)} className={inputClass} />
+              </Field>
+              <Field label="Enlace del catalogo">
+                <input required value={draft.slug} onChange={(event) => updateField("slug", event.target.value)} className={inputClass} />
+              </Field>
+              <Field label="Ciudad">
+                <select required value={draft.city_id} onChange={(event) => updateField("city_id", event.target.value)} className={inputClass}>
+                  <option value="">Selecciona una ciudad</option>
+                  {cities.map((city) => <option key={city.id} value={city.id}>{city.name}, {city.state_name}</option>)}
+                </select>
+              </Field>
+              <Field label="Rubro">
+                <select value={draft.business_type} onChange={(event) => updateField("business_type", event.target.value)} className={inputClass}>
+                  {BUSINESS_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+                </select>
+              </Field>
+              <Field label="WhatsApp del comercio">
+                <input required inputMode="tel" value={draft.whatsapp} onChange={(event) => updateField("whatsapp", event.target.value)} placeholder="584245666025" className={inputClass} />
+              </Field>
+              <Field label="Tasa USD a Bs">
+                <input required type="number" min="0.01" step="0.01" value={draft.usd_to_bs} onChange={(event) => updateField("usd_to_bs", event.target.value)} placeholder={isLoadingRate ? "Consultando BCV..." : "Tasa actual"} className={inputClass} />
+              </Field>
+              <Field label="Direccion">
+                <input value={draft.address} onChange={(event) => updateField("address", event.target.value)} className={inputClass} />
+              </Field>
+            </div>
+            {rateError && <p className="mt-2 text-sm text-amber-800">{rateError}</p>}
+          </div>
+
+          <div className="border-t border-[#25262B]/10 pt-5">
+            <h2 className="text-base font-black">Acceso al panel</h2>
+            <p className="mt-1 text-sm text-[#746f69]">Deja el correo vacio para asignar un usuario despues.</p>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <Field label="Correo del propietario">
+                <input type="email" autoComplete="email" value={draft.access_email} onChange={(event) => updateField("access_email", event.target.value)} className={inputClass} />
+              </Field>
+              {draft.access_email && (
+                <>
+                  <Field label="Clave inicial">
+                    <input type="password" autoComplete="new-password" value={draft.access_password} onChange={(event) => updateField("access_password", event.target.value)} placeholder="Clave unica y dificil de adivinar" className={inputClass} />
+                  </Field>
+                  <Field label="Confirmar clave">
+                    <input type="password" autoComplete="new-password" value={draft.access_password_confirmation} onChange={(event) => updateField("access_password_confirmation", event.target.value)} className={inputClass} />
+                  </Field>
+                </>
+              )}
+            </div>
+            {draft.access_email && <p className="mt-2 text-sm text-[#746f69]">Evita nombres, anos y claves comunes. Si el correo ya tiene cuenta, puedes asignarlo desde el comercio creado.</p>}
+          </div>
+
+          <div className="border-t border-[#25262B]/10 pt-5">
+            <h2 className="text-base font-black">Operacion</h2>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <Field label="Modelo comercial">
+                <select required value={draft.plan_type} onChange={(event) => updateField("plan_type", event.target.value)} className={inputClass}>
+                  <option value="">Selecciona un modelo</option>
+                  <option value="monthly">Mensualidad $20</option>
+                  <option value="per_service">Fee por pedido ${PER_SERVICE_FEE_USD.toFixed(2)}</option>
+                  <option value="trial">Prueba de 15 dias</option>
+                  {draft.is_test && <option value="founder">Founder (solo pruebas)</option>}
+                </select>
+              </Field>
+              {draft.plan_type === "per_service" && (
+                <Field label="Quien paga el fee">
+                  <select value={draft.service_fee_payer} onChange={(event) => updateField("service_fee_payer", event.target.value)} className={inputClass}>
+                    <option value="customer">Cliente (recomendado)</option>
+                    <option value="merchant">Comercio</option>
+                  </select>
+                </Field>
+              )}
+              <Field label="Metodos de pago (separados por coma)">
+                <input required value={draft.payment_methods} onChange={(event) => updateField("payment_methods", event.target.value)} className={inputClass} />
+              </Field>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-x-6 gap-y-3 text-sm font-bold">
+              <label className="flex items-center gap-2"><input type="checkbox" checked={draft.accepts_delivery} onChange={(event) => updateField("accepts_delivery", event.target.checked)} /> Delivery</label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={draft.accepts_pickup} onChange={(event) => updateField("accepts_pickup", event.target.checked)} /> Retiro</label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={draft.is_test} onChange={(event) => updateField("is_test", event.target.checked)} /> Cuenta de prueba</label>
+            </div>
+          </div>
+
+          {error && <p role="alert" className="text-sm font-bold text-red-700">{error}</p>}
+          <button type="submit" disabled={isSaving || isLoadingRate} className="inline-flex min-h-11 items-center justify-center gap-2 bg-[#1F464C] px-5 py-3 text-sm font-bold text-white disabled:opacity-50">
+            {isSaving ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />}
+            Crear comercio
+          </button>
+        </form>
+      </section>
+    );
+  }
+
   const subscription = subscriptionSummary(draft);
   const primarySubscriptionDate = getPrimarySubscriptionDate(draft);
   const feePayerLabel =
@@ -779,32 +862,6 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
           </div>
         </section>
       ) : null}
-
-      {isEditing ? <section className="mt-6 rounded-[28px] bg-white p-4 ring-1 ring-[#25262B]/[0.08]">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Control Super Admin</p>
-          <h3 className="mt-1 text-xl font-black text-[#25262B]">Logros y recompensas</h3>
-          <p className="mt-1 text-sm font-bold text-[#746f69]">Puedes habilitar o retirar una recompensa. Al retirarla, su progreso vuelve a cero y solo cuenta actividad nueva.</p>
-        </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {achievements.map((achievement) => <article key={achievement.key} className="rounded-[22px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
-            <div className="flex items-start justify-between gap-2"><div><p className="text-sm font-black text-[#25262B]">{achievement.title}</p><p className="mt-1 text-xs font-bold text-[#746f69]">{achievement.reward}</p></div><span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${achievement.unlocked ? "bg-green-100 text-green-700" : "bg-white text-[#746f69]"}`}>{achievement.unlocked ? achievement.source === "inherited" ? "Heredado" : achievement.source === "admin" ? "Admin" : "Logrado" : "Pendiente"}</span></div>
-            <p className="mt-3 text-xs font-bold text-[#746f69]">{achievement.progress.detail || `${achievement.progress.current} de ${achievement.progress.target}`}</p>
-            <button type="button" onClick={() => updateAchievement(achievement, achievement.unlocked ? "revoke" : "grant")} disabled={updatingAchievement === achievement.key} className={`mt-3 inline-flex w-full items-center justify-center rounded-full px-4 py-2 text-xs font-black disabled:cursor-not-allowed disabled:opacity-60 ${achievement.unlocked ? "bg-red-50 text-red-700 ring-1 ring-red-200" : "bg-[#2E3A79] text-white"}`}>{updatingAchievement === achievement.key ? "Actualizando..." : achievement.unlocked ? "Quitar recompensa" : "Habilitar manualmente"}</button>
-          </article>)}
-        </div>
-      </section> : null}
-
-      {isEditing && monthlyChallenges.length ? <section className="mt-6 rounded-[28px] bg-gradient-to-br from-[#FFF0C9] to-white p-4 ring-1 ring-[#FFB547]/40">
-        <div><p className="text-xs font-black uppercase tracking-[0.14em] text-[#8A5700]">Campaña temporal</p><h3 className="mt-1 text-xl font-black text-[#25262B]">Retos de agosto</h3><p className="mt-1 text-sm font-bold text-[#746f69]">Puedes retirar o reactivar una recompensa mensual que el comercio ya haya ganado.</p></div>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          {monthlyChallenges.map((challenge) => <article key={challenge.key} className="rounded-[22px] bg-white p-4 ring-1 ring-[#25262B]/[0.06]">
-            <div className="flex items-start justify-between gap-2"><div><p className="text-sm font-black text-[#25262B]">{challenge.title}</p><p className="mt-1 text-xs font-bold text-[#746f69]">{challenge.reward}</p></div><span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${challenge.rewardStatus === "active" ? "bg-green-100 text-green-700" : challenge.rewardStatus === "revoked" ? "bg-red-50 text-red-700" : "bg-[#F8F3E8] text-[#746f69]"}`}>{challenge.rewardStatus === "active" ? "Ganada" : challenge.rewardStatus === "revoked" ? "Retirada" : "En progreso"}</span></div>
-            <p className="mt-3 text-xs font-bold text-[#746f69]">{challenge.progress.detail || `${challenge.progress.current} de ${challenge.progress.target}`}</p>
-            {challenge.rewardStatus ? <button type="button" onClick={() => updateMonthlyChallenge(challenge)} disabled={updatingAchievement === challenge.key} className={`mt-3 inline-flex w-full items-center justify-center rounded-full px-4 py-2 text-xs font-black disabled:opacity-60 ${challenge.rewardStatus === "active" ? "bg-red-50 text-red-700 ring-1 ring-red-200" : "bg-[#2E3A79] text-white"}`}>{updatingAchievement === challenge.key ? "Actualizando..." : challenge.rewardStatus === "active" ? "Retirar recompensa" : "Reactivar recompensa"}</button> : null}
-          </article>)}
-        </div>
-      </section> : null}
 
       <section className="mt-6 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
         <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
@@ -980,7 +1037,7 @@ export function AdminStoreForm({ storeId }: { storeId?: string }) {
             </Field>
           )}
           <Field label="Límite de productos">
-            <input type="number" min="1" max="10000" step="1" value={draft.product_limit} onChange={(event) => updateField("product_limit", event.target.value)} className={inputClass} />
+            <input type="number" min="50" max="10000" step="1" value={draft.product_limit} onChange={(event) => updateField("product_limit", event.target.value)} className={inputClass} />
           </Field>
           <Field label="Proximo cobro">
             <input type="date" value={draft.next_payment_due_at} onChange={(event) => updateField("next_payment_due_at", event.target.value)} className={inputClass} />

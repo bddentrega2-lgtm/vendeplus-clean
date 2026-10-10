@@ -133,7 +133,7 @@ export function AdminAnnouncementsManager() {
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div><label className="block text-sm font-black">Texto del botón (opcional)</label><input maxLength={40} value={form.actionLabel} onChange={(event) => setForm({ ...form, actionLabel: event.target.value })} placeholder="Ver reto" className="mt-2 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none" /></div>
-          <div><label className="block text-sm font-black">Enlace (opcional)</label><input maxLength={500} value={form.actionUrl} onChange={(event) => setForm({ ...form, actionUrl: event.target.value })} placeholder="/panel/logros" className="mt-2 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none" /></div>
+          <div><label className="block text-sm font-black">Enlace (opcional)</label><input maxLength={500} value={form.actionUrl} onChange={(event) => setForm({ ...form, actionUrl: event.target.value })} placeholder="/panel/pedidos" className="mt-2 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none" /></div>
         </div>
 
         <label className="mt-4 block text-sm font-black">Finaliza (opcional)</label>

@@ -260,7 +260,7 @@ export async function PATCH(request: NextRequest) {
       trial_ends_at: trialEndsAt.toISOString(),
       subscription_status: "trial",
       monthly_price_usd: 0,
-      product_limit: 30,
+      product_limit: 50,
     });
 
     const { data: store, error: storeError } = await supabase

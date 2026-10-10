@@ -1,5 +1,5 @@
-import { AchievementsManager } from "@/components/panel/AchievementsManager";
+import { redirect } from "next/navigation";
 
 export default function AchievementsPage() {
-  return <AchievementsManager />;
+  redirect("/panel");
 }

@@ -210,7 +210,6 @@ export function DashboardManager() {
 
   const summary = stats.summary || {};
   const achievementFeatures = stats.achievementFeatures;
-  const hasBasicStats = achievementFeatures === null || achievementFeatures?.basic_stats;
   const hasFullStats = achievementFeatures === null || achievementFeatures?.full_stats;
   const hasCustomers = achievementFeatures === null || achievementFeatures?.customers_basic;
   const stores = Array.isArray(stats.stores) ? stats.stores : [];
@@ -507,11 +506,11 @@ export function DashboardManager() {
         </div>
       </section> : null}
 
-      {hasBasicStats ? <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {cards.map((card) => (
           <MetricCard key={card.label} {...card} />
         ))}
-      </section> : <section className="rounded-[34px] bg-white p-6 text-center shadow-xl ring-1 ring-[#25262B]/[0.06]"><Lock className="mx-auto text-[#2E3A79]" /><h2 className="mt-3 text-2xl font-black">Tus estadísticas se desbloquean con 10 pedidos</h2><p className="mt-2 text-sm font-bold text-[#746f69]">Revisa tu progreso y los demás beneficios disponibles.</p><Link href="/panel/logros" className="mt-4 inline-flex rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black">Ver logros</Link></section>}
+      </section>
 
       <section className="grid gap-5 xl:grid-cols-2">
         {hasFullStats ? <div className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
@@ -545,8 +544,8 @@ export function DashboardManager() {
             <Link href="/panel/pedidos" className="rounded-full bg-[#FFB547] px-5 py-3 text-center text-sm font-black text-[#25262B]">
               Ver pedidos
             </Link>
-            <Link href={hasFullStats ? "/panel/estadisticas" : "/panel/logros"} className="rounded-full bg-[#F8F3E8] px-5 py-3 text-center text-sm font-black text-[#2E3A79]">
-              {hasFullStats ? "Estadísticas completas" : "Desbloquear estadísticas"}
+            <Link href="/panel/estadisticas" className="rounded-full bg-[#F8F3E8] px-5 py-3 text-center text-sm font-black text-[#2E3A79]">
+              Estadísticas completas
             </Link>
           </div>
         </div>

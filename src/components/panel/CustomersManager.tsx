@@ -778,7 +778,7 @@ export function CustomersManager() {
                   type="button"
                   onClick={() => openCustomer(customer)}
                   disabled={isLoadingDetail || !customerDetailsUnlocked}
-                  title={customerDetailsUnlocked ? "Ver detalle" : "Completa el logro de 3 promociones y 3 meses activos"}
+                  title={customerDetailsUnlocked ? "Ver detalle" : "Detalle no disponible"}
                   className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-[#2E3A79] px-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <UserRound size={16} />

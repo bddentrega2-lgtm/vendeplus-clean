@@ -14,6 +14,7 @@ const PANEL_OAUTH_REDIRECT_KEY = "vendeplus_panel_oauth_redirect";
 let memoryPanelToken = "";
 let panelSessionBootstrapped = false;
 let panelTokenPromise: Promise<string> | null = null;
+let panelOAuthCompletionPromise: Promise<string> | null = null;
 
 type NativePanelAuthPlugin = {
   getPanelRedirectUrl: () => Promise<{ url: string }>;
@@ -124,7 +125,7 @@ export async function signInPanelWithGoogle(
     provider: "google",
     options: {
       redirectTo: redirectTo.toString(),
-      skipBrowserRedirect: Boolean(nativePlugin),
+      skipBrowserRedirect: true,
       queryParams: {
         access_type: "offline",
         prompt: "select_account",
@@ -187,7 +188,7 @@ export function hasPanelOAuthReturn() {
   );
 }
 
-export async function completePanelOAuthSession() {
+async function exchangePanelOAuthSession() {
   const supabase = createSupabaseBrowserClient();
   if (!supabase || typeof window === "undefined") return "";
 
@@ -223,6 +224,16 @@ export async function completePanelOAuthSession() {
   }
 
   return accessToken;
+}
+
+export async function completePanelOAuthSession() {
+  if (panelOAuthCompletionPromise) return panelOAuthCompletionPromise;
+  panelOAuthCompletionPromise = exchangePanelOAuthSession();
+  try {
+    return await panelOAuthCompletionPromise;
+  } finally {
+    panelOAuthCompletionPromise = null;
+  }
 }
 
 export async function clearPanelServerSession() {

@@ -750,7 +750,7 @@ function StoreSettingsCard({
           <div>
             <h3 className="text-lg font-black text-[#25262B]">Identidad visual</h3>
             <p className="mt-1 text-sm font-bold text-[#746f69]">
-              {canCustomizeColors ? "Ajusta los colores principales que verá el cliente en el catálogo público." : "Refiere un comercio y ayúdalo a completar su primera venta para desbloquear los colores."}
+              {canCustomizeColors ? "Ajusta los colores principales que verá el cliente en el catálogo público." : "Los colores no están disponibles para este comercio."}
             </p>
           </div>
           <div

@@ -67,13 +67,6 @@ export async function GET(request: NextRequest) {
     }
 
     const scopedStoreIds = requestedStoreId ? [requestedStoreId] : auth.storeIds;
-    const customerDetailsPromise = scopedStoreIds === null
-      ? Promise.resolve({ data: [], error: null })
-      : supabase
-          .from("store_achievement_unlocks")
-          .select("store_id")
-          .in("store_id", scopedStoreIds)
-          .eq("achievement_key", "promos_3_three_months_customer_details");
     const { searchParams } = new URL(request.url);
     const search = String(searchParams.get("search") || "").trim();
     const safeSearch = search.replace(/[,.%()]/g, " ").trim();
@@ -155,19 +148,13 @@ export async function GET(request: NextRequest) {
       }))
     );
 
-    const [customersResult, storesResult, customerDetailsResult, summaryResults] = await Promise.all([
+    const [customersResult, storesResult, summaryResults] = await Promise.all([
       customersQuery,
       storesQuery,
-      customerDetailsPromise,
       Promise.all(summaryPromises),
     ]);
 
-    if (customerDetailsResult.error) throw customerDetailsResult.error;
-    const unlockedStoreIds = new Set(
-      (customerDetailsResult.data || []).map((row: any) => String(row.store_id))
-    );
-    const customerDetailsUnlocked =
-      scopedStoreIds === null || scopedStoreIds.every((storeId) => unlockedStoreIds.has(storeId));
+    const customerDetailsUnlocked = true;
 
     if (customersResult.error) {
       return NextResponse.json({

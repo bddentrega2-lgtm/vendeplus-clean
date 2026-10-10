@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { panelErrorResponse, requirePanelAuth } from "@/lib/panel/access";
-
-const fullStatsAchievement = {
-  feature: "full_stats",
-  title: "Completa 50 pedidos",
-};
+import { includedAchievementFeatures } from "@/lib/achievements";
 
 export async function GET(request: NextRequest) {
   try {
@@ -24,47 +20,19 @@ export async function GET(request: NextRequest) {
     }
 
     const requestedStoreId = String(request.headers.get("x-panel-store-id") || "").trim();
-    const authorizedStoreId = auth.isFounderMode
-      ? requestedStoreId
-      : auth.storeIds?.includes(requestedStoreId)
-        ? requestedStoreId
-        : auth.storeIds?.[0] || "";
-    const unlockPromise = authorizedStoreId
-      ? supabase
-          .from("store_achievement_unlocks")
-          .select("achievement_key")
-          .eq("store_id", authorizedStoreId)
-          .eq("achievement_key", "orders_50_full_stats")
-          .maybeSingle()
-      : Promise.resolve({ data: null, error: null });
-
-    const [{ data, error }, initialUnlock] = await Promise.all([query, unlockPromise]);
+    const { data, error } = await query;
     if (error) throw error;
 
     const stores = data || [];
     const selectedStore = stores.find((store) => store.id === requestedStoreId) || stores[0] || null;
-    let fullStatsUnlocked = Boolean(initialUnlock.data);
-    if (initialUnlock.error) throw initialUnlock.error;
-
-    if (selectedStore && selectedStore.id !== authorizedStoreId) {
-      const { data: unlock, error: unlockError } = await supabase
-        .from("store_achievement_unlocks")
-        .select("achievement_key")
-        .eq("store_id", selectedStore.id)
-        .eq("achievement_key", "orders_50_full_stats")
-        .maybeSingle();
-
-      if (unlockError) throw unlockError;
-      fullStatsUnlocked = Boolean(unlock);
-    }
 
     return NextResponse.json({
       userId: auth.userId,
       isFounderMode: auth.isFounderMode,
       stores,
       selectedStoreId: selectedStore?.id || "",
-      achievementFeatures: { full_stats: fullStatsUnlocked },
-      achievements: [{ ...fullStatsAchievement, unlocked: fullStatsUnlocked }],
+      achievementFeatures: selectedStore ? includedAchievementFeatures : {},
+      achievements: [],
     });
   } catch (error) {
     return panelErrorResponse(error, "Error cargando comercios disponibles.");

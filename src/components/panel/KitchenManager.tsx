@@ -36,7 +36,7 @@ export function KitchenManager() {
     if (!cancellation) return;
     await kitchen.cancel(order.id, order.status, cancellation);
   };
-  if (!kitchen.eligible) return <div className="py-8"><h2 className="text-lg font-bold">Cocina no disponible</h2><p className="mt-2 text-sm">Requiere Mesa activa y autorizada por administración.</p><Link href="/panel/pedidos" className="mt-4 inline-block font-bold text-emerald-800">Ir a Pedidos</Link></div>;
+  if (!kitchen.eligible) return <div className="py-8"><h2 className="text-lg font-bold">Cocina no disponible</h2><p className="mt-2 text-sm">Activa Mesa / Barra para configurar Cocina.</p><Link href="/panel/mesas" className="mt-4 inline-block font-bold text-emerald-800">Ir a Mesa / Barra</Link></div>;
   return <div ref={board} className={`@container min-w-0 bg-[#F5F7F8] text-[#203538] ${fullscreen ? 'h-screen overflow-auto p-4' : ''}`}>
     {cancellationDialog}
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 py-3">

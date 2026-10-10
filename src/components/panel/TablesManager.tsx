@@ -58,7 +58,7 @@ const nextStatusAction: Record<string, { status: string; label: string }> = {
 export function TablesManager() {
   const kitchen = useKitchen();
   const kitchenTickets = useMemo(() => new Map(kitchen.tickets.map(ticket => [ticket.order_id, ticket])), [kitchen.tickets]);
-  const { selectedStoreId, selectedStore } = usePanelAuth();
+  const { selectedStoreId, selectedStore, revalidateSession } = usePanelAuth();
   const [tables, setTables] = useState<TableRow[]>([]);
   const [tableOrders, setTableOrders] = useState<ActiveOrder[]>([]);
   const [counterOrders, setCounterOrders] = useState<ActiveOrder[]>([]);
@@ -254,6 +254,7 @@ export function TablesManager() {
       });
       setNotice("Configuración guardada.");
       window.setTimeout(() => setNotice(""), 2200);
+      if (selectedStore?.table_orders_enabled !== enabled) await revalidateSession();
       await load(true);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "No se pudo guardar.");

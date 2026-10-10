@@ -155,7 +155,7 @@ export function normalizeAdminStorePayload(body: any) {
     is_test: body.is_test === true,
     table_orders_access_enabled: body.table_orders_access_enabled === true,
     plan_type: planType,
-    product_limit: Math.min(10000, Math.max(1, Number(body.product_limit || DEFAULT_PRODUCT_LIMIT))),
+    product_limit: Math.min(10000, Math.max(DEFAULT_PRODUCT_LIMIT, Number(body.product_limit || DEFAULT_PRODUCT_LIMIT))),
     service_fee_payer: body.service_fee_payer === "customer" ? "customer" : "merchant",
     service_fee_billing_cycle: "monthly",
     trial_started_at: cleanText(body.trial_started_at) || null,
@@ -189,7 +189,7 @@ export function normalizeAdminSubscriptionPayload(body: any) {
 
   return normalizePastDueDates({
     plan_type: planType,
-    product_limit: Math.min(10000, Math.max(1, Number(body.product_limit || DEFAULT_PRODUCT_LIMIT))),
+    product_limit: Math.min(10000, Math.max(DEFAULT_PRODUCT_LIMIT, Number(body.product_limit || DEFAULT_PRODUCT_LIMIT))),
     service_fee_payer: body.service_fee_payer === "customer" ? "customer" : "merchant",
     service_fee_billing_cycle: "monthly",
     subscription_status: subscriptionStatus,

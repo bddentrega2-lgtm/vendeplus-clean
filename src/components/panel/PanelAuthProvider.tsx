@@ -174,7 +174,7 @@ export function PanelAuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function revalidateSession() {
-    if (!isNativeApp() || !accountRef.current) return;
+    if (!accountRef.current) return;
     setIsRevalidating(true);
     try { await loadPanelContext(); }
     catch (error) { setContextError(getContextErrorMessage(error, "No pudimos comprobar tu acceso. Reintenta.")); }

@@ -25,8 +25,6 @@ import {
   ListPlus,
   Printer,
   Settings,
-  Sparkles,
-  Trophy,
   Tags,
   Trash2,
   Truck,
@@ -38,8 +36,7 @@ const navItems = [
   { href: "/panel", label: "Inicio", icon: LayoutDashboard },
   { href: "/panel/pedidos", label: "Pedidos", icon: ClipboardList },
   { href: "/panel/mesas", label: "Mesa / Barra", icon: UtensilsCrossed, premiumFeature: "table_orders" },
-  { href: "/panel/cocina", label: "Cocina", icon: ChefHat, premiumFeature: "table_orders", kitchenOnly: true },
-  { href: "/panel/logros", label: "Logros", icon: Trophy, featured: true },
+  { href: "/panel/cocina", label: "Cocina", icon: ChefHat, premiumFeature: "table_orders" },
   { href: "/panel/productos", label: "Productos", icon: Boxes },
   { href: "/panel/catalogo", label: "Categorías", icon: Tags },
   { href: "/panel/opciones", label: "Variantes o adicionales", icon: ListPlus },
@@ -102,7 +99,6 @@ export function PanelShell({
   const visibleNavItems = navItems.filter(
     (item) =>
       (!item.nativeOnly || isNativeApp) &&
-      (!item.kitchenOnly || selectedStore?.table_orders_enabled === true) &&
       (!item.premiumFeature || selectedStore?.table_orders_access_enabled === true)
   );
 
@@ -123,7 +119,6 @@ export function PanelShell({
             {visibleNavItems.map((item) => {
               const Icon = item.icon;
               const isActive = active === item.href;
-              const isFeatured = Boolean(item.featured);
 
               return (
                 <Link
@@ -135,14 +130,11 @@ export function PanelShell({
                     "flex items-center gap-3 rounded-3xl px-4 py-3 text-sm font-black transition",
                     isActive
                       ? "bg-[#2E3A79] text-white shadow-xl shadow-[#2E3A79]/20"
-                      : isFeatured
-                        ? "relative overflow-hidden bg-gradient-to-r from-[#FFF0C9] to-[#FFB547] text-[#2E3A79] shadow-lg shadow-[#FFB547]/30 ring-1 ring-[#FFB547] hover:-translate-y-0.5"
-                        : "text-[#746f69] hover:bg-[#F8F3E8] hover:text-[#25262B]",
+                      : "text-[#746f69] hover:bg-[#F8F3E8] hover:text-[#25262B]",
                   ].join(" ")}
                 >
                   <Icon size={18} />
                   {item.label}
-                  {isFeatured && !isActive ? <Sparkles size={15} className="ml-auto animate-pulse" aria-hidden="true" /> : null}
                 </Link>
               );
             })}
@@ -207,7 +199,6 @@ export function PanelShell({
             {visibleNavItems.map((item) => {
               const Icon = item.icon;
               const isActive = active === item.href;
-              const isFeatured = Boolean(item.featured);
 
               return (
                 <Link
@@ -219,9 +210,7 @@ export function PanelShell({
                     "group flex items-center gap-3 rounded-[24px] p-4 text-sm font-black shadow-lg shadow-[#2E3A79]/[0.05] ring-1 ring-[#25262B]/[0.06] transition hover:-translate-y-0.5",
                     isActive
                       ? "bg-[#2E3A79] text-white"
-                      : isFeatured
-                        ? "bg-gradient-to-br from-[#FFF0C9] to-[#FFB547] text-[#2E3A79] ring-[#FFB547] shadow-[#FFB547]/25"
-                        : "bg-white text-[#746f69] hover:text-[#25262B]",
+                      : "bg-white text-[#746f69] hover:text-[#25262B]",
                   ].join(" ")}
                 >
                   <span
@@ -229,9 +218,7 @@ export function PanelShell({
                       "grid h-10 w-10 shrink-0 place-items-center rounded-2xl transition",
                       isActive
                         ? "bg-white/15 text-[#FFB547]"
-                        : isFeatured
-                          ? "bg-white/70 text-[#2E3A79]"
-                          : "bg-[#F8F3E8] text-[#2E3A79] group-hover:bg-[#FFB547] group-hover:text-[#25262B]",
+                        : "bg-[#F8F3E8] text-[#2E3A79] group-hover:bg-[#FFB547] group-hover:text-[#25262B]",
                     ].join(" ")}
                   >
                     <Icon size={18} />
