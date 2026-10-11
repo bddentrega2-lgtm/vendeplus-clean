@@ -24,6 +24,7 @@ import {
   KeyRound,
   ListPlus,
   Printer,
+  ScanBarcode,
   Settings,
   Tags,
   Trash2,
@@ -35,6 +36,7 @@ import {
 const navItems = [
   { href: "/panel", label: "Inicio", icon: LayoutDashboard },
   { href: "/panel/pedidos", label: "Pedidos", icon: ClipboardList },
+  { href: "/panel/pos", label: "Pedido manual", icon: ScanBarcode },
   { href: "/panel/mesas", label: "Mesa / Barra", icon: UtensilsCrossed, premiumFeature: "table_orders" },
   { href: "/panel/cocina", label: "Cocina", icon: ChefHat, premiumFeature: "table_orders" },
   { href: "/panel/productos", label: "Productos", icon: Boxes },

@@ -1,14 +1,16 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   CheckCircle2,
+  ImageOff,
   Loader2,
   Lock,
+  Maximize2,
   Minus,
+  Minimize2,
   Plus,
   Save,
   Search,
@@ -18,12 +20,16 @@ import {
   X,
 } from "lucide-react";
 import { formatUsd } from "@/lib/currency";
+import { methodsForChannel } from "@/lib/payment-availability";
+import { OptimizedImage } from "@/components/shared/OptimizedImage";
+import { useNativeBackLayer } from "@/hooks/use-native-app";
 import type { ProductOptionGroup, SelectedCartOption } from "@/types";
 import { PanelAccessGate, PanelModuleSkeleton } from "@/components/panel/PanelLoadingState";
 import {
   getPanelAccessToken,
   getPanelAuthHeaders,
   getSavedPanelPin,
+  getSelectedPanelStoreId,
   hasSavedPanelAuth,
   savePanelPin,
   shouldShowPanelInitialAccessGate,
@@ -34,6 +40,10 @@ type StoreRow = {
   slug: string;
   name: string;
   payment_methods: string[] | null;
+  table_payment_methods?: string[] | null;
+  table_orders_access_enabled?: boolean;
+  table_orders_enabled?: boolean;
+  payment_details?: { availability?: Record<string, Array<"delivery" | "pickup" | "table" | "bar">> } | null;
   accepts_delivery: boolean;
   accepts_pickup: boolean;
   inventory_enabled?: boolean;
@@ -50,6 +60,7 @@ type ProductRow = {
   store_id: string;
   category_id: string | null;
   name: string;
+  image_url?: string | null;
   price_usd: number | string;
   is_available: boolean;
   categories?: { name?: string } | null;
@@ -71,6 +82,7 @@ type ProductRow = {
 };
 
 type SelectedItem = {
+  lineId: string;
   productId: string;
   variantId: string;
   variantName: string;
@@ -100,8 +112,9 @@ const fallbackPaymentMethods = [
 
 const ENABLE_ORDER_INTERPRETER = false;
 
-function getPaymentMethods(store?: StoreRow) {
-  return store?.payment_methods?.length ? store.payment_methods : fallbackPaymentMethods;
+function getPaymentMethods(store?: StoreRow, mode?: FulfillmentType) {
+  return methodsForChannel(store ? store.payment_methods : fallbackPaymentMethods,
+    store?.payment_details, mode || "delivery", store?.table_payment_methods);
 }
 
 function inventorySkuLabel(attributes: Record<string, string>, fallback: string) {
@@ -132,7 +145,11 @@ async function panelRequest(pin: string, url: string, options?: RequestInit) {
 
 export function ManualOrderManager() {
   const idempotencyKeyRef = useRef<string | null>(null);
-  const router = useRouter();
+  const boardRef = useRef<HTMLDivElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [expandedFallback, setExpandedFallback] = useState(false);
+  const [showTicket, setShowTicket] = useState(false);
+  const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [pin, setPin] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => shouldShowPanelInitialAccessGate());
@@ -166,6 +183,44 @@ export function ManualOrderManager() {
   const [success, setSuccess] = useState("");
 
   const selectedStore = stores.find((store) => store.id === selectedStoreId);
+  const expanded = fullscreen || expandedFallback;
+  useNativeBackLayer(expanded && !customizingProductId, () => { void toggleFullscreen(); });
+  useNativeBackLayer(showTicket && !customizingProductId, () => setShowTicket(false));
+
+  useEffect(() => {
+    const onChange = () => setFullscreen(document.fullscreenElement === boardRef.current);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  useEffect(() => {
+    if (!expandedFallback) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previous; };
+  }, [expandedFallback]);
+
+  useEffect(() => {
+    if (!showTicket) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previous; };
+  }, [showTicket]);
+
+  async function toggleFullscreen() {
+    if (document.fullscreenElement === boardRef.current) {
+      await document.exitFullscreen();
+    } else if (expandedFallback) {
+      setExpandedFallback(false);
+    } else {
+      try {
+        if (!boardRef.current?.requestFullscreen) throw new Error("Fullscreen unavailable");
+        await boardRef.current.requestFullscreen();
+      } catch {
+        setExpandedFallback(true);
+      }
+    }
+  }
   const usePhysicalTables = tableChoices.storeId === selectedStoreId && tableChoices.eligible;
   useEffect(() => {
     let active = true;
@@ -186,18 +241,23 @@ export function ManualOrderManager() {
     [products, selectedStoreId]
   );
 
+  const storeCategories = useMemo(() => {
+    const activeIds = new Set(storeProducts.map((product) => product.category_id));
+    return categories.filter((category) => category.store_id === selectedStoreId && activeIds.has(category.id));
+  }, [categories, selectedStoreId, storeProducts]);
+
   const filteredProducts = useMemo(() => {
     const needle = query.trim().toLowerCase();
 
-    if (!needle) return storeProducts;
-
     return storeProducts.filter((product) => {
+      if (selectedCategoryId && product.category_id !== selectedCategoryId) return false;
+      if (!needle) return true;
       const category = categories.find((item) => item.id === product.category_id);
       return `${product.name} ${category?.name || ""}`
         .toLowerCase()
         .includes(needle);
     });
-  }, [categories, query, storeProducts]);
+  }, [categories, query, selectedCategoryId, storeProducts]);
 
   const selectedRows = useMemo(
     () =>
@@ -235,9 +295,9 @@ export function ManualOrderManager() {
   const safeDeliveryUsd = deliveryType === "delivery" ? Math.max(0, Number(deliveryUsd || 0)) : 0;
   const totalUsd = subtotalUsd + safeDeliveryUsd;
   const totalQuantity = selectedRows.reduce((sum, item) => sum + item.quantity, 0);
-  const customizingRow = selectedRows.find((item) => item.productId === customizingProductId);
-  const customizingGroups = customizingProductId
-    ? optionGroupsByProduct[customizingProductId] || []
+  const customizingRow = selectedRows.find((item) => item.lineId === customizingProductId);
+  const customizingGroups = customizingRow
+    ? optionGroupsByProduct[customizingRow.productId] || []
     : [];
   const customizingVariants = customizingRow
     ? [...(customizingRow.product.product_variants || [])]
@@ -281,8 +341,9 @@ export function ManualOrderManager() {
       setStores(nextStores);
       setCategories(data.categories || []);
       setProducts(data.products || []);
-      setSelectedStoreId((current) => current || nextStores[0]?.id || "");
-      setPaymentMethod((current) => current || getPaymentMethods(nextStores[0])[0] || "");
+      const activeStore = nextStores.find((store: StoreRow) => store.id === getSelectedPanelStoreId()) || nextStores[0];
+      setSelectedStoreId((current) => current || activeStore?.id || "");
+      setPaymentMethod((current) => current || getPaymentMethods(activeStore)[0] || "");
       setIsUnlocked(true);
       savePanelPin(currentPin);
     } catch (error: any) {
@@ -320,10 +381,13 @@ export function ManualOrderManager() {
   }, []);
 
   useEffect(() => {
-    const methods = getPaymentMethods(selectedStore);
+    const methods = getPaymentMethods(selectedStore, deliveryType);
     setPaymentMethod((current) =>
       current && methods.includes(current) ? current : methods[0] || ""
     );
+  }, [deliveryType, selectedStore]);
+
+  useEffect(() => {
     setItems((current) =>
       current.filter((item) =>
         products.some(
@@ -332,7 +396,9 @@ export function ManualOrderManager() {
       )
     );
     setCustomizingProductId("");
-  }, [products, selectedStore, selectedStoreId]);
+    setSelectedCategoryId("");
+    setQuery("");
+  }, [products, selectedStoreId]);
 
   useEffect(() => {
     if (!customizingProductId) return;
@@ -344,30 +410,32 @@ export function ManualOrderManager() {
   }, [customizingProductId]);
 
   async function addProduct(product: ProductRow) {
+    setSuccess("");
+    const lineId = globalThis.crypto.randomUUID();
+    const hasVariants = (product.product_variants || []).some((variant) => variant.is_available !== false);
+    const cachedGroups = optionGroupsByProduct[product.id];
+    const needsCustomization = hasVariants || Boolean(cachedGroups?.length) || Boolean(product.product_inventory_skus?.length);
     setItems((current) => {
-      const existing = current.find((item) => item.productId === product.id);
+      const existing = !needsCustomization && cachedGroups
+        ? current.find((item) => item.productId === product.id && !item.variantId && !item.selectedOptions.length && !item.notes)
+        : undefined;
 
       if (existing) {
         return current.map((item) =>
-          item.productId === product.id
+          item.lineId === existing.lineId
             ? {
                 ...item,
                 quantity: item.quantity + 1,
-                inventorySelections: product.product_inventory_skus?.length
-                  ? []
-                  : item.inventorySelections,
               }
             : item
         );
       }
 
-      return [...current, { productId: product.id, variantId: "", variantName: "", quantity: 1, notes: "", selectedOptions: [], inventorySelections: [] }];
+      return [...current, { lineId, productId: product.id, variantId: "", variantName: "", quantity: 1, notes: "", selectedOptions: [], inventorySelections: [] }];
     });
 
-    const hasVariants = (product.product_variants || []).some((variant) => variant.is_available !== false);
-    const cachedGroups = optionGroupsByProduct[product.id];
     if (cachedGroups) {
-      if (hasVariants || cachedGroups.length || (product.product_inventory_skus || []).length) setCustomizingProductId(product.id);
+      if (needsCustomization) setCustomizingProductId(lineId);
       return;
     }
     if (!selectedStore?.slug) return;
@@ -382,7 +450,7 @@ export function ManualOrderManager() {
       const data = await response.json().catch(() => ({}));
       const nextGroups = response.ok && Array.isArray(data.optionGroups) ? data.optionGroups : [];
       setOptionGroupsByProduct((current) => ({ ...current, [product.id]: nextGroups }));
-      if (hasVariants || nextGroups.length || (product.product_inventory_skus || []).length) setCustomizingProductId(product.id);
+      if (hasVariants || nextGroups.length || (product.product_inventory_skus || []).length) setCustomizingProductId(lineId);
     } catch {
       setOptionGroupsByProduct((current) => ({ ...current, [product.id]: [] }));
     } finally {
@@ -390,12 +458,12 @@ export function ManualOrderManager() {
     }
   }
 
-  function toggleOption(productId: string, group: ProductOptionGroup, valueId: string) {
+  function toggleOption(lineId: string, group: ProductOptionGroup, valueId: string) {
     const value = group.values.find((option) => option.id === valueId);
     if (!value) return;
 
     setItems((current) => current.map((item) => {
-      if (item.productId !== productId) return item;
+      if (item.lineId !== lineId) return item;
       const withoutGroup = item.selectedOptions.filter((option) => option.groupId !== group.id);
       const currentGroup = item.selectedOptions.filter((option) => option.groupId === group.id);
       const alreadySelected = currentGroup.some((option) => option.valueId === value.id);
@@ -425,15 +493,15 @@ export function ManualOrderManager() {
     }));
   }
 
-  function updateQuantity(productId: string, delta: number) {
+  function updateQuantity(lineId: string, delta: number) {
     setItems((current) =>
       current
         .map((item) =>
-          item.productId === productId
+          item.lineId === lineId
             ? {
                 ...item,
                 quantity: Math.max(1, item.quantity + delta),
-                inventorySelections: products.find((product) => product.id === productId)?.product_inventory_skus?.length
+                inventorySelections: products.find((product) => product.id === item.productId)?.product_inventory_skus?.length
                   ? []
                   : item.inventorySelections,
               }
@@ -443,22 +511,23 @@ export function ManualOrderManager() {
     );
   }
 
-  function removeProduct(productId: string) {
-    setItems((current) => current.filter((item) => item.productId !== productId));
-    if (customizingProductId === productId) setCustomizingProductId("");
+  function removeProduct(lineId: string) {
+    setItems((current) => current.filter((item) => item.lineId !== lineId));
+    if (customizingProductId === lineId) setCustomizingProductId("");
   }
 
-  function selectVariant(productId: string, variantId: string) {
-    const product = products.find((row) => row.id === productId);
+  function selectVariant(lineId: string, variantId: string) {
+    const selectedItem = items.find((item) => item.lineId === lineId);
+    const product = products.find((row) => row.id === selectedItem?.productId);
     const variant = (product?.product_variants || []).find(
       (row) => row.id === variantId && row.is_available !== false
     );
     if (!variant) return;
 
     setItems((current) => current.map((item) => {
-      if (item.productId !== productId) return item;
+      if (item.lineId !== lineId) return item;
       const selectedOptions = item.selectedOptions.map((option) => {
-        const group = (optionGroupsByProduct[productId] || []).find((row) => row.id === option.groupId);
+        const group = (optionGroupsByProduct[item.productId] || []).find((row) => row.id === option.groupId);
         const value = group?.values.find((row) => row.id === option.valueId);
         const priceDeltaUsd = value?.variantPriceDeltas && Object.prototype.hasOwnProperty.call(value.variantPriceDeltas, variantId)
           ? Number(value.variantPriceDeltas[variantId] || 0)
@@ -469,17 +538,18 @@ export function ManualOrderManager() {
     }));
   }
 
-  function updateItemNotes(productId: string, notes: string) {
+  function updateItemNotes(lineId: string, notes: string) {
     setItems((current) => current.map((item) =>
-      item.productId === productId ? { ...item, notes } : item
+      item.lineId === lineId ? { ...item, notes } : item
     ));
   }
 
-  function selectInventorySku(productId: string, slotIndex: number, skuId: string) {
-    const product = products.find((row) => row.id === productId);
+  function selectInventorySku(lineId: string, slotIndex: number, skuId: string) {
+    const selectedItem = items.find((item) => item.lineId === lineId);
+    const product = products.find((row) => row.id === selectedItem?.productId);
     const sku = product?.product_inventory_skus?.find((row) => row.id === skuId);
     setItems((current) => current.map((item) => {
-      if (item.productId !== productId) return item;
+      if (item.lineId !== lineId) return item;
       const expanded = item.inventorySelections.flatMap((selection) =>
         Array(selection.quantity).fill(selection.skuId)
       );
@@ -537,6 +607,7 @@ export function ManualOrderManager() {
               )
             )
             .map((item: any) => ({
+              lineId: globalThis.crypto.randomUUID(),
               productId: String(item.productId),
               variantId: "",
               variantName: "",
@@ -597,6 +668,11 @@ export function ManualOrderManager() {
     setError("");
     setSuccess("");
 
+    if (loadingOptionsFor) {
+      setError("Espera a que terminen de cargar las opciones del producto.");
+      return;
+    }
+
     if (!selectedStoreId) {
       setError("Selecciona un comercio.");
       return;
@@ -640,7 +716,7 @@ export function ManualOrderManager() {
       );
       if (availableVariants.length && !availableVariants.some((variant) => variant.id === item.variantId)) {
         setError(`Selecciona un tamaño o presentación para ${product?.name || "el producto"}.`);
-        setCustomizingProductId(item.productId);
+        setCustomizingProductId(item.lineId);
         return;
       }
       if (product?.product_inventory_skus?.length) {
@@ -654,7 +730,7 @@ export function ManualOrderManager() {
         );
         if (selectedUnits !== inventoryUnits) {
           setError(`Selecciona color y talla para ${product.name}.`);
-          setCustomizingProductId(item.productId);
+          setCustomizingProductId(item.lineId);
           return;
         }
       }
@@ -688,12 +764,21 @@ export function ManualOrderManager() {
           orderDetails,
           originalMessage,
           deliveryUsd: safeDeliveryUsd,
-          items,
+          items: items.map(({ lineId: _lineId, ...item }) => item),
         }),
       });
 
       setSuccess(`Pedido ${data.order?.public_code || ""} creado correctamente.`);
-      window.setTimeout(() => router.push("/panel/pedidos"), 700);
+      idempotencyKeyRef.current = null;
+      setItems([]);
+      setCustomerName("");
+      setCustomerPhone("");
+      setDeliveryReference("");
+      setTableId("");
+      setOrderDetails("");
+      setDeliveryUsd("");
+      setOriginalMessage("");
+      setShowTicket(false);
     } catch (error: any) {
       setError(error.message || "No se pudo guardar el pedido.");
     } finally {
@@ -734,33 +819,37 @@ export function ManualOrderManager() {
 
   return (
     <>
-    <div className="grid gap-5 xl:grid-cols-[1fr_380px]">
-      <div className="space-y-5">
-        <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
+    <div ref={boardRef} className={`${expanded ? `fixed inset-0 z-[70] overflow-y-auto bg-[#F5F7F8] p-3 sm:p-5 ${fullscreen ? "h-screen" : ""}` : ""} pb-20 lg:pb-0`}>
+    <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="flex min-w-0 flex-col gap-4">
+        <section className="rounded-lg bg-white p-4 ring-1 ring-[#25262B]/[0.08]">
           <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
             <div>
-              <h2 className="text-2xl font-black">Pedido manual</h2>
-              <p className="mt-1 text-sm font-bold text-[#746f69]">
-                Registra ventas recibidas por WhatsApp, Instagram, llamada o atención directa.
-              </p>
+              <h2 className="text-xl font-black text-[#17272D]">Pedido manual</h2>
+              <p className="text-xs font-semibold text-[#65757A]">Venta asistida</p>
             </div>
-            <Link
-              href="/panel/pedidos"
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F8F3E8] px-5 py-3 text-sm font-black text-[#2E3A79]"
-            >
-              <ArrowLeft size={16} />
-              Volver a pedidos
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link href="/panel/pedidos" className="inline-flex h-10 items-center gap-2 rounded-md border border-[#DCE4E3] px-3 text-xs font-bold text-[#235E59]"><ArrowLeft size={16} /> Pedidos</Link>
+              <button type="button" onClick={() => void toggleFullscreen()} title={expanded ? "Salir de pantalla completa" : "Pantalla completa"} aria-label={expanded ? "Salir de pantalla completa" : "Pantalla completa"} className="grid h-10 w-10 place-items-center rounded-md border border-[#DCE4E3] text-[#235E59]">
+                {expanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+              </button>
+            </div>
           </div>
 
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
+          {success ? <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-md bg-[#E6F6ED] px-3 py-2 text-sm font-bold text-[#146946]"><span>{success}</span><Link href="/panel/pedidos" className="underline">Ver pedidos</Link></div> : null}
+          {error && !showTicket ? <p role="alert" className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</p> : null}
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
             <label className="space-y-1">
               <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
                 Comercio
               </span>
               <select
                 value={selectedStoreId}
-                onChange={(event) => setSelectedStoreId(event.target.value)}
+                onChange={(event) => {
+                  setSelectedStoreId(event.target.value);
+                  if (!stores.find((store) => store.id === event.target.value)?.table_orders_enabled) setDeliveryType("delivery");
+                }}
                 className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
               >
                 {stores.map((store) => (
@@ -771,22 +860,6 @@ export function ManualOrderManager() {
               </select>
             </label>
 
-            <label className="space-y-1">
-              <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-                Método de pago
-              </span>
-              <select
-                value={paymentMethod}
-                onChange={(event) => setPaymentMethod(event.target.value)}
-                className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-              >
-                {getPaymentMethods(selectedStore).map((method) => (
-                  <option key={method} value={method}>
-                    {method}
-                  </option>
-                ))}
-              </select>
-            </label>
           </div>
         </section>
 
@@ -823,120 +896,11 @@ export function ManualOrderManager() {
           </section>
         ) : null}
 
-        <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
-          <h2 className="text-xl font-black">Cliente y modalidad</h2>
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <input
-              value={customerName}
-              onChange={(event) => setCustomerName(event.target.value)}
-              placeholder={deliveryType === "table" || deliveryType === "bar" ? "Nombre (opcional)" : "Nombre del cliente"}
-              className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-            />
-            <input
-              value={customerPhone}
-              onChange={(event) => setCustomerPhone(event.target.value)}
-              placeholder={deliveryType === "table" || deliveryType === "bar" ? "Teléfono (opcional)" : "Teléfono"}
-              className="rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-            />
-          </div>
-
-          <div className="mt-4">
-            <input
-              value={orderDetails}
-              onChange={(event) => setOrderDetails(event.target.value)}
-              placeholder="Nota del pedido"
-              className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-            />
-          </div>
-
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <button
-              type="button"
-              onClick={() => setDeliveryType("delivery")}
-              className={[
-                "rounded-2xl px-4 py-3 text-left text-sm font-black",
-                deliveryType === "delivery"
-                  ? "bg-[#2E3A79] text-white"
-                  : "bg-[#F8F3E8] text-[#746f69]",
-              ].join(" ")}
-            >
-              Delivery
-            </button>
-            <button
-              type="button"
-              onClick={() => setDeliveryType("pickup")}
-              className={[
-                "rounded-2xl px-4 py-3 text-left text-sm font-black",
-                deliveryType === "pickup"
-                  ? "bg-[#2E3A79] text-white"
-                  : "bg-[#F8F3E8] text-[#746f69]",
-              ].join(" ")}
-            >
-              Retiro
-            </button>
-            <button
-              type="button"
-              onClick={() => setDeliveryType("table")}
-              className={[
-                "rounded-2xl px-4 py-3 text-left text-sm font-black",
-                deliveryType === "table"
-                  ? "bg-[#2E3A79] text-white"
-                  : "bg-[#F8F3E8] text-[#746f69]",
-              ].join(" ")}
-            >
-              Mesa
-            </button>
-            <button
-              type="button"
-              onClick={() => setDeliveryType("bar")}
-              className={[
-                "rounded-2xl px-4 py-3 text-left text-sm font-black",
-                deliveryType === "bar"
-                  ? "bg-[#2E3A79] text-white"
-                  : "bg-[#F8F3E8] text-[#746f69]",
-              ].join(" ")}
-            >
-              Barra
-            </button>
-          </div>
-
-          <label className="mt-4 block space-y-1">
-            <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-              {deliveryType === "table" ? "Número o nombre de la mesa" : deliveryType === "bar" ? "Referencia en barra" : deliveryType === "pickup" ? "Referencia del retiro" : "Dirección o referencia"}
-            </span>
-            {deliveryType === "table" && usePhysicalTables ? <select aria-label="Mesa" value={tableId} onChange={event => {
-              setTableId(event.target.value);
-              setDeliveryReference(tableChoices.tables.find(table => table.id === event.target.value)?.name || "");
-            }} className="w-full rounded-lg border px-4 py-3 text-sm font-bold">
-              <option value="">Selecciona una mesa</option>
-              {tableChoices.tables.map(table => <option key={table.id} value={table.id}>{table.name}{table.zone ? ` - ${table.zone}` : ""}</option>)}
-            </select> : <input
-              value={deliveryReference}
-              onChange={(event) => setDeliveryReference(event.target.value)}
-              placeholder={deliveryType === "table" ? "Ej: Mesa 4" : deliveryType === "bar" ? "Ej: Puesto 2 (opcional)" : deliveryType === "pickup" ? "Ej: Retira Carlos (opcional)" : "Dirección y punto de referencia"}
-              className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-            />}
-          </label>
-
-          {deliveryType === "delivery" && (
-            <input
-              value={deliveryUsd}
-              onChange={(event) => setDeliveryUsd(event.target.value)}
-              type="number"
-              step="0.01"
-              placeholder="Costo de entrega"
-              className="mt-4 w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
-            />
-          )}
-        </section>
-
-        <section className="rounded-[34px] bg-white p-5 shadow-xl shadow-[#2E3A79]/[0.07] ring-1 ring-[#25262B]/[0.06]">
+        <section className="min-w-0 rounded-lg bg-white p-4 ring-1 ring-[#25262B]/[0.08]">
           <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
             <div>
-              <h2 className="text-xl font-black">Productos</h2>
-              <p className="text-sm font-bold text-[#746f69]">
-                Busca productos activos del comercio seleccionado.
-              </p>
+              <h2 className="text-lg font-black">Catálogo</h2>
+              <p className="text-xs font-semibold text-[#65757A]">{storeProducts.length} productos disponibles</p>
             </div>
             <div className="relative md:w-80">
               <Search
@@ -952,59 +916,58 @@ export function ManualOrderManager() {
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3">
+          <div className="mt-4 flex gap-2 overflow-x-auto pb-1" aria-label="Filtrar por categoría">
+            <button type="button" onClick={() => setSelectedCategoryId("")} aria-pressed={!selectedCategoryId} className={`shrink-0 rounded-md px-3 py-2 text-xs font-bold ${!selectedCategoryId ? "bg-[#106C5B] text-white" : "bg-[#EDF3F1] text-[#235E59]"}`}>Todos</button>
+            {storeCategories.map((category) => <button key={category.id} type="button" onClick={() => setSelectedCategoryId(category.id)} aria-pressed={selectedCategoryId === category.id} className={`shrink-0 rounded-md px-3 py-2 text-xs font-bold ${selectedCategoryId === category.id ? "bg-[#106C5B] text-white" : "bg-[#EDF3F1] text-[#235E59]"}`}>{category.name}</button>)}
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 2xl:grid-cols-4">
             {isLoading && (
-              <div className="rounded-2xl bg-[#F8F3E8] p-4 text-sm font-black text-[#746f69]">
+              <div className="col-span-full rounded-md bg-[#F8F3E8] p-4 text-sm font-black text-[#746f69]">
                 Cargando productos...
               </div>
             )}
 
             {!isLoading && filteredProducts.length === 0 && (
-              <div className="rounded-2xl bg-[#F8F3E8] p-4 text-sm font-bold text-[#746f69]">
+              <div className="col-span-full rounded-md bg-[#F8F3E8] p-4 text-sm font-bold text-[#746f69]">
                 No hay productos disponibles para este comercio.
               </div>
             )}
 
             {filteredProducts.map((product) => {
-              const category = categories.find((item) => item.id === product.category_id);
-
               return (
-                <article
+                <button
                   key={product.id}
-                  className="flex flex-col justify-between gap-3 rounded-2xl border border-[#25262B]/10 p-4 md:flex-row md:items-center"
+                  type="button"
+                  onClick={() => void addProduct(product)}
+                  disabled={loadingOptionsFor === product.id}
+                  className="group flex min-w-0 flex-col overflow-hidden rounded-md border border-[#DCE4E3] bg-white text-left transition-colors hover:border-[#106C5B] hover:bg-[#F5FAF8] disabled:opacity-60"
                 >
-                  <div>
-                    <p className="font-black">{product.name}</p>
-                    <p className="text-xs font-bold text-[#746f69]">
-                      {category?.name || "Sin categoría"} · {formatUsd(Number(product.price_usd || 0))}
-                    </p>
+                  <div className="relative aspect-[4/3] w-full overflow-hidden bg-[#EDF3F1]">
+                    <OptimizedImage src={product.image_url} alt={product.name} fill sizes="(max-width: 640px) 50vw, (max-width: 1280px) 33vw, 240px" className="object-cover" fallback={<div className="grid h-full place-items-center text-[#79908B]"><ImageOff size={26} /></div>} />
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => addProduct(product)}
-                    disabled={loadingOptionsFor === product.id}
-                    className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
-                  >
-                    {loadingOptionsFor === product.id ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-                    {loadingOptionsFor === product.id ? "Cargando..." : "Agregar"}
-                  </button>
-                </article>
+                  <div className="flex min-h-[76px] w-full flex-col justify-between gap-1 p-2.5">
+                    <span className="line-clamp-2 text-sm font-bold leading-tight text-[#17272D]">{product.name}</span>
+                    <span className="flex items-center justify-between gap-1 text-sm font-black text-[#106C5B]">{formatUsd(Number(product.price_usd || 0))}{loadingOptionsFor === product.id ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}</span>
+                  </div>
+                </button>
               );
             })}
           </div>
         </section>
       </div>
 
-      <aside className="space-y-5 xl:sticky xl:top-5 xl:self-start">
-        <section className="rounded-[34px] bg-[#25262B] p-5 text-white shadow-xl shadow-[#25262B]/20">
+      <aside className={`${showTicket ? "fixed inset-0 z-[75] flex items-end bg-black/50" : "hidden"} xl:sticky xl:top-5 xl:block xl:self-start xl:bg-transparent`} onClick={() => setShowTicket(false)}>
+        <section role="dialog" aria-label="Ticket de venta" onClick={(event) => event.stopPropagation()} className="max-h-[93dvh] w-full overflow-y-auto rounded-t-lg bg-[#17272D] p-4 text-white shadow-xl xl:max-h-[calc(100dvh-2rem)] xl:rounded-lg">
           <div className="flex items-center gap-3">
             <ShoppingCart size={22} className="text-[#FFB547]" />
-            <div>
-              <h2 className="text-2xl font-black">Resumen</h2>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-lg font-black">Ticket</h2>
               <p className="text-sm font-bold text-white/65">
                 {totalQuantity} productos · {deliveryType === "delivery" ? "Delivery" : deliveryType === "pickup" ? "Retiro" : deliveryType === "table" ? "Mesa" : "Barra"}
               </p>
             </div>
+            <button type="button" onClick={() => setShowTicket(false)} aria-label="Cerrar ticket" className="grid h-9 w-9 place-items-center rounded-md text-white xl:hidden"><X size={18} /></button>
           </div>
 
           <div className="mt-5 space-y-3">
@@ -1014,7 +977,7 @@ export function ManualOrderManager() {
               </div>
             ) : (
               selectedRows.map((item) => (
-                <div key={item.productId} className="rounded-2xl bg-white p-4 text-[#25262B]">
+                <div key={item.lineId} className="rounded-md bg-white p-3 text-[#25262B]">
                   <div className="flex justify-between gap-3">
                     <div>
                       <p className="font-black">{item.product.name}</p>
@@ -1025,7 +988,7 @@ export function ManualOrderManager() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => removeProduct(item.productId)}
+                      onClick={() => removeProduct(item.lineId)}
                       className="grid h-9 w-9 place-items-center rounded-full bg-red-50 text-red-600"
                       aria-label="Quitar producto"
                     >
@@ -1036,7 +999,7 @@ export function ManualOrderManager() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => updateQuantity(item.productId, -1)}
+                        onClick={() => updateQuantity(item.lineId, -1)}
                         className="grid h-9 w-9 place-items-center rounded-full bg-[#F8F3E8]"
                       >
                         <Minus size={15} />
@@ -1044,7 +1007,7 @@ export function ManualOrderManager() {
                       <span className="w-8 text-center font-black">{item.quantity}</span>
                       <button
                         type="button"
-                        onClick={() => updateQuantity(item.productId, 1)}
+                        onClick={() => updateQuantity(item.lineId, 1)}
                         className="grid h-9 w-9 place-items-center rounded-full bg-[#F8F3E8]"
                       >
                         <Plus size={15} />
@@ -1063,8 +1026,8 @@ export function ManualOrderManager() {
                   ) : null}
                   <button
                     type="button"
-                    onClick={() => setCustomizingProductId(item.productId)}
-                    className="vp-button-soft mt-3 w-full"
+                    onClick={() => setCustomizingProductId(item.lineId)}
+                    className="mt-2 w-full rounded-md bg-[#EDF3F1] px-3 py-2 text-xs font-bold text-[#235E59]"
                   >
                     Personalizar
                   </button>
@@ -1073,7 +1036,33 @@ export function ManualOrderManager() {
             )}
           </div>
 
-          <div className="mt-5 space-y-2 rounded-3xl bg-white/10 p-4 text-sm font-bold">
+          <div className="mt-4 space-y-3 border-t border-white/15 pt-4">
+            <h3 className="text-sm font-black">Cliente y entrega</h3>
+            <div className="grid grid-cols-2 gap-1 rounded-md bg-white/10 p-1">
+              {([ ["delivery", "Delivery"], ["pickup", "Retiro"], ["table", "Mesa"], ["bar", "Barra"] ] as const).filter(([value]) => selectedStore?.table_orders_enabled || (value !== "table" && value !== "bar")).map(([value, label]) => (
+                <button key={value} type="button" onClick={() => setDeliveryType(value)} aria-pressed={deliveryType === value} className={`rounded-md px-2 py-2 text-xs font-bold ${deliveryType === value ? "bg-[#FFB547] text-[#17272D]" : "text-white/70"}`}>{label}</button>
+              ))}
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <input value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder={deliveryType === "table" || deliveryType === "bar" ? "Nombre (opcional)" : "Nombre del cliente"} aria-label="Nombre del cliente" className="min-w-0 rounded-md border border-white/20 bg-white px-3 py-2.5 text-sm text-[#17272D]" />
+              <input value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} placeholder={deliveryType === "table" || deliveryType === "bar" ? "Teléfono (opcional)" : "Teléfono"} aria-label="Teléfono del cliente" inputMode="tel" className="min-w-0 rounded-md border border-white/20 bg-white px-3 py-2.5 text-sm text-[#17272D]" />
+            </div>
+            {deliveryType === "table" && usePhysicalTables ? (
+              <select aria-label="Mesa" value={tableId} onChange={(event) => { setTableId(event.target.value); setDeliveryReference(tableChoices.tables.find((table) => table.id === event.target.value)?.name || ""); }} className="w-full rounded-md bg-white px-3 py-2.5 text-sm text-[#17272D]">
+                <option value="">Selecciona una mesa</option>
+                {tableChoices.tables.map((table) => <option key={table.id} value={table.id}>{table.name}{table.zone ? ` - ${table.zone}` : ""}</option>)}
+              </select>
+            ) : (
+              <input value={deliveryReference} onChange={(event) => setDeliveryReference(event.target.value)} placeholder={deliveryType === "table" ? "Número o nombre de mesa" : deliveryType === "bar" ? "Referencia en barra (opcional)" : deliveryType === "pickup" ? "Referencia de retiro (opcional)" : "Dirección o referencia"} aria-label="Referencia de entrega" className="w-full rounded-md bg-white px-3 py-2.5 text-sm text-[#17272D]" />
+            )}
+            {deliveryType === "delivery" ? <input value={deliveryUsd} onChange={(event) => setDeliveryUsd(event.target.value)} type="number" min="0" step="0.01" placeholder="Costo de entrega" aria-label="Costo de entrega" className="w-full rounded-md bg-white px-3 py-2.5 text-sm text-[#17272D]" /> : null}
+            <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} aria-label="Método de pago" className="w-full rounded-md bg-white px-3 py-2.5 text-sm text-[#17272D]">
+              {getPaymentMethods(selectedStore, deliveryType).map((method) => <option key={method} value={method}>{method}</option>)}
+            </select>
+            <input value={orderDetails} onChange={(event) => setOrderDetails(event.target.value)} placeholder="Nota del pedido (opcional)" aria-label="Nota del pedido" className="w-full rounded-md bg-white px-3 py-2.5 text-sm text-[#17272D]" />
+          </div>
+
+          <div className="mt-4 space-y-2 rounded-md bg-white/10 p-3 text-sm font-bold">
             <div className="flex justify-between">
               <span className="text-white/70">Subtotal</span>
               <span>{formatUsd(subtotalUsd)}</span>
@@ -1087,15 +1076,6 @@ export function ManualOrderManager() {
               <span className="text-[#FFB547]">{formatUsd(totalUsd)}</span>
             </div>
           </div>
-
-          {customerName && (
-            <p className="mt-4 rounded-2xl bg-white/10 p-3 text-sm font-bold text-white/75">
-              Cliente: <span className="text-white">{customerName}</span>
-            </p>
-          )}
-
-          {error && <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm font-black text-red-700">{error}</p>}
-          {success && <p className="mt-4 rounded-2xl bg-green-50 p-3 text-sm font-black text-green-700">{success}</p>}
 
           {ENABLE_ORDER_INTERPRETER && interpretDetails.mode ? (
             <div className="mt-4 rounded-2xl bg-white/10 p-3 text-xs font-bold text-white/75">
@@ -1132,21 +1112,22 @@ export function ManualOrderManager() {
             </div>
           ) : null}
 
-          <button
-            type="button"
-            onClick={saveManualOrder}
-            disabled={isSaving || selectedRows.length === 0}
-            className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-4 text-sm font-black text-[#25262B] disabled:opacity-60"
-          >
-            {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-            {isSaving ? "Guardando pedido..." : "Guardar pedido"}
-          </button>
+          <div className="sticky bottom-0 z-10 -mx-4 mt-4 border-t border-white/15 bg-[#17272D] px-4 py-3">
+            {error ? <p role="alert" className="mb-2 rounded-md bg-red-50 p-2 text-xs font-bold text-red-700">{error}</p> : null}
+            <button type="button" onClick={saveManualOrder} disabled={isSaving || Boolean(loadingOptionsFor) || selectedRows.length === 0} className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#FFB547] px-4 py-3 text-sm font-black text-[#17272D] disabled:opacity-60">
+              {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+              {isSaving ? "Guardando pedido..." : `Guardar pedido · ${formatUsd(totalUsd)}`}
+            </button>
+          </div>
         </section>
       </aside>
     </div>
+    <button type="button" onClick={() => setShowTicket(true)} className="fixed inset-x-3 bottom-3 z-[60] flex items-center justify-between rounded-md bg-[#106C5B] px-4 py-3 text-sm font-black text-white shadow-lg xl:hidden" aria-label="Abrir ticket de venta">
+      <span className="inline-flex items-center gap-2"><ShoppingCart size={18} /> Ticket · {totalQuantity}</span><span>{formatUsd(totalUsd)}</span>
+    </button>
     {customizingRow ? (
       <div
-        className="fixed inset-0 z-[70] flex items-end justify-center bg-[#042332]/70 sm:items-center sm:p-5"
+        className="fixed inset-0 z-[90] flex items-end justify-center bg-[#042332]/70 sm:items-center sm:p-5"
         role="presentation"
         onClick={() => setCustomizingProductId("")}
       >
@@ -1179,9 +1160,9 @@ export function ManualOrderManager() {
             <div className="flex items-center justify-between rounded-2xl bg-[#F8F3E8] p-4">
               <span className="text-sm font-black">Cantidad</span>
               <div className="flex items-center gap-3">
-                <button type="button" onClick={() => updateQuantity(customizingRow.productId, -1)} className="grid h-10 w-10 place-items-center rounded-full bg-white"><Minus size={16} /></button>
+                <button type="button" onClick={() => updateQuantity(customizingRow.lineId, -1)} className="grid h-10 w-10 place-items-center rounded-full bg-white"><Minus size={16} /></button>
                 <span className="w-8 text-center text-lg font-black">{customizingRow.quantity}</span>
-                <button type="button" onClick={() => updateQuantity(customizingRow.productId, 1)} className="grid h-10 w-10 place-items-center rounded-full bg-white"><Plus size={16} /></button>
+                <button type="button" onClick={() => updateQuantity(customizingRow.lineId, 1)} className="grid h-10 w-10 place-items-center rounded-full bg-white"><Plus size={16} /></button>
               </div>
             </div>
 
@@ -1198,7 +1179,7 @@ export function ManualOrderManager() {
                       <button
                         key={variant.id}
                         type="button"
-                        onClick={() => selectVariant(customizingRow.productId, variant.id)}
+                        onClick={() => selectVariant(customizingRow.lineId, variant.id)}
                         className={[
                           "flex min-h-12 items-center justify-between gap-3 rounded-2xl px-4 py-3 text-left text-sm font-black ring-1",
                           selected
@@ -1238,7 +1219,7 @@ export function ManualOrderManager() {
                         {requiredInventoryUnits > 1 ? `Pieza ${index + 1}` : "Disponible"}
                         <select
                           value={selectedSkuId}
-                          onChange={(event) => selectInventorySku(customizingRow.productId, index, event.target.value)}
+                          onChange={(event) => selectInventorySku(customizingRow.lineId, index, event.target.value)}
                           className="h-12 rounded-2xl border border-[#25262B]/10 bg-white px-3 text-sm font-black text-[#25262B] outline-none focus:border-[#2E3A79]"
                         >
                           <option value="">Selecciona</option>
@@ -1274,7 +1255,7 @@ export function ManualOrderManager() {
                         <button
                           key={value.id}
                           type="button"
-                          onClick={() => toggleOption(customizingRow.productId, group, value.id)}
+                          onClick={() => toggleOption(customizingRow.lineId, group, value.id)}
                           className={[
                             "flex min-h-12 items-center justify-between gap-3 rounded-2xl px-4 py-3 text-left text-sm font-black ring-1",
                             selected
@@ -1296,7 +1277,7 @@ export function ManualOrderManager() {
               Nota para cocina
               <textarea
                 value={customizingRow.notes}
-                onChange={(event) => updateItemNotes(customizingRow.productId, event.target.value)}
+                onChange={(event) => updateItemNotes(customizingRow.lineId, event.target.value)}
                 placeholder="Ej. Sin cebolla, salsa aparte..."
                 rows={3}
                 className="mt-2 w-full resize-none rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none focus:border-[#2E3A79]"
@@ -1326,6 +1307,7 @@ export function ManualOrderManager() {
         </section>
       </div>
     ) : null}
+    </div>
     </>
   );
 }

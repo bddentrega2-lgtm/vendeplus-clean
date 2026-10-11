@@ -10,17 +10,17 @@ import {
 } from "@/lib/panel/access";
 import {
   isPrepaidTablePaymentMethod,
-  availableTablePaymentMethods,
   normalizeTableAssistanceLabel,
 } from "@/lib/table-orders";
 import { getTableOrderTokenForStore } from "@/lib/server/table-order-tokens";
+import { methodsForChannel } from "@/lib/payment-availability";
 
 const TABLE_SELECT = "id, name, zone, is_enabled, created_at, updated_at";
 
 async function loadTableOrderStore(storeId: string, supabase = createSupabaseAdminClient()) {
   const { data, error } = await supabase
     .from("stores")
-    .select("id, slug, payment_methods, table_orders_access_enabled, table_orders_enabled, table_payment_methods, table_order_fulfillment_mode, table_waiter_calls_enabled, table_waiter_call_label")
+    .select("id, slug, payment_methods, payment_details, table_orders_access_enabled, table_orders_enabled, table_payment_methods, table_order_fulfillment_mode, table_waiter_calls_enabled, table_waiter_call_label")
     .eq("id", storeId)
     .single();
 
@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
           .eq("payment_receipts.store_id", storeId)
           .is("payment_receipts.deleted_at", null)
           .not("payment_receipts.storage_path", "is", null)
-          .eq("delivery_type", "table")
+          .or("delivery_type.eq.table,and(delivery_type.eq.pickup,delivery_pricing_type.eq.bar)")
           .not("status", "in", "(completed,cancelled)")
           .order("created_at", { ascending: true }),
         supabase.from("table_waiter_calls").select("table_id, requested_at")
@@ -72,10 +72,9 @@ export async function GET(request: NextRequest) {
     if (ordersError) throw ordersError;
     if (callsError) throw callsError;
 
-    const configuredMethods = Array.isArray(store.table_payment_methods)
-      ? store.table_payment_methods
-      : [];
-    const availableMethods = availableTablePaymentMethods(store.payment_methods);
+    const availableMethods = methodsForChannel(store.payment_methods, store.payment_details,
+      store.table_order_fulfillment_mode === "counter_pickup" ? "bar" : "table", store.table_payment_methods)
+      .filter(isPrepaidTablePaymentMethod);
 
     const normalizedOrders = (activeOrders || []).map(({ payment_receipts, ...order }) => ({
       ...order,
@@ -91,9 +90,7 @@ export async function GET(request: NextRequest) {
       waiterCalls: waiterCalls || [],
       qrToken,
       paymentMethods: availableMethods,
-      selectedPaymentMethods: configuredMethods.filter((method: string) =>
-        availableMethods.includes(method)
-      ),
+      selectedPaymentMethods: availableMethods,
       fulfillmentMode: store.table_order_fulfillment_mode === "counter_pickup" ? "counter_pickup" : "table_service",
       tables: tables || [],
       tableOrders,
@@ -158,19 +155,15 @@ export async function PATCH(request: NextRequest) {
     if (body.action === "settings") {
       const waiterCallLabel = normalizeTableAssistanceLabel(body.waiterCallLabel ?? store.table_waiter_call_label);
       if (!waiterCallLabel) return badRequest("El texto del botón debe tener entre 3 y 40 caracteres, en una sola línea.");
-      const requestedMethods = Array.isArray(body.paymentMethods)
-        ? body.paymentMethods.map((value: unknown) => String(value)).slice(0, 12)
-        : [];
-      const storeMethods = availableTablePaymentMethods(store.payment_methods);
-      const paymentMethods = requestedMethods.filter(
-        (method: string) => storeMethods.includes(method) && isPrepaidTablePaymentMethod(method)
-      );
       const enabled = body.enabled === true;
       const fulfillmentMode = body.fulfillmentMode === "counter_pickup"
         ? "counter_pickup"
         : "table_service";
+      const paymentMethods = methodsForChannel(store.payment_methods, store.payment_details,
+        fulfillmentMode === "counter_pickup" ? "bar" : "table", store.table_payment_methods)
+        .filter(isPrepaidTablePaymentMethod);
       if (enabled && paymentMethods.length === 0) {
-        return badRequest("Selecciona al menos un método de pago previo.");
+        return badRequest("Configura al menos un método de pago para Mesa o Barra en Configuración.");
       }
 
       const { error } = await supabase

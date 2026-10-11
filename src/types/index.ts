@@ -210,6 +210,7 @@ export type StoreDeliverySettings = {
 };
 
 export type StorePaymentDetails = {
+  availability?: Record<string, Array<"delivery" | "pickup" | "table" | "bar">>;
   pagoMovil?: {
     bank?: string;
     phone?: string;

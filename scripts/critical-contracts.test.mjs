@@ -15,10 +15,38 @@ import {
   verifyDeliveryQuote,
 } from "../src/lib/server/signed-delivery-quote.ts";
 import { auditApiGuards } from "./api-guard-contracts.mjs";
+import { initialPaymentAvailability, methodsForChannel, normalizePaymentAvailability } from "../src/lib/payment-availability.ts";
+
+test("pagos por modalidad conservan listas existentes y bloquean selecciones ajenas", () => {
+  const general = ["Pago móvil", "Efectivo"];
+  const table = ["Efectivo", "Punto de venta"];
+  assert.deepEqual(methodsForChannel(general, null, "delivery", table), general);
+  assert.deepEqual(methodsForChannel(general, null, "table", table), table);
+  const methods = [...new Set([...general, ...table])];
+  const availability = initialPaymentAvailability(general, table);
+  assert.deepEqual(methodsForChannel(methods, { availability }, "pickup"), general);
+  assert.deepEqual(methodsForChannel(methods, { availability }, "bar"), table);
+  availability["Pago móvil"] = ["pickup"];
+  assert.deepEqual(methodsForChannel(methods, { availability }, "delivery"), ["Efectivo"]);
+  assert.deepEqual(normalizePaymentAvailability({ "Pago móvil": ["pickup", "table", "inventado"] }, ["Pago móvil"], false), { "Pago móvil": ["pickup"] });
+  const settings = read("src/components/panel/ConfigManager.tsx");
+  const manual = read("src/app/api/panel/orders/route.ts");
+  const checkout = read("src/app/api/orders/route.ts");
+  assert.match(settings, /store\.table_orders_access_enabled && showTablePaymentChannels/);
+  assert.match(manual, /isOnPremise && \(!store\.table_orders_access_enabled \|\| !store\.table_orders_enabled\)/);
+  assert.match(manual, /methodsForChannel\(store\.payment_methods, store\.payment_details, deliveryType/);
+  assert.match(checkout, /methodsForChannel\(\(store as any\)\.payment_methods, \(store as any\)\.payment_details/);
+});
 
 function read(relativePath) {
   return readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
 }
+
+test("Mesa/Barra incluye los pedidos manuales de Barra sin incluir retiros normales", () => {
+  const tables = read("src/app/api/panel/tables/route.ts");
+  assert.match(tables, /\.or\("delivery_type\.eq\.table,and\(delivery_type\.eq\.pickup,delivery_pricing_type\.eq\.bar\)"\)/);
+  assert.match(tables, /\.not\("status", "in", "\(completed,cancelled\)"\)/);
+});
 
 function deliverySettings(overrides = {}) {
   return {
@@ -356,6 +384,21 @@ test("pedidos publicos y manuales se crean en una transaccion idempotente", () =
   assert.match(migration, /insert into public\.order_item_options/);
   assert.match(migration, /revoke all on function public\.create_order_atomic\(jsonb, jsonb\) from public, anon, authenticated/);
   assert.match(migration, /grant execute on function public\.create_order_atomic\(jsonb, jsonb\) to service_role/);
+});
+
+test("POS manual no cobra fee ni asigna empresa delivery y usa pagos de Mesa", () => {
+  const publicRoute = readFileSync(new URL("../src/app/api/orders/route.ts", import.meta.url), "utf8");
+  const manualRoute = readFileSync(new URL("../src/app/api/panel/orders/route.ts", import.meta.url), "utf8");
+  const manager = readFileSync(new URL("../src/components/panel/ManualOrderManager.tsx", import.meta.url), "utf8");
+  const catalog = readFileSync(new URL("../src/app/api/panel/catalogo/route.ts", import.meta.url), "utf8");
+
+  assert.match(publicRoute, /platform_service_fee_usd: platformServiceFeeUsd/);
+  assert.match(manualRoute, /platform_service_fee_usd: 0/);
+  assert.match(manualRoute, /platform_service_fee_customer_usd: 0/);
+  assert.match(manualRoute, /delivery_provider: null/);
+  assert.match(manager, /const totalUsd = subtotalUsd \+ safeDeliveryUsd/);
+  assert.match(manager, /methodsForChannel\(store \? store\.payment_methods/);
+  assert.match(catalog, /payment_methods, payment_details, table_payment_methods/);
 });
 
 test("pedidos por zona de empresa delivery no usan la FK de zonas propias", () => {

@@ -1,6 +1,7 @@
 import { randomInt, randomUUID } from "crypto";
 import { getStoreServiceFeeUsd } from "@/lib/plans";
 import { NextRequest, NextResponse } from "next/server";
+import { methodsForChannel } from "@/lib/payment-availability";
 import type { CartItem, CheckoutFormData, SavedOrder, Store } from "@/types";
 import { getInitialPaymentStatus, getSuggestedPaymentCurrency, isCashPaymentMethod } from "@/lib/payments";
 import { buildOrderMessage, buildWhatsAppUrl } from "@/lib/whatsapp";
@@ -11,7 +12,6 @@ import { normalizePhone } from "@/lib/customers/normalize-phone";
 import {
   isPrepaidTablePaymentMethod,
   isInPersonTablePaymentMethod,
-  availableTablePaymentMethods,
 } from "@/lib/table-orders";
 import { safeUpsertCustomerFromOrder } from "@/lib/customers/upsert-customer-from-order";
 import {
@@ -379,7 +379,7 @@ export async function POST(request: NextRequest) {
     const supabase = createSupabaseAdminClient();
     let storeResult = await supabase
       .from("stores")
-      .select("id, slug, name, whatsapp, usd_to_bs, base_currency, is_active, latitude, longitude, opening_hours, business_hours, manual_open_status, manual_open_note, accepts_delivery, accepts_pickup, accepts_national_shipping, request_customer_id_number, payment_proof_mode, payment_proof_required, payment_methods, table_orders_access_enabled, table_orders_enabled, table_payment_methods, table_order_fulfillment_mode, table_waiter_calls_enabled, table_waiter_call_label, plan_type, monthly_price_usd, service_fee_payer, service_fee_billing_cycle, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
+      .select("id, slug, name, whatsapp, usd_to_bs, base_currency, is_active, latitude, longitude, opening_hours, business_hours, manual_open_status, manual_open_note, accepts_delivery, accepts_pickup, accepts_national_shipping, request_customer_id_number, payment_proof_mode, payment_proof_required, payment_methods, payment_details, table_orders_access_enabled, table_orders_enabled, table_payment_methods, table_order_fulfillment_mode, table_waiter_calls_enabled, table_waiter_call_label, plan_type, monthly_price_usd, service_fee_payer, service_fee_billing_cycle, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
       .eq("id", storeId)
       .single();
 
@@ -432,14 +432,11 @@ export async function POST(request: NextRequest) {
         return requestBadRequest("Los pedidos en mesa no están disponibles en este momento.");
       }
 
-      const storePaymentMethods = availableTablePaymentMethods((store as any).payment_methods);
-      const tablePaymentMethods = Array.isArray((store as any).table_payment_methods)
-        ? (store as any).table_payment_methods
-        : [];
+      const tablePaymentMethods = methodsForChannel((store as any).payment_methods, (store as any).payment_details,
+        (store as any).table_order_fulfillment_mode === "counter_pickup" ? "bar" : "table", (store as any).table_payment_methods);
       const paymentMethod = cleanText(order.form.paymentMethod);
       if (
         !isPrepaidTablePaymentMethod(paymentMethod) ||
-        !storePaymentMethods.includes(paymentMethod) ||
         !tablePaymentMethods.includes(paymentMethod)
       ) {
         return requestBadRequest("Ese método de pago no está disponible para pedidos en mesa.");
@@ -468,6 +465,11 @@ export async function POST(request: NextRequest) {
       validatedTable = table;
       order.form.deliveryReference = table.name;
       }
+    }
+
+    if (requestedDeliveryType !== "table" && !methodsForChannel((store as any).payment_methods, (store as any).payment_details,
+      requestedDeliveryType === "pickup" ? "pickup" : "delivery").includes(cleanText(order.form.paymentMethod))) {
+      return requestBadRequest("Ese método de pago no está disponible para esta modalidad.");
     }
 
     const inPersonTablePayment = requestedDeliveryType === "table" && isInPersonTablePaymentMethod(order.form.paymentMethod);

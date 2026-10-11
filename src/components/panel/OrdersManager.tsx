@@ -1133,7 +1133,7 @@ export function OrdersManager() {
 
           <div className="flex flex-wrap gap-2">
             <Link
-              href="/panel/pedidos/nuevo"
+              href="/panel/pos"
               className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B]"
             >
               <Plus size={16} />

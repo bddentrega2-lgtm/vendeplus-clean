@@ -1,5 +1,6 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { methodsForChannel } from "@/lib/payment-availability";
 import { randomInt, randomUUID } from "crypto";
 import {
   assertStoreAccess,
@@ -13,7 +14,6 @@ import { normalizePhone } from "@/lib/customers/normalize-phone";
 import { isCustomerOrderCancelled } from "@/lib/customers/customer-metrics";
 import { recalculateCustomerFromOrder, safeUpsertCustomerFromOrder } from "@/lib/customers/upsert-customer-from-order";
 import { getVenezuelaRelativeRange } from "@/lib/time/venezuela";
-import { getStoreServiceFeeUsd } from "@/lib/plans";
 import { createOrderAtomic } from "@/lib/server/create-order-atomic";
 import { cancelOrderWithInventory } from "@/lib/server/cancel-order-with-inventory";
 import { tableCancellationReason } from "@/lib/table-orders";
@@ -790,11 +790,17 @@ export async function POST(request: NextRequest) {
 
     const { data: store, error: storeError } = await supabase
       .from("stores")
-      .select("id, name, usd_to_bs, plan_type, monthly_price_usd, service_fee_payer, service_fee_billing_cycle, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
+      .select("id, name, usd_to_bs, payment_methods, payment_details, table_payment_methods, table_orders_access_enabled, table_orders_enabled, plan_type, monthly_price_usd, service_fee_payer, service_fee_billing_cycle, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
       .eq("id", storeId)
       .single();
 
     if (storeError) throw storeError;
+    if (isOnPremise && (!store.table_orders_access_enabled || !store.table_orders_enabled)) {
+      return badRequest("Mesa y Barra no están habilitadas para este comercio.");
+    }
+    if (!methodsForChannel(store.payment_methods, store.payment_details, deliveryType, store.table_payment_methods).includes(paymentMethod)) {
+      return badRequest("Ese método de pago no está disponible para esta modalidad.");
+    }
     let manualTable: { id: string; name: string; zone: string | null } | null = null;
     if (deliveryType === "table" && body.tableId) {
       const { data: enabledStore, error: enabledError } = await supabase.from("stores")
@@ -956,10 +962,7 @@ export async function POST(request: NextRequest) {
     );
     const deliveryUsd =
       deliveryType === "delivery" ? Math.max(0, toSafeNumber(body.deliveryUsd, 0)) : 0;
-    const platformServiceFeeUsd = getStoreServiceFeeUsd(store as any);
-    const platformServiceFeePayer = (store as any).service_fee_payer === "customer" ? "customer" : "merchant";
-    const platformServiceFeeCustomerUsd = platformServiceFeePayer === "customer" ? platformServiceFeeUsd : 0;
-    const totalUsd = subtotalUsd + deliveryUsd + platformServiceFeeCustomerUsd;
+    const totalUsd = subtotalUsd + deliveryUsd;
     const usdToBs = toSafeNumber((store as any)?.usd_to_bs, 600);
     const totalBs = totalUsd * usdToBs;
     const orderId = randomUUID();
@@ -1000,22 +1003,21 @@ export async function POST(request: NextRequest) {
       payment_currency: getSuggestedPaymentCurrency(paymentMethod) || null,
       subtotal_usd: subtotalUsd,
     delivery_usd: deliveryUsd,
-      delivery_provider:
-        deliveryType === "delivery" ? cleanText(body.deliveryProvider) || "own_delivery" : null,
+      delivery_provider: null,
       delivery_fee_usd: deliveryUsd,
       delivery_zone_id: null,
       delivery_zone_name: cleanText(body.deliveryZoneName) || null,
       delivery_distance_km: null,
       delivery_pricing_type: deliveryType === "delivery" ? "manual" : serviceModeLabel ? deliveryType : null,
       delivery_status: deliveryType === "delivery" ? "pending" : "pickup",
-      delivery_notes: deliveryType === "delivery" ? "Pedido manual." : serviceModeLabel ? `Atención en ${serviceModeLabel.toLowerCase()}.` : null,
+      delivery_notes: deliveryType === "delivery" ? "Costo de entrega registrado manualmente." : serviceModeLabel ? `Atención en ${serviceModeLabel.toLowerCase()}.` : null,
       delivery_address: deliveryType === "delivery" ? deliveryReference || null : null,
       total_usd: totalUsd,
       total_bs: totalBs,
-      platform_service_fee_usd: platformServiceFeeUsd,
-      platform_service_fee_payer: platformServiceFeeUsd > 0 ? platformServiceFeePayer : null,
-      platform_service_fee_customer_usd: platformServiceFeeCustomerUsd,
-      platform_service_fee_billing_cycle: platformServiceFeeUsd > 0 ? "monthly" : null,
+      platform_service_fee_usd: 0,
+      platform_service_fee_payer: null,
+      platform_service_fee_customer_usd: 0,
+      platform_service_fee_billing_cycle: null,
       distance_km: null,
       delivery_lat: null,
       delivery_lng: null,

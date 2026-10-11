@@ -21,6 +21,7 @@ import {
   createDefaultDeliverySettings,
 } from "@/lib/delivery";
 import { isCashPaymentMethod } from "@/lib/payments";
+import { methodsForChannel } from "@/lib/payment-availability";
 import { checkoutNoteExample } from "@/lib/checkout-notes";
 import { buildPaymentInfo } from "@/lib/payment-display";
 import { buildOrderMessage, buildWhatsAppUrl } from "@/lib/whatsapp";
@@ -454,7 +455,8 @@ export function CheckoutForm({ store }: { store: Store }) {
   const totalBs = totalUsd * (store.usdToBs || 600);
   const availablePaymentMethods = tableOrder
     ? tableOrder.paymentMethods.filter(isPrepaidTablePaymentMethod)
-    : store.paymentMethods;
+    : methodsForChannel(store.paymentMethods, store.paymentDetails,
+        form.deliveryType === "pickup" ? "pickup" : "delivery");
   const isCashPayment = isCashPaymentMethod(form.paymentMethod);
   const inPersonTablePayment = Boolean(tableOrder && form.deliveryType === "table" && isInPersonTablePaymentMethod(form.paymentMethod));
   const acceptsPaymentProof = !isCashPayment && !inPersonTablePayment;
@@ -485,7 +487,7 @@ export function CheckoutForm({ store }: { store: Store }) {
       setPaymentCopyError("");
       setCopiedPaymentLine("");
     }
-    setForm((current) => ({ ...current, [field]: value }));
+    setForm((current) => ({ ...current, [field]: value, ...(field === "deliveryType" ? { paymentMethod: "" } : {}) }));
   }
 
   function updateCustomerId(type: string, number: string) {
@@ -516,8 +518,8 @@ export function CheckoutForm({ store }: { store: Store }) {
     if (acceptsPaymentProof && store.paymentProofMode === "image" && store.paymentProofRequired && !form.paymentReceiptToken) {
       return "Sube la captura de pago.";
     }
-    if (tableOrder && !availablePaymentMethods.includes(form.paymentMethod)) {
-      return "Selecciona un método de pago previo disponible para pedidos en mesa.";
+    if (!availablePaymentMethods.includes(form.paymentMethod)) {
+      return "Selecciona un método de pago disponible para esta modalidad.";
     }
     if (form.deliveryType === "delivery" && quote.available === false) {
       return quote.message || quote.label || "Delivery no disponible.";

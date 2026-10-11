@@ -14,6 +14,8 @@ import { normalizeBusinessType } from "@/lib/business-types";
 import { revalidatePath } from "next/cache";
 import { isBrandColor } from "@/lib/brand-colors";
 import { loadServiceFeeBalances, type ServiceFeeStore } from "@/lib/billing/service-fees";
+import { methodsForChannel, normalizePaymentAvailability, paymentAvailability } from "@/lib/payment-availability";
+import type { StorePaymentDetails } from "@/types";
 
 function optionalNumber(value: unknown) {
   if (value === "" || value === null || value === undefined) return null;
@@ -40,7 +42,7 @@ function cleanText(value: unknown) {
   return String(value || "").trim();
 }
 
-function normalizePaymentDetails(value: unknown) {
+function normalizePaymentDetails(value: unknown): StorePaymentDetails {
   const source =
     value && typeof value === "object" && !Array.isArray(value)
       ? (value as Record<string, any>)
@@ -245,6 +247,10 @@ const storeSelect = `
   pickup_estimate,
   payment_methods,
   payment_details,
+  table_orders_access_enabled,
+  table_orders_enabled,
+  table_payment_methods,
+  table_order_fulfillment_mode,
   usd_to_bs,
   base_currency,
   show_prices_in_bs,
@@ -471,7 +477,7 @@ export async function PATCH(request: NextRequest) {
 
     const { data: currentBrand, error: currentBrandError } = await supabase
       .from("stores")
-      .select("primary_color, accent_color, button_text_color")
+      .select("primary_color, accent_color, button_text_color, payment_details, table_orders_access_enabled, table_orders_enabled, table_payment_methods, table_order_fulfillment_mode")
       .eq("id", body.id)
       .single();
     if (currentBrandError) throw currentBrandError;
@@ -483,10 +489,33 @@ export async function PATCH(request: NextRequest) {
       await assertAchievementFeature(supabase, body.id, "brand_colors");
     }
 
+    const requestedAvailability = body.payment_details?.availability;
+    const availability = requestedAvailability === undefined
+      ? paymentAvailability(currentBrand.payment_details)
+      : normalizePaymentAvailability(requestedAvailability, payload.payment_methods, currentBrand.table_orders_access_enabled === true);
+    if (requestedAvailability !== undefined && !availability) return badRequest("Revisa la disponibilidad de los métodos de pago.");
+    if (availability) {
+      payload.payment_details = { ...payload.payment_details, availability };
+      if ((payload.accepts_delivery || payload.accepts_national_shipping) &&
+        methodsForChannel(payload.payment_methods, payload.payment_details, "delivery").length === 0) {
+        return badRequest("Selecciona al menos un método de pago para Delivery.");
+      }
+      if (payload.accepts_pickup && methodsForChannel(payload.payment_methods, payload.payment_details, "pickup").length === 0) {
+        return badRequest("Selecciona al menos un método de pago para Retiro.");
+      }
+      const currentMode = currentBrand.table_order_fulfillment_mode === "counter_pickup" ? "bar" : "table";
+      const selectedTableMethods = methodsForChannel(payload.payment_methods, payload.payment_details, currentMode);
+      if (currentBrand.table_orders_enabled && selectedTableMethods.length === 0) {
+        return badRequest(`Selecciona al menos un método de pago para ${currentMode === "bar" ? "Barra" : "Mesa"}.`);
+      }
+    }
+
     let paymentDetailsSaved = true;
     let { data, error } = await supabase
       .from("stores")
-      .update(payload)
+      .update(availability && currentBrand.table_orders_access_enabled
+        ? { ...payload, table_payment_methods: methodsForChannel(payload.payment_methods, payload.payment_details, currentBrand.table_order_fulfillment_mode === "counter_pickup" ? "bar" : "table") }
+        : payload)
       .eq("id", body.id)
       .select(storeSelect)
       .single();
@@ -504,6 +533,7 @@ export async function PATCH(request: NextRequest) {
         "checkout_note_placeholder",
       ])
     ) {
+      if (availability) return badRequest("No se pudo guardar la disponibilidad de pagos. Contacta soporte antes de continuar.");
       paymentDetailsSaved = false;
       const {
         payment_details: _paymentDetails,

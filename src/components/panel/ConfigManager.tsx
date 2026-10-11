@@ -12,6 +12,7 @@ import {
   ImageIcon,
   Save,
   Upload,
+  ChevronDown,
 } from "lucide-react";
 import { PanelAccessGate, PanelModuleSkeleton } from "@/components/panel/PanelLoadingState";
 import { LocationPicker } from "@/components/public/LocationPicker";
@@ -27,6 +28,7 @@ import {
 } from "@/lib/panel/client-auth";
 import { compressImageForUpload } from "@/lib/images/client-compress";
 import { BUSINESS_TYPES } from "@/lib/business-types";
+import { initialPaymentAvailability, paymentAvailability, PAYMENT_CHANNELS, type PaymentChannel } from "@/lib/payment-availability";
 import type {
   BusinessDayKey,
   BusinessHours,
@@ -54,6 +56,9 @@ type StoreRow = {
   delivery_estimate: string | null;
   pickup_estimate: string | null;
   payment_methods: string[] | null;
+  table_payment_methods?: string[] | null;
+  table_orders_access_enabled?: boolean;
+  table_orders_enabled?: boolean;
   payment_details: StorePaymentDetails | null;
   usd_to_bs: number | string | null;
   base_currency?: "USD" | "EUR" | string | null;
@@ -141,8 +146,9 @@ const emptyPaymentDetails: StorePaymentDetails = {
   },
 };
 
-function mergePaymentDetails(value?: StorePaymentDetails | null): StorePaymentDetails {
+function mergePaymentDetails(value?: StorePaymentDetails | null, generalMethods: string[] = [], tableMethods: string[] = []): StorePaymentDetails {
   return {
+    availability: paymentAvailability(value) || initialPaymentAvailability(generalMethods, tableMethods),
     pagoMovil: {
       ...emptyPaymentDetails.pagoMovil,
       ...(value?.pagoMovil || {}),
@@ -241,10 +247,8 @@ function StoreSettingsCard({
     opening_hours: store.opening_hours || "Disponible hoy",
     delivery_estimate: store.delivery_estimate || "25-40 min",
     pickup_estimate: store.pickup_estimate || "15-25 min",
-    payment_methods: Array.isArray(store.payment_methods)
-      ? store.payment_methods
-      : ["Pago móvil", "Transferencia", "Efectivo", "Binance"],
-    payment_details: mergePaymentDetails(store.payment_details),
+    payment_methods: [...new Set([...(Array.isArray(store.payment_methods) ? store.payment_methods : ["Pago móvil", "Transferencia", "Efectivo", "Binance"]), ...(store.table_payment_methods || [])])],
+    payment_details: mergePaymentDetails(store.payment_details, store.payment_methods || [], store.table_payment_methods || []),
     usd_to_bs: String(store.usd_to_bs || 600),
     base_currency:
       String(store.base_currency || "USD").toUpperCase() === "EUR" ? "EUR" : "USD",
@@ -284,6 +288,9 @@ function StoreSettingsCard({
   const [isFetchingRate, setIsFetchingRate] = useState(false);
   const [message, setMessage] = useState("");
   const [customPaymentMethod, setCustomPaymentMethod] = useState("");
+  const [showTablePaymentChannels, setShowTablePaymentChannels] = useState(store.table_orders_enabled === true);
+  const visiblePaymentChannels = PAYMENT_CHANNELS.filter((channel) =>
+    (channel !== "table" && channel !== "bar") || (store.table_orders_access_enabled && showTablePaymentChannels));
   const logoInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
 
@@ -334,6 +341,26 @@ function StoreSettingsCard({
         payment_methods: exists
           ? current.payment_methods.filter((item) => item !== method)
           : [...current.payment_methods, method],
+        payment_details: {
+          ...current.payment_details,
+          availability: { ...current.payment_details.availability, [method]: exists ? [] : ["delivery", "pickup"] },
+        },
+      };
+    });
+  }
+
+  function togglePaymentChannel(method: string, channel: PaymentChannel) {
+    setDraft((current) => {
+      const selected = current.payment_details.availability?.[method] || [];
+      return {
+        ...current,
+        payment_details: {
+          ...current.payment_details,
+          availability: {
+            ...current.payment_details.availability,
+            [method]: selected.includes(channel) ? selected.filter((item) => item !== channel) : [...selected, channel],
+          },
+        },
       };
     });
   }
@@ -347,6 +374,10 @@ function StoreSettingsCard({
       payment_methods: current.payment_methods.includes(method)
         ? current.payment_methods
         : [...current.payment_methods, method],
+      payment_details: {
+        ...current.payment_details,
+        availability: { ...current.payment_details.availability, [method]: ["delivery", "pickup"] },
+      },
     }));
     setCustomPaymentMethod("");
   }
@@ -355,6 +386,10 @@ function StoreSettingsCard({
     setDraft((current) => ({
       ...current,
       payment_methods: current.payment_methods.filter((item) => item !== method),
+      payment_details: {
+        ...current.payment_details,
+        availability: Object.fromEntries(Object.entries(current.payment_details.availability || {}).filter(([key]) => key !== method)),
+      },
     }));
   }
 
@@ -1051,7 +1086,10 @@ function StoreSettingsCard({
       </section>
 
       <section className="mt-4 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">
-        <h3 className="text-lg font-black text-[#25262B]">Métodos de pago activos</h3>
+        <h3 className="text-lg font-black text-[#25262B]">Métodos de pago</h3>
+        {store.table_orders_access_enabled && !store.table_orders_enabled ? <button type="button" onClick={() => setShowTablePaymentChannels((current) => !current)} aria-expanded={showTablePaymentChannels} className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-[#2E3A79]">
+          <ChevronDown size={15} className={showTablePaymentChannels ? "rotate-180" : ""} /> Mesa y Barra
+        </button> : null}
         <div className="mt-3 flex flex-wrap gap-2">
           {defaultPaymentMethodOptions.map((method) => {
             const active = draft.payment_methods.includes(method);
@@ -1092,20 +1130,24 @@ function StoreSettingsCard({
             Agregar método
           </button>
         </div>
-        {draft.payment_methods.length ? (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {draft.payment_methods.map((method) => (
-              <button
-                key={method}
-                type="button"
-                onClick={() => removePaymentMethod(method)}
-                className="rounded-full bg-white px-3 py-1.5 text-xs font-black text-[#746f69]"
-              >
-                Quitar · {method}
-              </button>
-            ))}
-          </div>
-        ) : null}
+        {draft.payment_methods.length ? <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[340px] text-sm">
+            <thead><tr className="text-left text-xs text-[#746f69]">
+              <th className="pb-2">Método</th>
+              {visiblePaymentChannels.map((channel) => (
+                <th key={channel} className="pb-2 text-center">{{ delivery: "Delivery", pickup: "Retiro", table: "Mesa", bar: "Barra" }[channel]}</th>
+              ))}
+              <th className="pb-2" />
+            </tr></thead>
+            <tbody>{draft.payment_methods.map((method) => <tr key={method} className="border-t border-[#25262B]/10">
+              <th scope="row" className="py-2 pr-2 text-left font-semibold">{method}</th>
+              {visiblePaymentChannels.map((channel) => <td key={channel} className="text-center">
+                <input type="checkbox" aria-label={`${method} en ${{ delivery: "Delivery", pickup: "Retiro", table: "Mesa", bar: "Barra" }[channel]}`} checked={draft.payment_details.availability?.[method]?.includes(channel) === true} onChange={() => togglePaymentChannel(method, channel)} className="h-4 w-4 accent-[#2E3A79]" />
+              </td>)}
+              <td className="text-right"><button type="button" onClick={() => removePaymentMethod(method)} className="text-xs font-semibold text-[#746f69] hover:text-red-700">Quitar</button></td>
+            </tr>)}</tbody>
+          </table>
+        </div> : null}
       </section>
 
       <section className="mt-4 rounded-[28px] bg-[#F8F3E8] p-4 ring-1 ring-[#25262B]/[0.06]">

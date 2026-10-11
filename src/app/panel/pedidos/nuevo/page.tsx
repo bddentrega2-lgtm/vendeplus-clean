@@ -1,5 +1,5 @@
-import { ManualOrderManager } from "@/components/panel/ManualOrderManager";
+import { redirect } from "next/navigation";
 
 export default function NewPanelOrderPage() {
-  return <ManualOrderManager />;
+  redirect("/panel/pos");
 }

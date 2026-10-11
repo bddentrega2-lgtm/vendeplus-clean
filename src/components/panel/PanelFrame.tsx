@@ -25,6 +25,11 @@ const panelRouteMeta: Record<string, { active: string; title: string; subtitle: 
     title: "Pedidos",
     subtitle: "",
   },
+  "/panel/pos": {
+    active: "/panel/pos",
+    title: "Pedido manual",
+    subtitle: "",
+  },
   "/panel/mesas": {
     active: "/panel/mesas",
     title: "Mesa / Barra",

@@ -4,8 +4,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getPublicStoreBySlug } from "@/lib/supabase/catalog";
 import {
   isPrepaidTablePaymentMethod,
-  availableTablePaymentMethods,
 } from "@/lib/table-orders";
+import { methodsForChannel } from "@/lib/payment-availability";
 import { getStoreIdByTableOrderToken } from "@/lib/server/table-order-tokens";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ export default async function TableOrderPage({
   const [{ data: tableStore }, store] = await Promise.all([
     supabase
       .from("stores")
-      .select("id, table_orders_access_enabled, table_orders_enabled, table_order_fulfillment_mode, payment_methods, table_payment_methods, table_waiter_calls_enabled, table_waiter_call_label")
+      .select("id, table_orders_access_enabled, table_orders_enabled, table_order_fulfillment_mode, payment_methods, payment_details, table_payment_methods, table_waiter_calls_enabled, table_waiter_call_label")
       .eq("id", tableStoreId)
       .eq("slug", storeSlug)
       .eq("is_active", true)
@@ -43,13 +43,9 @@ export default async function TableOrderPage({
     .order("name", { ascending: true });
   if (error) throw error;
 
-  const storeMethods = availableTablePaymentMethods(tableStore.payment_methods);
-  const selectedMethods = Array.isArray(tableStore.table_payment_methods)
-    ? tableStore.table_payment_methods
-    : [];
-  const paymentMethods = selectedMethods.filter(
-    (method: string) => storeMethods.includes(method) && isPrepaidTablePaymentMethod(method)
-  );
+  const paymentMethods = methodsForChannel(tableStore.payment_methods, tableStore.payment_details,
+    tableStore.table_order_fulfillment_mode === "counter_pickup" ? "bar" : "table", tableStore.table_payment_methods)
+    .filter(isPrepaidTablePaymentMethod);
 
   return (
     <TableEntryClient

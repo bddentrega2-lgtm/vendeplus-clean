@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import dynamic from "next/dynamic";
 import {
   Check,
@@ -78,8 +79,6 @@ export function TablesManager() {
   const loadSequence = useRef(0);
   const detailSequence = useRef(0);
   const [enabled, setEnabled] = useState(false);
-  const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
-  const [selectedPaymentMethods, setSelectedPaymentMethods] = useState<string[]>([]);
   const [fulfillmentMode, setFulfillmentMode] = useState<"table_service" | "counter_pickup">("table_service");
   const [qrToken, setQrToken] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState("");
@@ -154,8 +153,6 @@ export function TablesManager() {
       if (!background) {
       setEnabled(Boolean(data.enabled));
       setQrToken(data.qrToken || "");
-      setPaymentMethods(data.paymentMethods || []);
-      setSelectedPaymentMethods(data.selectedPaymentMethods || []);
       setFulfillmentMode(data.fulfillmentMode === "counter_pickup" ? "counter_pickup" : "table_service");
       setWaiterCallsEnabled(data.waiterCallsEnabled === true);
       const assistanceLabel = data.waiterCallLabel || TABLE_ASSISTANCE_LABELS[0];
@@ -247,7 +244,6 @@ export function TablesManager() {
       await request("PATCH", {
         action: "settings",
         enabled,
-        paymentMethods: selectedPaymentMethods,
         fulfillmentMode,
         waiterCallsEnabled,
         waiterCallLabel,
@@ -602,20 +598,7 @@ export function TablesManager() {
                 onChange={(event) => setWaiterCallLabel(event.target.value)} />
             </label> : null}
           </div> : null}
-          <h3 className="mt-5 text-sm font-black">Pagos previos disponibles</h3>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            {paymentMethods.map((method) => (
-              <label key={method} className="flex items-center gap-3 rounded-2xl bg-[#F8F3E8] p-3 text-sm font-bold">
-                <input
-                  type="checkbox"
-                  checked={selectedPaymentMethods.includes(method)}
-                  onChange={(event) => setSelectedPaymentMethods((current) => event.target.checked ? [...current, method] : current.filter((item) => item !== method))}
-                  className="h-4 w-4 accent-[#2E3A79]"
-                />
-                {method}
-              </label>
-            ))}
-          </div>
+          <Link href="/panel/configuracion" className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-[#2E3A79] hover:underline"><Settings2 size={17} /> Métodos de pago</Link>
           <button type="button" onClick={saveSettings} disabled={isSaving} className="vp-button-primary mt-5">
             <Save size={17} /> Guardar configuración
           </button>
