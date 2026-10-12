@@ -1,10 +1,15 @@
 param([switch]$CreateFreeProject, [switch]$ReadAuthStatus, [switch]$InitializeSchema, [switch]$HardenPermissions, [switch]$Verify, [switch]$SeedCatalog, [switch]$TestBuyerFlow,
     [ValidateSet('inspect','build','deploy','status','share','start','kitchen-test','kitchen-access','kitchen-peak')][string]$PreviewAction,
     [string]$OperatorEmail,
+    [switch]$AffiliatePreview,
+    [ValidateRange(1,100)][int]$AffiliateJourneyStart = 1,
     [switch]$ResetPreviewOperatorPassword,
-    [switch]$ConfigurePreviewRedirects, [switch]$ReadAuthDiagnostics, [switch]$ApplyReviewObservation, [switch]$ApplyAccountDeletionRequests,
+    [ValidateSet('inspect','rehearse','apply','verify','stage-legacy','payment-inspect','payment-rehearse','payment-apply','allies-audit')][string]$AffiliateReleaseAction,
+    [switch]$PreserveLegacyRegistrations,
+    [switch]$ConfigurePreviewRedirects, [switch]$ReadAuthDiagnostics, [switch]$ReadAffiliateReleaseStatus, [switch]$ApplyReviewObservation, [switch]$ApplyAccountDeletionRequests,
     [ValidateSet('inspect','complete')][string]$DemoOrderAction,
-    [ValidateSet('inspect','apply','refresh-functions','test','seed','timing-apply','timing-test','delay-alerts-apply','state-sync-apply','cancellation-apply','orders-audit','realtime-audit','realtime-apply')][string]$KitchenAction)
+    [ValidateSet('inspect','apply','refresh-functions','test','seed','timing-apply','timing-test','delay-alerts-apply','state-sync-apply','cancellation-apply','orders-audit','realtime-audit','realtime-apply')][string]$KitchenAction,
+    [ValidateSet('inspect','apply','harden','seed','test','access-test','admin-qa','journey-test','demo-login','admin-login','demo-personas','monthly-apply','earnings-apply','admin-balances-apply','admin-list-apply','independent-payment-apply')][string]$AffiliateV2Action)
 
 $ErrorActionPreference = 'Stop'
 
@@ -48,6 +53,10 @@ try {
     if ($token -notmatch '^sbp_[A-Za-z0-9]+$') { throw 'Unsupported CLI credential format; no request sent.' }
     $headers = @{ Authorization = "Bearer $token" }
     $workspace = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+    if ($AffiliateReleaseAction) {
+        & (Join-Path $PSScriptRoot 'affiliate-release-db.ps1') -Action $AffiliateReleaseAction -Headers $headers -Workspace $workspace -PreserveLegacyRegistrations:$PreserveLegacyRegistrations
+        return
+    }
     foreach ($slug in @('tqkuaohznmpndqxdepdu', 'vercel_icfg_B9hGS5Xag5lYa2DTCwT7IvDi')) {
         try {
             $org = Invoke-RestMethod -Method Get -Uri "https://api.supabase.com/v1/organizations/$slug" -Headers $headers -TimeoutSec 30
@@ -70,9 +79,27 @@ try {
             $auth = $null
         }
     }
-    if ($InitializeSchema -or $HardenPermissions -or $Verify -or $SeedCatalog -or $TestBuyerFlow -or $PreviewAction -or $ConfigurePreviewRedirects -or $ReadAuthDiagnostics -or $DemoOrderAction -or $ApplyReviewObservation -or $ApplyAccountDeletionRequests -or $KitchenAction) {
+    if ($ReadAffiliateReleaseStatus) {
+        $readOnlyQuery = @'
+select
+  to_regclass('public.affiliate_codes') is not null as affiliate_codes_present,
+  to_regclass('public.affiliate_commissions') is not null as affiliate_commissions_present,
+  to_regprocedure('public.affiliate_admin_list()') is not null as affiliate_admin_list_present,
+  exists(select 1 from information_schema.columns where table_schema='public' and table_name='commerce_registration_requests' and column_name='setup_payment_status') as setup_payment_columns_present,
+  (select count(*) from public.commerce_registration_requests where status='pending') as pending_registrations,
+  (select count(*) from public.commerce_registration_requests where status='approved') as approved_registrations,
+  (select jsonb_agg(jsonb_build_object('id',id,'public',public,'file_size_limit',file_size_limit)) from storage.buckets where id in ('product-images','commerce-registration-assets','subscription-receipts')) as required_buckets;
+'@
+        $readOnlyBody = @{ query = $readOnlyQuery } | ConvertTo-Json -Compress
+        Invoke-RestMethod -Method Post -Uri 'https://api.supabase.com/v1/projects/rvmtjtuztewcrmodrodb/database/query' -Headers $headers -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($readOnlyBody)) -TimeoutSec 30 | ConvertTo-Json -Depth 8
+    }
+    if ($InitializeSchema -or $HardenPermissions -or $Verify -or $SeedCatalog -or $TestBuyerFlow -or $PreviewAction -or $ConfigurePreviewRedirects -or $ReadAuthDiagnostics -or $DemoOrderAction -or $ApplyReviewObservation -or $ApplyAccountDeletionRequests -or $KitchenAction -or $AffiliateV2Action) {
         $stageRef = 'xpqmmdmixpyqruykkbkf'
-        $manifest = Get-Content (Join-Path $workspace 'tmp/buyer-staging/provisioning.dpapi.json') -Raw | ConvertFrom-Json
+        $manifestPath = Join-Path $workspace 'tmp/buyer-staging/provisioning.dpapi.json'
+        if (-not (Test-Path $manifestPath) -and ($AffiliateV2Action -or $PreviewAction)) {
+            $manifestPath = Join-Path (Split-Path $workspace -Parent) '.fee-billing-prod/tmp/buyer-staging/provisioning.dpapi.json'
+        }
+        $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
         if ($manifest.project_ref -ne $stageRef -or $manifest.state -ne 'created') { throw 'Staging project identity not confirmed.' }
         $project = Invoke-RestMethod -Method Get -Uri "https://api.supabase.com/v1/projects/$stageRef" -Headers $headers -TimeoutSec 30
         if ($project.name -ne 'somos-buyer-staging' -or $project.organization_id -ne $manifest.organization -or $project.status -ne 'ACTIVE_HEALTHY') { throw 'Unexpected staging project state.' }
@@ -112,6 +139,7 @@ try {
             $child.WorkingDirectory = $workspace
             $child.UseShellExecute = $false
             $child.CreateNoWindow = $true
+            if ($AffiliatePreview) { $child.EnvironmentVariables['SOMOS_AFFILIATE_PREVIEW_FOUNDER'] = '1' }
             $child.RedirectStandardInput = $true
             $process = [Diagnostics.Process]::Start($child)
             try {
@@ -129,6 +157,114 @@ try {
                 if ($details.Length -gt 800) { $details = $details.Substring(0, 800) }
                 throw "Staging SQL failed. Production was not targeted. $details"
             }
+        }
+        if ($AffiliateV2Action) {
+            $preflight = @(Invoke-StagingQuery "select to_regclass('public.affiliate_codes') is not null as old_schema, exists (select 1 from information_schema.columns where table_schema='public' and table_name='affiliate_codes' and column_name='partner_type') as v2_schema;")
+            if ($preflight.Count -ne 1 -or -not $preflight[0].old_schema) { throw 'Legacy referral schema is missing in staging.' }
+            if ($AffiliateV2Action -eq 'apply') {
+                if ($preflight[0].v2_schema) { throw 'V2 migration already applied; no SQL repeated.' }
+                $migration = [IO.File]::ReadAllText((Join-Path $workspace 'supabase/migrations/20261011120000_affiliate_v2_terms.sql'))
+                $null = Invoke-StagingQuery ("begin;`n" + $migration + "`ncommit;")
+            }
+            if ($AffiliateV2Action -eq 'test') {
+                if (-not $preflight[0].v2_schema) { throw 'V2 migration is missing in staging.' }
+                Invoke-StagingQuery ([IO.File]::ReadAllText((Join-Path $workspace 'supabase/affiliate_v2_transaction_test.sql'))) | ConvertTo-Json -Depth 6
+            }
+            if ($AffiliateV2Action -eq 'independent-payment-apply') {
+                if (-not $preflight[0].v2_schema) { throw 'V2 migration is missing in staging.' }
+                $exists = @(Invoke-StagingQuery "select exists(select 1 from pg_trigger where tgname='recognize_affiliate_setup_on_approval' and tgrelid='public.commerce_registration_requests'::regclass and pg_get_triggerdef(oid) like '%UPDATE OF status, setup_payment_status%') as applied;")
+                if ($exists.Count -ne 1 -or $exists[0].applied) { throw 'Independent payment migration already applied or preflight failed.' }
+                $migration = [IO.File]::ReadAllText((Join-Path $workspace 'supabase/migrations/20261012180000_registration_independent_payment.sql'))
+                $null = Invoke-StagingQuery ("begin; set local lock_timeout='3s';`n" + $migration + "`ncommit;")
+                [PSCustomObject]@{ stage = $stageRef; migration = '20261012180000'; applied = $true } | ConvertTo-Json -Compress
+            }
+            if ($AffiliateV2Action -eq 'harden') {
+                if (-not $preflight[0].v2_schema) { throw 'V2 migration is missing in staging.' }
+                $security = [IO.File]::ReadAllText((Join-Path $workspace 'supabase/migrations/20261011121000_affiliate_v2_security.sql'))
+                $null = Invoke-StagingQuery ("begin;`n" + $security + "`ncommit;")
+            }
+            if ($AffiliateV2Action -eq 'seed') {
+                if (-not $preflight[0].v2_schema) { throw 'V2 migration is missing in staging.' }
+                $seed = [IO.File]::ReadAllText((Join-Path $workspace 'supabase/affiliate_v2_preview_seed.sql'))
+                $null = Invoke-StagingQuery ("begin;`n" + $seed + "`ncommit;")
+            }
+            if ($AffiliateV2Action -eq 'monthly-apply') {
+                if (-not $preflight[0].v2_schema) { throw 'V2 migration is missing in staging.' }
+                $monthly = [IO.File]::ReadAllText((Join-Path $workspace 'supabase/migrations/20261011122000_affiliate_monthly_snapshot.sql'))
+                $null = Invoke-StagingQuery ("begin;`n" + $monthly + "`ncommit;")
+                Invoke-StagingQuery "select has_function_privilege('service_role','public.affiliate_monthly_snapshot_by_codes(uuid[])','execute') as service_execute, has_function_privilege('authenticated','public.affiliate_monthly_snapshot_by_codes(uuid[])','execute') as authenticated_execute;" | ConvertTo-Json -Depth 4
+            }
+            if ($AffiliateV2Action -eq 'earnings-apply') {
+                if (-not $preflight[0].v2_schema) { throw 'V2 migration is missing in staging.' }
+                $exists = @(Invoke-StagingQuery "select to_regclass('public.affiliate_payout_accounts') is not null as applied;")
+                if ($exists.Count -ne 1 -or $exists[0].applied) { throw 'Earnings/payout migration already applied or preflight failed.' }
+                $earnings = [IO.File]::ReadAllText((Join-Path $workspace 'supabase/migrations/20261011123000_affiliate_earnings_payout.sql'))
+                $null = Invoke-StagingQuery ("begin;`n" + $earnings + "`ncommit;")
+                Invoke-StagingQuery "select to_regclass('public.affiliate_payout_accounts') is not null as payout_table, has_function_privilege('service_role','public.affiliate_earnings_by_codes(uuid[])','execute') as service_execute, has_function_privilege('authenticated','public.affiliate_earnings_by_codes(uuid[])','execute') as authenticated_execute;" | ConvertTo-Json -Depth 4
+            }
+            if ($AffiliateV2Action -eq 'admin-balances-apply') {
+                if (-not $preflight[0].v2_schema) { throw 'V2 migration is missing in staging.' }
+                $exists = @(Invoke-StagingQuery "select to_regprocedure('public.affiliate_admin_balances()') is not null as applied;")
+                if ($exists.Count -ne 1 -or $exists[0].applied) { throw 'Admin balances migration already applied or preflight failed.' }
+                $balances = [IO.File]::ReadAllText((Join-Path $workspace 'supabase/migrations/20261012120000_affiliate_admin_balances.sql'))
+                $null = Invoke-StagingQuery ("begin;`n" + $balances + "`ncommit;")
+                Invoke-StagingQuery "select has_function_privilege('service_role','public.affiliate_admin_balances()','execute') as service_execute, has_function_privilege('authenticated','public.affiliate_admin_balances()','execute') as authenticated_execute;" | ConvertTo-Json -Depth 4
+            }
+            if ($AffiliateV2Action -eq 'admin-list-apply') {
+                if (-not $preflight[0].v2_schema) { throw 'V2 migration is missing in staging.' }
+                $exists = @(Invoke-StagingQuery "select to_regprocedure('public.affiliate_admin_list()') is not null as applied;")
+                if ($exists.Count -ne 1 -or $exists[0].applied) { throw 'Admin list migration already applied or preflight failed.' }
+                $list = [IO.File]::ReadAllText((Join-Path $workspace 'supabase/migrations/20261012121000_affiliate_admin_list.sql'))
+                $null = Invoke-StagingQuery ("begin;`n" + $list + "`ncommit;")
+                Invoke-StagingQuery "select has_function_privilege('service_role','public.affiliate_admin_list()','execute') as service_execute, has_function_privilege('authenticated','public.affiliate_admin_list()','execute') as authenticated_execute;" | ConvertTo-Json -Depth 4
+            }
+            if ($AffiliateV2Action -in @('access-test', 'admin-qa', 'journey-test', 'demo-login', 'admin-login', 'demo-personas')) {
+                $keys = Invoke-RestMethod -Method Get -Uri "https://api.supabase.com/v1/projects/$stageRef/api-keys?reveal=true" -Headers $headers -TimeoutSec 30
+                $anon = @($keys | Where-Object { $_.name -eq 'anon' })
+                $service = @($keys | Where-Object { $_.name -eq 'service_role' })
+                if ($anon.Count -ne 1 -or $service.Count -ne 1) { throw 'Staging API keys unavailable.' }
+                $child = New-Object Diagnostics.ProcessStartInfo
+                $child.FileName = (Get-Command node.exe).Source
+                $child.Arguments = switch ($AffiliateV2Action) {
+                    'demo-login' { 'scripts/ops/affiliate-v2-demo-login.mjs' }
+                    'admin-login' { 'scripts/ops/affiliate-v2-demo-login.mjs --admin-only' }
+                    'demo-personas' { 'scripts/ops/affiliate-v2-persona-access.mjs' }
+                    'admin-qa' { 'scripts/ops/affiliate-v2-admin-qa.mjs' }
+                    'journey-test' { 'scripts/ops/affiliate-v2-journeys.mjs' }
+                    default { 'scripts/ops/affiliate-v2-access-qa.mjs' }
+                }
+                $child.EnvironmentVariables['SOMOS_REFERRAL_QA_START'] = [string]$AffiliateJourneyStart
+                $child.WorkingDirectory = $workspace
+                $child.UseShellExecute = $false
+                $child.CreateNoWindow = $true
+                $child.RedirectStandardInput = $true
+                $child.RedirectStandardOutput = $true
+                $child.RedirectStandardError = $true
+                $process = [Diagnostics.Process]::Start($child)
+                try {
+                    $payload = @{ ref = $stageRef; anon = $anon[0].api_key; service = $service[0].api_key }
+                    if ($AffiliateV2Action -eq 'admin-qa') {
+                        $deployment = Get-Content (Join-Path $workspace 'tmp/buyer-staging/preview-deployment.json') -Raw | ConvertFrom-Json
+                        if ($deployment.stage -ne $stageRef) { throw 'Preview does not target staging.' }
+                        $payload.base = $deployment.url
+                    }
+                    $process.StandardInput.Write(($payload | ConvertTo-Json -Compress))
+                    $process.StandardInput.Close()
+                    $output = $process.StandardOutput.ReadToEnd()
+                    $errorOutput = $process.StandardError.ReadToEnd()
+                    $process.WaitForExit()
+                    if ($process.ExitCode -ne 0) { throw "Affiliate staging action failed: $($errorOutput.Substring(0, [Math]::Min(800, $errorOutput.Length)))" }
+                    Write-Output $output
+                } finally { $process.Dispose(); $keys = $null; $anon = $null; $service = $null }
+            }
+            if ($AffiliateV2Action -eq 'harden' -or $preflight[0].v2_schema) {
+                Invoke-StagingQuery "select has_function_privilege('authenticated','public.activate_affiliate_fee_window(uuid,timestamptz)','execute') as authenticated_can_activate, has_function_privilege('service_role','public.activate_affiliate_fee_window(uuid,timestamptz)','execute') as service_can_activate;" | ConvertTo-Json -Depth 4
+            }
+            if ($AffiliateV2Action -eq 'apply' -or $preflight[0].v2_schema) {
+                Invoke-StagingQuery "select count(*) as codes, count(*) filter (where partner_type='delivery') as delivery_codes from public.affiliate_codes;" | ConvertTo-Json -Depth 4
+                Invoke-StagingQuery "select (select count(*) from auth.users where email_confirmed_at is not null) as confirmed_users, (select count(*) from public.service_cities) as cities, (select count(*) from public.transport_agencies) as agencies;" | ConvertTo-Json -Depth 4
+            }
+            Invoke-StagingQuery "select column_name from information_schema.columns where table_schema='public' and table_name='affiliate_codes' and column_name in ('partner_type','setup_commission_percent','transport_agency_id') order by column_name;" | ConvertTo-Json -Depth 4
         }
         if ($KitchenAction) {
             if ($KitchenAction -eq 'cancellation-apply') {

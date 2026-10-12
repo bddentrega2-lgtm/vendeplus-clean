@@ -14,6 +14,7 @@ type PaymentRow = {
   payment_reference?: string | null;
   payment_bank?: string | null;
   paid_at?: string | null;
+  proof_signed_url?: string | null;
   notes?: string | null;
   status: "pending" | "approved" | "rejected";
   created_at: string;
@@ -155,6 +156,7 @@ export function AdminSubscriptionPaymentsManager() {
                 <p className="mt-1 text-xs font-bold text-[#746f69]">
                   Banco emisor: {payment.payment_bank || "no indicado"} · Fecha pago: {formatDate(payment.paid_at)}
                 </p>
+                {payment.proof_signed_url ? <a href={payment.proof_signed_url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-sm font-bold text-[#007A69] underline">Ver comprobante</a> : null}
                 {payment.notes ? <p className="mt-2 rounded-2xl bg-[#F8F3E8] p-3 text-sm font-bold text-[#746f69]">{payment.notes}</p> : null}
               </div>
               {payment.status === "pending" ? (

@@ -60,6 +60,7 @@ export const panelNavItems = [
   { key: "configuracion", label: "Configuracion", href: "/transporte/panel/configuracion" },
   { key: "solicitudes", label: "Solicitudes", href: "/transporte/panel/solicitudes" },
   { key: "comercios", label: "Comercios", href: "/transporte/panel/comercios" },
+  { key: "referidos", label: "Referidos", href: "/transporte/panel/referidos" },
   { key: "facturacion", label: "Facturacion", href: "/transporte/panel/facturacion" },
 ];
 

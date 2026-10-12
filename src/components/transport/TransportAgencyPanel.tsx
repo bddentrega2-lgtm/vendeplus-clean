@@ -71,6 +71,9 @@ const TransportBillingTab = dynamic(() =>
 const TransportDriversTab = dynamic(() =>
   import("@/components/transport/TransportDriversTab").then((module) => module.TransportDriversTab)
 );
+const AffiliateDashboard = dynamic(() =>
+  import("@/components/affiliates/AffiliateDashboard").then((module) => module.AffiliateDashboard)
+);
 
 let transportPanelCache: PanelCache | null = null;
 
@@ -120,6 +123,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
   const [isPanelRefreshing, setIsPanelRefreshing] = useState(false);
   const [hasSession, setHasSession] = useState(Boolean(hasUsableInitialCache));
   const [hasCheckedSession, setHasCheckedSession] = useState(Boolean(hasUsableInitialCache));
+  const [affiliatesEnabled, setAffiliatesEnabled] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [showLoginPassword, setShowLoginPassword] = useState(false);
@@ -177,6 +181,21 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     agencies[0] ||
     null;
   const agencyId = agency?.id || "";
+  useEffect(() => {
+    setAffiliatesEnabled(false);
+    if (!hasSession || !agencyId) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(`/api/transport/panel/affiliates?agencyId=${encodeURIComponent(agencyId)}&summary=1`, {
+          headers: await getPanelAuthHeaders(), signal: controller.signal, cache: "no-store",
+        });
+        const result = await response.json();
+        if (!controller.signal.aborted) setAffiliatesEnabled(response.ok && result.enabled === true);
+      } catch { if (!controller.signal.aborted) setAffiliatesEnabled(false); }
+    })();
+    return () => controller.abort();
+  }, [agencyId, hasSession]);
   const agencyPricingType = agency?.pricing_type || "";
   const premiumDispatchEnabled = agency?.premium_dispatch_enabled === true;
   const canSendParticularToEntrega2 = (agency?.slug || "").toLowerCase() === "entrega2";
@@ -1639,7 +1658,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       </section>
 
       <nav className="grid grid-cols-2 gap-2 md:grid-cols-7" aria-label="Secciones de empresa delivery">
-        {panelNavItems.map((item) => (
+        {panelNavItems.filter((item) => item.key !== "referidos" || affiliatesEnabled).map((item) => (
           <button
             type="button"
             key={item.key}
@@ -1670,7 +1689,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
         </section>
       ) : null}
 
-      {hasLoadedConfiguration && configIssues.length ? (
+      {tab !== "referidos" && hasLoadedConfiguration && configIssues.length ? (
         <section className="rounded-[28px] bg-amber-50 p-4 text-amber-900 ring-1 ring-amber-200">
           <h2 className="text-sm font-black">Completa tu empresa para aparecer ante comercios</h2>
           <p className="mt-1 text-sm font-bold leading-relaxed">
@@ -1678,7 +1697,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
             los comercios podran ver y solicitar afiliacion sin errores.
           </p>
         </section>
-      ) : hasLoadedConfiguration ? (
+      ) : tab !== "referidos" && hasLoadedConfiguration ? (
         <section className="rounded-[28px] bg-green-50 p-4 text-green-800 ring-1 ring-green-200">
           <h2 className="text-sm font-black">Configuracion operativa completa</h2>
           <p className="mt-1 text-sm font-bold">
@@ -2673,6 +2692,8 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       {tab === "facturacion" ? (
         <TransportBillingTab agencyId={agencyId} billing={billing} currency={billingCurrency} symbol={billingSymbol} />
       ) : null}
+
+      {tab === "referidos" && affiliatesEnabled ? <AffiliateDashboard agencyId={agencyId} embedded /> : null}
 
       {message ? <p className="rounded-2xl bg-white p-3 text-sm font-black text-[#2E3A79]">{message}</p> : null}
     </div>

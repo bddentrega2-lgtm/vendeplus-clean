@@ -187,6 +187,29 @@ export async function getPanelAuthContext(
     }
 
     if (!storeUsers?.length) {
+      const { data: affiliate, error: affiliateError } = await supabase.from("affiliate_codes")
+        .select("id").eq("beneficiary_email", userEmail).limit(1).maybeSingle();
+      if (affiliateError) throw affiliateError;
+      if (affiliate) {
+        const { data: identity, error: identityError } = await supabase.auth.admin.getUserById(userId);
+        if (identityError) throw identityError;
+        if (!identity.user?.email_confirmed_at || normalizeAuthEmail(identity.user.email) !== userEmail) {
+          return {
+            isAuthorized: false, mode: "user", method: "auth", isFounderMode: false,
+            userId, email: userEmail, storeIds: [], error: "Verifica tu correo antes de entrar.",
+          };
+        }
+        return {
+          isAuthorized: true,
+          mode: "user",
+          method: token ? "auth" : "cookie",
+          isFounderMode: false,
+          userId,
+          email: userEmail,
+          storeIds: [],
+          role: "affiliate",
+        };
+      }
       return {
         isAuthorized: false,
         mode: "user",

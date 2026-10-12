@@ -16,6 +16,7 @@ import {
   logApiEvent,
 } from "@/lib/server/observability";
 import { normalizeBusinessType } from "@/lib/business-types";
+import { isAffiliateCodeAvailable, isValidAffiliateCode, normalizeAffiliateCode } from "@/lib/affiliates";
 
 const MAX_LOGO_BYTES = 2 * 1024 * 1024;
 const MAX_SIGNUP_BODY_BYTES = MAX_LOGO_BYTES + 120_000;
@@ -126,7 +127,9 @@ export async function POST(request: NextRequest) {
     const businessType = normalizeBusinessType(body.get("businessType"));
     const cityId = cleanText(body.get("cityId"));
     const captchaToken = cleanText(body.get("captchaToken"));
-    const referralCode = slugifyStore(cleanText(body.get("referralCode")));
+    const rawReferralCode = cleanText(body.get("referralCode"));
+    const affiliateCode = normalizeAffiliateCode(rawReferralCode);
+    const referralCode = slugifyStore(rawReferralCode);
     const weeklyOrderVolume = cleanText(body.get("weeklyOrderVolume"));
 
     if (storeName.length < 2 || storeName.length > 120) {
@@ -185,11 +188,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { data: referrerStore, error: referrerError } = referralCode
+    const { data: affiliate, error: affiliateError } = affiliateCode && isValidAffiliateCode(affiliateCode)
+      ? await supabase.from("affiliate_codes")
+        .select("id, status, starts_at, expires_at, max_uses, used_count")
+        .eq("code", affiliateCode).maybeSingle()
+      : { data: null, error: null };
+    if (affiliateError) throw affiliateError;
+    if (affiliate && !isAffiliateCodeAvailable(affiliate)) {
+      return observed(badRequest("El codigo de afiliacion ya no esta disponible."));
+    }
+    const { data: referrerStore, error: referrerError } = referralCode && !affiliate
       ? await supabase.from("stores").select("id").eq("slug", referralCode).maybeSingle()
       : { data: null, error: null };
     if (referrerError) throw referrerError;
-    if (referralCode && !referrerStore) {
+    if (referralCode && !referrerStore && !affiliate) {
       return observed(badRequest("El codigo de referido no es valido."));
     }
 
@@ -219,12 +231,13 @@ export async function POST(request: NextRequest) {
         business_type: businessType,
         city_id: cityId,
         referral_store_id: referrerStore?.id || null,
+        affiliate_code_id: affiliate?.id || null,
         weekly_order_volume: weeklyOrderVolume,
         logo_path: uploadedLogoPath,
         logo_mime_type: logo.type,
         status: "pending",
       })
-      .select("id, request_code, status, created_at")
+      .select("id, request_code, status, created_at, setup_base_usd, setup_discount_percent, setup_due_usd")
       .single();
     if (registrationError) throw registrationError;
 

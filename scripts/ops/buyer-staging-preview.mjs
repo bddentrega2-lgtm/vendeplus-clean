@@ -100,6 +100,7 @@ Object.assign(appEnv, {
   NEXT_PUBLIC_SUPABASE_ANON_KEY: keys.anon,
   SUPABASE_SERVICE_ROLE_KEY: keys.service,
   NEXT_PUBLIC_ALLOW_DEMO_FALLBACKS: 'false',
+  FOUNDER_EMAILS: process.env.SOMOS_AFFILIATE_PREVIEW_FOUNDER === '1' ? 'preview-admin@somos.test' : '',
 });
 if (previewWebhookSecret) appEnv.ENTREGA2_WEBHOOK_SECRET = previewWebhookSecret;
 if (firebasePreview) appEnv.FIREBASE_SERVICE_ACCOUNT_JSON = firebasePreviewRaw;
@@ -107,7 +108,13 @@ const env = { ...process.env, ...appEnv, VERCEL_ENV: 'preview' };
 const response = await fetch(`${appEnv.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/stores?select=id,slug&order=slug&limit=5`, { headers: { apikey: keys.service, Authorization: `Bearer ${keys.service}` } });
 if (!response.ok) throw new Error(`Staging catalog HTTP ${response.status}`);
 const stores = await response.json();
-if (stores.length !== 2 || stores.some(store => !['cocina-demo', 'tienda-demo'].includes(store.slug))) throw new Error('Unexpected staging catalog');
+const baselineSlugs = ['cocina-demo', 'tienda-demo'];
+// Registration QA can add stores. Only the read-only build accepts extra stores;
+// deployment and test actions retain the original exact-fixture guard.
+const validCatalog = mode === 'build'
+  ? baselineSlugs.every(slug => stores.some(store => store.slug === slug))
+  : stores.length === 2 && stores.every(store => baselineSlugs.includes(store.slug));
+if (!validCatalog) throw new Error(`Unexpected staging catalog: ${JSON.stringify(stores.map(store => store.slug))}`);
 const privateResponse = await fetch(`${appEnv.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/buyer_order_accounts?select=order_id&limit=1`, { headers: { apikey: keys.anon, Authorization: `Bearer ${keys.anon}` } });
 if (![401, 403].includes(privateResponse.status)) throw new Error('Buyer data not private');
 console.log(JSON.stringify({ stage: ref, fictionalStores: stores.map(s => s.slug), privateBuyerStatus: privateResponse.status, firebaseEnabled: Boolean(firebasePreview), disabledVariables: Object.keys(appEnv).filter(key => appEnv[key] === ''), productionBefore: before.targets.production.id }));

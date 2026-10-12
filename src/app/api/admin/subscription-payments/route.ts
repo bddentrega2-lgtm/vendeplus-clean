@@ -30,8 +30,16 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await query;
     if (error) throw error;
-
-    return NextResponse.json({ payments: data || [] });
+    const paths = [...new Set((data || []).map((entry: any) => String(entry.proof_url || ""))
+      .filter((path) => path && !/^https?:\/\//i.test(path)))];
+    const { data: signed, error: signError } = paths.length
+      ? await supabase.storage.from("subscription-receipts").createSignedUrls(paths, 60 * 15)
+      : { data: [], error: null };
+    if (signError) throw signError;
+    const urls = new Map((signed || []).map((entry: any, index: number) => [paths[index], entry.signedUrl || null]));
+    return NextResponse.json({ payments: (data || []).map((entry: any) => ({
+      ...entry, proof_signed_url: urls.get(entry.proof_url) || null, proof_url: undefined,
+    })) });
   } catch (error) {
     return adminErrorResponse(error, "Error cargando pagos.");
   }
@@ -61,6 +69,20 @@ export async function PATCH(request: NextRequest) {
     }
 
     const status = action === "reject" ? "rejected" : "approved";
+
+    if (status === "approved" && (payment as any).plan_type === "per_service") {
+      const { error: approvalError } = await supabase.rpc("approve_per_service_fee_payment", {
+        p_payment_id: paymentId,
+        p_actor: auth.userId,
+        p_notes: cleanText(body.reviewNotes),
+      });
+      if (approvalError) throw approvalError;
+      const { data: approved, error: readError } = await supabase.from("store_subscription_payments")
+        .select("*, stores(id, name, slug, subscription_ends_at, next_payment_due_at)")
+        .eq("id", paymentId).single();
+      if (readError) throw readError;
+      return NextResponse.json({ payment: approved, message: "Pago de fee aprobado y conciliado por pedido." });
+    }
 
     if (status === "approved") {
       const planType = cleanText((payment as any).plan_type) || "monthly";

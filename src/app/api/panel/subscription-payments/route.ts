@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
+import sharp from "sharp";
 import { getPlan, PER_SERVICE_FEE_USD } from "@/lib/plans";
 import { loadServiceFeeBalances } from "@/lib/billing/service-fees";
 import {
@@ -9,6 +11,10 @@ import {
   requirePanelAuth,
 } from "@/lib/panel/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+
+const PROOF_BUCKET = "subscription-receipts";
+const MAX_PROOF_BYTES = 5 * 1024 * 1024;
+const PROOF_MIME = new Map([["image/jpeg", "jpeg"], ["image/png", "png"], ["image/webp", "webp"]]);
 
 function cleanText(value: unknown) {
   return String(value || "").trim();
@@ -97,13 +103,19 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  let uploadedPath = "";
   try {
     const auth = await requirePanelAuth(request);
-    const body = await request.json();
-    const storeId = cleanText(body.storeId);
+    if (Number(request.headers.get("content-length") || 0) > MAX_PROOF_BYTES + 100_000) {
+      return badRequest("El comprobante supera 5 MB.");
+    }
+    const multipart = request.headers.get("content-type")?.startsWith("multipart/form-data") === true;
+    const body: any = multipart ? await request.formData() : await request.json();
+    const value = (key: string) => multipart ? body.get(key) : body[key];
+    const storeId = cleanText(value("storeId"));
     const billingPeriod = "monthly";
-    const action = cleanText(body.action);
-    const selectedPlanId = cleanText(body.planId);
+    const action = cleanText(value("action"));
+    const selectedPlanId = cleanText(value("planId"));
 
     if (!storeId) return badRequest("Selecciona un comercio.");
     assertStoreManager(auth, storeId, "No tienes permiso para pagar este comercio.");
@@ -119,7 +131,7 @@ export async function POST(request: NextRequest) {
 
     if (action === "choose_plan" && selectedPlanId === "per_service") {
       const serviceFeePayer =
-        body.serviceFeePayer === "customer" ? "customer" : body.serviceFeePayer === "merchant" ? "merchant" : "";
+        value("serviceFeePayer") === "customer" ? "customer" : value("serviceFeePayer") === "merchant" ? "merchant" : "";
 
       if (!serviceFeePayer) {
         return badRequest("Elige si el fee por pedido lo paga el comercio o el cliente.");
@@ -170,13 +182,28 @@ export async function POST(request: NextRequest) {
     }
 
     const exchangeRate = money((store as any).usd_to_bs) || 600;
-    const paymentReference = cleanText(body.paymentReference);
-    const paymentBank = cleanText(body.paymentBank);
-    const paidAt = cleanText(body.paidAt);
+    const paymentReference = cleanText(value("paymentReference"));
+    const paymentBank = cleanText(value("paymentBank"));
+    const paidAt = cleanText(value("paidAt"));
+    const proof = value("proof");
 
     if (!paymentReference) return badRequest("Indica la referencia del pago.");
     if (!paymentBank) return badRequest("Indica el banco emisor.");
     if (!paidAt) return badRequest("Indica la fecha de pago.");
+    if (!(proof instanceof File) || !PROOF_MIME.has(proof.type) || proof.size < 1 || proof.size > MAX_PROOF_BYTES) {
+      return badRequest("Adjunta un comprobante JPG, PNG o WebP de hasta 5 MB.");
+    }
+    const proofBytes = Buffer.from(await proof.arrayBuffer());
+    const metadata = await sharp(proofBytes).metadata().catch(() => null);
+    if (!metadata || metadata.format !== PROOF_MIME.get(proof.type) ||
+        (metadata.width || 0) * (metadata.height || 0) > 30_000_000) {
+      return badRequest("El archivo no es una imagen valida.");
+    }
+    uploadedPath = `${storeId}/${randomUUID()}.${metadata.format === "jpeg" ? "jpg" : metadata.format}`;
+    const { error: uploadError } = await supabase.storage.from(PROOF_BUCKET).upload(uploadedPath, proofBytes, {
+      contentType: proof.type, upsert: false,
+    });
+    if (uploadError) throw uploadError;
 
     const { data, error } = await supabase
       .from("store_subscription_payments")
@@ -190,19 +217,22 @@ export async function POST(request: NextRequest) {
         payment_reference: paymentReference,
         payment_bank: paymentBank,
         paid_at: paidAt,
-        notes: cleanText(body.notes) || null,
+        notes: cleanText(value("notes")) || null,
+        proof_url: uploadedPath,
         status: "pending",
       })
       .select()
       .single();
 
     if (error) throw error;
+    uploadedPath = "";
 
     return NextResponse.json({
       payment: data,
       message: "Pago enviado a revisión.",
     });
   } catch (error) {
+    if (uploadedPath) await createSupabaseAdminClient().storage.from(PROOF_BUCKET).remove([uploadedPath]).catch(() => {});
     return panelErrorResponse(error, "Error enviando pago.");
   }
 }

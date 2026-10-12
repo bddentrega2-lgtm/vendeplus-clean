@@ -62,7 +62,7 @@ async function subscriptionRequest(pin: string, options?: RequestInit) {
   const response = await fetch("/api/panel/subscription-payments", {
     ...options,
     headers: {
-      "Content-Type": "application/json",
+      ...(options?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
       ...(await getPanelAuthHeaders(pin)),
       ...(options?.headers || {}),
     },
@@ -102,6 +102,8 @@ export function SubscriptionPaymentManager() {
   const [paymentBank, setPaymentBank] = useState("");
   const [paidAt, setPaidAt] = useState("");
   const [notes, setNotes] = useState("");
+  const [proof, setProof] = useState<File | null>(null);
+  const [proofInputKey, setProofInputKey] = useState(0);
   const [serviceFeePayer, setServiceFeePayer] = useState<"merchant" | "customer">("merchant");
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => shouldShowPanelInitialAccessGate());
   const [isLoading, setIsLoading] = useState(() => hasSavedPanelAuth());
@@ -173,23 +175,37 @@ export function SubscriptionPaymentManager() {
 
   async function submitPayment() {
     if (!selectedStore) return;
+    if (!needsPlanChoice && !proof) {
+      setMessage("Adjunta el comprobante del pago.");
+      return;
+    }
 
     setIsLoading(true);
     setMessage("");
 
     try {
+      const form = new FormData();
+      if (!needsPlanChoice && proof) {
+        form.set("storeId", selectedStore.id);
+        form.set("action", "submit_payment");
+        form.set("paymentReference", paymentReference);
+        form.set("paymentBank", paymentBank);
+        form.set("paidAt", paidAt);
+        form.set("notes", notes);
+        form.set("proof", proof);
+      }
       const data = await subscriptionRequest(pin, {
         method: "POST",
-        body: JSON.stringify({
+        body: needsPlanChoice ? JSON.stringify({
           storeId: selectedStore.id,
-          action: needsPlanChoice ? "choose_plan" : "submit_payment",
-          planId: needsPlanChoice ? selectedPlanId : selectedStore.plan_type,
+          action: "choose_plan",
+          planId: selectedPlanId,
           billingPeriod,
           paymentReference,
           paymentBank,
           paidAt,
           notes,
-        }),
+        }) : form,
       });
       const successMessage =
         data.message || "Pago enviado a revisión. Queda pendiente de aprobación por Somos.";
@@ -197,6 +213,8 @@ export function SubscriptionPaymentManager() {
       setPaymentBank("");
       setPaidAt("");
       setNotes("");
+      setProof(null);
+      setProofInputKey((current) => current + 1);
       await load(pin, { keepMessage: true });
       setMessage(successMessage);
     } catch (error: any) {
@@ -433,6 +451,11 @@ export function SubscriptionPaymentManager() {
         <label className="mt-4 block space-y-1">
           <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Nota</span>
           <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={2} className="w-full rounded-2xl border border-[#25262B]/10 px-4 py-3 text-sm font-bold outline-none" />
+        </label>
+        <label className="mt-4 block space-y-1">
+          <span className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Comprobante de pago</span>
+          <input key={proofInputKey} type="file" accept="image/jpeg,image/png,image/webp" required onChange={(event) => setProof(event.target.files?.[0] || null)} className="w-full rounded-lg border border-[#25262B]/10 bg-white px-3 py-2 text-sm" />
+          <span className="block text-xs text-[#746f69]">JPG, PNG o WebP. Maximo 5 MB.</span>
         </label>
         <button type="button" onClick={submitPayment} disabled={isLoading || !selectedStore} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#FFB547] px-5 py-3 text-sm font-black text-[#25262B] disabled:opacity-60">
           {isLoading ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} />}

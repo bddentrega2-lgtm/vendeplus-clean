@@ -1,5 +1,117 @@
 # Memoria de trabajo - Entrega2 y SOMOS
 
+## 2026-10-12: auditar aliados sin suplantar accesos
+
+- Revisar condiciones reales con SELECT readonly, saldos de RPC admin y enlace
+  publico; no generar sesion de un aliado real para "probar" su panel.
+- Correo configurado sin Auth aun no es fallo: pendiente primer login Google.
+  Delivery usa membresia owner/admin de su empresa, no un correo extra del codigo.
+- FED tiene 0% inicial y50% fee durante1mes: valido y distinto del vendedor.
+  No normalizar acuerdos diferentes sin solicitarlo. Informar los valores exactos.
+- Git conserva codigo e historial, no las filas de los aliados de Supabase.
+  Etiqueta de respaldo remoto sin mover main evita un nuevo despliegue solicitado.
+- Compilacion local requiere env privado inyectado. Un nuevo registro de QA puede
+  agregar tiendas a staging: no borrarlas. Guard de build readonly puede admitirlas
+  sin relajar guardias de deploy/pruebas mutantes ni identidad de credenciales.
+
+## 2026-10-12: publicacion del cobro independiente
+
+- Publicar artefacto con entorno productivo, nunca promover Preview con Supabase
+  aislado. --skip-domain puede mover alias del proyecto: verificar dominio oficial
+  mediante su HTML antes y despues de promover, no solo targets.production.
+- Migracion puntual ensayada con ROLLBACK, bloqueo con timeout3s e historial dentro
+  de la misma transaccion; comparar filas antes/despues para preservar solicitudes.
+  Ante timeout de red, inspeccionar estado antes de repetir una escritura.
+- Produccion permite registros nuevos concurrentes: no borrar ni interpretar como
+  fixtures los codigos creados por usuarios durante rollout (verify encontro1).
+- Rollback de deployment no revierte SQL ni datos. Version anterior aun exigia
+  pago antes de aprobar en API; evaluar coherencia de reglas si hay que volver.
+- Controles productivos readonly:19rutas y10vistas PASS, sin crear pedidos/pagos.
+  Logs sin errores en ventana corta no equivalen a garantia absoluta.
+
+## 2026-10-12: separar acceso y cobro por decision comercial
+
+- Para renovar acceso QA de una persona no ejecutar demo-login general (rota dos
+  cuentas). admin-login/--admin-only limita al adminexistente de staging. Probar
+  password+API protegida, cerrar sesion y entregar clave solo por chat, no en docs.
+
+- Nueva regla explicita: solicitud sin pago previo; WhatsApp con condiciones y total;
+  admin aprueba acceso y cobro independientemente. No imponer pago previo en SQL
+  aunque la interfaz quite el bloqueo. Confirmar monto/referencia no activa cuenta.
+- La comision setup debe escuchar ambos cambios (status y setup_payment_status),
+  exigir aprobado+confirmado y conservar UNIQUE. Testear ambos ordenes y concurrencia.
+- Nunca usar aprobar acceso para llenar setup_paid_usd ni marcar ingreso ficticio.
+  Aprobados sin pagar deben poder encontrarse en filtro de pagos pendientes.
+- Bienvenida para personas: correoGoogle+aliados; empresasdelivery: cuenta propia+
+  transporte. No inventar correo deempresa ni enviar mensajes automaticamente.
+- Staging antiguo no tiene historial supabase_migrations: verificar trigger real,
+  sin crear historial incompleto ni confundirlo con historial productivo existente.
+- Un select envuelto en label puede incluir opciones en su nombre accesible:
+  usar prefijo semantico al probar. Capturas y pruebas negativas complementan build.
+
+## 2026-10-12: referidos publicado y comprobado
+
+- Confirmacion explicita del usuario permite preservar solicitudes antiguas;17
+  migraciones aplicadas una vez, datoslegacy y permisos verificados antes de promover.
+  Confirmar deployment en HTML oficial despues; no confundir alias de proyecto.
+- Una falla transitoria de red/CLI no prueba fallo de despliegue ni de SQL. Leer
+  estado remoto antes de reintentar escrituras; salida0 sin metadata no basta.
+- Comparar registros anteriores y posteriores al intervalo esquema/promocion para
+  evitar cobrar20USD a quienes vieron condiciones viejas. Nueve antes/despues,
+  trespendienteslegacy preservadas. No se generaron pagos ni registros ficticios.
+- QA visual no debe usar longitud minima grande para detectar pagina vacia:
+  "Mis referidos" + error de acceso + login puede ser una pantalla valida corta.
+  Esperar elemento semantico, revisar contenido/overflow/JS y captura.
+- Pruebas productivas readonly y permisos401 no sustituyen Google/correo reales
+  ni operacion financiera autenticada. Ese paso requiere primer aliado real.
+  No copiar porcentajes de demos a acuerdos comerciales ni marcar liquidado
+  sin pago real. Publicar no equivale a commit/push: aun no solicitado.
+
+## 2026-10-12: candidato de referidos sin mover dominio
+
+- `vercel deploy --prod --skip-domain` construye con variables productivas y puede
+  mover el alias predeterminado del proyecto, aunque NO mueva somos-ve.com. Revisar
+  el deployment ID en el HTML del dominio oficial, no solo project.targets.production.
+- Antes de aplicar17 migraciones se ensayaron juntas con rollback, lock timeout3s
+  y registros de migracion en la misma transaccion. Verificar esquema e historial
+  despues del ensayo: ambos ausentes, cambios no persistidos.
+- Los registros anteriores necesitan compatibilidad en SQL, API y botones admin;
+  mostrar la etiqueta legacy no basta. Caso11 PASS15 comprobaciones: aprobar sin
+  pago y sin comision inventados, y rechazar cobro del inicial legacy.
+- Una redireccion307 de admin al login sin sesion es correcta. El smoke debe seguir
+  redirecciones de paginas, conservando la exigencia401 JSON en APIs privadas.
+- Autorizacion de publicar no resuelve automaticamente condiciones comerciales
+  pendientes. Esperar respuesta sobre3 solicitudes previas, sin aplicar cobros
+  retroactivos ni crear5 aliados con porcentajes demostrativos.
+
+## 2026-10-12: referidos de principio a fin, solo staging
+
+- No dar por terminado un flujo financiero porque los demos y sumas SQL coincidan.
+  Probar registro, comprobante, aprobacion, pedidos, pago de fee y liquidacion por
+  las APIs reales. La aprobacion detecto un bucket product-images ausente solo en
+  staging; se agrego alli, sin tocar produccion.
+- Un resumen agregado sin limites no garantiza que todos los importes se puedan
+  liquidar. La prueba de 510 pedidos produjo 511 comisiones y encontro 11 fuera
+  del detalle global limitado a 500. Solucion: endpoint admin por aliado,
+  paginas de 100 con conteo completo y ajustes netos, seleccion limpia al cambiar
+  de pagina/aliado. Validar tambien el navegador, no solo SQL.
+- Ejecucion final 4f2730fc6f: 10/10 escenarios, 550 comprobaciones, 607 pedidos
+  cobrables y 2 sin fee. Incluye descuentos, cobro rechazado, reintentos,
+  cancelados cobrables, manuales, condiciones congeladas y cobro despues del
+  vencimiento. Paginas UI 390/1280 sin overflow/errores JS; 20 controles de acceso
+  y SQL transaccional pasaron. Datos temporales eliminados.
+- No confundir codigo de prueba incorrecto con bug de producto: products usa
+  is_available; cancelar exige motivo del conjunto permitido y detalle si es Otro.
+  Corregir el harness al contrato existente, no debilitar validaciones para pasar.
+- Pruebas con correos .invalid no demuestran entrega de correo. Sesiones QA
+  verificadas no demuestran Google OAuth interactivo ni transferencias reales.
+  Cerrar solo la sesion QA (signOut scope local), no todas las del usuario demo.
+- Produccion aun no tiene tablas/campos/RPC de referidos. Existen 3 solicitudes
+  pendientes anteriores al pago de USD20: consultar su tratamiento antes de
+  migrar, no cobrar retroactivamente por suposicion. Un rollback de codigo no
+  revierte guards de base de datos. Nunca promover artefacto de staging.
+- Informe: docs/audits/2026-10-12-referrals-release-readiness.md.
+
 ## 2026-10-06: estados que dejaron de verse
 
 ### Hechos comprobados
