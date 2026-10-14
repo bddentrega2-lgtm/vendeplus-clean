@@ -128,7 +128,10 @@ export function UpdatePasswordForm({
         return;
       }
 
-      const { error } = await supabase.auth.updateUser({ password });
+      const { error } = await supabase.auth.updateUser({
+        password,
+        data: { somos_admin_password_reminder: false },
+      });
 
       if (error) throw error;
 

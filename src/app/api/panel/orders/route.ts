@@ -195,6 +195,10 @@ const compactOrdersSelect = `
     id,
     agency_id,
     status
+  ),
+  order_payment_receipts (
+    storage_path,
+    deleted_at
   )
 `;
 
@@ -555,7 +559,9 @@ async function isOrderDeliveredByExternalDelivery(supabase: any, order: any) {
 
 export async function GET(request: NextRequest) {
   try {
+    const startedAt = performance.now();
     const auth = await requirePanelAuth(request);
+    const authMs = performance.now() - startedAt;
     const supabase = createSupabaseAdminClient();
     const { searchParams } = new URL(request.url);
 
@@ -674,6 +680,7 @@ export async function GET(request: NextRequest) {
     };
 
     if (orderId) {
+      const queryStartedAt = performance.now();
       let { data, error } = await query.eq("id", orderId).maybeSingle();
 
       if (error) {
@@ -686,15 +693,20 @@ export async function GET(request: NextRequest) {
 
       if (error) throw error;
 
+      const queryMs = performance.now() - queryStartedAt;
+      const relationsStartedAt = performance.now();
       const [order] = await attachOrderRelations(supabase, data ? [withPaymentFallback(data)] : [], {
         includeEvents: true,
       });
 
-      return NextResponse.json({ order: order || null, serverTime: new Date().toISOString() });
+      const response = NextResponse.json({ order: order || null, serverTime: new Date().toISOString() });
+      response.headers.set("Server-Timing", `auth;dur=${authMs.toFixed(1)}, query;dur=${queryMs.toFixed(1)}, relations;dur=${(performance.now() - relationsStartedAt).toFixed(1)}, total;dur=${(performance.now() - startedAt).toFixed(1)}`);
+      return response;
     }
 
     query = applyDateFilter(query);
 
+    const queryStartedAt = performance.now();
     let { data, error } = await query.range(offset, to);
 
     if (error) {
@@ -711,6 +723,8 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error;
 
+    const queryMs = performance.now() - queryStartedAt;
+    const relationsStartedAt = performance.now();
     const pageRows = data || [];
     const hasMore = pageRows.length > limit;
     const visibleRows = hasMore ? pageRows.slice(0, limit) : pageRows;
@@ -718,18 +732,21 @@ export async function GET(request: NextRequest) {
     let ordersWithTransport;
     if (compact) {
       const compactOrders = visibleRows.map(withPaymentFallback);
-      const receiptOrderIds = await attachPaymentReceipts(supabase, compactOrders);
-      ordersWithTransport = compactOrders.map((order: any) => ({
-        ...order,
-        has_payment_receipt: receiptOrderIds.has(order.id),
-      }));
+      ordersWithTransport = compactOrders.map((order: any) => {
+        const { order_payment_receipts: receipt, ...fields } = order;
+        const receipts = Array.isArray(receipt) ? receipt : receipt ? [receipt] : [];
+        return {
+          ...fields,
+          has_payment_receipt: receipts.some((entry: any) => !entry.deleted_at && Boolean(entry.storage_path)),
+        };
+      });
     } else {
       ordersWithTransport = await attachOrderRelations(supabase, visibleRows.map(withPaymentFallback), {
           includeEvents: true,
         });
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       orders: ordersWithTransport,
       serverTime: new Date().toISOString(),
       page: {
@@ -745,6 +762,8 @@ export async function GET(request: NextRequest) {
         storeIds: auth.storeIds || [],
       },
     });
+    response.headers.set("Server-Timing", `auth;dur=${authMs.toFixed(1)}, query;dur=${queryMs.toFixed(1)}, relations;dur=${(performance.now() - relationsStartedAt).toFixed(1)}, total;dur=${(performance.now() - startedAt).toFixed(1)}`);
+    return response;
   } catch (error: any) {
     return panelErrorResponse(error, "Error cargando pedidos.");
   }

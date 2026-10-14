@@ -171,10 +171,28 @@ export async function POST(request: NextRequest) {
       return observed(badRequest("Las claves no coinciden."));
     }
 
+    const emailLimit = await checkDistributedRateLimit({
+      key: `transport-apply:email:${contactEmail}`,
+      limit: TRANSPORT_APPLY_EMAIL_LIMIT,
+      windowMs: TRANSPORT_APPLY_RATE_WINDOW_MS,
+    });
+
+    if (!emailLimit.allowed) {
+      return observed(
+        NextResponse.json(
+          { error: "Demasiados intentos con este correo. Prueba de nuevo mas tarde." },
+          {
+            status: 429,
+            headers: rateLimitHeaders(emailLimit, TRANSPORT_APPLY_EMAIL_LIMIT),
+          }
+        )
+      );
+    }
+
     const existingUser = await findUserByEmail(supabase, contactEmail);
 
     if (existingUser) {
-      if (!oauthUser || existingUser.id !== oauthUser.id) {
+      if (oauthUser && existingUser.id !== oauthUser.id) {
         return observed(
           conflict("Ese correo ya tiene una cuenta. Usa otro correo o pide recuperar la clave.")
         );
@@ -188,27 +206,22 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      createdUserId = existingUser.id;
-    }
+      if (!oauthUser) {
+        const publicAuth = createSupabasePublicClient();
+        if (!publicAuth) throw new Error("Faltan variables publicas de Supabase.");
 
-    if (!createdUserId) {
-      const emailLimit = await checkDistributedRateLimit({
-        key: `transport-apply:email:${contactEmail}`,
-        limit: TRANSPORT_APPLY_EMAIL_LIMIT,
-        windowMs: TRANSPORT_APPLY_RATE_WINDOW_MS,
-      });
-
-      if (!emailLimit.allowed) {
-        return observed(
-          NextResponse.json(
-            { error: "Demasiados intentos con este correo. Prueba de nuevo mas tarde." },
-            {
-              status: 429,
-              headers: rateLimitHeaders(emailLimit, TRANSPORT_APPLY_EMAIL_LIMIT),
-            }
-          )
-        );
+        const { data: signInData, error: signInError } = await publicAuth.auth.signInWithPassword({
+          email: contactEmail,
+          password,
+        });
+        if (signInError || signInData.user?.id !== existingUser.id) {
+          return observed(
+            conflict("Ese correo ya tiene una cuenta. Ingresa su clave o recuperala antes de continuar.")
+          );
+        }
       }
+
+      createdUserId = existingUser.id;
     }
 
     const baseSlug = slugifyTransportAgency(name);

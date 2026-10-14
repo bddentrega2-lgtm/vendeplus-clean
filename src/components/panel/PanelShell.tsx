@@ -51,7 +51,6 @@ const navItems = [
 ];
 
 const routeDataUrls: Record<string, string> = {
-  "/panel/pedidos": "/api/panel/orders?date=today&compact=true&limit=40",
   "/panel/clientes": "/api/panel/customers?limit=80&offset=0",
   "/panel/estadisticas": "/api/panel/stats?range=last_7_days",
 };

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
-import { ArrowRight, Check, ImageUp, Loader2, Lock, MessageCircle, Store } from "lucide-react";
+import { ArrowRight, Check, Gift, ImageUp, Loader2, Lock, MessageCircle, Store } from "lucide-react";
 import { AuthCaptcha } from "@/components/shared/AuthCaptcha";
 import { BUSINESS_TYPES, businessTypeLabel } from "@/lib/business-types";
 import {
@@ -11,6 +11,7 @@ import {
 } from "@/lib/commerce-registration";
 import { buildSomosWhatsAppUrl } from "@/lib/whatsapp";
 import { normalizeAffiliateCode, registrationPriceMessage } from "@/lib/affiliates";
+import { TRIAL_DAYS } from "@/lib/plans";
 
 type SuccessState = {
   requestCode: string;
@@ -192,12 +193,16 @@ export function SignupForm() {
             <Store size={25} />
           </div>
           <h1 className="mt-6 text-4xl font-black">Registra tu comercio</h1>
+          <div className="mt-4 flex items-start gap-3 text-[#FFB547]">
+            <Gift size={22} aria-hidden="true" className="mt-0.5 shrink-0" />
+            <p className="text-base font-bold leading-6">Regístrate hoy y recibe {TRIAL_DAYS} días libres de fee.</p>
+          </div>
           <p className="mt-3 text-sm font-bold leading-relaxed text-white/70">
             Envía tus datos a Somos. Revisaremos la solicitud antes de habilitar tu cuenta y tu catálogo.
           </p>
           <div className="mt-5 rounded-[26px] bg-[#FFB547] p-5 text-[#25262B]">
             <p className="text-xs font-black uppercase tracking-[0.16em] text-[#2E3A79]">Suscripción y configuración</p>
-            <div className="mt-2 flex items-end gap-2">
+            <div className="mt-2 flex flex-wrap items-end gap-2">
               <span className="text-4xl font-black">${Number(codePreview?.valid ? codePreview.dueUsd : 20).toFixed(2)}</span>
               {codePreview?.valid && Number(codePreview.discountPercent) > 0 ? <span className="pb-1 text-xs font-bold line-through opacity-65">US$20.00</span> : null}
               <span className="pb-1 text-xs font-black opacity-65">pago único</span>

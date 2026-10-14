@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
-import { ArrowRight, Check, ClipboardList, MessageCircle, Motorbike, PackageCheck, QrCode, Settings2, ShoppingBag, Store as StoreIcon, UtensilsCrossed } from "lucide-react";
+import { ArrowRight, Check, ClipboardList, Gift, MessageCircle, Motorbike, PackageCheck, QrCode, Settings2, ShoppingBag, Store as StoreIcon, UtensilsCrossed } from "lucide-react";
 import type { Store } from "@/types";
 import type { PublicTransportAgencyLogo } from "@/lib/transport";
 import { AffiliatedDeliveryLogos } from "@/components/public/AffiliatedDeliveryLogos";
@@ -21,6 +21,7 @@ import {
 } from "@/lib/panel/client-auth";
 import { safeInternalPanelPath } from "@/lib/panel/safe-redirect";
 import { buildSomosWhatsAppUrl } from "@/lib/whatsapp";
+import { TRIAL_DAYS } from "@/lib/plans";
 
 const commerceFeatures = ["Catálogo público por comercio", "Productos, precios, imágenes y variantes", "Carrito y finalización de pedido", "Solicitud de pedido por WhatsApp", "Delivery o retiro según configuración"];
 const deliveryFeatures = ["Panel para empresas delivery", "Solicitudes de afiliación", "Tarifas por rango de km", "Cobertura máxima configurable", "Datos operativos y de contacto"];
@@ -143,8 +144,17 @@ export function HomeClient({ stores = [], transportAgencies = [] }: { stores?: S
     </div></section>
 
     <section className="bg-[var(--somos-navy)] py-14 text-white sm:py-20"><div className="vp-container grid gap-8 lg:grid-cols-[1fr_0.9fr] lg:items-center">
-      <div><p className="somos-badge somos-badge-light">Modelo simple para comercios</p><h2 className="mt-4 text-3xl font-bold leading-tight tracking-tight sm:text-5xl">Tu negocio, tus precios, tus pagos y tus clientes</h2><p className="mt-4 max-w-2xl text-base font-medium leading-7 text-white/70">Un pago único de $20 por suscripción y configuración del catálogo. Después, el fee habitual de $0.10 por pedido recibido. Sin mensualidades ni porcentaje sobre tus ventas.</p></div>
-      <div className="rounded-3xl bg-white/8 p-6 ring-1 ring-white/10"><p className="text-sm font-semibold text-[var(--somos-amber)]">Pago único de suscripción y configuración</p><div className="mt-2 flex items-end gap-2"><span className="text-5xl font-bold">$20</span><span className="pb-1 text-sm font-medium text-white/60">una sola vez</span></div><div className="mt-4 flex items-baseline gap-2 border-t border-white/15 pt-4"><span className="text-2xl font-bold">$0.10</span><span className="text-sm font-medium text-white/70">por pedido recibido</span></div><p className="mt-3 text-sm font-medium text-white/70">Sin mensualidades ni comisiones porcentuales.</p><p className="mt-2 text-xs font-semibold text-white/60">Envía tu solicitud. Somos confirmará el pago y aprobará el acceso al panel.</p><ButtonLink href="/registro" variant="light" className="mt-6 w-full sm:w-fit">Registrar comercio <ArrowRight size={17} /></ButtonLink></div>
+      <div><p className="somos-badge somos-badge-light">Modelo simple para comercios</p><h2 className="mt-4 text-3xl font-bold leading-tight tracking-tight sm:text-5xl">Tu negocio, tus precios, tus pagos y tus clientes</h2></div>
+      <div className="rounded-3xl bg-white/8 p-6 ring-1 ring-white/10"><p className="text-sm font-semibold text-[var(--somos-amber)]">Pago único de suscripción y configuración</p><div className="mt-2 flex items-end gap-2"><span className="text-5xl font-bold">$20</span><span className="pb-1 text-sm font-medium text-white/60">una sola vez</span></div>
+        <div className="mt-4 grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] items-center gap-3 border-t border-white/15 pt-4">
+          <div><span className="text-2xl font-bold">$0.10</span><span className="mt-1 block text-sm font-medium text-white/70">por pedido recibido</span></div>
+          <div className="flex min-w-0 items-start gap-2 text-[var(--somos-amber)]">
+            <Gift size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
+            <p className="min-w-0 text-sm font-bold leading-5">Regístrate hoy y recibe {TRIAL_DAYS} días libres de fee.</p>
+          </div>
+        </div>
+        <p className="mt-3 text-sm font-medium text-white/70">Sin mensualidades ni comisiones porcentuales.</p><ButtonLink href="/registro" variant="light" className="mt-6 w-full sm:w-fit">Registrar comercio <ArrowRight size={17} /></ButtonLink>
+      </div>
       <div className="overflow-hidden rounded-3xl border border-white/10 lg:col-span-2">
         <div className="grid grid-cols-2 border-b border-white/10 text-sm font-bold">
           <p className="bg-[var(--somos-teal)] p-4 text-[var(--somos-amber)] sm:px-6">Con Somos</p>

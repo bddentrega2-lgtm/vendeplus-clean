@@ -37,6 +37,15 @@ const productsSelect = `
       id,
       name
     )
+  ),
+  product_images (
+    id,
+    product_id,
+    store_id,
+    image_url,
+    alt_text,
+    sort_order,
+    is_active
   )
 `;
 
@@ -53,7 +62,16 @@ const legacyProductsSelect = `
   is_featured,
   sort_order,
   stores(name),
-  categories(name)
+  categories(name),
+  product_images (
+    id,
+    product_id,
+    store_id,
+    image_url,
+    alt_text,
+    sort_order,
+    is_active
+  )
 `;
 
 type NormalizedVariant = {
@@ -107,27 +125,6 @@ function normalizeProductImages(body: any, primaryImageUrl: string | null): Prod
     .filter((url, index, urls) => Boolean(url) && urls.indexOf(url) === index)
     .slice(0, maxProductImages)
     .map((image_url, sort_order) => ({ image_url, alt_text: String(body.name || "").trim() || null, sort_order }));
-}
-
-async function attachProductImages(supabase: ReturnType<typeof createSupabaseAdminClient>, products: any[]) {
-  const ids = products.map((product) => product.id).filter(Boolean);
-  if (!ids.length) return products;
-  const { data, error } = await supabase.from("product_images")
-    .select("id, product_id, store_id, image_url, alt_text, sort_order, is_active")
-    .in("product_id", ids).eq("is_active", true).order("sort_order");
-  if (error) throw error;
-  const imagesByProductId = new Map<string, any[]>();
-  for (const image of data || []) {
-    const productId = String(image.product_id || "");
-    if (!productId) continue;
-    const current = imagesByProductId.get(productId) || [];
-    current.push(image);
-    imagesByProductId.set(productId, current);
-  }
-  return products.map((product) => ({
-    ...product,
-    product_images: imagesByProductId.get(String(product.id)) || [],
-  }));
 }
 
 async function syncProductImages(supabase: ReturnType<typeof createSupabaseAdminClient>, productId: string, storeId: string, images: ProductImageInput[]) {
@@ -250,7 +247,9 @@ async function syncProductVariants(
 
 export async function GET(request: NextRequest) {
   try {
+    const startedAt = performance.now();
     const auth = await requirePanelAuth(request);
+    const authMs = performance.now() - startedAt;
     const supabase = createSupabaseAdminClient();
     const { searchParams } = new URL(request.url);
     const search = String(searchParams.get("search") || "").trim();
@@ -297,6 +296,7 @@ export async function GET(request: NextRequest) {
       productsQuery = productsQuery.ilike("name", `%${search}%`);
     }
 
+    const queryStartedAt = performance.now();
     const [storesResult, categoriesResult, productsResult] = await Promise.all([
       storesQuery,
       categoriesQuery,
@@ -334,8 +334,14 @@ export async function GET(request: NextRequest) {
 
     if (productsError) throw productsError;
 
-    products = await attachProductImages(supabase, products);
-    return NextResponse.json({
+    const queryMs = performance.now() - queryStartedAt;
+    products = products.map((product) => ({
+      ...product,
+      product_images: (product.product_images || [])
+        .filter((image: any) => image.is_active)
+        .sort((a: any, b: any) => a.sort_order - b.sort_order),
+    }));
+    const response = NextResponse.json({
       stores: storesResult.data || [],
       categories: categoriesResult.data || [],
       products,
@@ -350,6 +356,8 @@ export async function GET(request: NextRequest) {
         role: auth.role || null,
       },
     });
+    response.headers.set("Server-Timing", `auth;dur=${authMs.toFixed(1)}, query;dur=${queryMs.toFixed(1)}, total;dur=${(performance.now() - startedAt).toFixed(1)}`);
+    return response;
   } catch (error: any) {
     return panelErrorResponse(error, "Error cargando productos.");
   }

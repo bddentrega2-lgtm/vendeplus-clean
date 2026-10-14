@@ -41,6 +41,7 @@ type PanelAuthContextValue = {
   isRevalidating: boolean;
   contextError: string;
   accountId: string;
+  passwordChangeSuggested: boolean;
   refreshSession: () => Promise<void>;
   revalidateSession: () => Promise<void>;
   clearSession: () => void;
@@ -73,6 +74,7 @@ export function PanelAuthProvider({ children }: { children: React.ReactNode }) {
   const [achievements, setAchievements] = useState<PanelAchievement[]>([]);
   const [contextError, setContextError] = useState("");
   const [accountId, setAccountId] = useState("");
+  const [passwordChangeSuggested, setPasswordChangeSuggested] = useState(false);
   const requestVersion = useRef(0);
   const accountRef = useRef("");
 
@@ -81,6 +83,7 @@ export function PanelAuthProvider({ children }: { children: React.ReactNode }) {
     if (printer?.setActiveStore) void printer.setActiveStore({ storeId: "" }).catch(() => undefined);
     setStores([]); setSelectedStoreId(""); setIsFounderMode(false);
     setAchievementFeatures({}); setAchievements([]); setAccountId("");
+    setPasswordChangeSuggested(false);
     accountRef.current = "";
     clearPanelReadCache();
   }
@@ -125,6 +128,7 @@ export function PanelAuthProvider({ children }: { children: React.ReactNode }) {
     accountRef.current = userId;
     setHasSession(true);
     setAccountId(userId);
+    setPasswordChangeSuggested(Boolean(data.passwordChangeSuggested));
     writeMobile("private_store", nextStoreId);
     writeMobile("space", "business");
     setSelectedStoreId(nextStoreId);
@@ -218,6 +222,7 @@ export function PanelAuthProvider({ children }: { children: React.ReactNode }) {
     isRevalidating,
     contextError,
     accountId,
+    passwordChangeSuggested,
     refreshSession,
     revalidateSession,
     clearSession,
@@ -247,6 +252,7 @@ export function usePanelAuth() {
       isRevalidating: false,
       contextError: "",
       accountId: "",
+      passwordChangeSuggested: false,
       refreshSession: primePanelAuthSession,
       revalidateSession: primePanelAuthSession,
       clearSession: () => {},

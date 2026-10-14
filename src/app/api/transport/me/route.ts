@@ -311,20 +311,12 @@ export async function GET(request: NextRequest) {
     }
     const relationAgencyIds = requestedAgencyId ? [requestedAgencyId] : agencyIds;
     const billingAgencyIds = requestedAgencyId ? [requestedAgencyId] : agencyIds;
-    const [citiesResult, coverageResult] = await Promise.all([
-      includeConfiguration
-        ? supabase.from("service_cities").select("id, name, state_name, slug").eq("is_active", true).order("sort_order")
-        : Promise.resolve({ data: [], error: null }),
-      includeConfiguration && agencyIds.length
-        ? supabase.from("transport_agency_city_coverage").select("agency_id, city_id, is_base_city, is_active").in("agency_id", agencyIds)
-        : Promise.resolve({ data: [], error: null }),
-    ]);
-    if (citiesResult.error) throw citiesResult.error;
-    if (coverageResult.error) throw coverageResult.error;
-    agencies = (agencies || []).map((agency: any) => ({
-      ...agency,
-      city_coverage: (coverageResult.data || []).filter((coverage: any) => coverage.agency_id === agency.id),
-    }));
+    const citiesPromise = includeConfiguration
+      ? supabase.from("service_cities").select("id, name, state_name, slug").eq("is_active", true).order("sort_order")
+      : Promise.resolve({ data: [], error: null });
+    const coveragePromise = includeConfiguration && agencyIds.length
+      ? supabase.from("transport_agency_city_coverage").select("agency_id, city_id, is_base_city, is_active").in("agency_id", agencyIds)
+      : Promise.resolve({ data: [], error: null });
     const billingRange = getTransportBillingRange(request.nextUrl.searchParams);
     const loadBillingDetail = (select: string) => loadCompleteBillingRows<any>((from, to) =>
       supabase.from("transport_orders").select(select, { count: "exact" })
@@ -334,12 +326,10 @@ export async function GET(request: NextRequest) {
         .range(from, to)
     );
 
-    let requestsResult: any;
-    let connectionsResult: any;
     let ordersResult: any;
-    [requestsResult, connectionsResult, ordersResult] =
+    const relationPromise =
       agencyIds.length
-        ? await Promise.all([
+        ? Promise.all([
             includeRelations ? supabase
               .from("store_transport_agency_requests")
               .select(
@@ -395,12 +385,28 @@ export async function GET(request: NextRequest) {
               ? loadBillingDetail(billingOrdersSelect).catch((error) => ({ data: [], error }))
               : Promise.resolve({ data: [], error: null }),
           ])
-        : [
+        : Promise.resolve([
             { data: [], error: null },
             { data: [], error: null },
             { data: [], error: null },
-          ];
+          ]);
 
+    const summaryPromise = includeBilling && agencyIds.length
+      ? supabase.rpc("transport_billing_summary", {
+          p_agency_ids: billingAgencyIds, p_start: billingRange.start, p_end: billingRange.end,
+        })
+      : Promise.resolve({ data: { ordersCount: 0, totalUsd: 0, driverPayouts: [] }, error: null });
+    const [[requestsResult, connectionsResult, initialOrdersResult], citiesResult, coverageResult, summaryResult] = await Promise.all([
+      relationPromise, citiesPromise, coveragePromise, summaryPromise,
+    ]);
+    ordersResult = initialOrdersResult;
+
+    if (citiesResult.error) throw citiesResult.error;
+    if (coverageResult.error) throw coverageResult.error;
+    agencies = (agencies || []).map((agency: any) => ({
+      ...agency,
+      city_coverage: (coverageResult.data || []).filter((coverage: any) => coverage.agency_id === agency.id),
+    }));
     if (requestsResult.error) throw requestsResult.error;
     if (connectionsResult.error) throw connectionsResult.error;
     const legacyEntrega2Connections = includeRelations
@@ -424,11 +430,6 @@ export async function GET(request: NextRequest) {
         !isCancelledBillingStatus(order.orders?.status)
     );
 
-    const summaryResult = includeBilling && agencyIds.length
-      ? await supabase.rpc("transport_billing_summary", {
-          p_agency_ids: billingAgencyIds, p_start: billingRange.start, p_end: billingRange.end,
-        })
-      : { data: { ordersCount: 0, totalUsd: 0, driverPayouts: [] }, error: null };
     // No fallback to a partial list if the aggregate is unavailable.
     if (summaryResult.error || !summaryResult.data) throw summaryResult.error || new Error("Resumen no disponible.");
     const response = NextResponse.json({

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { KeyRound } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { PanelShell } from "@/components/panel/PanelShell";
 import { isSubscriptionPastDue } from "@/lib/subscription-status";
@@ -126,7 +127,7 @@ function ExpiredPanelBlock() {
 export function PanelFrame({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { isBootstrapping, isRevalidating, contextError, refreshSession, revalidateSession, accountId, selectedStoreId, selectedStore, isFounderMode } = usePanelAuth();
+  const { isBootstrapping, isRevalidating, contextError, refreshSession, revalidateSession, accountId, selectedStoreId, selectedStore, isFounderMode, passwordChangeSuggested } = usePanelAuth();
   useEffect(() => {
     if (!isBootstrapping && !contextError && accountId && !selectedStoreId && !isFounderMode && pathname !== "/panel/update-password") router.replace("/aliados");
   }, [isBootstrapping, contextError, accountId, selectedStoreId, isFounderMode, pathname, router]);
@@ -161,6 +162,12 @@ export function PanelFrame({ children }: { children: React.ReactNode }) {
     <div inert={checking} style={checking ? { visibility: "hidden" } : undefined}>
     <PanelShell active={meta.active} title={meta.title} subtitle={meta.subtitle}>
       <TableOrderNotifier />
+      {passwordChangeSuggested && !isFounderMode ? (
+        <Link href="/panel/update-password" className="mb-4 flex min-h-12 items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-[#25262B] hover:bg-amber-100">
+          <KeyRound size={19} className="shrink-0 text-amber-700" aria-hidden="true" />
+          <span>Tu clave fue asignada por Somos. Cambia tu clave.</span>
+        </Link>
+      ) : null}
       <div key={`${accountId}:${selectedStoreId}`}>
         {shouldBlockContent ? <ExpiredPanelBlock /> : children}
       </div>

@@ -31,6 +31,10 @@ function addDays(date: Date, days: number) {
   return next;
 }
 
+function validAccessPassword(password: string) {
+  return password.length >= 8 && password.length <= 72 && password.trim().length >= 8;
+}
+
 async function buildUniqueSlug(supabase: any, storeName: string) {
   const baseSlug = slugifyStore(storeName) || `comercio-${Date.now().toString(36)}`;
   for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -144,8 +148,15 @@ export async function PATCH(request: NextRequest) {
     registrationId = cleanText(body.id);
     const action = cleanText(body.action);
     if (!registrationId) return badRequest("Falta la solicitud.");
-    if (!["approve", "reject", "resend_access", "report_payment", "confirm_payment", "waive_payment"].includes(action)) {
+    if (!["approve", "reject", "resend_access", "set_password", "report_payment", "confirm_payment", "waive_payment"].includes(action)) {
       return badRequest("Accion no soportada.");
+    }
+
+    const accessMethod = action === "approve" ? cleanText(body.accessMethod) || "email" : "";
+    const password = typeof body.password === "string" ? body.password : "";
+    if (action === "approve" && !["email", "password"].includes(accessMethod)) return badRequest("Selecciona como entregar el acceso.");
+    if ((action === "approve" && accessMethod === "password") || action === "set_password") {
+      if (!validAccessPassword(password)) return badRequest("La clave debe tener entre 8 y 72 caracteres, sin espacios de relleno.");
     }
 
     const supabase = createSupabaseAdminClient();
@@ -217,6 +228,41 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ message: "Correo de acceso reenviado." });
     }
 
+    if (action === "set_password") {
+      if (current.status !== "approved" || !current.auth_user_id || !current.store_id) {
+        return conflict("La solicitud aun no tiene una cuenta aprobada.");
+      }
+      const [{ data: userData, error: userError }, { data: assignments, error: assignmentError }] = await Promise.all([
+        supabase.auth.admin.getUserById(current.auth_user_id),
+        supabase.from("store_users").select("store_id, role").eq("user_id", current.auth_user_id),
+      ]);
+      if (userError) throw userError;
+      if (assignmentError) throw assignmentError;
+      const user = userData.user;
+      if (!user || user.email?.toLowerCase() !== current.email.toLowerCase()
+        || user.user_metadata?.source !== "somos_registration_approved"
+        || user.last_sign_in_at
+        || assignments?.length !== 1 || assignments[0].store_id !== current.store_id || assignments[0].role !== "owner"
+        || (Array.isArray(user.app_metadata?.providers) && user.app_metadata.providers.some((provider: string) => provider !== "email"))) {
+        return conflict("Esta cuenta ya se uso o tiene otros accesos. Reenvia el correo para no cambiar una clave activa.");
+      }
+      const { error: passwordError } = await supabase.auth.admin.updateUserById(user.id, {
+        password,
+        user_metadata: { ...user.user_metadata, somos_admin_password_reminder: true },
+      });
+      if (passwordError) throw passwordError;
+      if (current.activation_error) {
+        await supabase.from("commerce_registration_requests")
+          .update({ activation_error: null, updated_at: new Date().toISOString() })
+          .eq("id", registrationId).eq("status", "approved");
+      }
+      return NextResponse.json({ message: `Clave asignada a ${current.email}. Compartela de forma privada.` });
+    }
+
+    if (accessMethod === "password" && await findUserByEmail(supabase, current.email)) {
+      return conflict("Este correo ya tiene una cuenta. Aprueba enviando el correo de acceso para no cambiar su clave actual.");
+    }
+
     const { data: locked, error: lockError } = await supabase
       .from("commerce_registration_requests")
       .update({ status: "activating", activation_error: null, updated_at: new Date().toISOString() })
@@ -227,22 +273,30 @@ export async function PATCH(request: NextRequest) {
     if (lockError) throw lockError;
     if (!locked) {
       if (current.status === "approved") {
+        if (accessMethod === "password") return conflict("La solicitud ya fue aprobada. Usa la opcion de asignar clave.");
         return NextResponse.json({ request: current, message: "La solicitud ya estaba aprobada." });
       }
       return conflict("La solicitud esta siendo procesada o ya fue rechazada.");
     }
 
     let authUser = await findUserByEmail(supabase, locked.email);
+    if (authUser && accessMethod === "password") {
+      const { error: unlockError } = await supabase.from("commerce_registration_requests")
+        .update({ status: current.status, activation_error: current.activation_error, updated_at: new Date().toISOString() })
+        .eq("id", registrationId).eq("status", "activating");
+      if (unlockError) throw unlockError;
+      return conflict("Este correo ya tiene una cuenta. Aprueba enviando el correo de acceso para no cambiar su clave actual.");
+    }
     if (!authUser) {
-      const temporaryPassword = randomBytes(32).toString("base64url");
       const { data, error } = await supabase.auth.admin.createUser({
         email: locked.email,
-        password: temporaryPassword,
+        password: accessMethod === "password" ? password : randomBytes(32).toString("base64url"),
         email_confirm: true,
         user_metadata: {
           name: locked.store_name,
           source: "somos_registration_approved",
           account_type: "commerce",
+          ...(accessMethod === "password" ? { somos_admin_password_reminder: true } : {}),
         },
       });
       if (error) throw error;
@@ -341,6 +395,14 @@ export async function PATCH(request: NextRequest) {
       })
       .eq("id", registrationId);
     if (approvalError) throw approvalError;
+
+    if (accessMethod === "password") {
+      return NextResponse.json({
+        request: { id: registrationId, status: "approved", store_id: store.id },
+        emailSent: false,
+        message: `Solicitud aprobada. La clave de ${locked.email} esta lista; compartela de forma privada.`,
+      });
+    }
 
     let emailSent = true;
     try {

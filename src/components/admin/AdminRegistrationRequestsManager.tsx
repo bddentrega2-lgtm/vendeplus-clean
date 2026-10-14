@@ -7,11 +7,15 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
+  Eye,
+  EyeOff,
+  KeyRound,
   Loader2,
   Mail,
   MessageCircle,
   RefreshCcw,
   Search,
+  X,
   XCircle,
 } from "lucide-react";
 import { businessTypeLabel } from "@/lib/business-types";
@@ -90,6 +94,11 @@ export function AdminRegistrationRequestsManager() {
   const [activeId, setActiveId] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [accessDialog, setAccessDialog] = useState<{ entry: RegistrationRequest; action: "approve" | "set_password" } | null>(null);
+  const [accessMethod, setAccessMethod] = useState<"email" | "password">("email");
+  const [accessPassword, setAccessPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const requestId = useRef(0);
 
   const loadRequests = useCallback(async () => {
@@ -125,24 +134,59 @@ export function AdminRegistrationRequestsManager() {
     { label: "Rechazadas", value: data?.summary?.rejected || 0 },
   ], [data]);
 
-  async function runAction(entry: RegistrationRequest, action: "approve" | "reject" | "resend_access" | "report_payment" | "confirm_payment" | "waive_payment") {
+  function openAccessDialog(entry: RegistrationRequest, action: "approve" | "set_password") {
+    setAccessDialog({ entry, action });
+    setAccessMethod(action === "approve" ? "email" : "password");
+    setAccessPassword("");
+    setConfirmPassword("");
+    setShowPassword(false);
+    setError("");
+  }
+
+  function closeAccessDialog() {
+    setAccessDialog(null);
+    setAccessPassword("");
+    setConfirmPassword("");
+    setShowPassword(false);
+  }
+
+  async function submitAccess(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!accessDialog) return;
+    const manual = accessDialog.action === "set_password" || accessMethod === "password";
+    if (manual && (accessPassword.length < 8 || accessPassword.length > 72 || accessPassword.trim().length < 8)) {
+      setError("La clave debe tener entre 8 y 72 caracteres, sin espacios de relleno.");
+      return;
+    }
+    if (manual && accessPassword !== confirmPassword) {
+      setError("Las claves no coinciden.");
+      return;
+    }
+    const succeeded = await runAction(accessDialog.entry, accessDialog.action, {
+      accessMethod: accessDialog.action === "approve" ? accessMethod : undefined,
+      password: manual ? accessPassword : undefined,
+    });
+    if (succeeded) closeAccessDialog();
+  }
+
+  async function runAction(entry: RegistrationRequest, action: "approve" | "reject" | "resend_access" | "set_password" | "report_payment" | "confirm_payment" | "waive_payment", access?: { accessMethod?: "email" | "password"; password?: string }) {
     const actionLabel = action === "approve" ? "aprobar" : action === "reject" ? "rechazar" : action === "confirm_payment" ? "confirmar el pago de" : action === "waive_payment" ? "exonerar" : action === "report_payment" ? "reportar el pago de" : "reenviar el acceso de";
-    if (!window.confirm(`¿Confirmas ${actionLabel} ${entry.store_name}?`)) return;
-    if (action === "approve" && !["confirmed", "waived", "legacy"].includes(entry.setup_payment_status) && Number(entry.setup_due_usd) > 0 && !window.confirm(`El pago inicial de US$${Number(entry.setup_due_usd).toFixed(2)} sigue pendiente. ¿Habilitar el comercio sin registrar un cobro?`)) return;
-    if (action === "reject" && entry.setup_payment_status === "confirmed" && !window.confirm("Este comercio ya tiene un pago confirmado. Si rechazas la solicitud, deberas conciliar la devolucion por separado. ¿Continuar?")) return;
+    if (action !== "approve" && action !== "set_password" && !window.confirm(`¿Confirmas ${actionLabel} ${entry.store_name}?`)) return false;
+    if (action === "approve" && !["confirmed", "waived", "legacy"].includes(entry.setup_payment_status) && Number(entry.setup_due_usd) > 0 && !window.confirm(`El pago inicial de US$${Number(entry.setup_due_usd).toFixed(2)} sigue pendiente. ¿Habilitar el comercio sin registrar un cobro?`)) return false;
+    if (action === "reject" && entry.setup_payment_status === "confirmed" && !window.confirm("Este comercio ya tiene un pago confirmado. Si rechazas la solicitud, deberas conciliar la devolucion por separado. ¿Continuar?")) return false;
     let reference = "";
     let paidUsd: number | undefined;
     if (action === "report_payment" || action === "confirm_payment") {
       const input = window.prompt("Referencia del pago:", entry.setup_payment_reference || "");
-      if (input === null) return;
+      if (input === null) return false;
       reference = input.trim();
-      if (!reference) { setError("Indica la referencia del pago."); return; }
+      if (!reference) { setError("Indica la referencia del pago."); return false; }
     }
     if (action === "confirm_payment") {
       const input = window.prompt("Importe verificado en USD:", Number(entry.setup_due_usd).toFixed(2));
-      if (input === null) return;
+      if (input === null) return false;
       paidUsd = Number(input);
-      if (!Number.isFinite(paidUsd) || paidUsd !== Number(entry.setup_due_usd)) { setError("El importe debe coincidir con el total inicial."); return; }
+      if (!Number.isFinite(paidUsd) || paidUsd !== Number(entry.setup_due_usd)) { setError("El importe debe coincidir con el total inicial."); return false; }
     }
 
     setActiveId(entry.id);
@@ -153,14 +197,16 @@ export function AdminRegistrationRequestsManager() {
         method: "PATCH",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: entry.id, action, reference, paidUsd }),
+        body: JSON.stringify({ id: entry.id, action, reference, paidUsd, ...access }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "No se pudo procesar la solicitud.");
       setMessage(payload.message || "Solicitud actualizada.");
       await loadRequests();
+      return true;
     } catch (actionError: any) {
       setError(actionError.message || "No se pudo procesar la solicitud.");
+      return false;
     } finally {
       setActiveId("");
     }
@@ -237,12 +283,15 @@ export function AdminRegistrationRequestsManager() {
                   ) : null}
                   {["pending", "activation_error"].includes(entry.status) ? (
                     <>
-                      <button type="button" disabled={isWorking} onClick={() => runAction(entry, "approve")} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#2E3A79] px-3 py-2 text-xs font-black text-white disabled:opacity-50">{isWorking ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} Aprobar comercio</button>
+                      <button type="button" disabled={isWorking} onClick={() => openAccessDialog(entry, "approve")} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#2E3A79] px-3 py-2 text-xs font-black text-white disabled:opacity-50">{isWorking ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} Aprobar comercio</button>
                       <button type="button" disabled={isWorking} onClick={() => runAction(entry, "reject")} className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-100 px-3 py-2 text-xs font-black text-red-700 disabled:opacity-50"><XCircle size={15} /> Rechazar</button>
                     </>
                   ) : null}
-                  {entry.status === "approved" && (!entry.access_email_sent_at || entry.activation_error) ? (
-                    <button type="button" disabled={isWorking} onClick={() => runAction(entry, "resend_access")} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#FFB547] px-3 py-2 text-xs font-black text-[#25262B] disabled:opacity-50"><Mail size={15} /> Reenviar acceso</button>
+                  {entry.status === "approved" ? (
+                    <>
+                      <button type="button" disabled={isWorking} onClick={() => runAction(entry, "resend_access")} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#FFB547] px-3 py-2 text-xs font-black text-[#25262B] disabled:opacity-50"><Mail size={15} /> Reenviar correo</button>
+                      <button type="button" disabled={isWorking} onClick={() => openAccessDialog(entry, "set_password")} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#F8F3E8] px-3 py-2 text-xs font-black text-[#2E3A79] disabled:opacity-50"><KeyRound size={15} /> Definir clave</button>
+                    </>
                   ) : null}
                 </div>
               </article>
@@ -260,6 +309,50 @@ export function AdminRegistrationRequestsManager() {
           <button type="button" disabled={page >= (data?.pagination?.totalPages || 1) || isLoading} onClick={() => setPage((current) => current + 1)} className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-white text-[#2E3A79] ring-1 ring-[#25262B]/10 disabled:opacity-40" title="Página siguiente"><ChevronRight size={18} /></button>
         </div>
       </div>
+
+      {accessDialog ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#25262B]/60 p-4">
+          <form role="dialog" aria-modal="true" aria-labelledby="access-dialog-title" onSubmit={submitAccess} className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 id="access-dialog-title" className="text-lg font-black text-[#25262B]">{accessDialog.action === "approve" ? "Aprobar comercio" : "Definir clave"}</h2>
+                <p className="mt-1 break-all text-sm font-bold text-[#746f69]">{accessDialog.entry.store_name} · {accessDialog.entry.email}</p>
+              </div>
+              <button type="button" onClick={closeAccessDialog} disabled={activeId === accessDialog.entry.id} title="Cerrar" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-[#746f69] hover:bg-[#F8F3E8] disabled:opacity-50"><X size={19} /></button>
+            </div>
+
+            {accessDialog.action === "approve" ? (
+              <div className="mt-5 grid grid-cols-2 gap-2" role="group" aria-label="Forma de entregar el acceso">
+                <button type="button" onClick={() => { setAccessMethod("email"); setError(""); }} className={`flex items-center justify-center gap-2 rounded-lg px-3 py-3 text-sm font-black ${accessMethod === "email" ? "bg-[#2E3A79] text-white" : "bg-[#F8F3E8] text-[#2E3A79]"}`}><Mail size={16} /> Enviar correo</button>
+                <button type="button" onClick={() => { setAccessMethod("password"); setError(""); }} className={`flex items-center justify-center gap-2 rounded-lg px-3 py-3 text-sm font-black ${accessMethod === "password" ? "bg-[#2E3A79] text-white" : "bg-[#F8F3E8] text-[#2E3A79]"}`}><KeyRound size={16} /> Definir clave</button>
+              </div>
+            ) : null}
+
+            {accessDialog.action === "set_password" || accessMethod === "password" ? (
+              <div className="mt-5 space-y-3">
+                <div>
+                  <label htmlFor="registration-access-password" className="text-xs font-black text-[#25262B]">Clave nueva</label>
+                  <div className="mt-1 flex rounded-lg border border-[#25262B]/15 focus-within:border-[#2E3A79]">
+                    <input id="registration-access-password" type={showPassword ? "text" : "password"} autoComplete="new-password" minLength={8} maxLength={72} required value={accessPassword} onChange={(event) => setAccessPassword(event.target.value)} className="min-w-0 flex-1 rounded-lg px-3 py-3 text-sm outline-none" />
+                    <button type="button" onClick={() => setShowPassword((current) => !current)} title={showPassword ? "Ocultar clave" : "Mostrar clave"} className="grid w-11 shrink-0 place-items-center text-[#2E3A79]">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button>
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="registration-access-confirm" className="text-xs font-black text-[#25262B]">Confirmar clave</label>
+                  <input id="registration-access-confirm" type={showPassword ? "text" : "password"} autoComplete="new-password" minLength={8} maxLength={72} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="mt-1 w-full rounded-lg border border-[#25262B]/15 px-3 py-3 text-sm outline-none focus:border-[#2E3A79]" />
+                </div>
+                <p className="text-xs font-bold text-[#746f69]">{accessDialog.action === "set_password" ? "Solo para cuentas que aun no han iniciado sesion y no comparten acceso con otros comercios. " : ""}No se enviara correo. Comparte la clave de forma privada y pide al comercio que la cambie al entrar.</p>
+              </div>
+            ) : <p className="mt-5 text-sm text-[#746f69]">El comercio recibira un enlace para crear su propia clave.</p>}
+
+            {error ? <p role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p> : null}
+            <div className="mt-6 flex justify-end gap-2">
+              <button type="button" onClick={closeAccessDialog} disabled={activeId === accessDialog.entry.id} className="rounded-lg px-4 py-3 text-sm font-black text-[#746f69] disabled:opacity-50">Cancelar</button>
+              <button type="submit" disabled={activeId === accessDialog.entry.id} className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#2E3A79] px-4 py-3 text-sm font-black text-white disabled:opacity-50">{activeId === accessDialog.entry.id ? <Loader2 size={16} className="animate-spin" /> : accessDialog.action === "approve" ? <CheckCircle2 size={16} /> : <KeyRound size={16} />}{accessDialog.action === "set_password" ? "Guardar clave" : accessMethod === "email" ? "Aprobar y enviar correo" : "Aprobar con clave"}</button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </div>
   );
 }

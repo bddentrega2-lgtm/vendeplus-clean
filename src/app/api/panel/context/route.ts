@@ -5,7 +5,9 @@ import { includedAchievementFeatures } from "@/lib/achievements";
 
 export async function GET(request: NextRequest) {
   try {
+    const startedAt = performance.now();
     const auth = await requirePanelAuth(request);
+    const authMs = performance.now() - startedAt;
     const supabase = createSupabaseAdminClient();
 
     let query = supabase
@@ -20,20 +22,28 @@ export async function GET(request: NextRequest) {
     }
 
     const requestedStoreId = String(request.headers.get("x-panel-store-id") || "").trim();
-    const { data, error } = await query;
+    const readsStartedAt = performance.now();
+    const reminderPromise = !auth.isFounderMode && auth.userId
+      ? supabase.auth.admin.getUserById(auth.userId)
+          .then(({ data, error }) => !error && data.user?.user_metadata?.somos_admin_password_reminder === true)
+          .catch(() => false)
+      : Promise.resolve(false);
+    const [{ data, error }, passwordChangeSuggested] = await Promise.all([query, reminderPromise]);
     if (error) throw error;
 
     const stores = data || [];
     const selectedStore = stores.find((store) => store.id === requestedStoreId) || stores[0] || null;
-
-    return NextResponse.json({
+    const response = NextResponse.json({
       userId: auth.userId,
       isFounderMode: auth.isFounderMode,
+      passwordChangeSuggested,
       stores,
       selectedStoreId: selectedStore?.id || "",
       achievementFeatures: selectedStore ? includedAchievementFeatures : {},
       achievements: [],
     });
+    response.headers.set("Server-Timing", `auth;dur=${authMs.toFixed(1)}, reads;dur=${(performance.now() - readsStartedAt).toFixed(1)}, total;dur=${(performance.now() - startedAt).toFixed(1)}`);
+    return response;
   } catch (error) {
     return panelErrorResponse(error, "Error cargando comercios disponibles.");
   }

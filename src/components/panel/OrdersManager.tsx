@@ -969,7 +969,7 @@ export function OrdersManager() {
 
       if (savedPin || savedToken) {
         setPin(savedPin);
-        loadOrders(savedPin);
+        setIsUnlocked(true);
       } else {
         setIsCheckingAccess(false);
         setIsLoading(false);
@@ -981,7 +981,6 @@ export function OrdersManager() {
     return () => {
       active = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
