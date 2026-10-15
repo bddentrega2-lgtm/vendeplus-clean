@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth, adminErrorResponse } from "@/lib/admin/access";
 import { isMissingAdminMetricsRpc, loadAdminStoreMetricsFallback } from "@/lib/admin/metrics-fallback";
 import { buildPeriodSummary, getSummaryPeriod, isSummaryStoreExpired } from "@/lib/admin/summary-period";
-import { loadServiceFeeBalances } from "@/lib/billing/service-fees";
+import { loadAdminApprovedPaymentsTotal, loadAdminOpenFeeBalances } from "@/lib/admin/financial-read";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const PAGE_SIZE = 500;
@@ -40,14 +40,17 @@ export async function GET(request: NextRequest) {
       request.nextUrl.searchParams.get("period"),
       request.nextUrl.searchParams.get("anchor")
     );
+    const periodOnly = request.nextUrl.searchParams.get("view") === "period";
 
     const stores = await fetchPages(() => supabase.from("stores").select(
-      "id, slug, name, business_type, whatsapp, is_active, is_test, plan_type, trial_ends_at, subscription_status, subscription_ends_at, next_payment_due_at, payment_methods, subscription_started_at, last_payment_at, created_at"
+      periodOnly
+        ? "id, name, is_test"
+        : "id, slug, name, business_type, whatsapp, is_active, is_test, plan_type, trial_ends_at, subscription_status, subscription_ends_at, next_payment_due_at, payment_methods, subscription_started_at, last_payment_at, created_at"
     ).order("id", { ascending: true }));
     const realStores = stores.filter((store) => store.is_test !== true);
     const storeIds = realStores.map((store) => store.id);
     const currentMonth = getSummaryPeriod("month", null);
-    const [orders, payments, approvedPayments, feeBalances, storeMetricsRows, productCount, customerCount, assignmentCount, historicalOrders, ordersThisMonth] = await Promise.all([
+    const periodRows = Promise.all([
       storeIds.length ? fetchPages(() => supabase.from("orders")
         .select("id, store_id, created_at, status, platform_service_fee_usd, customer_phone_normalized, customer_id")
         .in("store_id", storeIds)
@@ -64,13 +67,19 @@ export async function GET(request: NextRequest) {
         .lt("reviewed_at", period.endIso)
         .order("reviewed_at", { ascending: true })
         .order("id", { ascending: true })) : [],
-      storeIds.length ? fetchPages(() => supabase.from("store_subscription_payments")
-        .select("id, amount_usd")
-        .in("store_id", storeIds)
-        .eq("status", "approved")
-        .order("created_at", { ascending: true })
-        .order("id", { ascending: true })) : [],
-      loadServiceFeeBalances(supabase, stores),
+    ]);
+    if (periodOnly) {
+      const [orders, payments] = await periodRows;
+      return NextResponse.json({
+        summary: buildPeriodSummary(period, orders, payments,
+          new Map(realStores.map((store) => [store.id, store.name]))),
+      });
+    }
+
+    const [[orders, payments], approvedPaymentsUsd, feeBalances, storeMetricsRows, productCount, customerCount, assignmentCount, historicalOrders, ordersThisMonth] = await Promise.all([
+      periodRows,
+      loadAdminApprovedPaymentsTotal(supabase, storeIds),
+      loadAdminOpenFeeBalances(supabase, stores),
       loadStoreMetrics(supabase),
       storeIds.length ? countRows(supabase.from("products").select("id", { count: "exact", head: true }).in("store_id", storeIds)) : 0,
       storeIds.length ? countRows(supabase.from("customers").select("id", { count: "exact", head: true }).in("store_id", storeIds)) : 0,
@@ -124,8 +133,7 @@ export async function GET(request: NextRequest) {
           totalProducts: productCount,
           totalCustomers: customerCount,
           totalAssignments: assignmentCount,
-          approvedPaymentsUsd: Number((approvedPayments.reduce((sum, payment) =>
-            sum + Math.round(Number(payment.amount_usd || 0) * 100), 0) / 100).toFixed(2)),
+          approvedPaymentsUsd,
           pendingFeeUsd: Number([...feeBalances.values()].reduce((sum, balance) => sum + balance.amountUsd, 0).toFixed(2)),
           attentionStores: new Set(alerts.map((alert) => alert.storeId)).size,
         },

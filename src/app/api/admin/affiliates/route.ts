@@ -15,38 +15,24 @@ export async function GET(request: NextRequest) {
   try {
     await requireAdminAuth(request);
     const db = createSupabaseAdminClient();
-    const [codes, referrals, commissions, settlements, adjustments, agencies, balances] = await Promise.all([
-      db.from("affiliate_codes").select("*").order("created_at", { ascending: false }).limit(200),
-      db.from("affiliate_referrals").select("*, commerce_registration_requests(request_code, store_name, status, setup_payment_status), stores(name, slug)").order("created_at", { ascending: false }).limit(200),
-      db.from("affiliate_commissions").select("id, referral_id, store_id, kind, fee_usd, setup_paid_usd, commission_percent, amount_usd, eligible_at, status").order("created_at", { ascending: false }).limit(500),
-      db.from("affiliate_settlements").select("id, affiliate_code_id, amount_usd, paid_at, method, reference").order("created_at", { ascending: false }).limit(200),
-      db.from("affiliate_commission_adjustments").select("id, commission_id, amount_usd, reason, created_at").order("created_at", { ascending: false }).limit(500),
+    const [agencies, balances, demoCodes] = await Promise.all([
       db.from("transport_agencies").select("id, name, slug, contact_email").order("name").limit(200),
       db.rpc("affiliate_admin_list"),
+      process.env.NEXT_PUBLIC_SUPABASE_URL === "https://xpqmmdmixpyqruykkbkf.supabase.co"
+        ? db.from("affiliate_codes").select("id, code, name, beneficiary_email, transport_agency_id, discount_percent, setup_commission_percent, commission_percent, duration_months")
+          .in("code", ["VENDEDORDEMO", "CREADORDEMO", "DELIVERYDEMO"])
+        : Promise.resolve({ data: [], error: null }),
     ]);
-    if (codes.error) throw codes.error;
-    if (referrals.error) throw referrals.error;
-    if (commissions.error) throw commissions.error;
-    if (settlements.error) throw settlements.error;
-    if (adjustments.error) throw adjustments.error;
     if (agencies.error) throw agencies.error;
     if (balances.error) throw balances.error;
-    const emails = [...new Set((codes.data || []).map((code) => code.beneficiary_email).filter((value): value is string => Boolean(value)))];
-    const agencyIds = [...new Set((codes.data || []).map((code) => code.transport_agency_id).filter((value): value is string => Boolean(value)))];
-    const [individualPayouts, agencyPayouts] = await Promise.all([
-      emails.length ? db.from("affiliate_payout_accounts").select("beneficiary_email, transport_agency_id, holder_name, bank_name, document_number, phone")
-        .in("beneficiary_email", emails) : Promise.resolve({ data: [], error: null }),
-      agencyIds.length ? db.from("affiliate_payout_accounts").select("beneficiary_email, transport_agency_id, holder_name, bank_name, document_number, phone")
-        .in("transport_agency_id", agencyIds) : Promise.resolve({ data: [], error: null }),
-    ]);
-    if (individualPayouts.error || agencyPayouts.error) throw individualPayouts.error || agencyPayouts.error;
-    const demoByKey = new Map(affiliatePreviewAdminBalances(codes.data || []).map((item) => [item.allyKey, item]));
+    if (demoCodes.error) throw demoCodes.error;
+    const demoByKey = new Map(affiliatePreviewAdminBalances(demoCodes.data || []).map((item) => [item.allyKey, item]));
     const allyBalances = ((balances.data || []) as Array<{ allyKey: string; setupPendingUsd: number; feePendingUsd: number; setupPaidUsd: number; feePaidUsd: number }>).map((item) => {
       const demo = demoByKey.get(item.allyKey);
       return demo && [item.setupPendingUsd, item.feePendingUsd, item.setupPaidUsd, item.feePaidUsd]
         .every((amount) => Number(amount) === 0) ? { ...item, ...demo } : item;
     });
-    return NextResponse.json({ codes: codes.data, referrals: referrals.data, commissions: commissions.data, settlements: settlements.data, adjustments: adjustments.data, agencies: agencies.data, balances: allyBalances, payoutAccounts: [...(individualPayouts.data || []), ...(agencyPayouts.data || [])] });
+    return NextResponse.json({ agencies: agencies.data, balances: allyBalances }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) { return adminErrorResponse(error, "No se pudieron cargar los aliados."); }
 }
 

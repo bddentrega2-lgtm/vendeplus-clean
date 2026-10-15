@@ -7,7 +7,7 @@ import {
   Lock, Package, PlusCircle, RefreshCcw, ShoppingBag, TrendingUp, UserRoundCheck,
   UserRoundPlus, Users, XCircle,
 } from "lucide-react";
-import { getPanelAuthHeaders, getSavedPanelToken, hasSavedPanelAuth } from "@/lib/panel/client-auth";
+import { getPanelAuthHeaders } from "@/lib/panel/client-auth";
 import { getSummaryPeriod, moveSummaryAnchor, type PeriodMode } from "@/lib/admin/summary-period";
 
 type RankingEntry = { storeId: string; storeName: string; value: number };
@@ -144,7 +144,7 @@ function OrderSeries({ summary }: { summary: Summary }) {
 export function AdminDashboard() {
   const [mode, setMode] = useState<PeriodMode>("month");
   const [anchor, setAnchor] = useState(caracasToday);
-  const [isCheckingAccess, setIsCheckingAccess] = useState(() => hasSavedPanelAuth());
+  const [isCheckingAccess, setIsCheckingAccess] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -152,17 +152,21 @@ export function AdminDashboard() {
   const [alerts, setAlerts] = useState<AdminAlert[]>([]);
   const requestId = useRef(0);
 
-  async function loadSummary(nextMode = mode, nextAnchor = anchor) {
+  async function loadSummary(nextMode = mode, nextAnchor = anchor, refreshAll = false) {
     const currentRequest = ++requestId.current;
+    const periodOnly = Boolean(summary) && !refreshAll;
     setIsLoading(true);
     setError("");
     try {
       const params = new URLSearchParams({ period: nextMode, anchor: nextAnchor });
+      if (periodOnly) params.set("view", "period");
       const data = await adminRequest("/api/admin/summary?" + params);
       if (currentRequest !== requestId.current) return;
-      setSummary(data.summary);
-      setRecentStores(data.recentStores || []);
-      setAlerts(data.alerts || []);
+      setSummary((current) => periodOnly && current ? { ...current, ...data.summary } : data.summary);
+      if (!periodOnly) {
+        setRecentStores(data.recentStores || []);
+        setAlerts(data.alerts || []);
+      }
     } catch (cause) {
       if (currentRequest === requestId.current) {
         setError(cause instanceof Error ? cause.message : "No se pudo cargar el resumen.");
@@ -176,8 +180,7 @@ export function AdminDashboard() {
   }
 
   useEffect(() => {
-    if (getSavedPanelToken()) void loadSummary(mode, anchor);
-    else setIsCheckingAccess(false);
+    void loadSummary(mode, anchor);
   }, [mode, anchor]);
 
   if (isCheckingAccess) {
@@ -190,7 +193,7 @@ export function AdminDashboard() {
         <Lock size={26} className="mx-auto text-[#746f69]" />
         <h1 className="text-xl font-black">Acceso fundador</h1>
         <p className="text-sm text-[#746f69]">{error || "Inicia sesión para ver el resumen."}</p>
-        <button type="button" onClick={() => void loadSummary()} disabled={isLoading}
+        <button type="button" onClick={() => void loadSummary(mode, anchor, true)} disabled={isLoading}
           className="inline-flex items-center gap-2 bg-[#FFB547] px-4 py-2 text-sm font-bold disabled:opacity-50">
           <CheckCircle2 size={16} /> Validar sesión
         </button>
@@ -254,7 +257,7 @@ export function AdminDashboard() {
             className="h-9 border border-[#25262B]/20 px-2 text-sm" aria-label="Seleccionar fecha" />
           <button type="button" onClick={() => setAnchor(moveSummaryAnchor(mode, anchor, 1))}
             className="grid size-9 place-items-center border border-[#25262B]/20" title="Período siguiente" aria-label="Período siguiente"><ArrowRight size={16} /></button>
-          <button type="button" onClick={() => void loadSummary()} disabled={isLoading}
+          <button type="button" onClick={() => void loadSummary(mode, anchor, true)} disabled={isLoading}
             className="grid size-9 place-items-center border border-[#25262B]/20 disabled:opacity-50" title="Actualizar" aria-label="Actualizar"><RefreshCcw size={16} /></button>
         </div>
       </header>

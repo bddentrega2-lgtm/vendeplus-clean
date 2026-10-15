@@ -107,7 +107,7 @@ export function AdminShell({
           </div>
         </aside>
 
-        <section className="flex-1 px-4 py-5 sm:px-6 lg:px-8">
+        <section className="min-w-0 flex-1 px-4 py-5 sm:px-6 lg:px-8">
           <header className="rounded-[36px] bg-[#25262B] p-6 text-white shadow-2xl shadow-[#25262B]/20">
             <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
               <div>
