@@ -127,6 +127,8 @@ export function useKitchen(board = false) {
     ...(snapshot.scope === scope ? snapshot.value : empty), eligible, now, error: mutationError || error, loading, connected, online, refresh,
     isPending: (id: string) => pending.has(`${scope}:${id}`),
     operate: (orderId: string, action: string, expectedState?: string) => mutate(orderId, '/api/panel/kitchen', 'POST', { orderId, action, expectedState }),
+    complete: (orderId: string, expectedStatus: string) =>
+      mutate(orderId, '/api/panel/orders', 'PATCH', { id: orderId, status: 'completed', expectedStatus }),
     cancel: (orderId: string, expectedStatus: string, cancellation: { cancellationReason: string; cancellationDetail: string }) =>
       mutate(orderId, '/api/panel/orders', 'PATCH', { id: orderId, status: 'cancelled', expectedStatus, ...cancellation }),
     configure: (enabled: boolean, dispatchMode: string, delayThresholds: OrderDelayThresholds = snapshot.value.settings.delay_thresholds,

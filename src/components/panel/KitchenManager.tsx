@@ -123,7 +123,16 @@ export function KitchenManager() {
                   <div className="flex items-center gap-2">
                     {ticket.state !== 'ready' ? <button type="button" disabled={!kitchen.online || kitchen.isPending(order.id)} onClick={() => void kitchen.operate(order.id, ticket.state === 'queued' ? 'prepare' : 'ready', ticket.state)} className="flex min-h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-md bg-[#146B60] px-2 py-2 text-sm font-bold text-white disabled:opacity-50">
                       {kitchen.isPending(order.id) ? <Loader2 size={17} className="animate-spin" /> : <Check size={17} />}{kitchen.isPending(order.id) ? 'Guardando...' : ticket.state === 'queued' ? 'Iniciar preparación' : 'Marcar listo'}
-                    </button> : <p className="min-w-0 flex-1 py-2 text-center text-sm font-bold text-emerald-800">Pendiente de entrega</p>}
+                    </button> : order.delivery_type === 'delivery' && ['transport_agency', 'entrega2'].includes(order.delivery_provider || '') ? (
+                      <p className="min-w-0 flex-1 py-2 text-center text-sm font-bold text-emerald-800">Pendiente de entrega</p>
+                    ) : (
+                      <button type="button" disabled={!kitchen.online || kitchen.isPending(order.id)} onClick={() => {
+                        if (window.confirm(`¿Confirmas que ${order.public_code} ya fue entregado?`)) void kitchen.complete(order.id, order.status);
+                      }} className="flex min-h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-md bg-[#146B60] px-2 py-2 text-sm font-bold text-white disabled:opacity-50">
+                        {kitchen.isPending(order.id) ? <Loader2 size={17} className="animate-spin" /> : <Check size={17} />}
+                        {kitchen.isPending(order.id) ? 'Guardando...' : 'Marcar completado'}
+                      </button>
+                    )}
                     <button type="button" title="Cancelar pedido" aria-label={`Cancelar ${order.public_code}`} disabled={!kitchen.online || kitchen.isPending(order.id)} onClick={() => void cancelOrder(order)} className="grid h-11 w-11 shrink-0 place-items-center rounded-md bg-red-50 text-red-700 disabled:opacity-50"><X size={18} /></button>
                   </div>
                 </article>;

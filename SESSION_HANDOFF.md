@@ -1,3 +1,11 @@
+# 2026-10-17 - Checkpoint del catalogo visual publicado
+
+- Codigo productivo desplegado desde este worktree en Vercel: `dpl_J6dD5qcAPAStPDr6EfPY6Hw1NseR`, dominios `www.somos-ve.com` y `somos-ve.com`. Rollback web: `dpl_GHKW2SYv1xb8LLk8wyRAMjdBUkoa`.
+- Incluye detalle al tocar producto, WhatsApp verde, insignias compactas en Productos y directorio de comercios compacto. Incluye los cuatro archivos del hotfix de Cocina que ya estaba en produccion; no altera otros estados ni Entrega2.
+- QA antes de publicar: suites 46/46 y 40/40 PASS; despues, inicio y catalogos 200, APIs protegidas 401 sin sesion, detalle movil y carrito de una variante PASS. Sin cambios SQL ni datos reales. Build Vercel READY; el build local Turbopack falla por el junction externo de node_modules.
+- Pendiente para retomar: auditoria de estados del informe `docs/audits/2026-10-16-order-status-flow-audit.md` en el arbol raiz del workspace; riesgos historicos de sincronizacion/agencias siguen sin corregir. Revisar tambien autenticado Productos, Admin/Comercios y Cocina, y resolver build local. La preparacion de Play Store es otro frente.
+- El checkpoint Git de esta entrega debe guardarse en esta rama `feature/catalog-ux-20261015`, sin desplegar de nuevo ni fusionar cambios ajenos de la raiz antigua.
+
 # 2026-10-12 - Tres aliados revisados y checkpoint autorizado
 
 - Usuario pide revisar sus3 aliados y asegurar enGit si estanbien. SQL READ ONLY y enlacespublicos PASS: VIBES creador50%descuento/100%inicial=10USD/50%fee3meses; ALE vendedor0%descuento/75%inicial=15USD/50%fee3meses; FED delivery75%descuento/0%inicial/50%fee1mes. Todosactivos sin limite/vencimiento, sin duplicados/colisiones,0referidos/0comisiones/0liquidaciones. No modificar esosacuerdos.

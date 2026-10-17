@@ -275,6 +275,8 @@ function ProductOptionsSheet({
   onClose,
   onAdded,
   isStoreOpen = true,
+  showDetails = false,
+  onVariantChange,
 }: {
   product: Product;
   storeSlug: string;
@@ -290,7 +292,30 @@ function ProductOptionsSheet({
   onClose: () => void;
   onAdded: () => void;
   isStoreOpen?: boolean;
+  showDetails?: boolean;
+  onVariantChange?: (variant: ProductVariant | null) => void;
 }) {
+  const images = (product.imageUrls?.length ? product.imageUrls : [product.imageUrl]).filter(Boolean).slice(0, 2);
+  const [detailImage, setDetailImage] = useState(images[0]);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+  useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const timer = window.setTimeout(() => closeRef.current?.focus(), 0);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); onCloseRef.current(); }
+      if (event.key !== "Tab") return;
+      const dialog = closeRef.current?.closest('[role="dialog"]');
+      const controls = Array.from(dialog?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), a[href], [tabindex="0"]') || [])
+        .filter(element => element.getClientRects().length > 0);
+      const first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => { window.clearTimeout(timer); window.removeEventListener("keydown", onKey); previousFocus?.focus(); };
+  }, []);
   const initialSelections = useMemo(() => {
     return {};
   }, []);
@@ -423,6 +448,9 @@ function ProductOptionsSheet({
   }
 
   function validateSelections() {
+    if (product.variants?.length && (!selectedVariant || !selectedVariant.isAvailable)) {
+      return "Selecciona una presentación disponible.";
+    }
     if (requiredInventoryUnits > 0 && inventorySkuIds.some((skuId) => !skuId)) {
       return requiredInventoryUnits === 1
         ? "Selecciona el color y la talla disponibles."
@@ -452,6 +480,8 @@ function ProductOptionsSheet({
       setMessage("El comercio esta cerrado por horario. Puedes revisar el catalogo, pero no hacer pedidos ahora.");
       return;
     }
+
+    if (isLoadingOptions || (product.hasOptionGroups && !hasLoadedOptions)) return;
 
     const validation = validateSelections();
     if (validation) {
@@ -494,13 +524,13 @@ function ProductOptionsSheet({
   return (
     <ProductModalPortal>
     <div className="absolute inset-0 flex h-full w-full max-w-full items-end overflow-hidden bg-[#25262B]/45 p-0 backdrop-blur-sm sm:items-center sm:justify-center sm:p-3">
-      <section role="dialog" aria-modal="true" aria-label={`Opciones de ${product.name}`} className="max-h-[calc(100dvh-0.75rem)] min-w-0 w-full max-w-[calc(100dvw-0.75rem)] overflow-x-hidden overflow-y-auto overscroll-contain rounded-t-[24px] bg-white p-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl sm:max-h-[88dvh] sm:max-w-xl sm:rounded-[28px] sm:pb-6">
-        <div className="flex items-start justify-between gap-3">
+      <section role="dialog" aria-modal="true" aria-label={`${showDetails ? "Detalle" : "Opciones"} de ${product.name}`} className="max-h-full min-w-0 w-full max-w-full overflow-x-hidden overflow-y-auto overscroll-contain rounded-t-lg bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl sm:max-h-[88dvh] sm:max-w-xl sm:rounded-lg">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 bg-white py-3">
           <div className="min-w-0">
             <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">
-              Añade tu producto
+              {showDetails ? "Detalle del producto" : "Añade tu producto"}
             </p>
-            <h2 className="mt-1 break-words text-2xl font-black text-[#25262B]">
+            <h2 className="mt-1 break-words text-lg font-black text-[#25262B] [overflow-wrap:anywhere]">
               {product.name}
             </h2>
             <p className="mt-1 text-sm font-bold text-[#746f69]">
@@ -508,15 +538,28 @@ function ProductOptionsSheet({
             </p>
           </div>
           <button
+            ref={closeRef}
             type="button"
             onClick={onClose}
-            className="grid h-10 w-10 place-items-center rounded-full bg-[#F8F3E8] text-[#2E3A79]"
-            aria-label="Cerrar personalización"
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-[#F8F3E8] text-[#2E3A79]"
+            aria-label={showDetails ? "Cerrar detalle" : "Cerrar personalización"}
           >
             <X size={18} />
           </button>
         </div>
 
+        {showDetails ? <div className="min-w-0 space-y-3">
+          {detailImage ? <OptimizedImage src={detailImage} alt={product.imageAlt} width={640} height={480} sizes="(max-width: 640px) 100vw, 544px" className="h-[min(36dvh,300px)] w-full rounded-lg bg-[#F8F3E8] object-contain" /> : null}
+          {images.length > 1 ? <div className="flex justify-center gap-2">{images.map((image, index) => <button key={image} type="button" aria-label={`Ver foto ${index + 1}`} aria-pressed={detailImage === image} onClick={() => setDetailImage(image)} className={`overflow-hidden rounded-lg ${detailImage === image ? 'ring-2 ring-[#FFB547]' : 'opacity-70'}`}><OptimizedImage src={image} alt={`${product.name}, foto ${index + 1}`} width={56} height={56} sizes="56px" className="h-14 w-14 object-cover" /></button>)}</div> : null}
+          {product.description ? <p className="whitespace-pre-line break-words text-sm leading-relaxed text-[#526164] [overflow-wrap:anywhere]">{product.description}</p> : null}
+          {product.variants?.length ? <label className="block text-sm font-bold">
+            Presentación
+            <select aria-label="Presentación" value={selectedVariant?.id || ""} onChange={event => onVariantChange?.(product.variants?.find(variant => variant.id === event.target.value) || null)} className="mt-1 min-h-11 w-full min-w-0 max-w-full rounded-lg border px-2 text-sm">
+              <option value="">{getVariantPlaceholder(product)}</option>
+              {product.variants.map(variant => <option key={variant.id} value={variant.id} disabled={!variant.isAvailable}>{variant.name}</option>)}
+            </select>
+          </label> : null}
+        </div> : null}
         <div className="mt-4 space-y-4">
           {requiredInventoryUnits > 0 ? (
             <fieldset className="rounded-2xl bg-[#FFF8F0] p-3">
@@ -1034,7 +1077,6 @@ export function ProductListItem({
   const [isLoadingOptions, setIsLoadingOptions] = useState(false);
   const [optionsMessage, setOptionsMessage] = useState("");
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
-  const [activeImage, setActiveImage] = useState(product.imageUrl);
   const productImages = (product.imageUrls?.length ? product.imageUrls : [product.imageUrl]).slice(0, 2);
   const hasOptionGroups = Boolean(loadedOptionGroups?.length || product.hasOptionGroups);
   const hasInventory = product.inventoryManaged === true;
@@ -1142,28 +1184,38 @@ export function ProductListItem({
     });
   }
 
+  function openDetails() {
+    setIsGalleryOpen(true);
+    if (hasOptionGroups && !loadedOptionGroups) {
+      void loadOptionGroups().catch((error: Error) => setOptionsMessage(error.message || "No se pudieron cargar los extras."));
+    }
+  }
+
   return (
     <article
       ref={prefetchTargetRef}
       className={[
+        "relative",
         isVisualLayout ? "catalog-product catalog-product-visual overflow-hidden rounded-2xl p-2 shadow-sm ring-1" : "catalog-product min-h-[128px] rounded-2xl p-2 shadow-sm ring-1",
         product.isFeatured
           ? "bg-[#FFF8F0] ring-[#FFB547]/55 shadow-[#FFB547]/10"
           : "bg-white ring-[#25262B]/[0.07]",
       ].join(" ")}
     >
+      <button type="button" onClick={openDetails} aria-label={`Ver detalle de ${product.name}`} className="absolute inset-0 rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2E3A79]" />
       <div
         className={[
+          "pointer-events-none relative",
           isVisualLayout
             ? "flex h-full flex-col gap-2.5"
             : "grid min-h-[112px] grid-cols-[76px_minmax(0,1fr)] gap-2.5",
         ].join(" ")}
       >
-        <button type="button" onClick={() => { setActiveImage(productImages[0]); setIsGalleryOpen(true); }} className={isVisualLayout ? "relative aspect-square w-full overflow-hidden rounded-xl text-left" : "relative text-left"} aria-label={`Ver fotos de ${product.name} en grande`}>
+        <div className={isVisualLayout ? "relative aspect-square w-full overflow-hidden rounded-xl text-left" : "relative text-left"}>
           <OptimizedImage src={product.imageUrl} alt={product.imageAlt} width={isVisualLayout ? 480 : 76} height={isVisualLayout ? 480 : 112} sizes={isVisualLayout ? "(max-width: 640px) 46vw, (max-width: 1024px) 30vw, 240px" : "76px"} loading={eagerImage ? "eager" : undefined} fetchPriority={eagerImage ? "high" : undefined} className={isVisualLayout ? "h-full w-full rounded-xl bg-[#F8F3E8] object-cover" : "h-[112px] w-[76px] rounded-xl bg-[#F8F3E8] object-cover"} fallback={<div className={isVisualLayout ? "grid h-full w-full place-items-center rounded-xl bg-[#F8F3E8] text-3xl font-black text-[#2E3A79]" : "grid h-[112px] w-[76px] place-items-center rounded-xl bg-[#F8F3E8] text-lg font-black text-[#2E3A79]"}>{product.name.slice(0, 1).toUpperCase()}</div>} />
           {product.discountPercent && product.discountPercent > 0 ? <span className="absolute left-1 top-1 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-black text-white shadow-sm">-{product.discountPercent}%</span> : null}
           {productImages.length > 1 ? <span className="absolute bottom-1 right-1 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-black text-white">2 fotos</span> : null}
-        </button>
+        </div>
         <div className={isVisualLayout ? "flex min-w-0 flex-1 flex-col px-1 pb-1" : "flex min-w-0 flex-col"}>
           <div className="flex min-w-0 items-start justify-between gap-2">
             <div className="min-w-0">
@@ -1175,13 +1227,19 @@ export function ProductListItem({
               </span>
             ) : null}
           </div>
-          <p className="mt-0.5 line-clamp-2 text-[11px] font-semibold leading-snug text-[#746f69]">
-            {product.description}
-          </p>
+          {product.description ? (
+            <div className="mt-0.5">
+              <p className="line-clamp-2 text-[11px] font-semibold leading-snug text-[#746f69]">
+                {product.description}
+              </p>
+
+            </div>
+          ) : null}
 
           <div className="mt-auto pt-1.5">
             {product.variants?.length ? (
               <select
+                aria-label={`Presentación de ${product.name}`}
                 value={selectedVariant?.id || ""}
                 onChange={(event) => {
                   setSelectedVariant(
@@ -1190,7 +1248,7 @@ export function ProductListItem({
                     ) || null
                   );
                 }}
-                className="mb-1.5 h-8 w-full rounded-lg border border-[#25262B]/10 bg-[#FFF8F0] px-2.5 text-[11px] font-black text-[#746f69] outline-none"
+                className="pointer-events-auto mb-1.5 h-8 w-full rounded-lg border border-[#25262B]/10 bg-[#FFF8F0] px-2.5 text-[11px] font-black text-[#746f69] outline-none"
               >
                 <option value="">{getVariantPlaceholder(product)}</option>
                 {product.variants.map((variant) => (
@@ -1229,7 +1287,7 @@ export function ProductListItem({
                 disabled={!isStoreOpen || !canAdd}
                 title={!isStoreOpen ? "Cerrado" : !inventoryAvailable ? "Agotado" : isLoadingOptions ? "Cargando" : added ? "Listo" : "Anadir"}
                 className={[
-                  "catalog-add inline-flex min-h-10 shrink-0 items-center justify-center gap-1 rounded-lg px-2 text-center text-[11px] font-black leading-tight",
+                  "catalog-add pointer-events-auto inline-flex min-h-10 shrink-0 items-center justify-center gap-1 rounded-lg px-2 text-center text-[11px] font-black leading-tight",
                   added
                     ? "bg-[#6FA64F] text-white"
                     : !isStoreOpen || !canAdd
@@ -1247,9 +1305,11 @@ export function ProductListItem({
           </div>
         </div>
       </div>
-      {isCustomizing ? (
+      {isCustomizing || isGalleryOpen ? (
         <ProductOptionsSheet
           product={productForOptions}
+          showDetails={isGalleryOpen}
+          onVariantChange={setSelectedVariant}
           storeSlug={storeSlug}
           usdToBs={usdToBs}
           baseCurrency={baseCurrency}
@@ -1264,21 +1324,10 @@ export function ProductListItem({
               setOptionsMessage(error.message || "No se pudieron cargar los extras de este producto.");
             });
           }}
-          onClose={() => setIsCustomizing(false)}
+          onClose={() => { setIsCustomizing(false); setIsGalleryOpen(false); }}
           onAdded={markAdded}
           isStoreOpen={isStoreOpen}
         />
-      ) : null}
-      {isGalleryOpen ? (
-        <ProductModalPortal>
-        <div className="absolute inset-0 flex h-full w-full max-w-full items-center justify-center overflow-hidden bg-black/85 p-3" role="dialog" aria-modal="true" aria-label={`Fotos de ${product.name}`}>
-          <button type="button" onClick={() => setIsGalleryOpen(false)} className="absolute right-4 top-4 grid h-11 w-11 place-items-center rounded-full bg-white text-[#25262B]" aria-label="Cerrar fotos"><X size={20} /></button>
-          <div className="w-full max-w-3xl">
-            <OptimizedImage src={activeImage} alt={product.imageAlt} width={1000} height={1000} sizes="100vw" className="max-h-[78dvh] w-full rounded-2xl object-contain" />
-            {productImages.length > 1 ? <div className="mt-3 flex justify-center gap-3">{productImages.map((url, index) => <button type="button" key={url} onClick={() => setActiveImage(url)} className={activeImage === url ? "rounded-xl ring-4 ring-[#FFB547]" : "rounded-xl opacity-70"}><OptimizedImage src={url} alt={`${product.name}, foto ${index + 1}`} width={72} height={72} sizes="72px" className="h-18 w-18 rounded-xl object-cover" /></button>)}</div> : null}
-          </div>
-        </div>
-        </ProductModalPortal>
       ) : null}
     </article>
   );

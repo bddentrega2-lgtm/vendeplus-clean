@@ -5,6 +5,7 @@ export type KitchenTicket = {
 };
 export type KitchenOrder = {
   id: string; public_code: string; customer_name?: string | null; created_at: string; status: string; delivery_type: string;
+  delivery_provider?: string | null;
   status_entered_at?: string | null; status_elapsed_ms?: Record<string, number> | null;
   delivery_pricing_type?: string | null; table_name_snapshot?: string | null;
   table_fulfillment_snapshot?: string | null; delivery_reference?: string | null;

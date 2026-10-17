@@ -15,6 +15,7 @@ import {
   PlusCircle,
   RefreshCcw,
   Search,
+  Save,
 } from "lucide-react";
 import {
   getPanelAuthHeaders,
@@ -453,8 +454,8 @@ export function AdminStoresManager() {
         {error ? <p className="mt-3 text-sm font-black text-red-600">{error}</p> : null}
       </section>
 
-      <section className="overflow-hidden rounded-[24px] bg-white shadow-xl shadow-[#2E3A79]/[0.06] ring-1 ring-[#25262B]/[0.06]">
-        <div className="hidden grid-cols-[minmax(220px,1fr)_110px_92px_130px_135px_170px_270px] gap-3 border-b border-[#25262B]/10 bg-[#F8F3E8] px-4 py-3 text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69] xl:grid">
+      <section className="@container min-w-0 rounded-lg bg-white shadow-xl shadow-[#2E3A79]/[0.06] ring-1 ring-[#25262B]/[0.06]">
+        <div className="hidden grid-cols-[minmax(150px,1fr)_70px_48px_80px_90px_150px_172px] items-center gap-1.5 border-b border-[#25262B]/10 bg-[#F8F3E8] px-2.5 py-2 text-[11px] font-bold text-[#746f69] @[840px]:grid">
           <span>Comercio</span>
           <span>Plan</span>
           <span>Total pedidos</span>
@@ -474,87 +475,84 @@ export function AdminStoresManager() {
           return (
             <article
               key={store.id}
-              className="grid gap-3 border-b border-[#25262B]/10 px-4 py-3 last:border-b-0 xl:min-h-[78px] xl:grid-cols-[minmax(220px,1fr)_110px_92px_130px_135px_170px_270px] xl:items-center"
+              className="grid min-w-0 grid-cols-2 items-center gap-2 border-b border-[#25262B]/10 px-2.5 py-2 last:border-b-0 @[840px]:grid-cols-[minmax(150px,1fr)_70px_48px_80px_90px_150px_172px] @[840px]:gap-1.5"
             >
-              <div className="min-w-0">
+              <div className="col-span-2 min-w-0 @[840px]:col-span-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="truncate text-base font-black">{store.name}</h3>
+                  <h3 className="truncate text-sm font-bold">{store.name}</h3>
                   {!store.is_active && (
                     <span className="rounded-full bg-red-100 px-2 py-1 text-[11px] font-black text-red-700">
                       Pausado
                     </span>
                   )}
                 </div>
-                <p className="mt-0.5 truncate text-xs font-bold text-[#746f69]">
+                <p className="mt-0.5 truncate text-[11px] font-medium text-[#746f69]">
                   /{store.slug} · {store.business_type || "general"} · {store.whatsapp || "sin WhatsApp"}
                 </p>
               </div>
 
-              <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69] xl:hidden">Plan</p>
-                <p className="text-sm font-black text-[#2E3A79]">{getPlan(store.plan_type).name}</p>
+              <div className="min-w-0 break-words">
+                <p className="text-[11px] font-medium text-[#746f69] @[840px]:hidden">Plan</p>
+                <p className="text-xs font-bold text-[#2E3A79]">{getPlan(store.plan_type).name}</p>
               </div>
 
-              <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69] xl:hidden">
+              <div className="min-w-0 break-words">
+                <p className="text-[11px] font-medium text-[#746f69] @[840px]:hidden">
                   Total pedidos
                 </p>
-                <p className="text-base font-black text-[#25262B]">{store.order_count}</p>
+                <p className="text-xs font-bold text-[#25262B]">{store.order_count}</p>
               </div>
 
-              <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69] xl:hidden">
+              <div className="min-w-0 break-words">
+                <p className="text-[11px] font-medium text-[#746f69] @[840px]:hidden">
                   Estado
                 </p>
-                <p className={["text-sm font-black leading-tight", status.isUrgent ? "text-red-700" : "text-green-700"].join(" ")}>
+                <p className={["text-xs font-bold leading-tight", status.isUrgent ? "text-red-700" : "text-green-700"].join(" ")}>
                   {status.daysLabel}
                 </p>
               </div>
 
-              <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69] xl:hidden">Facturado Somos</p>
-                <p className="text-sm font-black text-[#25262B]">{getSomosBillingLabel(store)}</p>
+              <div className="min-w-0 break-words">
+                <p className="text-[11px] font-medium text-[#746f69] @[840px]:hidden">Facturado Somos</p>
+                <p className="text-xs font-bold text-[#25262B]">{getSomosBillingLabel(store)}</p>
                 {store.plan_type === "per_service" ? (
                   <p className="text-[11px] font-bold text-[#746f69]">Corte actual</p>
                 ) : null}
               </div>
 
-              <label className="block">
-                <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[#746f69] xl:hidden">
-                  Fecha de corte
-                </span>
-                <input
-                  type="date"
-                  value={draftDate}
-                  onChange={(event) =>
-                    setCutoffDrafts((current) => ({ ...current, [store.id]: event.target.value }))
-                  }
-                  className="mt-1 w-full rounded-xl border border-[#25262B]/10 bg-white px-3 py-2 text-sm font-black text-[#25262B] outline-none focus:border-[#2E3A79]"
-                />
-              </label>
-
-              <div className="flex flex-wrap justify-start gap-1.5 xl:flex-nowrap xl:justify-end">
+              <div className="col-span-2 min-w-0 @[840px]:col-span-1">
+                <label htmlFor={`cutoff-${store.id}`} className="text-[11px] font-medium text-[#746f69] @[840px]:sr-only">Fecha de corte</label>
+                <div className="flex min-w-0 max-w-[180px] items-center gap-1">
+                  <input id={`cutoff-${store.id}`} type="date" value={draftDate}
+                    onChange={event => setCutoffDrafts(current => ({ ...current, [store.id]: event.target.value }))}
+                    className="h-8 w-full min-w-0 rounded-md border border-[#25262B]/10 bg-white px-1 text-[11px] font-semibold text-[#25262B] outline-none focus:border-[#2E3A79]" />
                 <button
                   type="button"
+                  title="Guardar fecha de corte"
+                  aria-label={`Guardar fecha de corte de ${store.name}`}
                   onClick={() => saveCutoffDate(store)}
                   disabled={isSaving || !draftDate}
                   className={[
-                    "inline-flex h-9 items-center justify-center gap-1.5 rounded-full px-3 text-xs font-black",
+                    "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md",
                     isDraftDirty
                       ? "bg-[#FFB547] text-[#25262B]"
                       : "bg-[#F8F3E8] text-[#2E3A79]",
                     isSaving || !draftDate ? "cursor-not-allowed opacity-60" : "",
                   ].join(" ")}
                 >
-                  {isSaving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                  Guardar
+                  {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={15} />}
                 </button>
+                </div>
+              </div>
+
+              <div className="col-span-2 flex items-center gap-1 @[840px]:col-span-1 @[840px]:justify-end">
+
                 <Link
                   href={`/admin/comercios/${store.id}`}
-                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full bg-[#25262B] px-3 text-xs font-black text-white"
+                  title="Ver comercio" aria-label={`Ver comercio ${store.name}`}
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[#25262B] text-white @[840px]:h-8 @[840px]:w-8"
                 >
                   <Pencil size={14} />
-                  Ver
                 </Link>
                 <button
                   type="button"
@@ -563,7 +561,7 @@ export function AdminStoresManager() {
                   title={store.marketplace_visible === false ? "Mostrar en Marketplace" : "Ocultar del Marketplace"}
                   aria-label={store.marketplace_visible === false ? "Mostrar en Marketplace" : "Ocultar del Marketplace"}
                   className={[
-                    "inline-flex h-9 w-9 items-center justify-center rounded-full disabled:opacity-60",
+                    "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md @[840px]:h-8 @[840px]:w-8 disabled:opacity-60",
                     store.marketplace_visible === false
                       ? "bg-amber-100 text-amber-800"
                       : "bg-emerald-100 text-emerald-800",
@@ -582,7 +580,7 @@ export function AdminStoresManager() {
                   onClick={() => toggleStore(store)}
                   title={store.is_active ? "Pausar comercio" : "Activar comercio"}
                   aria-label={store.is_active ? "Pausar comercio" : "Activar comercio"}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#F8F3E8] text-[#2E3A79]"
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md @[840px]:h-8 @[840px]:w-8 bg-[#F8F3E8] text-[#2E3A79]"
                 >
                   {store.is_active ? <PauseCircle size={14} /> : <CheckCircle2 size={14} />}
                 </button>
@@ -591,7 +589,7 @@ export function AdminStoresManager() {
                   onClick={() => copyStoreLink(store)}
                   title="Copiar link"
                   aria-label="Copiar link"
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-[#2E3A79] ring-1 ring-[#25262B]/10"
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md @[840px]:h-8 @[840px]:w-8 bg-white text-[#2E3A79] ring-1 ring-[#25262B]/10"
                 >
                   <Copy size={14} />
                 </button>
@@ -601,7 +599,7 @@ export function AdminStoresManager() {
                   rel="noopener noreferrer"
                   title="Abrir catálogo"
                   aria-label="Abrir catálogo"
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#2E3A79] text-white"
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md @[840px]:h-8 @[840px]:w-8 bg-[#2E3A79] text-white"
                 >
                   <ExternalLink size={14} />
                 </a>

@@ -1313,7 +1313,7 @@ export function ProductManager() {
                   key={product.id}
                   className="relative rounded-xl bg-white px-3 py-2 shadow-sm ring-1 ring-[#25262B]/[0.06]"
                 >
-                  <div className="grid gap-3 sm:grid-cols-[56px_1fr_150px_auto] sm:items-center">
+                  <div className="grid gap-3 sm:grid-cols-[56px_minmax(0,1fr)_180px_auto] sm:items-center">
                     <div className="h-14 w-14 overflow-hidden rounded-xl bg-[#F8F3E8]">
                       {product.image_url ? (
                         <OptimizedImage
@@ -1346,11 +1346,14 @@ export function ProductManager() {
                       ) : null}
                     </div>
                     <div className="min-w-0 text-left sm:text-right">
-                      {product.is_cart_suggestion ? (
-                        <p className="mb-1 inline-flex rounded-full bg-green-100 px-2.5 py-1 text-[11px] font-black text-green-700">
-                          Complemento
-                        </p>
-                      ) : null}
+                      <div className="mb-1 flex flex-nowrap items-center gap-1 whitespace-nowrap sm:justify-end">
+                        {product.is_cart_suggestion ? (
+                          <span className="inline-flex rounded-md bg-green-100 px-1.5 py-0.5 text-[10px] font-bold text-green-700">Complemento</span>
+                        ) : null}
+                        {product.is_featured ? (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800"><Sparkles size={11} /> Destacado</span>
+                        ) : null}
+                      </div>
                       <span
                         className={[
                           "inline-flex rounded-full px-2.5 py-1 text-[11px] font-black",

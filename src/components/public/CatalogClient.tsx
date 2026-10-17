@@ -208,11 +208,11 @@ export function CatalogClient({
             rel={whatsappUrl ? "noopener noreferrer" : undefined}
             aria-disabled={!whatsappUrl}
             className={[
-              "grid h-14 place-items-center rounded-xl bg-[#2E3A79] text-white transition sm:rounded-2xl",
-              whatsappUrl ? "hover:-translate-y-0.5 hover:shadow-lg hover:shadow-[#2E3A79]/15" : "pointer-events-none opacity-60",
+              "grid h-14 place-items-center rounded-xl bg-[#25D366] text-white transition sm:rounded-2xl",
+              whatsappUrl ? "hover:-translate-y-0.5 hover:shadow-lg hover:shadow-[#25D366]/25" : "pointer-events-none opacity-60",
             ].join(" ")}
           >
-            <MessageCircle className="text-[#FFB547]" size={19} />
+            <MessageCircle size={19} />
             <span className="sr-only">WhatsApp</span>
           </a>
           {showPricesInBs ? (
