@@ -252,7 +252,15 @@ export async function GET(request: NextRequest) {
     const authMs = performance.now() - startedAt;
     const supabase = createSupabaseAdminClient();
     const { searchParams } = new URL(request.url);
-    const search = String(searchParams.get("search") || "").trim();
+    const search = String(searchParams.get("search") || "").trim().slice(0, 100);
+    const status = String(searchParams.get("status") || "all");
+    const categoryId = String(searchParams.get("category_id") || "").trim();
+    if (!["all", "active", "hidden", "featured", "complement"].includes(status)) {
+      return badRequest("Filtro de productos no válido.");
+    }
+    if (categoryId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(categoryId)) {
+      return badRequest("Categoría no válida.");
+    }
     const requestedStoreId = String(request.headers.get("x-panel-store-id") || "").trim();
 
     if (requestedStoreId) {
@@ -292,8 +300,14 @@ export async function GET(request: NextRequest) {
       productsQuery = productsQuery.eq("store_id", requestedStoreId);
     }
 
-    if (search) {
-      productsQuery = productsQuery.ilike("name", `%${search}%`);
+    if (status === "active") productsQuery = productsQuery.eq("is_available", true);
+    if (status === "hidden") productsQuery = productsQuery.eq("is_available", false);
+    if (status === "featured") productsQuery = productsQuery.eq("is_featured", true);
+    if (status === "complement") productsQuery = productsQuery.eq("is_cart_suggestion", true);
+    if (categoryId) productsQuery = productsQuery.eq("category_id", categoryId);
+    const safeSearch = search.replace(/[(),%"\\]/g, " ").trim();
+    if (safeSearch) {
+      productsQuery = productsQuery.or(`name.ilike.%${safeSearch}%,description.ilike.%${safeSearch}%`);
     }
 
     const queryStartedAt = performance.now();
@@ -308,7 +322,10 @@ export async function GET(request: NextRequest) {
     let products: any[] = productsResult.data || [];
     let productsError = productsResult.error;
 
-    if (productsError) {
+    if (productsError && status === "complement" && String(productsError.message || "").includes("is_cart_suggestion")) {
+      products = [];
+      productsError = null;
+    } else if (productsError) {
       let fallbackProductsQuery = supabase
         .from("products")
         .select(legacyProductsSelect)
@@ -323,9 +340,12 @@ export async function GET(request: NextRequest) {
         fallbackProductsQuery = fallbackProductsQuery.eq("store_id", requestedStoreId);
       }
 
-      if (search) {
-        fallbackProductsQuery = fallbackProductsQuery.ilike("name", `%${search}%`);
-      }
+      if (status === "active") fallbackProductsQuery = fallbackProductsQuery.eq("is_available", true);
+      if (status === "hidden") fallbackProductsQuery = fallbackProductsQuery.eq("is_available", false);
+      if (status === "featured") fallbackProductsQuery = fallbackProductsQuery.eq("is_featured", true);
+      if (status === "complement") fallbackProductsQuery = fallbackProductsQuery.eq("is_cart_suggestion", true);
+      if (categoryId) fallbackProductsQuery = fallbackProductsQuery.eq("category_id", categoryId);
+      if (safeSearch) fallbackProductsQuery = fallbackProductsQuery.or(`name.ilike.%${safeSearch}%,description.ilike.%${safeSearch}%`);
 
       const fallbackResult = await fallbackProductsQuery;
       products = fallbackResult.data || [];

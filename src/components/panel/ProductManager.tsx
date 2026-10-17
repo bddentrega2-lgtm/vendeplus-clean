@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Boxes,
+  DollarSign,
   CheckCircle2,
   Eye,
   EyeOff,
@@ -680,6 +681,15 @@ export function ProductManager() {
   const [isUploadingNewImage, setIsUploadingNewImage] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [productQuery, setProductQuery] = useNativeTextState(`private_products_${accountId}_${selectedStoreId}_query`, "");
+  const [appliedQuery, setAppliedQuery] = useState(productQuery);
+  const [productStatus, setProductStatus] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [quickSavingId, setQuickSavingId] = useState("");
+  const [quickPriceId, setQuickPriceId] = useState("");
+  const [quickPriceDraft, setQuickPriceDraft] = useState("");
+  const [quickError, setQuickError] = useState("");
+  const [editingProducts, setEditingProducts] = useState<Set<string>>(() => new Set());
+  const loadGeneration = useRef(0);
   const [productView, setProductView] = useState<"comfortable" | "compact">(
     "compact"
   );
@@ -717,25 +727,10 @@ export function ProductManager() {
       store.slug === "shibui"
   );
 
-  const filteredProducts = useMemo(() => {
-    const normalizedQuery = productQuery.trim().toLowerCase();
-
-    if (!normalizedQuery) return products;
-
-    return products.filter((product) => {
-      const haystack = [
-        product.name,
-        product.description || "",
-        product.categories?.name || "",
-      ]
-        .join(" ")
-        .toLowerCase();
-
-      return haystack.includes(normalizedQuery);
-    });
-  }, [productQuery, products]);
+  const filteredProducts = products;
 
   async function loadData(currentPin: string, nextOffset = 0) {
+    const generation = ++loadGeneration.current;
     setIsLoading(true);
     setError("");
 
@@ -744,7 +739,12 @@ export function ProductManager() {
         limit: String(page.limit),
         offset: String(nextOffset),
       });
+      if (appliedQuery.trim()) params.set("search", appliedQuery.trim());
+      if (productStatus !== "all") params.set("status", productStatus);
+      if (categoryFilter) params.set("category_id", categoryFilter);
       const data = await apiRequest(currentPin, { url: `/api/panel/products?${params}` });
+
+      if (generation !== loadGeneration.current) return;
 
       setStores(data.stores || []);
       setCategories(data.categories || []);
@@ -763,11 +763,34 @@ export function ProductManager() {
       setIsUnlocked(true);
       savePanelPin(currentPin);
     } catch (error: any) {
+      if (generation !== loadGeneration.current) return;
       setError(error.message || "No se pudo abrir el panel.");
       setIsUnlocked(false);
     } finally {
-      setIsLoading(false);
-      setIsCheckingAccess(false);
+      if (generation === loadGeneration.current) {
+        setIsLoading(false);
+        setIsCheckingAccess(false);
+      }
+    }
+  }
+
+  async function saveQuickChange(product: ProductRow, field: "is_available" | "is_featured" | "is_cart_suggestion" | "price_usd", value: boolean | number) {
+    if (quickSavingId || editingProducts.has(product.id)) return;
+    setQuickSavingId(product.id);
+    setQuickError("");
+    try {
+      const data = await apiRequest(pin, {
+        url: "/api/panel/products/quick",
+        method: "PATCH",
+        body: JSON.stringify({ id: product.id, field, value, expected: product[field] ?? false }),
+      });
+      setProducts((current) => current.map((row) => row.id === product.id ? { ...row, ...data.product } : row));
+      setQuickPriceId("");
+      if (productStatus !== "all") await loadData(pin);
+    } catch (error: any) {
+      setQuickError(error.message || "No se pudo guardar el cambio.");
+    } finally {
+      setQuickSavingId("");
     }
   }
 
@@ -894,6 +917,20 @@ export function ProductManager() {
   useEffect(() => {
     localStorage.setItem("vendeplus_panel_products_view", productView);
   }, [productView]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setAppliedQuery(productQuery), 300);
+    return () => window.clearTimeout(timer);
+  }, [productQuery]);
+
+  useEffect(() => {
+    setCategoryFilter("");
+  }, [selectedStoreId]);
+
+  useEffect(() => {
+    if (isUnlocked) loadData(pin);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appliedQuery, productStatus, categoryFilter, selectedStoreId, isUnlocked]);
 
   if (isCheckingAccess) {
     return <PanelAccessGate />;
@@ -1244,7 +1281,7 @@ export function ProductManager() {
           <div>
             <h2 className="text-2xl font-black">Productos editables</h2>
             <p className="text-sm font-bold text-[#746f69]">
-              {filteredProducts.length} de {products.length} productos en tus catálogos.
+              {filteredProducts.length} productos cargados{page.hasMore ? " · hay más" : ""}.
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -1263,13 +1300,13 @@ export function ProductManager() {
           </div>
         </div>
 
-        <div className="product-list-filters grid gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-[#25262B]/[0.06] lg:grid-cols-[1fr_auto]">
+        <div className="product-list-filters grid gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-[#25262B]/[0.06] lg:grid-cols-[minmax(0,1fr)_auto]">
           <label className="flex items-center gap-3 rounded-2xl bg-[#F8F3E8] px-4 py-3">
             <Search size={18} className="text-[#746f69]" />
             <input
               value={productQuery}
               onChange={(event) => setProductQuery(event.target.value)}
-              placeholder="Buscar producto..."
+              placeholder="Buscar por nombre o descripción..."
               className="w-full bg-transparent text-sm font-bold outline-none placeholder:text-[#746f69]/70"
             />
           </label>
@@ -1303,7 +1340,39 @@ export function ProductManager() {
               Vista compacta
             </button>
           </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:col-span-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <label className="flex min-w-0 items-center gap-2 text-xs font-bold text-[#746f69]">
+              Mostrar
+              <select
+                value={productStatus}
+                onChange={(event) => setProductStatus(event.target.value)}
+                aria-label="Filtrar productos"
+                className="min-w-0 flex-1 rounded-xl border border-[#25262B]/10 bg-white px-3 py-2 text-sm font-bold text-[#25262B]"
+              >
+                <option value="all">Todos</option>
+                <option value="active">Activos</option>
+                <option value="hidden">Ocultos</option>
+                <option value="featured">Destacados</option>
+                <option value="complement">Complementos</option>
+              </select>
+            </label>
+            <label className="flex min-w-0 items-center gap-2 text-xs font-bold text-[#746f69]">
+              Categoría
+              <select
+                value={categoryFilter}
+                onChange={(event) => setCategoryFilter(event.target.value)}
+                className="min-w-0 flex-1 rounded-xl border border-[#25262B]/10 bg-white px-3 py-2 text-sm font-bold text-[#25262B]"
+              >
+                <option value="">Todas</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>{category.name}</option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
+
+        {quickError ? <p role="alert" className="text-sm font-bold text-red-700">{quickError}</p> : null}
 
         {filteredProducts.length ? (
           productView === "compact" ? (
@@ -1313,8 +1382,8 @@ export function ProductManager() {
                   key={product.id}
                   className="relative rounded-xl bg-white px-3 py-2 shadow-sm ring-1 ring-[#25262B]/[0.06]"
                 >
-                  <div className="grid gap-3 sm:grid-cols-[56px_minmax(0,1fr)_180px_auto] sm:items-center">
-                    <div className="h-14 w-14 overflow-hidden rounded-xl bg-[#F8F3E8]">
+                  <div className="grid grid-cols-[48px_minmax(0,1fr)_44px] gap-2 lg:grid-cols-[56px_minmax(0,1fr)_140px_156px_44px] lg:items-center 2xl:grid-cols-[56px_minmax(0,1fr)_180px_156px_44px]">
+                    <div className="h-12 w-12 overflow-hidden rounded-xl bg-[#F8F3E8] sm:h-14 sm:w-14">
                       {product.image_url ? (
                         <OptimizedImage
                           src={product.image_url}
@@ -1345,7 +1414,7 @@ export function ProductManager() {
                         </p>
                       ) : null}
                     </div>
-                    <div className="min-w-0 text-left sm:text-right">
+                    <div className="col-span-3 min-w-0 text-left lg:col-span-1 lg:text-right">
                       <div className="mb-1 flex flex-nowrap items-center gap-1 whitespace-nowrap sm:justify-end">
                         {product.is_cart_suggestion ? (
                           <span className="inline-flex rounded-md bg-green-100 px-1.5 py-0.5 text-[10px] font-bold text-green-700">Complemento</span>
@@ -1377,7 +1446,21 @@ export function ProductManager() {
                         </p>
                       )}
                     </div>
-                    <details className="product-edit min-w-0 open:col-span-full">
+                    <div className="col-span-3 flex flex-wrap items-center gap-1 lg:col-span-1 lg:justify-end" aria-label={`Acciones rápidas de ${product.name}`}>
+                      <button type="button" disabled={Boolean(quickSavingId) || editingProducts.has(product.id)} onClick={() => saveQuickChange(product, "is_available", !product.is_available)} aria-label={`${product.is_available ? "Ocultar" : "Activar"} ${product.name}`} title={product.is_available ? "Ocultar producto" : "Activar producto"} className="grid h-9 w-9 place-items-center rounded-lg bg-[#F0F2F2] text-[#526164] disabled:opacity-50">
+                        {product.is_available ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                      <button type="button" disabled={Boolean(quickSavingId) || editingProducts.has(product.id)} onClick={() => saveQuickChange(product, "is_featured", !product.is_featured)} aria-pressed={product.is_featured} aria-label={`${product.is_featured ? "Quitar destacado de" : "Destacar"} ${product.name}`} title={product.is_featured ? "Quitar destacado" : "Destacar producto"} className={`grid h-9 w-9 place-items-center rounded-lg disabled:opacity-50 ${product.is_featured ? "bg-amber-100 text-amber-800" : "bg-[#F0F2F2] text-[#526164]"}`}>
+                        <Sparkles size={16} />
+                      </button>
+                      <button type="button" disabled={Boolean(quickSavingId) || editingProducts.has(product.id)} onClick={() => saveQuickChange(product, "is_cart_suggestion", !product.is_cart_suggestion)} aria-pressed={Boolean(product.is_cart_suggestion)} aria-label={`${product.is_cart_suggestion ? "Quitar complemento de" : "Marcar como complemento"} ${product.name}`} title={product.is_cart_suggestion ? "Quitar complemento" : "Marcar como complemento"} className={`grid h-9 w-9 place-items-center rounded-lg disabled:opacity-50 ${product.is_cart_suggestion ? "bg-green-100 text-green-700" : "bg-[#F0F2F2] text-[#526164]"}`}>
+                        <Layers size={16} />
+                      </button>
+                      <button type="button" disabled={Boolean(quickSavingId) || editingProducts.has(product.id)} onClick={() => { setQuickPriceId(product.id); setQuickPriceDraft(String(product.price_usd)); setQuickError(""); }} aria-label={`Cambiar precio base de ${product.name}`} title="Cambiar precio base" className="grid h-9 w-9 place-items-center rounded-lg bg-[#F0F2F2] text-[#526164] disabled:opacity-50">
+                        {quickSavingId === product.id ? <Loader2 size={16} className="animate-spin" /> : <DollarSign size={16} />}
+                      </button>
+                    </div>
+                    <details className="product-edit col-start-3 row-start-1 min-w-0 lg:col-start-5 lg:row-start-auto open:col-span-full open:col-start-1 open:row-start-auto" onToggle={(event) => { const isOpen = event.currentTarget.open; setEditingProducts((current) => { const next = new Set(current); if (isOpen) next.add(product.id); else next.delete(product.id); return next; }); if (isOpen && quickPriceId === product.id) setQuickPriceId(""); }}>
                       <summary aria-label={`Editar ${product.name}`} title={`Editar ${product.name}`} className="inline-flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-lg bg-[#2E3A79] text-white">
                         <Pencil size={18} aria-hidden="true" />
                       </summary>
@@ -1391,6 +1474,15 @@ export function ProductManager() {
                         />
                       </div>
                     </details>
+                    {quickPriceId === product.id ? (
+                      <form className="col-span-full flex flex-wrap items-center gap-2 border-t border-[#25262B]/10 pt-2" onSubmit={(event) => { event.preventDefault(); saveQuickChange(product, "price_usd", Number(quickPriceDraft)); }}>
+                        <label className="text-xs font-bold text-[#526164]" htmlFor={`quick-price-${product.id}`}>Precio base USD</label>
+                        <input id={`quick-price-${product.id}`} type="number" required min="0" max="999999.99" step="0.01" value={quickPriceDraft} onChange={(event) => setQuickPriceDraft(event.target.value)} className="w-28 rounded-lg border border-[#25262B]/20 px-2 py-2 text-sm font-bold" />
+                        <button type="submit" disabled={Boolean(quickSavingId)} aria-label={`Guardar precio de ${product.name}`} title="Guardar precio" className="grid h-9 w-9 place-items-center rounded-lg bg-[#2E3A79] text-white disabled:opacity-50"><Save size={16} /></button>
+                        <button type="button" onClick={() => setQuickPriceId("")} aria-label="Cancelar cambio de precio" title="Cancelar" className="grid h-9 w-9 place-items-center rounded-lg bg-[#F0F2F2] text-[#526164]"><X size={16} /></button>
+                        {product.product_variants?.length ? <span className="text-xs text-[#746f69]">Las presentaciones conservan sus precios.</span> : null}
+                      </form>
+                    ) : null}
                   </div>
                 </article>
               ))}
