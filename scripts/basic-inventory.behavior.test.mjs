@@ -68,7 +68,8 @@ test("las APIs solo pasan identificadores saneados al procedimiento atomico", as
     readFile(new URL("../src/lib/supabase/catalog.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/components/public/ProductCard.tsx", import.meta.url), "utf8"),
   ]);
-  assert.match(publicRoute, /inventorySelections:[\s\S]*isUuid\(selection\.skuId\)/);
+  assert.match(publicRoute, /const items = normalizeItems\(order\.items\)/);
+  assert.match(await readFile(new URL("../src/lib/server/cart-review.ts", import.meta.url), "utf8"), /inventorySelections:[\s\S]*isUuid\(selection\.skuId\)/);
   assert.match(panelRoute, /inventorySelections:[\s\S]*isUuid\(selection\.skuId\)/);
   assert.match(atomicHelper, /inventory: Array/);
   assert.match(cancelHelper, /rpc\("cancel_order_with_inventory"/);

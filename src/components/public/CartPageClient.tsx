@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { CartItem, Store } from "@/types";
-import { getCart, getCartSubtotal, removeCartItem, updateCartItemQuantity } from "@/lib/cart";
+import { getCart, getCartKey, getCartSubtotal, removeCartItem, updateCartItemQuantity } from "@/lib/cart";
 import { formatBaseCurrency, formatBs } from "@/lib/currency";
 import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import { useLiveStoreOpenState } from "@/hooks/use-live-store-open-state";
@@ -37,17 +37,23 @@ export function CartPageClient({ store }: { store: Store }) {
   const [tableOrder, setTableOrder] = useState<TableOrderContext | null>(null);
 
   useEffect(() => {
-    function sync() {
-      setItems(getCart(store.slug));
-    }
-
-    sync();
     setTableOrder(getTableOrderContext(store.slug));
-    window.addEventListener("vendeplus-cart-change", sync);
-    window.addEventListener("storage", sync);
+  }, [store.slug]);
+
+  useEffect(() => {
+    const sync = () => setItems(getCart(store.slug));
+    const onCartChange = (event: Event) => {
+      if ((event as CustomEvent<{ storeSlug: string }>).detail?.storeSlug === store.slug) sync();
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === getCartKey(store.slug)) sync();
+    };
+    sync();
+    window.addEventListener("vendeplus-cart-change", onCartChange);
+    window.addEventListener("storage", onStorage);
     return () => {
-      window.removeEventListener("vendeplus-cart-change", sync);
-      window.removeEventListener("storage", sync);
+      window.removeEventListener("vendeplus-cart-change", onCartChange);
+      window.removeEventListener("storage", onStorage);
     };
   }, [store.slug]);
 

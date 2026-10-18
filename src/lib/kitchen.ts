@@ -6,6 +6,8 @@ export type KitchenTicket = {
 export type KitchenOrder = {
   id: string; public_code: string; customer_name?: string | null; created_at: string; status: string; delivery_type: string;
   delivery_provider?: string | null;
+  delivery_status?: string | null; transport_agency_id?: string | null;
+  transport_orders?: Array<{ agency_id: string; status: string }>;
   status_entered_at?: string | null; status_elapsed_ms?: Record<string, number> | null;
   delivery_pricing_type?: string | null; table_name_snapshot?: string | null;
   table_fulfillment_snapshot?: string | null; delivery_reference?: string | null;
@@ -13,6 +15,16 @@ export type KitchenOrder = {
   order_items?: Array<{ id: string; product_name: string; variant_name: string | null; quantity: number; notes: string | null;
     order_item_options?: Array<{ id: string; option_group_name: string; option_name: string; quantity: number }> }>;
 };
+export function hasKitchenDeliveryHandoff(order: KitchenOrder) {
+  if (order.delivery_type !== 'delivery') return false;
+  if (order.delivery_provider === 'entrega2') {
+    return ['sent', 'accepted', 'picking_up', 'delivering', 'issue'].includes(order.delivery_status || '');
+  }
+  if (order.delivery_provider !== 'transport_agency') return false;
+  return (order.transport_orders || []).some(service =>
+    service.agency_id === order.transport_agency_id &&
+    !['agency_rejected', 'cancelled', 'delivery_failed'].includes(service.status));
+}
 export function kitchenEligible(store?: { table_orders_access_enabled?: boolean; table_orders_enabled?: boolean } | null) {
   return store?.table_orders_access_enabled === true && store?.table_orders_enabled === true;
 }

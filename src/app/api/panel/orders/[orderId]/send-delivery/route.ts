@@ -28,8 +28,6 @@ import {
 } from "@/lib/server/entrega2-dispatch";
 import {
   insertTransportOrderEvent,
-  mapTransportStatusToOrderDeliveryStatus,
-  normalizeTransportOrderStatus,
 } from "@/lib/transport/orders";
 import { buildPublicUrl } from "@/lib/public-url";
 
@@ -491,10 +489,8 @@ export async function POST(
       return badRequest("Solo los pedidos delivery se pueden enviar a un proveedor.");
     }
 
-    if (["cancelled", "canceled", "cancelado"].includes(cleanText(order.status).toLowerCase())) {
-      return badRequest(
-        "Este pedido esta cancelado. Cambia el estado del pedido antes de solicitar delivery."
-      );
+    if (["cancelled", "canceled", "cancelado", "completed"].includes(cleanText(order.status).toLowerCase())) {
+      return badRequest("Este pedido ya está cerrado y no admite un nuevo envío.");
     }
 
     if (order.delivery_provider === "transport_agency") {
@@ -586,7 +582,6 @@ export async function POST(
         });
       }
 
-      const transportStatus = normalizeTransportOrderStatus(transportOrder.status);
       const message = buildTransportAgencyMessage(order, agency, transportOrder);
       const whatsappUrl = buildWhatsappUrl(agencyPhone, message);
 
@@ -595,7 +590,6 @@ export async function POST(
       }
 
       const provider = "transport_agency";
-      const externalOrderId = `agency-${order.id}`;
       const requestPayload = {
         channel: "whatsapp",
         agencyId: agency.id,
@@ -605,31 +599,15 @@ export async function POST(
         message,
       };
 
-      const { error: integrationError } = await supabase
-        .from("order_integrations")
-        .upsert(
-          {
-            order_id: order.id,
-            provider,
-            external_id: externalOrderId,
-            status: transportOrder.status,
-            request_payload: requestPayload,
-            last_payload: { whatsappUrl, transportOrderId: transportOrder.id },
-            last_error: null,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "order_id,provider" }
-        );
-      if (integrationError) throw integrationError;
-
-      const { error: orderUpdateError } = await supabase
-        .from("orders")
-        .update({
-          delivery_status: mapTransportStatusToOrderDeliveryStatus(transportStatus),
-          transport_agency_status: transportOrder.status,
-        })
-        .eq("id", order.id);
-      if (orderUpdateError) throw orderUpdateError;
+      const { data: syncedTransportOrder, error: syncError } = await supabase.rpc(
+        "sync_transport_dispatch_v1",
+        {
+          p_transport_order_id: transportOrder.id,
+          p_request_payload: requestPayload,
+          p_last_payload: { whatsappUrl, transportOrderId: transportOrder.id },
+        }
+      );
+      if (syncError) throw syncError;
 
       logApiEvent(apiContext, "transport_agency_order_sent", {
         orderId: order.id,
@@ -641,7 +619,7 @@ export async function POST(
       return attachApiResponseHeaders(NextResponse.json({
         ok: true,
         provider,
-        transportOrder,
+        transportOrder: syncedTransportOrder,
         whatsappUrl,
         message,
       }), apiContext, "send-delivery");

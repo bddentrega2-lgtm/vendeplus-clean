@@ -30,8 +30,11 @@ import { OptimizedImage } from "@/components/shared/OptimizedImage";
 import { useLiveStoreOpenState } from "@/hooks/use-live-store-open-state";
 import { FrequentLocation } from "@/components/mobile/FrequentLocation";
 import { useNativeApp } from "@/hooks/use-native-app";
-import { isNativeApp, readMobile, writeMobile, removeMobile, safeCheckoutDraft } from "@/lib/mobile/state";
+import { isNativeApp, writeMobile, safeCheckoutDraft } from "@/lib/mobile/state";
+import { readCheckoutDraft, writeCheckoutDraft, clearCheckoutDraft } from "@/lib/checkout-draft";
 import { compressImageForUpload } from "@/lib/images/client-compress";
+import { useCartReview } from "@/hooks/use-cart-review";
+import { CartReviewNotice } from "@/components/public/CartReviewNotice";
 import {
   getTableOrderContext,
   isPrepaidTablePaymentMethod,
@@ -137,7 +140,8 @@ export function CheckoutForm({ store }: { store: Store }) {
   const native = useNativeApp();
   const router = useRouter();
   const openState = useLiveStoreOpenState(store);
-  const [items, setItems] = useState<ReturnType<typeof getCart>>([]);
+  const cart = useCartReview(store.slug);
+  const { items } = cart;
   const [tableOrder, setTableOrder] = useState<TableOrderContext | null>(null);
   const [form, setForm] = useState<CheckoutFormData>(initialForm);
   const [location, setLocation] = useState<DeliveryLocation | null>(null);
@@ -166,22 +170,20 @@ export function CheckoutForm({ store }: { store: Store }) {
   const sending = useRef(false);
 
   useEffect(() => {
-    if (!isNativeApp()) return;
-    const saved = readMobile<{ form: Record<string, unknown>; key: string; updatedAt: number } | null>(`checkout_${store.slug}`, null);
+    const saved = readCheckoutDraft(store.slug);
     if (getCart(store.slug).length && saved && Date.now() - saved.updatedAt < 86400000 && /^[0-9a-f-]{36}$/i.test(saved.key)) {
       setForm((current) => ({ ...current, ...safeCheckoutDraft(saved.form || {}) }));
       idempotencyKeyRef.current = saved.key;
-    } else removeMobile(`checkout_${store.slug}`);
+    } else clearCheckoutDraft(store.slug);
     draftReady.current = true;
   }, [store.slug]);
 
   useEffect(() => {
     if (!draftReady.current || confirmed.current || !getCart(store.slug).length) return;
-    writeMobile(`checkout_${store.slug}`, { form: safeCheckoutDraft(form), key: idempotencyKeyRef.current, updatedAt: Date.now() });
+    writeCheckoutDraft(store.slug, { form: safeCheckoutDraft(form), key: idempotencyKeyRef.current, updatedAt: Date.now() });
   }, [form, store.slug]);
 
   useEffect(() => {
-    setItems(getCart(store.slug));
     const context = getTableOrderContext(store.slug);
     setTableOrder(context);
     if (context) {
@@ -620,6 +622,7 @@ export function CheckoutForm({ store }: { store: Store }) {
 
   async function sendOrder() {
     if (isSubmitting || sending.current || confirmed.current) return;
+    if (cart.blocked || JSON.stringify(getCart(store.slug)) !== JSON.stringify(items)) { cart.retry(); return; }
     if (isNativeApp() && !navigator.onLine) { setError("Sin conexion. Conservamos tu carrito; vuelve a intentar al conectarte."); return; }
 
     const order = buildOrder();
@@ -637,12 +640,13 @@ export function CheckoutForm({ store }: { store: Store }) {
       );
 
       if (!saveResult.ok || !saveResult.order) {
+        if (saveResult.cartReview) cart.receive(saveResult.cartReview, order.items);
         setError(saveResult.error || "No se pudo guardar el pedido.");
         return;
       }
 
       confirmed.current = true;
-      removeMobile(`checkout_${store.slug}`);
+      clearCheckoutDraft(store.slug);
       writeMobile("buyer_route", `/${store.slug}/confirmacion`);
       const savedOrder = isNativeApp() ? {
         ...saveResult.order,
@@ -662,7 +666,6 @@ export function CheckoutForm({ store }: { store: Store }) {
         setHasSavedCustomer(false);
       }
       try { clearCart(store.slug); } catch { /* Confirmation still takes precedence over local persistence. */ }
-      setItems([]);
       if (saveResult.order.form.deliveryType === "table") {
         router.replace(`/${store.slug}/confirmacion`);
         return;
@@ -673,7 +676,7 @@ export function CheckoutForm({ store }: { store: Store }) {
         return;
       }
       window.history.replaceState(null, "", `/${store.slug}/confirmacion`);
-      window.location.href = saveResult.order.whatsappUrl;
+      window.location.assign(saveResult.order.whatsappUrl);
       return;
     } catch (error: any) {
       setError(error.message || "No se pudo guardar el pedido.");
@@ -1073,6 +1076,7 @@ export function CheckoutForm({ store }: { store: Store }) {
             <section className="rounded-[36px] bg-[#25262B] p-3 text-white shadow-2xl shadow-[#25262B]/25">
               <div className="rounded-[30px] bg-white p-5 text-[#25262B]">
                 <h2 className="text-xl font-black">Tu pedido es</h2>
+                <CartReviewNotice cart={cart} storeSlug={store.slug} currency={baseCurrency} disabled={isSubmitting} />
                 <div className="mt-4 space-y-3">
                   {items.map((item, index) => (
                     <div key={`${item.productId}-${index}`} className="flex justify-between gap-3 text-sm">
@@ -1130,9 +1134,9 @@ export function CheckoutForm({ store }: { store: Store }) {
                   <button
               type="button"
               onClick={sendOrder}
-              disabled={isSubmitting || !openState.isOpen}
+              disabled={isSubmitting || !openState.isOpen || cart.blocked || !items.length}
               className={`vp-button-mango w-full disabled:cursor-not-allowed disabled:opacity-70 ${
-                !isSubmitting && openState.isOpen ? "vp-confirm-order-attention" : ""
+                !isSubmitting && openState.isOpen && !cart.blocked ? "vp-confirm-order-attention" : ""
               }`}
             >
               {isSubmitting ? (

@@ -48,6 +48,12 @@ test("Mesa/Barra incluye los pedidos manuales de Barra sin incluir retiros norma
   assert.match(tables, /\.not\("status", "in", "\(completed,cancelled\)"\)/);
 });
 
+test("filtro Retiro incluye tarifas heredadas sin mezclar Mesa ni Barra", () => {
+  const orders = read("src/app/api/panel/orders/route.ts");
+  assert.match(orders, /deliveryType === "pickup"[\s\S]*?\.eq\("delivery_type", "pickup"\)[\s\S]*?\.is\("table_fulfillment_snapshot", null\)[\s\S]*?\.or\("delivery_pricing_type\.is\.null,and\(delivery_pricing_type\.neq\.table,delivery_pricing_type\.neq\.bar\)"\)/);
+  assert.doesNotMatch(orders, /\.eq\("delivery_type", "pickup"\)\.is\("delivery_pricing_type", null\)/);
+});
+
 function deliverySettings(overrides = {}) {
   return {
     ...createDefaultDeliverySettings(),
@@ -1084,7 +1090,7 @@ test("Somos usa su WhatsApp oficial en Home y despues de cada registro", () => {
 
   assert.match(whatsapp, /SOMOS_WHATSAPP_PHONE = "584224600742"/);
   assert.match(home, /Contactar por WhatsApp/);
-  assert.match(signup, /window\.location\.assign\(officialWhatsappUrl\)/);
+  assert.match(signup, /href=\{success\.whatsappUrl\}/);
   assert.match(signup, /Enviar solicitud a Somos/);
   assert.doesNotMatch(signup, /`Cédula: \$\{representativeIdNumber/);
   assert.match(transport, /window\.location\.assign\(whatsappUrl\)/);
@@ -1331,7 +1337,8 @@ test("boxes Joshi permiten rolls repetidos por bloques de diez y conservan canti
   assert.match(productCard, /Cada selección de roll incluye 10 piezas/i);
   assert.match(productCard, /Selección \{index \+ 1\} · 10 piezas/);
   assert.match(productCard, /selectedIds\.filter\(Boolean\)\.length/);
-  assert.match(ordersRoute, /current\.quantity \+= 1/);
+  assert.match(ordersRoute, /reviewStoredCart\(supabase, storeId, items\)/);
+  assert.match(read("src/lib/cart-review.ts"), /previous\.quantity = Number\(previous\.quantity \|\| 1\) \+ Number\(option\.quantity \|\| 1\)/);
   assert.match(ordersRoute, /quantity: Math\.max\(1, Math\.floor\(Number\(option\.quantity/);
   assert.match(printer, /option\.optInt\("quantity", 1\)/);
   for (const count of [2, 3, 4, 6]) assert.match(migration, new RegExp(`, ${count}, (?:true|false)\\)`));
@@ -1545,7 +1552,7 @@ test("cuentas pueden cambiar contraseña desde ambos paneles", () => {
   const transportPanel = readFileSync(new URL("../src/components/transport/TransportAgencyPanel.tsx", import.meta.url), "utf8");
   const transportPage = readFileSync(new URL("../src/app/transporte/panel/seguridad/page.tsx", import.meta.url), "utf8");
 
-  assert.match(form, /supabase\.auth\.updateUser\(\{ password \}\)/);
+  assert.match(form, /supabase\.auth\.updateUser\(\{[\s\S]*?password,[\s\S]*?somos_admin_password_reminder: false/);
   assert.match(form, /password\.length < 8/);
   assert.match(form, /password !== confirmPassword/);
   assert.match(panelShell, /\/panel\/update-password/);

@@ -17,6 +17,7 @@ import {
   getTransportOrderTimestampField,
   mapTransportStatusToOrderDeliveryStatus,
   normalizeTransportOrderStatus,
+  transportOrderStatuses,
 } from "@/lib/transport/orders";
 import { mutateTransportOrderAtomic } from "@/lib/server/mutate-transport-order-atomic";
 
@@ -36,6 +37,13 @@ export async function PATCH(
     scopedTransportOrderId = transportOrderId;
     const auth = await requireTransportAgencyAuth(request);
     const body = await request.json().catch(() => ({}));
+    if (!transportOrderStatuses.some((status) => status === body.status)) {
+      return attachApiResponseHeaders(
+        badRequest("Estado de entrega no valido."),
+        apiContext,
+        "transport-order-status"
+      );
+    }
     const nextStatus = normalizeTransportOrderStatus(body.status);
     const note = cleanTransportText(body.note, 500);
     const supabase = createSupabaseAdminClient();

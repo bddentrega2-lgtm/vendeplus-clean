@@ -15,7 +15,6 @@ import { isCustomerOrderCancelled } from "@/lib/customers/customer-metrics";
 import { recalculateCustomerFromOrder, safeUpsertCustomerFromOrder } from "@/lib/customers/upsert-customer-from-order";
 import { getVenezuelaRelativeRange } from "@/lib/time/venezuela";
 import { createOrderAtomic } from "@/lib/server/create-order-atomic";
-import { cancelOrderWithInventory } from "@/lib/server/cancel-order-with-inventory";
 import { tableCancellationReason } from "@/lib/table-orders";
 import { getEntrega2TerminalOrderStatus, isCurrentEntrega2Delivery } from "@/lib/entrega2-contract";
 
@@ -642,7 +641,10 @@ export async function GET(request: NextRequest) {
             "delivery_pricing_type.eq.bar,and(delivery_type.eq.table,table_fulfillment_snapshot.eq.counter_pickup)"
           );
         } else if (deliveryType === "pickup") {
-          query = query.eq("delivery_type", "pickup").is("delivery_pricing_type", null);
+          query = query
+            .eq("delivery_type", "pickup")
+            .is("table_fulfillment_snapshot", null)
+            .or("delivery_pricing_type.is.null,and(delivery_pricing_type.neq.table,delivery_pricing_type.neq.bar)");
         } else {
           query = query.eq("delivery_type", deliveryType);
         }
@@ -1134,6 +1136,9 @@ export async function PATCH(request: NextRequest) {
     if (!allowedStatuses.includes(status)) {
       return badRequest("Estado inválido.");
     }
+    if (!allowedStatuses.includes(body.expectedStatus)) {
+      return badRequest("Actualiza los pedidos antes de cambiar el estado.");
+    }
 
     const supabase = createSupabaseAdminClient();
 
@@ -1182,43 +1187,21 @@ export async function PATCH(request: NextRequest) {
       return badRequest("Selecciona el motivo de cancelación.");
     }
 
-    if (existingOrder.delivery_type === "table") {
-      const result = await supabase.rpc("update_table_order_status_v2", {
-        p_store_id: existingOrder.store_id,
-        p_order_id: id,
-        p_expected_status: body.expectedStatus || existingOrder.status,
-        p_status: status,
-        p_reason: cancellationReason,
-        p_actor: auth.userId || "Acceso del comercio",
-      });
-      if (result.error) {
-        if (["P0001", "P0002"].includes(result.error.code)) return badRequest(result.error.message);
-        throw result.error;
+    const result = await supabase.rpc("transition_order_status_v3", {
+      p_store_id: existingOrder.store_id,
+      p_order_id: id,
+      p_expected_status: body.expectedStatus,
+      p_status: status,
+      p_reason: cancellationReason,
+      p_actor: auth.userId || "Acceso del comercio",
+    });
+    if (result.error) {
+      if (["P0001", "P0002"].includes(result.error.code)) {
+        return NextResponse.json({ error: result.error.message }, { status: 409 });
       }
-      if (existingOrder.customer_id && isCustomerOrderCancelled(existingOrder.status) !== isCustomerOrderCancelled(status)) {
-        await recalculateCustomerFromOrder(supabase, existingOrder);
-      }
-      return respond(Array.isArray(result.data) ? result.data[0] : result.data);
+      throw result.error;
     }
-
-    const data = status === "cancelled"
-      ? await cancelOrderWithInventory({
-          supabase,
-          orderId: id,
-          storeId: existingOrder.store_id,
-          cancellationReason,
-        })
-      : await (async () => {
-          const result = await supabase
-            .from("orders")
-            .update({ status })
-            .eq("id", id)
-            .eq("store_id", existingOrder.store_id)
-            .select()
-            .single();
-          if (result.error) throw result.error;
-          return result.data;
-        })();
+    const data = Array.isArray(result.data) ? result.data[0] : result.data;
 
     if (
       existingOrder.customer_id &&

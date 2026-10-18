@@ -53,11 +53,11 @@ export async function GET(request: NextRequest) {
     let tickets: unknown[] = [];
     let hasMore = false;
     if (settingsRow?.enabled) {
-      const columns = board ? `${summary},orders!inner(id,public_code,customer_name,created_at,status,status_entered_at,status_elapsed_ms,delivery_type,delivery_provider,delivery_pricing_type,table_name_snapshot,table_fulfillment_snapshot,delivery_reference,notes,order_details,table_cancellation_reason,order_items(id,product_name,variant_name,quantity,notes,order_item_options(id,option_group_name,option_name,quantity)))` : `${summary},orders!inner(id)`;
+      const columns = board ? `${summary},orders!inner(id,public_code,customer_name,created_at,status,status_entered_at,status_elapsed_ms,delivery_type,delivery_provider,delivery_status,transport_agency_id,transport_orders(agency_id,status),delivery_pricing_type,table_name_snapshot,table_fulfillment_snapshot,delivery_reference,notes,order_details,table_cancellation_reason,order_items(id,product_name,variant_name,quantity,notes,order_item_options(id,option_group_name,option_name,quantity)))` : `${summary},orders!inner(id)`;
       const result = await supabase.from('order_kitchen_tickets').select(columns).eq('store_id', storeId)
         .in('state', ['queued', 'preparing', 'ready'])
         .in('orders.status', ['received', 'accepted', 'preparing', 'ready'])
-        .or('delivery_status.is.null,delivery_status.neq.delivered', { referencedTable: 'orders' })
+        .or('delivery_status.is.null,delivery_status.not.in.(picked_up,on_the_way,delivering,completed,delivered)', { referencedTable: 'orders' })
         .order('sent_at').order('order_id').range(offset, offset + 99);
       if (result.error) throw result.error;
       tickets = result.data || [];

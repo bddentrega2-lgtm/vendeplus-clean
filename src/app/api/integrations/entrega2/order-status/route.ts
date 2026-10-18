@@ -9,7 +9,6 @@ import {
 import { advanceEntrega2OrderDeliveryStatus } from "@/lib/server/entrega2-dispatch";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getTransportOrderTimestampField, type TransportOrderStatus } from "@/lib/transport/orders";
-import { cancelOrderWithInventory } from "@/lib/server/cancel-order-with-inventory";
 import { recalculateCustomerFromOrder } from "@/lib/customers/upsert-customer-from-order";
 
 const MAX_WEBHOOK_BODY_BYTES = 80_000;
@@ -87,20 +86,14 @@ async function syncOrderStatus(supabase: any, orderId: string, deliveryStatus: s
     .select("id,store_id,status,customer_id,customer_name,customer_phone,customer_phone_normalized")
     .eq("id", orderId).maybeSingle();
   if (error) throw error;
-  if (!order || ["cancelled", "completed"].includes(order.status)) return;
-
-  if (deliveryStatus === "cancelled") {
-    const cancelled = await cancelOrderWithInventory({
-      supabase, orderId, storeId: order.store_id,
-      cancellationReason: "Entrega2 canceló el delivery.",
-    });
-    if (order.customer_id) await recalculateCustomerFromOrder(supabase, cancelled);
-    return;
-  }
-
-  const result = await supabase.from("orders").update({ status: "completed" })
-    .eq("id", orderId).eq("store_id", order.store_id).eq("status", order.status);
+  if (!order) return;
+  const result = await supabase.rpc("close_entrega2_order_v2", {
+    p_order_id: orderId, p_terminal_status: deliveryStatus,
+  });
   if (result.error) throw result.error;
+  if (deliveryStatus === "cancelled" && order.customer_id && order.status !== "cancelled" && result.data?.status === "cancelled") {
+    await recalculateCustomerFromOrder(supabase, result.data);
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -155,44 +148,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (
-      !canAdvanceEntrega2OrderStatus(integration.status, vendeplusStatus)
-    ) {
-      return NextResponse.json({
-        ok: true,
-        ignored: true,
-        reason: "out_of_order",
-        orderId: integration.order_id,
-        transportOrderId: integration.transport_order_id,
-        mappedStatus: vendeplusStatus,
-      });
+    let currentStatus = integration.status;
+    let applied = false;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      if (!canAdvanceEntrega2OrderStatus(currentStatus, vendeplusStatus)) {
+        return NextResponse.json({
+          ok: true, ignored: true, reason: "out_of_order",
+          orderId: integration.order_id, transportOrderId: integration.transport_order_id,
+          mappedStatus: vendeplusStatus,
+        });
+      }
+      const { data: updated, error: updateError } = await supabase.from("order_integrations")
+        .update({ status: vendeplusStatus, last_payload: payload, last_error: null, updated_at: new Date().toISOString() })
+        .eq("id", integration.id).eq("status", currentStatus)
+        .select("id").maybeSingle();
+      if (updateError) throw updateError;
+      if (updated) { applied = true; break; }
+      const refreshed = await supabase.from("order_integrations")
+        .select("status").eq("id", integration.id).single();
+      if (refreshed.error) throw refreshed.error;
+      currentStatus = refreshed.data.status;
     }
-
-    let integrationUpdate = supabase
-      .from("order_integrations")
-      .update({
-        status: vendeplusStatus,
-        last_payload: payload,
-        last_error: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", integration.id);
-    integrationUpdate = integrationUpdate.eq("status", integration.status);
-    const { data: updatedIntegration, error: updateError } = await integrationUpdate
-      .select("id")
-      .maybeSingle();
-
-    if (updateError) throw updateError;
-    if (!updatedIntegration) {
-      return NextResponse.json({
-        ok: true,
-        ignored: true,
-        reason: "concurrent_update",
-        orderId: integration.order_id,
-        transportOrderId: integration.transport_order_id,
-        mappedStatus: vendeplusStatus,
-      });
-    }
+    if (!applied) throw new Error("No se pudo conciliar el aviso de Entrega2. Debe reintentarse.");
 
     let appliesToCurrentOrder = false;
     if (integration.order_id) {
@@ -211,28 +188,20 @@ export async function POST(request: NextRequest) {
 
     const transportStatus = mapEntrega2StatusToTransportStatus(vendeplusStatus);
     if (transportStatus && integration.transport_order_id) {
-      const { data: currentTransportOrder, error: currentTransportError } =
-        await supabase
-          .from("transport_orders")
-          .select("status")
-          .eq("id", integration.transport_order_id)
-          .maybeSingle();
-      if (currentTransportError) throw currentTransportError;
-      if (
-        currentTransportOrder &&
-        canAdvanceTransportStatus(currentTransportOrder.status, transportStatus)
-      ) {
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        const { data: current, error: readError } = await supabase.from("transport_orders")
+          .select("status").eq("id", integration.transport_order_id).maybeSingle();
+        if (readError) throw readError;
+        if (!current || current.status === transportStatus || !canAdvanceTransportStatus(current.status, transportStatus)) break;
         const timestampField = getTransportOrderTimestampField(transportStatus as TransportOrderStatus);
-        const { error: transportError } = await supabase
-          .from("transport_orders")
-          .update({
-            status: transportStatus,
-            updated_at: new Date().toISOString(),
-            ...(timestampField ? { [timestampField]: new Date().toISOString() } : {}),
-          })
-          .eq("id", integration.transport_order_id)
-          .eq("status", currentTransportOrder.status);
+        const { data: updated, error: transportError } = await supabase.from("transport_orders")
+          .update({ status: transportStatus, updated_at: new Date().toISOString(),
+            ...(timestampField ? { [timestampField]: new Date().toISOString() } : {}) })
+          .eq("id", integration.transport_order_id).eq("status", current.status)
+          .select("id").maybeSingle();
         if (transportError) throw transportError;
+        if (updated) break;
+        if (attempt === 3) throw new Error("No se pudo conciliar el servicio delivery. Debe reintentarse.");
       }
     }
 

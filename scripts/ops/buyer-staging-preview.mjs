@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
-import { readFile, writeFile, readdir } from 'node:fs/promises';
-import { resolve, join } from 'node:path';
+import { readFile, writeFile, readdir, mkdir } from 'node:fs/promises';
+import { resolve, join, dirname } from 'node:path';
 import { parseEnv } from 'node:util';
 
 const mode = process.argv[2];
@@ -109,11 +109,12 @@ const response = await fetch(`${appEnv.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/stores?
 if (!response.ok) throw new Error(`Staging catalog HTTP ${response.status}`);
 const stores = await response.json();
 const baselineSlugs = ['cocina-demo', 'tienda-demo'];
+const permittedSlugs = [...baselineSlugs, 'papa'];
 // Registration QA can add stores. Only the read-only build accepts extra stores;
 // deployment and test actions retain the original exact-fixture guard.
 const validCatalog = mode === 'build'
   ? baselineSlugs.every(slug => stores.some(store => store.slug === slug))
-  : stores.length === 2 && stores.every(store => baselineSlugs.includes(store.slug));
+  : stores.length === permittedSlugs.length && stores.every(store => permittedSlugs.includes(store.slug));
 if (!validCatalog) throw new Error(`Unexpected staging catalog: ${JSON.stringify(stores.map(store => store.slug))}`);
 const privateResponse = await fetch(`${appEnv.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/buyer_order_accounts?select=order_id&limit=1`, { headers: { apikey: keys.anon, Authorization: `Bearer ${keys.anon}` } });
 if (![401, 403].includes(privateResponse.status)) throw new Error('Buyer data not private');
@@ -151,6 +152,7 @@ if (mode === 'build' || mode === 'start') {
   const raw = deployed.url || deployed.deployment?.url;
   const url = raw?.startsWith('https://') ? raw : `https://${raw}`;
   if (!/^https:\/\/vendeplus-clean-[a-z0-9]{9}-entrega2-s-projects\.vercel\.app$/.test(url)) throw new Error('Unexpected deployment URL; reconcile before retry');
+  await mkdir(dirname(artifact), { recursive: true });
   await writeFile(artifact, JSON.stringify({ projectId, url, productionBefore: before.targets.production.id, stage: ref, createdAt: new Date().toISOString() }, null, 2));
   const after = await project();
   if (after.targets.production.id !== before.targets.production.id) throw new Error('Production target changed');

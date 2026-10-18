@@ -1,4 +1,5 @@
 import { randomInt, randomUUID } from "crypto";
+import { normalizeItems, reviewStoredCart } from "@/lib/server/cart-review";
 import { getStoreServiceFeeUsd } from "@/lib/plans";
 import { NextRequest, NextResponse } from "next/server";
 import { methodsForChannel } from "@/lib/payment-availability";
@@ -39,8 +40,6 @@ import { getVerifiedBuyer } from "@/lib/buyer/auth-server";
 import { safeSendPrintWakePush } from "@/lib/printing/firebase-push";
 
 const MAX_ORDER_BODY_BYTES = 180_000;
-const MAX_ORDER_ITEMS = 80;
-const MAX_ITEM_QUANTITY = 99;
 const ORDER_IP_LIMIT = 60;
 const ORDER_STORE_IP_LIMIT = 24;
 const ORDER_RATE_WINDOW_MS = 10 * 60 * 1000;
@@ -97,100 +96,7 @@ function isUuid(value?: string) {
   );
 }
 
-function normalizeItems(value: unknown): CartItem[] {
-  if (!Array.isArray(value)) return [];
 
-  return value
-    .map((item) => ({
-      productId: cleanText(item?.productId),
-      productName: cleanText(item?.productName, 140),
-      productSlug: cleanText(item?.productSlug, 140),
-      productImageUrl: cleanText(item?.productImageUrl, 1000),
-      variantId: cleanText(item?.variantId) || undefined,
-      variantName: cleanText(item?.variantName, 140) || undefined,
-      quantity: Math.min(
-        MAX_ITEM_QUANTITY,
-        Math.max(1, Math.floor(toSafeNumber(item?.quantity, 1)))
-      ),
-      unitPriceUsd: toSafeNumber(item?.unitPriceUsd, 0),
-      notes: cleanText(item?.notes, 280) || undefined,
-          selectedOptions: Array.isArray(item?.selectedOptions)
-        ? item.selectedOptions.slice(0, 50).map((option: any) => ({
-            groupId: cleanText(option?.groupId),
-            groupName: cleanText(option?.groupName, 140),
-            valueId: cleanText(option?.valueId),
-            valueName: cleanText(option?.valueName, 140),
-            priceDeltaUsd: toSafeNumber(option?.priceDeltaUsd, 0),
-          }))
-        : [],
-      inventorySelections: Array.isArray(item?.inventorySelections)
-        ? item.inventorySelections
-            .map((selection: any) => ({
-              skuId: cleanText(selection?.skuId),
-              label: cleanText(selection?.label, 180) || undefined,
-              quantity: Math.min(
-                MAX_ITEM_QUANTITY,
-                Math.max(1, Math.floor(toSafeNumber(selection?.quantity, 1)))
-              ),
-            }))
-            .filter((selection: any) => isUuid(selection.skuId))
-        : [],
-    }))
-    .slice(0, MAX_ORDER_ITEMS)
-    .filter((item) => item.productId);
-}
-
-async function loadOptionAssignments(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
-  storeId: string,
-  productIds: string[]
-) {
-  const { data, error } = await supabase
-    .from("product_option_group_products")
-    .select(
-      `
-      product_id,
-      sort_order,
-      product_option_groups (
-        id,
-        name,
-        description,
-        selection_type,
-        required,
-        min_select,
-        max_select,
-        is_active,
-        sort_order,
-        product_option_values (
-          id,
-          name,
-          description,
-          price_delta_usd,
-          is_active,
-          sort_order,
-          product_option_value_variant_prices (
-            variant_id,
-            price_delta_usd
-          )
-        )
-      )
-    `
-    )
-    .eq("store_id", storeId)
-    .in("product_id", productIds);
-
-  if (error) throw error;
-
-  const byProduct = new Map<string, any[]>();
-  for (const assignment of data || []) {
-    const productId = String((assignment as any).product_id);
-    const current = byProduct.get(productId) || [];
-    current.push(assignment);
-    byProduct.set(productId, current);
-  }
-
-  return byProduct;
-}
 
 function inventoryLabel(attributes: Record<string, unknown>, fallback: string) {
   const labels = ["color", "talla", "detalle"]
@@ -494,167 +400,15 @@ export async function POST(request: NextRequest) {
       return requestBadRequest(`${openState.label}. El comercio no está recibiendo pedidos en este momento.`);
     }
 
-    const productIds = Array.from(new Set(items.map((item) => item.productId)));
-    const { data: products, error: productsError } = await supabase
-      .from("products")
-      .select("id, store_id, name, price_usd, discount_percent, image_url, is_available")
-      .eq("store_id", storeId)
-      .in("id", productIds);
-
-    if (productsError) throw productsError;
-
-    const productMap = new Map(
-      (products || []).map((product: any) => [String(product.id), product])
-    );
-
-    if (productMap.size !== productIds.length) {
-      return requestBadRequest("Uno o más productos no pertenecen al comercio.");
+    const cartReview = await reviewStoredCart(supabase, storeId, items);
+    if (cartReview.issues.length) {
+      return withApiHeaders(NextResponse.json({
+        code: "CART_CHANGED",
+        error: "Tu carrito cambió. Revisa los productos señalados antes de confirmar.",
+        cartReview,
+      }, { status: 409 }));
     }
-
-    const variantIds = Array.from(
-      new Set(items.map((item) => item.variantId).filter(Boolean))
-    ) as string[];
-    const variantsById = new Map<string, any>();
-
-    if (variantIds.length) {
-      const { data: variants, error: variantsError } = await supabase
-        .from("product_variants")
-        .select("id, product_id, name, price_usd, is_available")
-        .in("id", variantIds);
-
-      if (variantsError) throw variantsError;
-      for (const variant of variants || []) {
-        variantsById.set(String((variant as any).id), variant);
-      }
-    }
-
-    const hasSelectedOptions = items.some((item) => item.selectedOptions?.length);
-    let optionAssignments = new Map<string, any[]>();
-
-    try {
-      optionAssignments = await loadOptionAssignments(supabase, storeId, productIds);
-    } catch (error) {
-      if (hasSelectedOptions) throw error;
-    }
-
-    let validatedItems: CartItem[] = items.map((item) => {
-      const product: any = productMap.get(item.productId);
-      if (product.is_available === false) {
-        throw new Error(`El producto ${product.name} no está disponible.`);
-      }
-
-      const basePriceUsd = toSafeNumber(product.price_usd, 0);
-      const discountPercent = Math.max(0, Math.min(95, toSafeNumber(product.discount_percent, 0)));
-      let productUnitPriceUsd = basePriceUsd;
-      let variantName = item.variantName || null;
-
-      if (item.variantId) {
-        const variant = variantsById.get(item.variantId);
-        if (!variant || String(variant.product_id) !== item.productId) {
-          throw new Error(`La presentación de ${product.name} no es válida.`);
-        }
-        if (variant.is_available === false) {
-          throw new Error(`La presentación ${variant.name} no está disponible.`);
-        }
-        variantName = variant.name || variantName;
-        productUnitPriceUsd = toSafeNumber(variant.price_usd, basePriceUsd);
-      }
-
-      let unitPriceUsd = discountPercent > 0
-        ? Number((productUnitPriceUsd * (1 - discountPercent / 100)).toFixed(2))
-        : productUnitPriceUsd;
-
-      const assignments = optionAssignments.get(item.productId) || [];
-      const groups = assignments
-        .map((assignment) => assignment.product_option_groups)
-        .filter((group) => group && group.is_active !== false);
-      const selectedByGroup = new Map<string, string[]>();
-
-      for (const option of item.selectedOptions || []) {
-        if (!option.groupId || !option.valueId) continue;
-        const current = selectedByGroup.get(option.groupId) || [];
-        current.push(option.valueId);
-        selectedByGroup.set(option.groupId, current);
-      }
-
-      const frozenOptions = groups.flatMap((group: any) => {
-        const selectedValueIds = selectedByGroup.get(String(group.id)) || [];
-        const values = Array.isArray(group.product_option_values)
-          ? group.product_option_values.filter((value: any) => value.is_active !== false)
-          : [];
-        const minSelect = group.required
-          ? Math.max(1, toSafeNumber(group.min_select, 1))
-          : 0;
-        const maxSelect = toSafeNumber(
-          group.max_select,
-          group.selection_type === "single" ? 1 : 0
-        );
-
-        if (selectedValueIds.length < minSelect) {
-          throw new Error(
-            minSelect === 1
-              ? `Selecciona una opción para ${group.name}.`
-              : `Selecciona ${minSelect} opciones para ${group.name}.`
-          );
-        }
-        if (maxSelect > 0 && selectedValueIds.length > maxSelect) {
-          throw new Error(`Seleccionaste demasiadas opciones en ${group.name}.`);
-        }
-        if (group.selection_type === "single" && selectedValueIds.length > 1) {
-          throw new Error(`Solo puedes seleccionar una opción en ${group.name}.`);
-        }
-
-        return selectedValueIds.map((valueId) => {
-          const value = values.find((entry: any) => String(entry.id) === valueId);
-          if (!value) {
-            throw new Error(`Una opción de ${group.name} ya no está disponible.`);
-          }
-          const variantPrice = Array.isArray(value.product_option_value_variant_prices)
-            ? value.product_option_value_variant_prices.find(
-                (price: any) => String(price.variant_id) === item.variantId
-              )
-            : null;
-
-          return {
-            groupId: String(group.id),
-            groupName: group.name || "Opciones",
-            valueId: String(value.id),
-            valueName: value.name || "Opción",
-            priceDeltaUsd: variantPrice
-              ? toSafeNumber(variantPrice.price_delta_usd, 0)
-              : toSafeNumber(value.price_delta_usd, 0),
-          };
-        });
-      });
-
-      const groupedOptions = Array.from(frozenOptions.reduce((groups, option) => {
-        const key = `${option.groupId}:${option.valueId}`;
-        const current = groups.get(key);
-        if (current) current.quantity += 1;
-        else groups.set(key, { ...option, quantity: 1 });
-        return groups;
-      }, new Map<string, (typeof frozenOptions)[number] & { quantity: number }>()).values());
-
-      const optionExtraUsd = groupedOptions.reduce(
-        (sum, option) => sum + option.priceDeltaUsd * option.quantity,
-        0
-      );
-      unitPriceUsd += optionExtraUsd;
-
-      return {
-        productId: item.productId,
-        productName: product.name || item.productName || "Producto",
-        productSlug: item.productSlug,
-        productImageUrl: product.image_url || item.productImageUrl,
-        variantId: item.variantId,
-        variantName: variantName || undefined,
-        quantity: item.quantity,
-        unitPriceUsd,
-        notes: item.notes,
-        selectedOptions: groupedOptions,
-        inventorySelections: item.inventorySelections,
-      } satisfies CartItem;
-    });
+    let validatedItems: CartItem[] = cartReview.items;
 
     validatedItems = await canonicalizeInventorySelections(supabase, storeId, validatedItems);
 

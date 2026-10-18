@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
   });
   response.headers.set(
     "Cache-Control",
-    "public, max-age=30, s-maxage=120, stale-while-revalidate=600"
+    searchParams.has("refresh") ? "no-store" : "public, max-age=30, s-maxage=120, stale-while-revalidate=600"
   );
   return response;
 }

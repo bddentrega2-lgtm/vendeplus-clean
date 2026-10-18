@@ -1,5 +1,22 @@
 # Memoria de trabajo - Entrega2 y SOMOS
 
+## 2026-10-18: estados cruzados, lo que mostro la prueba real
+
+- No basta ocultar una comanda de Cocina por `delivery_status`: el ticket persistido tambien debe cerrarse cuando Entrega2 pase a `llevando`. El pedido permanece abierto hasta `entregado`. Prueba HTTP staging confirmo la discrepancia y el trigger `orders_entrega2_handoff_kitchen` la corrigio.
+- Una actualizacion de `transport_orders` de una agencia anterior no debe propagar estados a `orders` ni a la integracion vigente. La mutacion ahora comprueba `delivery_type`, proveedor y `transport_agency_id`; prueba SQL con dos agencias paso.
+- Verificar pago y autoaceptar son una sola decision sobre la fila bloqueada. Un pago tardio tras la recogida se registra, pero no cambia el estado interno ni reabre Cocina. La autoaceptacion normal con modo de despacho por pago sigue creando la comanda.
+- Los webhooks terminales de Entrega2 repetidos SI concilian de forma idempotente: la condicion de estado igual permite volver a recorrer la sincronizacion. No confundir un riesgo hipotetico con un bug confirmado; probar con HTTP y leer el contrato completo antes de cambiarlo.
+- Pendiente: `send-delivery` usa varias escrituras independientes y puede competir con cierre/envio externo. No considerar este conjunto listo para produccion por el mero PASS de flujos secuenciales. Preview aislado `dpl_8mpTqvo1GjaAeYxKyLh3oVd9w9Vo`; produccion intacta.
+
+## 2026-10-17: prioridades acordadas para retomar
+
+- El usuario confirma que Global Burger quedo bien y deja para manana la prueba humana del Preview del carrito. No publicar ni crear commit sin nueva instruccion. Preview READY `dpl_7yaVS8zFoJAEJ9rb2YxjffWCS5uM`; produccion permanece en `dpl_GY6a7UvDj8unt2LWCcFc6t56jb13`. Probar en Smash Test: agregar/cambiar cantidad sin espera; al entrar a Finalizar pedido revisar producto oculto, precio cambiado y opcion retirada. El Preview usa datos reales: mutar solo productos de prueba. Informe `docs/audits/2026-10-17-cart-review-preview.md`.
+- Prioridad operativa siguiente: resolver la auditoria de estados `docs/audits/2026-10-16-order-status-flow-audit.md`. La entrega de agencias puede quedar abierta en `orders.status` aunque Cocina ya la oculte; proteger transiciones, verificacion de pago y concurrencia de webhooks; completar seguimiento publico para agencias/Retiro. Conciliar historico primero en dry-run, sin cerrar pedidos en masa ni inventar fechas. Hallazgos fechados 2026-10-16; revalidar antes de mutar produccion.
+- Seguridad: MFA AAL2 obligatorio en rutas/sesiones de admin sigue pendiente, con enrolamiento y recuperacion previos. Revisar tambien abuso de Auth/registro/sesiones. El parche de Next y el cierre de columnas administrativas ya se publicaron; no tratarlos como pendientes.
+- Referidos: reglas y paneles publicados; falta observar el primer ciclo real de un aliado (Google, comercio referido, pago confirmado, fee cobrado y liquidacion), sin marcar pagos ficticios. Android: APK 1.5.1 firmada publicada, pero falta probar esa release en otro telefono/tablet, respaldar la firma, definir titular/contacto/retencion, completar declaraciones y pruebas internas de Play Console.
+- Menores: Global Burger conserva `Refresco` y `Agua Mineral` publicados a USD 0; no ocultarlos sin indicacion. Quedan nueve productos sin foto. El build local del worktree falla por junction de `node_modules`/Turbopack; build remoto del Preview paso. Hay tres contratos criticos heredados fallando (WhatsApp oficial, cambio de clave y clasificacion de referidos) que requieren limpieza separada.
+- Esta memoria contiene historia, incluidas entradas de "pendiente" que luego se resolvieron. Para el estado actual contrastar con la primera entrada de `SESSION_HANDOFF.md` y los informes recientes; no reabrir trabajos ya publicados por leer una entrada vieja. Git del worktree sigue con cambios sin commit propios del Preview; la raiz tambien esta sucia. No mezclar worktrees ni desplegar la raiz.
+
 ## 2026-10-12: auditar aliados sin suplantar accesos
 
 - Revisar condiciones reales con SELECT readonly, saldos de RPC admin y enlace
@@ -172,3 +189,14 @@
 - Corregir solo la etiqueta de lectura usando `order_integrations.created_at` y un corte fijo de inicio de seguimiento; no usar antiguedad relativa, que cambiaria el significado de pedidos actuales con el tiempo. Priorizar estado final del pedido para `sent` terminal. No reescribir masivamente estados externos sin conciliacion fiable.
 - Aplicar coherencia en tarjeta/detalle de Pedidos, transporte y confirmacion publica. Probar ambos lados del corte, terminales, proveedor distinto y API con fecha original. Preview compartido; produccion sigue sin este cambio hasta validacion del usuario.
 - Usuario aprobo Preview con `listo`; etiqueta publicada en deployment productivo `dpl_HxioU2sGtxUNpgJ5zbfM4nTFKBqU`. Anterior productivo `dpl_4sjszZkSMxtwiHTbx8n6hVim58Mm` conserva la misma clave para rollback. Smoke web/publico y 401 sin Bearer pasaron; llamada con Bearer no se repitio porque portapapeles ya no tenia la clave. No afirmar callback autenticado nuevo en este deployment hasta observar uno real.
+# 2026-10-18 - Estados listos para rollout controlado
+
+- La carrera de `send-delivery` no se resuelve con una segunda lectura de `orders`: el courier puede cambiar el estado entre lectura y escritura. Reservar bajo bloqueo en base de datos y sincronizar leyendo `transport_orders` bajo el mismo bloqueo. Los triggers nuevos rechazan pedido cerrado, empresa anterior y regresion de un servicio avanzado; los particulares (`order_id` nulo) quedan intactos.
+- Probar simultaneidad real, no solo secuencias: cancelacion vs reserva, recogida vs upsert antiguo, cancelacion vs reserva directa Entrega2. Las tres invariantes pasaron en staging. El webhook HTTP Entrega2 termino y tolero duplicado. Compilacion remota y suites verdes; build local limitado por junction de dependencias del worktree.
+- Produccion no cambiada. El despliegue futuro requiere migracion antes de codigo y smoke de todas las modalidades. Conciliacion historica de pedidos de agencia es una operacion separada, no parte del release.
+
+# 2026-10-18 - Release productivo controlado
+
+- La migracion de estados se aplico en Supabase produccion con transaccion antes de Vercel. Vercel productivo quedo en `dpl_3CPyEhVz17C3oantJbVASS3zBTsr`; rollback anterior `dpl_GY6a7UvDj8unt2LWCcFc6t56jb13`. La matriz QA con rollback paso en produccion y no dejo datos ficticios. Smoke publico y guardias HTTP correctos; sin logs de error inmediatos.
+- Aprendizaje: un fixture con slug global `entrega2` colisiona en produccion; el test transaccional debe reutilizar la agencia existente y nunca actualizarla. No confundir un fallo del fixture con fallo de la migracion. SQL aplicado manualmente no equivale a version marcada en `supabase_migrations`; documentar antes de futuros `db push`.
+- Sin commit por instruccion AGENTS. Conciliacion historica queda fuera. Ver `SESSION_HANDOFF.md` para estado completo.

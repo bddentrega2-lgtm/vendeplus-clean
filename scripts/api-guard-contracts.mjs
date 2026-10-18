@@ -5,6 +5,33 @@ import { join, relative, sep } from "node:path";
 const API_ROOT = join(process.cwd(), "src", "app", "api");
 
 const PUBLIC_SERVICE_ROLE_ROUTES = {
+  "src/app/api/affiliate-code/route.ts": [
+    /checkDistributedRateLimit/,
+    /isValidAffiliateCode\(code\)/,
+    /\.eq\("code", code\)/,
+  ],
+  "src/app/api/affiliates/me/route.ts": [
+    /getPanelAuthContext\(request\)/,
+    /auth\.isAuthorized/,
+    /\.eq\("beneficiary_email", auth\.email\)/,
+  ],
+  "src/app/api/affiliates/payout/route.ts": [
+    /resolveOwner\(request, db\)/,
+    /requireTransportAgencyAuth\(request\)/,
+    /getPanelAuthContext\(request\)/,
+  ],
+  "src/app/api/signup/payment/route.ts": [
+    /checkDistributedRateLimit/,
+    /\.eq\("request_code", code\)/,
+    /registration\.email\.toLowerCase\(\) !== email/,
+    /registration\.whatsapp !== phone/,
+  ],
+  "src/app/api/catalog/cart-review/route.ts": [
+    /checkDistributedRateLimit/,
+    /\.eq\("slug", body\.storeSlug\)/,
+    /\.eq\("is_active", true\)/,
+    /reviewStoredCart\(supabase, String\(store\.id\), items\)/,
+  ],
   "src/app/api/catalog/product-options/route.ts": [
     /\.eq\("slug", storeSlug\)/,
     /\.eq\("is_active", true\)/,

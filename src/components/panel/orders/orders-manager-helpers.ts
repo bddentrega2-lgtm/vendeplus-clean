@@ -351,7 +351,7 @@ export function isOrderCancelled(order: Pick<OrderRow, "status">) {
 export function canSendToEntrega2(order: OrderRow) {
   const integration = getEntrega2Integration(order);
 
-  if (isOrderCancelled(order)) return false;
+  if (isOrderCancelled(order) || order.status === "completed") return false;
   if (order.delivery_type !== "delivery") return false;
   if (order.delivery_provider !== "entrega2") return false;
   if (!integration) return true;
@@ -363,7 +363,7 @@ export function canSendToTransportAgency(order: OrderRow) {
   const integration = getTransportAgencyIntegration(order);
   const transportOrder = getCurrentTransportOrder(order);
 
-  if (isOrderCancelled(order)) return false;
+  if (isOrderCancelled(order) || order.status === "completed") return false;
   if (order.delivery_type !== "delivery") return false;
   if (order.delivery_provider !== "transport_agency") return false;
   if (!order.transport_agency_id) return false;
@@ -417,23 +417,39 @@ export function getActiveDeliveryStatusLabel(order: OrderRow) {
 }
 
 export function isDeliveryAlreadyDelivered(order: OrderRow) {
+  if (order.delivery_type !== "delivery") return false;
   const entrega2Integration = getEntrega2Integration(order);
-  const transportAgencyIntegration = getTransportAgencyIntegration(order);
-  const transportOrder = getCurrentTransportOrder(order);
-
-  return (
-    order.delivery_status === "delivered" ||
-    order.transport_agency_status === "delivered" ||
-    ["delivered", "completed"].includes(entrega2Integration?.status || "") ||
-    ["delivered", "completed"].includes(transportAgencyIntegration?.status || "") ||
-    transportOrder?.status === "delivered"
-  );
+  if (entrega2Integration) return ["delivered", "completed"].includes(entrega2Integration.status) ||
+    order.delivery_status === "delivered";
+  if (order.delivery_provider === "transport_agency") {
+    return getCurrentTransportOrder(order)?.status === "delivered" || order.delivery_status === "delivered";
+  }
+  return order.status === "completed";
 }
 
 export function getStatusOptionsForOrder(order: OrderRow) {
-  const cannotCancel = isDeliveryAlreadyDelivered(order) || hasActiveTransportAgencyHandoff(order);
+  if (["completed", "cancelled"].includes(order.status)) {
+    return statusOptions.filter(item => item.value === order.status);
+  }
+  const transportStatus = getCurrentTransportOrder(order)?.status;
+  if (order.delivery_provider === "transport_agency" && ["picked_up", "on_the_way", "delivered"].includes(transportStatus || "")) {
+    return statusOptions.filter(item => item.value === order.status);
+  }
+  const entrega2Status = getEntrega2Integration(order)?.status;
+  if (entrega2Status === "delivering") {
+    return statusOptions.filter(item => item.value === order.status);
+  }
+  if (entrega2Status === "completed") {
+    return statusOptions.filter(item => item.value === order.status || item.value === "completed");
+  }
+  const activeEntrega2 = Boolean(entrega2Status &&
+    !["error", "failed", "cancelled"].includes(entrega2Status));
+  const cannotCancel = isDeliveryAlreadyDelivered(order) || hasActiveTransportAgencyHandoff(order) || activeEntrega2;
   return statusOptions.filter(
-    (item) => !["all", "active"].includes(item.value) && (!cannotCancel || item.value !== "cancelled")
+    (item) => !["all", "active"].includes(item.value) &&
+      (order.delivery_type === "delivery" || item.value !== "delivering") &&
+      (!activeEntrega2 || !["completed", "delivering"].includes(item.value)) &&
+      (!cannotCancel || item.value !== "cancelled")
   );
 }
 

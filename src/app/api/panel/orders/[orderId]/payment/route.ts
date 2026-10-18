@@ -60,23 +60,36 @@ export async function PATCH(
     );
 
     const isVerified = paymentStatus === "verified";
-    const updatePayload = {
-      payment_status: paymentStatus,
-      ...(Object.hasOwn(body, "paymentReference") ? { payment_reference: paymentReference || null } : {}),
-      ...(Object.hasOwn(body, "paymentCurrency") ? { payment_currency: cleanText(body.paymentCurrency, 20).toUpperCase() || null } : {}),
-      ...(Object.hasOwn(body, "amountPaid") ? { amount_paid: optionalNumber(body.amountPaid) } : {}),
-      ...(Object.hasOwn(body, "paymentBank") ? { payment_bank: cleanText(body.paymentBank, 120) || null } : {}),
-      ...(Object.hasOwn(body, "paymentNotes") ? { payment_notes: cleanText(body.paymentNotes, 500) || null } : {}),
-      payment_verified_at: isVerified ? new Date().toISOString() : null,
-      payment_verified_by: isVerified ? auth.userId || null : null,
-      ...(isVerified && existingOrder.status === "received" ? { status: "accepted" } : {}),
+    const fields = {
+      ...(Object.hasOwn(body, "paymentReference") ? { paymentReference: paymentReference || null } : {}),
+      ...(Object.hasOwn(body, "paymentCurrency") ? { paymentCurrency: cleanText(body.paymentCurrency, 20).toUpperCase() || null } : {}),
+      ...(Object.hasOwn(body, "amountPaid") ? { amountPaid: optionalNumber(body.amountPaid) } : {}),
+      ...(Object.hasOwn(body, "paymentBank") ? { paymentBank: cleanText(body.paymentBank, 120) || null } : {}),
+      ...(Object.hasOwn(body, "paymentNotes") ? { paymentNotes: cleanText(body.paymentNotes, 500) || null } : {}),
     };
 
-    const { data, error } = await supabase
+    const { error } = await supabase.rpc("update_order_payment_v2", {
+      p_store_id: existingOrder.store_id,
+      p_order_id: orderId,
+      p_expected_payment_status: existingOrder.payment_status,
+      p_payment_status: paymentStatus,
+      p_fields: fields,
+      p_actor: isVerified ? auth.userId || null : null,
+    });
+
+    if (error && (error.code === "PGRST202" || isMissingColumnError(error, ["payment_", "amount_paid"]))) {
+      return NextResponse.json(
+        { error: "El control de pago necesita aplicar primero la migración nueva en Supabase." },
+        { status: 409 }
+      );
+    }
+    if (error && ["P0001", "P0002"].includes(error.code || "")) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+    if (error) throw error;
+
+    const { data, error: readError } = await supabase
       .from("orders")
-      .update(updatePayload)
-      .eq("id", orderId)
-      .eq("store_id", existingOrder.store_id)
       .select(
         `
         id,
@@ -95,19 +108,10 @@ export async function PATCH(
         status_elapsed_ms
       `
       )
+      .eq("id", orderId)
+      .eq("store_id", existingOrder.store_id)
       .single();
-
-    if (error && isMissingColumnError(error, ["payment_", "amount_paid"])) {
-      return NextResponse.json(
-        {
-          error:
-            "El control de pago necesita aplicar primero la migración nueva en Supabase.",
-        },
-        { status: 409 }
-      );
-    }
-
-    if (error) throw error;
+    if (readError) throw readError;
 
     if (isVerified && existingOrder.payment_status !== "verified") {
       after(() => safeSendPrintWakePush({

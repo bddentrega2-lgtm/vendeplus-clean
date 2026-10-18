@@ -29,10 +29,11 @@ function optionGroupsCacheKey(storeSlug: string, productId: string) {
 }
 
 async function fetchProductOptionGroups(storeSlug: string, productId: string) {
+  const reviewingCart = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("revisar") === "carrito";
   const key = optionGroupsCacheKey(storeSlug, productId);
   const now = Date.now();
   const cached = optionGroupsCache.get(key);
-  if (cached?.data && cached.expiresAt > now) return cached.data;
+  if (!reviewingCart && cached?.data && cached.expiresAt > now) return cached.data;
   if (cached?.promise) return cached.promise;
 
   if (optionGroupsCache.size >= OPTION_GROUPS_CACHE_LIMIT) {
@@ -41,7 +42,8 @@ async function fetchProductOptionGroups(storeSlug: string, productId: string) {
 
   const promise = (async () => {
     const params = new URLSearchParams({ storeSlug, productId });
-    const response = await fetch(`/api/catalog/product-options?${params.toString()}`);
+    if (reviewingCart) params.set("refresh", String(now));
+    const response = await fetch(`/api/catalog/product-options?${params.toString()}`, reviewingCart ? { cache: "no-store" } : undefined);
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "No se pudieron cargar los extras.");
     const optionGroups = Array.isArray(data.optionGroups) ? data.optionGroups as ProductOptionGroup[] : [];

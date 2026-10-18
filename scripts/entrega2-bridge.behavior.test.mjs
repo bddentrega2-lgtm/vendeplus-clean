@@ -203,7 +203,11 @@ test("webhook terminal solo cierra el pedido si Entrega2 sigue asignado", async 
     let advanced = 0;
     let cancelled = 0;
     let integrationUpdated = false;
-    const db = { from(table) {
+    const db = { rpc: async (name) => {
+      assert.equal(name, "close_entrega2_order_v2");
+      cancelled++;
+      return { data: { id: "order", status: "cancelled" }, error: null };
+    }, from(table) {
       const query = {
         select() { return query; }, eq() { return query; }, update() { integrationUpdated = true; return query; },
         maybeSingle: async () => {

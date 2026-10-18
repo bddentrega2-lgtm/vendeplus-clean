@@ -1,4 +1,5 @@
 import type { SavedOrder, Store } from "@/types";
+import type { CartReview } from "@/lib/cart-review";
 import { buyerAuthHeaders } from "@/lib/buyer/client";
 
 export async function saveOrderToSupabase(
@@ -18,6 +19,7 @@ export async function saveOrderToSupabase(
     return {
       ok: false,
       error: data.error || "No se pudo guardar el pedido.",
+      cartReview: data.code === "CART_CHANGED" ? data.cartReview as CartReview : undefined,
     };
   }
 

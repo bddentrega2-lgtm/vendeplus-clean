@@ -13,10 +13,13 @@ import { WaiterCallButton } from "@/components/public/WaiterCallButton";
 import { getTableOrderContext } from "@/lib/table-orders";
 import { isNativeApp } from "@/lib/mobile/state";
 import { entrega2StatusLabels, getEntrega2DisplayStatus } from "@/lib/entrega2-contract";
+import { transportOrderStatusLabels } from "@/lib/transport/orders";
 
 type DeliveryTracking = {
   orderStatus: string;
+  deliveryType: string;
   deliveryStatus: string | null;
+  agencyStatus: string | null;
   entrega2Status: string | null;
   entrega2CreatedAt: string | null;
   updatedAt: string | null;
@@ -31,6 +34,14 @@ const entrega2Steps = [
   ["picking_up", entrega2StatusLabels.picking_up],
   ["delivering", entrega2StatusLabels.delivering], ["completed", entrega2StatusLabels.completed],
 ] as const;
+const deliveryStatusLabels: Record<string, string> = {
+  pending: "Pendiente de coordinación", pending_agency: "Pendiente por empresa delivery",
+  sent_to_agency: "Enviado a empresa delivery", agency_received: "Recibido por empresa delivery",
+  accepted: "Aceptado", assigned: "Repartidor asignado", pickup_pending: "Retirando",
+  picked_up: "Retirado del comercio", delivering: "En camino", delivered: "Entregado",
+  rejected: "Rechazado por empresa delivery", cancelled: "Servicio cancelado",
+  delivery_failed: "Entrega fallida", issue_reported: "Con novedad",
+};
 
 export function ConfirmationClient({ store }: { store: Store }) {
   const [order, setOrder] = useState<SavedOrder | null>(null);
@@ -45,6 +56,12 @@ export function ConfirmationClient({ store }: { store: Store }) {
   const sentDeliveryLabel = deliveryTracking?.entrega2Status === "sent"
     ? getEntrega2DisplayStatus("sent", deliveryTracking.entrega2CreatedAt, deliveryTracking.orderStatus)
     : null;
+  const deliveredExternally = deliveryTracking?.agencyStatus === "delivered" ||
+    deliveryTracking?.deliveryStatus === "delivered" ||
+    deliveryTracking?.entrega2Status === "completed";
+  const deliveryLabel = deliveryTracking?.agencyStatus
+    ? transportOrderStatusLabels[deliveryTracking.agencyStatus as keyof typeof transportOrderStatusLabels]
+    : deliveryStatusLabels[deliveryTracking?.deliveryStatus || ""];
   const showPricesInBs = store.showPricesInBs !== false;
   const baseCurrency = store.baseCurrency || "USD";
   const isCashPayment = isCashPaymentMethod(order?.form.paymentMethod);
@@ -109,7 +126,7 @@ export function ConfirmationClient({ store }: { store: Store }) {
   }, [order]);
 
   useEffect(() => {
-    if (!order?.databaseId || order.form.deliveryType !== "delivery") return;
+    if (!order?.databaseId || order.tableOrder || !["delivery", "pickup"].includes(order.form.deliveryType)) return;
 
     let active = true;
     let busy = false;
@@ -126,7 +143,9 @@ export function ConfirmationClient({ store }: { store: Store }) {
         const payload = await response.json() as DeliveryTracking;
         if (active) {
           setDeliveryTracking(payload);
-          closed = payload.orderStatus === "cancelled" || ["completed", "cancelled"].includes(payload.entrega2Status || "");
+          closed = ["completed", "cancelled"].includes(payload.orderStatus) ||
+            payload.agencyStatus === "delivered" || payload.deliveryStatus === "delivered" ||
+            ["completed", "cancelled"].includes(payload.entrega2Status || "");
         }
       } catch {
         // Keep the last known status during temporary connection issues.
@@ -271,10 +290,12 @@ export function ConfirmationClient({ store }: { store: Store }) {
                   <h3 className="text-base font-black">Seguimiento del pedido</h3>
                 </div>
                 <p className="mt-2 text-sm font-bold text-[#746f69]">
-                  Comercio: {orderStatusLabels[deliveryTracking.orderStatus] || "En proceso"}
+                   Comercio: {deliveredExternally ? "Completado" : orderStatusLabels[deliveryTracking.orderStatus] || "En proceso"}
                 </p>
                 {deliveryTracking.orderStatus === "cancelled" ? (
                   <p className="mt-3 text-sm font-black text-red-700">Pedido cancelado. Comunícate con el comercio.</p>
+                ) : deliveredExternally && !deliveryTracking.entrega2Status ? (
+                  <p className="mt-3 text-sm font-black text-green-700">Delivery: Entregado</p>
                 ) : sentDeliveryLabel && sentDeliveryLabel !== entrega2StatusLabels.sent ? (
                   <p className="mt-3 text-sm font-bold text-[#746f69]">Delivery: {sentDeliveryLabel}</p>
                 ) : deliveryTracking.entrega2Status === "issue" ? (
@@ -295,9 +316,23 @@ export function ConfirmationClient({ store }: { store: Store }) {
                       </div>;
                     })}
                   </div>
+                ) : deliveryLabel ? (
+                  <p className={`mt-3 text-sm font-bold ${["cancelled", "agency_rejected", "delivery_failed"].includes(deliveryTracking.agencyStatus || "") ? "text-amber-800" : "text-[#746f69]"}`}>
+                    Delivery: {deliveryLabel}{["cancelled", "agency_rejected", "delivery_failed"].includes(deliveryTracking.agencyStatus || "") ? ". Consulta al comercio." : ""}
+                  </p>
                 ) : (
                   <p className="mt-3 text-sm font-bold text-[#746f69]">El comercio coordina la entrega.</p>
                 )}
+              </section>
+            ) : null}
+
+            {order.form.deliveryType === "pickup" && !order.tableOrder && deliveryTracking ? (
+              <section className="mt-5 border-t border-[#25262B]/10 pt-5" aria-label="Seguimiento del retiro">
+                <div className="flex items-center gap-2 text-[#2E3A79]"><ReceiptText size={19} aria-hidden="true" /><h3 className="text-base font-black">Seguimiento del retiro</h3></div>
+                <p className="mt-2 text-sm font-bold text-[#746f69]">Pedido: {orderStatusLabels[deliveryTracking.orderStatus] || "En proceso"}</p>
+                {deliveryTracking.orderStatus === "ready" ? <p className="mt-2 text-sm font-black text-green-700">Tu pedido está listo para retirar.</p> : null}
+                {deliveryTracking.orderStatus === "completed" ? <p className="mt-2 text-sm font-black text-green-700">Pedido entregado.</p> : null}
+                {deliveryTracking.orderStatus === "cancelled" ? <p className="mt-2 text-sm font-black text-red-700">Pedido cancelado. Comunícate con el comercio.</p> : null}
               </section>
             ) : null}
 
