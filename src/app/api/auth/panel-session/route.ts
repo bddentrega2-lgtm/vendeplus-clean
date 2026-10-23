@@ -8,10 +8,19 @@ import {
 import { createPanelServerSession, revokePanelServerSession } from "@/lib/server/panel-session-store";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSupabaseUserEmail, isFounderEmail, normalizeAuthEmail } from "@/lib/panel/auth";
+import { ADMIN_MFA_SESSION_COOKIE, readAdminMfaCookieFromStore } from "@/lib/admin/mfa-session-cookie";
+import { revokeAdminMfaSession } from "@/lib/admin/mfa-session-store";
 
 function clearSessionResponse() {
   const response = NextResponse.json({ ok: true });
   response.cookies.set(PANEL_SESSION_COOKIE, "", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 0,
+  });
+  response.cookies.set(ADMIN_MFA_SESSION_COOKIE, "", {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
@@ -96,10 +105,15 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   const cookieSession = readPanelSessionCookieFromStore(request.cookies);
+  const adminMfaSession = readAdminMfaCookieFromStore(request.cookies);
 
-  if (cookieSession) {
+  if (cookieSession || adminMfaSession) {
     try {
-      await revokePanelServerSession(createSupabaseAdminClient(), cookieSession);
+      const supabase = createSupabaseAdminClient();
+      await Promise.all([
+        revokePanelServerSession(supabase, cookieSession),
+        revokeAdminMfaSession(supabase, adminMfaSession),
+      ]);
     } catch {
       // Igual limpiamos la cookie del navegador aunque Supabase no responda.
     }

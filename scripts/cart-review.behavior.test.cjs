@@ -50,6 +50,27 @@ test('removed, hidden or foreign variant requires reselection', () => {
   }
 });
 test('new variant requirement cannot fall back to base price', () => assert.equal(review(item, product, [{ id: vid, product_id: pid }]).issues[0].kind, 'options'));
+test('inactive presentations do not block a base product with available inventory', () => {
+  const inventoryItem = { ...item, inventorySelections: [{ skuId: vid, quantity: 2 }] };
+  const inactiveVariants = [
+    { id: vid, product_id: pid, name: '1 pieza', is_available: false },
+    { id: 'old-promo', product_id: pid, name: 'Promo 3 piezas', is_available: false },
+  ];
+  const result = review(inventoryItem, product, inactiveVariants);
+  assert.equal(result.issues.length, 0);
+  assert.deepEqual(result.items[0].inventorySelections, inventoryItem.inventorySelections);
+});
+test('inactive presentations do not affect a base product without inventory', () => {
+  assert.equal(review(item, product, [{ id: vid, product_id: pid, is_available: false }]).issues.length, 0);
+});
+test('an active presentation still requires selection even alongside inactive ones', () => {
+  const variants = [
+    { id: 'old', product_id: pid, is_available: false },
+    { id: vid, product_id: pid, is_available: true },
+  ];
+  assert.equal(review(item, product, variants).issues[0].kind, 'options');
+  assert.equal(review({ ...item, variantId: 'old' }, product, variants).issues[0].kind, 'options');
+});
 test('variant-specific extra price and repeated quantities are preserved', () => {
   const a = clone(assignment); a.product_option_groups.product_option_values[0].product_option_value_variant_prices = [{ variant_id: vid, price_delta_usd: 2 }];
   const result = review({ ...item, variantId: vid, variantName: 'Grande', unitPriceUsd: 14, selectedOptions: [{ ...option, quantity: 2, priceDeltaUsd: 2 }] }, product, [{ id: vid, product_id: pid, price_usd: 10, name: 'Grande' }], [a]);
@@ -112,6 +133,6 @@ for (const mode of ['pickup', 'delivery', 'table', 'bar']) test(`final order che
     '@/lib/server/table-order-tokens': { isValidTableOrderTokenForStore: async () => true }, '@/lib/server/create-order-atomic': { createOrderAtomic: async () => { persisted = true; } },
     '@/lib/buyer/auth-server': {}, '@/lib/printing/firebase-push': {},
   });
-  const response = await route.POST(new Request('https://example.test/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ storeId: pid, idempotencyKey: vid, order: { items: [item], form: { customerName: 'Demo', customerPhone: '04120000000', paymentMethod: 'efectivo', deliveryType: ['table','bar'].includes(mode) ? 'table' : mode }, tableOrder: { storeToken: 'demo', tableId: vid } } }) }));
+  const response = await route.POST(new Request('https://example.test/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ storeId: pid, idempotencyKey: vid, order: { items: [item], form: { customerName: 'Demo', customerPhone: '04120000000', paymentMethod: 'efectivo', deliveryType: ['table','bar'].includes(mode) ? 'table' : mode }, quote: {}, tableOrder: { storeToken: 'demo', tableId: vid } } }) }));
   assert.equal(response.status, 409); const data = await response.json(); assert.equal(data.code, 'CART_CHANGED'); assert.equal(data.cartReview.issues[0].kind, 'unavailable'); assert.equal(persisted, false);
 });

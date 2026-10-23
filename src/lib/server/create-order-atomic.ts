@@ -31,13 +31,17 @@ export async function createOrderAtomic({
   order,
   items,
   buyerId,
+  receiptId,
 }: {
   supabase: SupabaseAdminClient;
   order: Record<string, unknown>;
   items: AtomicOrderItem[];
   buyerId?: string;
+  receiptId?: string;
 }) {
-  const { data, error } = buyerId ? await supabase.rpc("create_buyer_order_atomic", {
+  const { data, error } = receiptId ? await supabase.rpc("create_order_with_receipt_atomic", {
+    p_order: order, p_items: items, p_buyer_id: buyerId || null, p_receipt_id: receiptId,
+  }) : buyerId ? await supabase.rpc("create_buyer_order_atomic", {
     p_order: order, p_items: items, p_buyer_id: buyerId,
   }) : await supabase.rpc("create_order_atomic", {
     p_order: order,

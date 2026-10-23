@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { assertStoreAccess, panelErrorResponse, requirePanelAuth } from "@/lib/panel/access";
 import { getCustomerBadges, shouldContactCustomer } from "@/lib/customers/customer-segments";
 import { buildContactAgainMessage, buildRepeatLastOrderMessage, buildWhatsappUrl } from "@/lib/customers/customer-messages";
+import { normalizePhone } from "@/lib/customers/normalize-phone";
 
 function toNumber(value: unknown) {
   const parsed = Number(value || 0);
@@ -182,13 +183,15 @@ export async function GET(request: NextRequest) {
     let lastOrdersById = new Map<string, any>();
 
     if (lastOrderIds.length) {
-      const lastOrdersResult = await supabase
+      let lastOrdersQuery = supabase
           .from("orders")
           .select(
             `
             id,
             public_code,
+            store_id,
             customer_id,
+            customer_phone,
             total_usd,
             created_at,
             order_items (
@@ -199,6 +202,10 @@ export async function GET(request: NextRequest) {
           `
           )
           .in("id", lastOrderIds);
+      if (scopedStoreIds !== null) {
+        lastOrdersQuery = lastOrdersQuery.in("store_id", scopedStoreIds);
+      }
+      const lastOrdersResult = await lastOrdersQuery;
 
       if (!lastOrdersResult.error) {
         lastOrdersById = new Map(
@@ -208,7 +215,13 @@ export async function GET(request: NextRequest) {
     }
 
     const enriched = customers.map((customer: any) => {
-      const lastOrder = lastOrdersById.get(String(customer.last_order_id));
+      const candidateOrder = lastOrdersById.get(String(customer.last_order_id));
+      const sameCustomer = candidateOrder != null && (candidateOrder.customer_id === customer.id ||
+        (candidateOrder?.customer_id == null &&
+          Boolean(normalizePhone(customer.phone)) &&
+          normalizePhone(candidateOrder.customer_phone) === normalizePhone(customer.phone)));
+      const lastOrder = candidateOrder?.store_id === customer.store_id && sameCustomer
+        ? candidateOrder : null;
       const badges = getCustomerBadges(customer);
       const storeName = customer.stores?.name || "tu comercio";
       const repeatMessage = buildRepeatLastOrderMessage({

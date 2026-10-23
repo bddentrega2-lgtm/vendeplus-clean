@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PanelAccessError, requirePanelAuth } from "@/lib/panel/access";
 import type { PanelAuthContext } from "@/lib/panel/auth";
+import { assertAdminMfa } from "@/lib/admin/mfa";
 
 export async function requireAdminAuth(
   request: NextRequest
@@ -9,6 +10,12 @@ export async function requireAdminAuth(
 
   if (!auth.isFounderMode) {
     throw new PanelAccessError("Solo el fundador puede acceder al admin.", 403);
+  }
+
+  // The MFA-session endpoint is the narrow bootstrap path that creates/checks
+  // the second-factor session. It still requires the authenticated founder.
+  if (request.nextUrl.pathname !== "/api/admin/mfa-session") {
+    await assertAdminMfa(request, auth);
   }
 
   return auth;

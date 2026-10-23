@@ -1,5 +1,86 @@
 # Memoria de trabajo - Entrega2 y SOMOS
 
+## 2026-10-22: MFA Admin sin riesgo para comercios
+
+- La preparacion MFA no debe modificar `create_panel_session`, la cookie ni
+  `getPanelAuthContext`: esas piezas son compartidas por todos los comercios.
+  El historial conserva RPC v2/AAL, pero el flujo productivo actual usa v1;
+  cambiarlo globalmente antes de comprobar recuperacion puede bloquear accesos.
+- Fase 1 aislada: pagina `/admin/seguridad` con TOTP nativo de Supabase Auth,
+  disponible solo en la interfaz Admin y sin exigir AAL2. Nunca sincronizar ni
+  recrear la sesion de panel al verificar un factor durante esta fase.
+- Preview ficticio `dpl_J9x7whkzWuX9G8ute41Qdp5ngcF4` permite probar enrolamiento
+  y comercio en paralelo. Produccion no contiene este cambio. Antes de exigir
+  MFA: probar fundador de prueba, comercio de prueba, nueva sesion y plan de
+  recuperacion; luego una bandera exclusiva para Admin, no un cambio global.
+
+## 2026-10-22: exigencia MFA aislada por sesion Admin
+
+- No guardar AAL2 en la cookie compartida del panel. La exigencia usa cookie
+  HTTP-only `somos_admin_mfa`, asociada a una fila v2 AAL2 en
+  `private.panel_sessions`, y coteja usuario/correo con la sesion normal.
+  Cerrar sesion debe revocar ambas filas y limpiar ambas cookies.
+- `requireAdminAuth` aplica MFA solo si la bandera de servidor
+  `ADMIN_MFA_ENFORCEMENT` es `true`. El endpoint bootstrap de MFA es la unica
+  ruta que la omite y sigue obligando founder; no extender esta excepcion.
+- La interfaz debe bloquear Admin mientras permite `/admin/seguridad`; de lo
+  contrario un founder sin factor no tendria como enrolarlo. Preview activo
+  `dpl_4v9MzzMzNhCYef3PZon3gj4bH2qn` fuerza la bandera solo para datos
+  ficticios. Produccion permanece sin codigo ni bandera MFA obligatoria.
+- La prueba humana del Preview completo paso: el reto reaparecio al cerrar y
+  volver a entrar como Admin, y Comercio siguio entrando a `/panel` sin MFA.
+  Publicar primero con la bandera apagada y no activar la exigencia productiva
+  hasta contar con recuperacion real o un segundo founder preparado.
+
+## 2026-10-22: primera publicacion MFA sin exigencia
+
+- Se promovio `dpl_CknQ5gxrLfaHpxiLJWLVq6ZKAwyA` a `www.somos-ve.com` con el
+  codigo MFA disponible, pero `ADMIN_MFA_ENFORCEMENT` no esta configurada en
+  Produccion; el resultado efectivo es apagado y Comercio no cambia.
+- Smoke oficial: catalogos y login 200; API privada sin sesion 401. Punto de
+  rollback: `dpl_B4f65FgAd8oGMB6SEmP4FvinRzfm`. Antes de encender MFA, enrolar
+  el factor real y acordar recuperacion/segundo founder.
+
+## 2026-10-22: reset seguro de factor MFA historico
+
+- La pantalla puede mostrar un factor ya existente aunque la exigencia MFA este
+  apagada: `listFactors()` refleja Supabase Auth, no una configuracion creada
+  por la pantalla actual. Se encontro un factor founder historico de 2026-09-16.
+- Para borrar un factor usar primero una lectura exacta, exigir un unico UUID y
+  despues borrar por ese UUID. La API administrativa puede devolver una fila
+  directa para un solo resultado, no siempre un objeto con `.value`; validar la
+  forma antes de mutar. Dos intentos se abortaron sin cambios por esa guardia.
+- Despues de eliminar, verificar el conteo exacto. Nunca borrar todos los
+  factores ni tocar contrasenas, sesiones compartidas o cuentas de comercios.
+
+## 2026-10-22: MFA Admin obligatorio activado
+
+- Solo Production tiene `ADMIN_MFA_ENFORCEMENT=true`. El deployment activo es
+  `dpl_4hZyxgGa8g7grLNgtD51VFJPiijQ`; sin sesion, el bootstrap MFA declara
+  `required:true` y las APIs privadas conservan 401. Catalogos/login siguen 200.
+- Vercel dejo ese deployment como produccion al finalizar `deploy --prod
+  --skip-domain`; comprobar siempre `vercel inspect www.somos-ve.com` antes de
+  promover de nuevo. Rollback que deja MFA apagado:
+  `dpl_CknQ5gxrLfaHpxiLJWLVq6ZKAwyA`.
+
+## 2026-10-21: cierre QA del Preview de auditoria
+
+- No basta lista vacia: sembrar clientes sin ultimo pedido detecto500. `candidateOrder?.customer_id == null` tambien es true si el objeto no existe; luego leer candidateOrder.customer_phone rompe. Exigir objeto presente. Regresion con last_order_id null y referencia no devuelta reproducida antes del fix.
+- Admin/Comercios emitia React418 por useState inicializado desde hasSavedPanelAuth: SSR y navegador diferian. Estado inicial estable y sesion en effect, sin saltar controles server-side; recorrido posterior sin pageerror.
+- Volver a filtro cacheado no exige otra llamada HTTP. Probar filtros nuevos en UI y datos completos por API; no tratar cache intencional como fallo. Para ultimo pedido usar fixture con customer_id explicito, no telefono demo vacio.
+- Confirmar READY y compartir Preview antes de HTTP QA: primer intento nuevo recibio401 de Vercel, no de SOMOS. Fixtures retirados y prueba repetida sin debilitar auth. Nuevo Preview jqytfi2b1 e informe `docs/auditoria/2026-10-21-qa-preview-final.md`. Sin commit/produccion.
+
+## 2026-10-21: recuperacion aislada de staging SOMOS
+
+- Solo SOMOS: reutilizada rama `nmuypksuaxwyonilzoqs` con respaldo DB/Storage, ensayo de restauracion con ROLLBACK y copia externa verificada. No confundir ramas Supabase con worktrees Git; no tocar Mila/ENTREGA2 ni reactivar el staging independiente pausado. Ver `docs/auditoria/2026-10-21-staging-recuperado.md`.
+- GET generico de proyecto puede dar 404 para una rama que CLI/SQL si reconocen. Comprobar identidad, parent y branch ID; no crear otra instancia por inferencia. MIGRATIONS_FAILED es un marcador del pipeline antiguo, no prueba de que el SQL actual no funcione.
+- Exportar solo esquema no basta: trasladar configuracion/politicas Storage y Realtime, nunca credenciales, usuarios, pedidos ni objetos productivos. Scrub de todas las variables heredadas por deployment; no modificar variables compartidas de Vercel.
+- Restore: excluir solo default ACL del rol gestionado supabase_admin que postgres no puede ejecutar; conservar permisos efectivos y verificar anon/service. Restablecer search_path antes de permisos exportados con funciones sin schema. Usar to_jsonb(roles) para roles de pg_policies y tratar PUBLIC como pseudorol.
+- SQL por API en una transaccion evita latencia por cada DDL; native psql sigue siendo necesario para dump con COPY. Primeros ensayos fallidos hicieron rollback, no se ocultaron ni se siguio con una restauracion parcial. Verificar archivos Storage por longitud y SHA256.
+- Un test viejo puede violar el contrato actual: expectedStatus es obligatorio y ready->accepted es retroceso prohibido. Corregir el test y probar recorrido hacia adelante; no debilitar el producto para pasar QA.
+- Hubo CHANNEL_ERROR inicial de Realtime sin causa demostrada; reintento completo paso con En vivo y cambios efectivos en Mesa. No atribuir causa ni declarar un fix ficticio. En Playwright esperar hidratacion mediante contexto inicial, no networkidle ni llenar antes de hidratar.
+- Credenciales demo solo en archivo local ignorado; accesos reales por formulario pasaron. Nunca publicar las claves o incluirlas en Git. Sin commit ni produccion para esta recuperacion.
+
 ## 2026-10-18: estados cruzados, lo que mostro la prueba real
 
 - No basta ocultar una comanda de Cocina por `delivery_status`: el ticket persistido tambien debe cerrarse cuando Entrega2 pase a `llevando`. El pedido permanece abierto hasta `entregado`. Prueba HTTP staging confirmo la discrepancia y el trigger `orders_entrega2_handoff_kitchen` la corrigio.

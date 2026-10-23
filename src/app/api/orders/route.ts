@@ -60,6 +60,7 @@ function orderErrorResponse(error: unknown) {
   ];
 
   if (
+    message.startsWith("La captura de pago ") ||
     publicPrefixes.some((prefix) => message.startsWith(prefix)) ||
     message.startsWith("No queda stock ") ||
     message.startsWith("El inventario ")
@@ -231,13 +232,24 @@ export async function POST(request: NextRequest) {
 
     const buyer = request.headers.has("authorization") ? await getVerifiedBuyer(request) : null;
     if (request.headers.has("authorization") && !buyer) return withApiHeaders(NextResponse.json({ error: "Tu sesion de comprador vencio. Ingresa de nuevo antes de confirmar." }, { status: 401 }));
-    const body = await request.json();
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return requestBadRequest("Pedido invalido.");
+    }
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return requestBadRequest("Pedido invalido.");
+    }
     const order = body.order as SavedOrder | undefined;
     const storeId = cleanText(body.storeId);
     const idempotencyKey = cleanText(body.idempotencyKey, 100);
     const tableOrder = order?.tableOrder;
 
     if (!order || !storeId) return requestBadRequest("Pedido inválido.");
+    if (!order.quote || typeof order.quote !== "object" || Array.isArray(order.quote)) {
+      return requestBadRequest("Vuelve a revisar la entrega antes de confirmar el pedido.");
+    }
     if (!isUuid(idempotencyKey)) {
       return requestBadRequest("No se pudo identificar este intento de pedido.");
     }
@@ -542,6 +554,9 @@ export async function POST(request: NextRequest) {
       }
     }
     let pendingReceipt: { id: string; order_id: string | null } | null = null;
+    if (paymentProofMode === "image" && paymentReceiptToken && !isUuid(paymentReceiptToken)) {
+      return requestBadRequest("La captura de pago ya no esta disponible. Subela nuevamente.");
+    }
     if (paymentProofMode === "image" && paymentReceiptToken) {
       const receiptResult = await supabase
         .from("order_payment_receipts")
@@ -691,25 +706,9 @@ export async function POST(request: NextRequest) {
       order: orderPayload,
       items: itemsPayload,
       buyerId: buyer?.id,
+      receiptId: pendingReceipt?.id,
     });
     const persistedOrder = atomicResult.order;
-    if (pendingReceipt?.order_id && pendingReceipt.order_id !== persistedOrder.id) {
-      throw new Error("El comprobante ya fue utilizado por otro pedido.");
-    }
-    if (pendingReceipt && !pendingReceipt.order_id) {
-      const { data: attachedReceipt, error: attachReceiptError } = await supabase
-        .from("order_payment_receipts")
-        .update({ order_id: persistedOrder.id, attached_at: new Date().toISOString() })
-        .eq("id", pendingReceipt.id)
-        .eq("store_id", storeId)
-        .is("order_id", null)
-        .select("id")
-        .maybeSingle();
-      if (attachReceiptError) throw attachReceiptError;
-      if (!attachedReceipt) {
-        throw new Error("No se pudo asociar el comprobante al pedido.");
-      }
-    }
     const cashPaymentNote = isCashPaymentMethod(order.form.paymentMethod)
       ? cleanText(order.form.cashPaymentNote, 500) || null
       : null;

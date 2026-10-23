@@ -371,12 +371,12 @@ export async function GET(request: NextRequest) {
 
     let storesQuery = supabase
       .from("stores")
-      .select("id, slug, name, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at")
+      .select("id, slug, name, subscription_status, trial_ends_at, subscription_ends_at, next_payment_due_at", { count: "exact" })
       .order("name", { ascending: true });
 
     let ordersQuery = supabase
       .from("orders")
-      .select(ordersSelect)
+      .select(ordersSelect, { count: "exact" })
       .gte("created_at", dateRange.start.toISOString())
       .lte("created_at", dateRange.end.toISOString())
       .order("created_at", { ascending: false })
@@ -384,11 +384,11 @@ export async function GET(request: NextRequest) {
 
     let productsQuery = supabase
       .from("products")
-      .select("id, name, store_id, is_available, is_featured, price_usd, stores(name)");
+      .select("id, name, store_id, is_available, is_featured, price_usd, stores(name)", { count: "exact" });
 
     let customersQuery = supabase
       .from("customers")
-      .select("orders_count, last_order_at");
+      .select("orders_count, last_order_at", { count: "exact" });
 
     if (auth.storeIds !== null) {
       storesQuery = storesQuery.in("id", auth.storeIds);
@@ -405,9 +405,9 @@ export async function GET(request: NextRequest) {
     }
 
     const [
-      { data: stores, error: storesError },
+      { data: stores, error: storesError, count: storesCount },
       ordersResult,
-      { data: products, error: productsError },
+      { data: products, error: productsError, count: productsCount },
       customersResult,
       achievementStateResult,
     ] = await Promise.all([
@@ -421,11 +421,12 @@ export async function GET(request: NextRequest) {
 
     let orders = ordersResult.data;
     let ordersError = ordersResult.error;
+    let ordersCount = ordersResult.count;
 
     if (ordersError && isMissingColumnError(ordersError, ["payment_"])) {
       let fallbackOrdersQuery = supabase
         .from("orders")
-        .select(baseOrdersSelect)
+        .select(baseOrdersSelect, { count: "exact" })
         .gte("created_at", dateRange.start.toISOString())
         .lte("created_at", dateRange.end.toISOString())
         .order("created_at", { ascending: false })
@@ -442,11 +443,26 @@ export async function GET(request: NextRequest) {
       const fallbackResult = await fallbackOrdersQuery;
       orders = fallbackResult.data?.map(withPaymentFallback) || [];
       ordersError = fallbackResult.error;
+      ordersCount = fallbackResult.count;
     }
 
     if (storesError) throw storesError;
     if (ordersError) throw ordersError;
     if (productsError) throw productsError;
+    if (customersResult.error) throw customersResult.error;
+
+    const completeFallback = [
+      [storesCount, stores?.length],
+      [ordersCount, orders?.length],
+      [productsCount, products?.length],
+      [customersResult.count, customersResult.data?.length],
+    ].every(([count, length]) => typeof count === "number" && count === length);
+    if (!completeFallback) {
+      return NextResponse.json({
+        code: "STATS_UNAVAILABLE",
+        error: "No podemos mostrar estadisticas completas en este momento. Intenta de nuevo mas tarde.",
+      }, { status: 503 });
+    }
 
     const safeStores = stores || [];
     const safeOrders = (orders || []).map(withPaymentFallback);
@@ -685,7 +701,7 @@ export async function GET(request: NextRequest) {
           start: dateRange.start.toISOString(),
           end: dateRange.end.toISOString(),
           days: countDays(dateRange.start, dateRange.end),
-          capped: billableOrders.length === ordersLimit,
+          capped: false,
         },
         summary: {
           totalOrders: billableOrders.length,
@@ -729,7 +745,7 @@ export async function GET(request: NextRequest) {
         start: dateRange.start.toISOString(),
         end: dateRange.end.toISOString(),
         days: countDays(dateRange.start, dateRange.end),
-        capped: billableOrders.length === ordersLimit,
+        capped: false,
       },
       summary: {
         totalOrders: billableOrders.length,

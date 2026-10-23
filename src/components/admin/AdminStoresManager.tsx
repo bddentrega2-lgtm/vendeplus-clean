@@ -20,7 +20,6 @@ import {
 import {
   getPanelAuthHeaders,
   getSavedPanelToken,
-  hasSavedPanelAuth,
 } from "@/lib/panel/client-auth";
 import { buildClientPublicUrl } from "@/lib/public-url";
 import { getPlan } from "@/lib/plans";
@@ -175,7 +174,7 @@ export function AdminStoresManager() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const [isUnlocked, setIsUnlocked] = useState(false);
-  const [isCheckingAccess, setIsCheckingAccess] = useState(() => hasSavedPanelAuth());
+  const [isCheckingAccess, setIsCheckingAccess] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");

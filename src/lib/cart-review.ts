@@ -33,7 +33,7 @@ export function reviewCartRows(items: CartItem[], products: any[], variants: any
     };
     const variant = item.variantId ? variantMap.get(item.variantId) : undefined;
     if (item.variantId && (!variant || String(variant.product_id) !== item.productId || variant.is_available === false)) return invalidOptions();
-    if (!item.variantId && variants.some(row => String(row.product_id) === item.productId)) return invalidOptions();
+    if (!item.variantId && variants.some(row => String(row.product_id) === item.productId && row.is_available !== false)) return invalidOptions();
     const groups = assignments.filter(row => String(row.product_id) === item.productId)
       .map(row => row.product_option_groups).filter(group => group && group.is_active !== false);
     const selected = item.selectedOptions || [];

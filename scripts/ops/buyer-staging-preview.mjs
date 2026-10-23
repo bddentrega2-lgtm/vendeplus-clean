@@ -8,7 +8,11 @@ if (!['inspect', 'build', 'deploy', 'status', 'share', 'start', 'kitchen-test', 
 const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
 const keys = JSON.parse(Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, ''));
-const ref = 'xpqmmdmixpyqruykkbkf';
+const auditStaging = keys.ref === 'nmuypksuaxwyonilzoqs';
+const ref = auditStaging ? 'nmuypksuaxwyonilzoqs' : 'xpqmmdmixpyqruykkbkf';
+if (auditStaging && !['inspect', 'build', 'deploy', 'status', 'share'].includes(mode)) {
+  throw new Error('This action is not approved for the recovered audit branch');
+}
 const projectId = 'prj_LPHnsOxowUvGBXYalbdNO3R01PrI';
 const orgId = 'team_Y83WN5EPd5KzLDL9BHzoHkme';
 if (keys.ref !== ref) throw new Error('Wrong database');
@@ -20,12 +24,13 @@ for (const [key, role] of [[keys.anon, 'anon'], [keys.service, 'service_role']])
 const link = JSON.parse(await readFile('.vercel/project.json', 'utf8'));
 if (link.projectId !== projectId || link.orgId !== orgId) throw new Error('Wrong Vercel project');
 const cli = resolve(process.env.APPDATA, 'npm/node_modules/vercel/dist/vc.js');
-const artifact = 'tmp/buyer-staging/preview-deployment.json';
+const artifact = auditStaging ? 'tmp/audit-staging-recovery/preview-deployment.json' : 'tmp/buyer-staging/preview-deployment.json';
 const previewWebhookSecret = String(process.env.SOMOS_ENTREGA2_PREVIEW_WEBHOOK_SECRET || '');
 if (previewWebhookSecret && (previewWebhookSecret.length < 32 || previewWebhookSecret.length > 256 || /\s/.test(previewWebhookSecret))) {
   throw new Error('Invalid preview webhook secret');
 }
 const firebasePreviewRaw = process.env.SOMOS_FIREBASE_PREVIEW === '1' ? String(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '') : '';
+if (auditStaging && (previewWebhookSecret || firebasePreviewRaw)) throw new Error('External integrations must remain disabled for audit staging');
 let firebasePreview = null;
 if (firebasePreviewRaw) {
   try { firebasePreview = JSON.parse(firebasePreviewRaw); } catch { throw new Error('Firebase preview credential is not valid JSON'); }
@@ -100,7 +105,8 @@ Object.assign(appEnv, {
   NEXT_PUBLIC_SUPABASE_ANON_KEY: keys.anon,
   SUPABASE_SERVICE_ROLE_KEY: keys.service,
   NEXT_PUBLIC_ALLOW_DEMO_FALLBACKS: 'false',
-  FOUNDER_EMAILS: process.env.SOMOS_AFFILIATE_PREVIEW_FOUNDER === '1' ? 'preview-admin@somos.test' : '',
+  ADMIN_MFA_ENFORCEMENT: auditStaging ? 'true' : '',
+  FOUNDER_EMAILS: auditStaging ? 'preview-audit-admin@somos.test' : process.env.SOMOS_AFFILIATE_PREVIEW_FOUNDER === '1' ? 'preview-admin@somos.test' : '',
 });
 if (previewWebhookSecret) appEnv.ENTREGA2_WEBHOOK_SECRET = previewWebhookSecret;
 if (firebasePreview) appEnv.FIREBASE_SERVICE_ACCOUNT_JSON = firebasePreviewRaw;
@@ -109,7 +115,7 @@ const response = await fetch(`${appEnv.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/stores?
 if (!response.ok) throw new Error(`Staging catalog HTTP ${response.status}`);
 const stores = await response.json();
 const baselineSlugs = ['cocina-demo', 'tienda-demo'];
-const permittedSlugs = [...baselineSlugs, 'papa'];
+const permittedSlugs = auditStaging ? baselineSlugs : [...baselineSlugs, 'papa'];
 // Registration QA can add stores. Only the read-only build accepts extra stores;
 // deployment and test actions retain the original exact-fixture guard.
 const validCatalog = mode === 'build'

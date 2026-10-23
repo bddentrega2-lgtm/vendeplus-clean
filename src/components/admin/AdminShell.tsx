@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { LogoutButton } from "@/components/panel/LogoutButton";
 import { PwaInstallButton } from "@/components/pwa/PwaInstallButton";
+import { AdminMfaGate } from "@/components/admin/AdminMfaGate";
 import {
   Building2,
   ClipboardList,
@@ -9,6 +10,7 @@ import {
   LayoutDashboard,
   Megaphone,
   PlusCircle,
+  Shield,
   ShieldCheck,
   Sparkles,
   Tags,
@@ -28,6 +30,7 @@ const navItems = [
   { href: "/admin/notificaciones", label: "Notificaciones", icon: Megaphone },
   { href: "/admin/transporte", label: "Transporte", icon: Truck },
   { href: "/admin/asignaciones", label: "Asignaciones", icon: UserRoundPlus },
+  { href: "/admin/seguridad", label: "Seguridad", icon: Shield },
 ];
 
 export function AdminShell({
@@ -159,7 +162,7 @@ export function AdminShell({
             <LogoutButton />
           </div>
 
-          <div className="mt-6">{children}</div>
+          <div className="mt-6"><AdminMfaGate>{children}</AdminMfaGate></div>
         </section>
       </div>
     </main>

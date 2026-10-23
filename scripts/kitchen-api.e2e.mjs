@@ -4,13 +4,13 @@ import { createClient } from '@supabase/supabase-js';
 import { chromium } from 'playwright';
 
 export async function testKitchenApi(keys, base) {
- assert.equal(keys.ref,'xpqmmdmixpyqruykkbkf');
+ assert.ok(['xpqmmdmixpyqruykkbkf','nmuypksuaxwyonilzoqs'].includes(keys.ref),'Only isolated staging projects are allowed');
  assert.match(base,/^https:\/\/vendeplus-clean-[a-z0-9]{9}-entrega2-s-projects\.vercel\.app$/);
  const db=createClient(`https://${keys.ref}.supabase.co`,keys.service,{auth:{persistSession:false,autoRefreshToken:false}});
  const ok=result=>{if(result.error)throw new Error(result.error.message);return result.data;};
  const store='51000000-0000-4000-8000-000000000001', other='51000000-0000-4000-8000-000000000002';
  const original=ok(await db.from('store_kitchen_settings').select('*').eq('store_id',store).single());
- let userId,orderId,cancelOrderId,access,manualOrderId,qaProductId,realtimeClient,realtimeChannel,browser,browserContext;
+ let userId,orderId,cancelOrderId,noKitchenOrderId,access,manualOrderId,qaProductId,realtimeClient,realtimeChannel,browser,browserContext;
  const realtimeEvents=[];
  const timings=[];
  const call=async(path,method='GET',body,storeId=store,expected=200)=>{
@@ -34,7 +34,7 @@ export async function testKitchenApi(keys, base) {
    realtimeChannel=auth.channel(`store:${store}:orders`,{config:{private:true}})
     .on('broadcast',{event:'kitchen_changed'},()=>realtimeEvents.push('kitchen_changed'))
     .on('broadcast',{event:'order_changed'},()=>realtimeEvents.push('order_changed'))
-    .subscribe(status=>{if(status==='SUBSCRIBED'){clearTimeout(timeout);resolve();}else if(['CHANNEL_ERROR','TIMED_OUT','CLOSED'].includes(status)){clearTimeout(timeout);reject(new Error(`Private Cocina realtime ${status}.`));}});
+    .subscribe((status,error)=>{if(status==='SUBSCRIBED'){clearTimeout(timeout);resolve();}else if(['CHANNEL_ERROR','TIMED_OUT','CLOSED'].includes(status)){clearTimeout(timeout);const reason=String(error?.message || '').replaceAll(access,'[token]').replaceAll(keys.service,'[service]').replaceAll(keys.anon,'[anon]');reject(new Error(`Private Cocina realtime ${status}: ${reason.slice(0,500)}`));}});
   });
   const anonymous=await fetch(`${base}/api/panel/kitchen`,{headers:{'X-Panel-Store-Id':store}});
   assert.equal(anonymous.status,401);
@@ -76,12 +76,20 @@ export async function testKitchenApi(keys, base) {
   await call('/api/panel/kitchen','POST',{orderId,action:'prepare',expectedState:'queued'},store,400);
   cancelOrderId=randomUUID();
   ok(await db.rpc('create_order_atomic',{p_order:{id:cancelOrderId,store_id:store,public_code:`QA-CANCEL-${randomUUID().slice(0,8)}`,idempotency_key:randomUUID(),customer_name:'Cancel QA',customer_phone:'',delivery_type:'pickup',payment_method:'Efectivo',payment_status:'pending',subtotal_usd:product.price_usd,total_usd:product.price_usd,platform_service_fee_usd:0},p_items:[{product_id:product.id,product_name:product.name,quantity:1,unit_price_usd:product.price_usd,total_usd:product.price_usd,options:[]}]}));
-  await call('/api/panel/orders','PATCH',{id:cancelOrderId,status:'cancelled'},store,400);
-  await call('/api/panel/orders','PATCH',{id:cancelOrderId,status:'cancelled',cancellationReason:'Cliente desistió',cancellationDetail:''});
+  await call('/api/panel/orders','PATCH',{id:cancelOrderId,status:'cancelled',expectedStatus:'received'},store,400);
+  await call('/api/panel/orders','PATCH',{id:cancelOrderId,status:'cancelled',expectedStatus:'received',cancellationReason:'Cliente desistió',cancellationDetail:''});
   const cancelledPickup=ok(await db.from('orders').select('status,table_cancellation_reason').eq('id',cancelOrderId).single());
   assert.equal(cancelledPickup.status,'cancelled');assert.equal(cancelledPickup.table_cancellation_reason,'Cliente desistió');
   await call('/api/panel/kitchen','PATCH',{enabled:false,dispatchMode:'manual',delayAlertsEnabled:false});
-  for(const status of ['accepted','preparing','ready','completed']) await call('/api/panel/orders','PATCH',{id:orderId,status});
+  await call('/api/panel/orders','PATCH',{id:orderId,status:'accepted',expectedStatus:'ready'},store,409);
+  await call('/api/panel/orders','PATCH',{id:orderId,status:'completed',expectedStatus:'ready'});
+  noKitchenOrderId=randomUUID();
+  ok(await db.rpc('create_order_atomic',{p_order:{id:noKitchenOrderId,store_id:store,public_code:`QA-NOK-${randomUUID().slice(0,8)}`,idempotency_key:randomUUID(),customer_name:'No kitchen QA',customer_phone:'',delivery_type:'pickup',payment_method:'Efectivo',payment_status:'pending',subtotal_usd:product.price_usd,total_usd:product.price_usd,platform_service_fee_usd:0},p_items:[{product_id:product.id,product_name:product.name,quantity:1,unit_price_usd:product.price_usd,total_usd:product.price_usd,options:[]}]}));
+  let expectedStatus='received';
+  for(const status of ['accepted','preparing','ready','completed']) {
+   await call('/api/panel/orders','PATCH',{id:noKitchenOrderId,status,expectedStatus});
+   expectedStatus=status;
+  }
   qaProductId=randomUUID();
   ok(await db.from('products').insert({id:qaProductId,store_id:store,name:'Temporary kitchen QA',price_usd:1,is_available:true}));
   await call('/api/panel/kitchen','PATCH',{enabled:true,dispatchMode:'paid',delayAlertsEnabled:false});
@@ -115,6 +123,7 @@ export async function testKitchenApi(keys, base) {
   if(realtimeClient && realtimeChannel) await realtimeClient.removeChannel(realtimeChannel);
   const clean=async(label,promise)=>{const result=await promise;if(result.error)errors.push(`${label}: ${result.error.message}`);};
   if(orderId) await clean('test order',db.from('orders').delete().eq('id',orderId).eq('store_id',store));
+  if(noKitchenOrderId) await clean('test order without kitchen',db.from('orders').delete().eq('id',noKitchenOrderId).eq('store_id',store));
   if(cancelOrderId) await clean('test cancelled pickup',db.from('orders').delete().eq('id',cancelOrderId).eq('store_id',store));
   if(manualOrderId) await clean('test table order',db.from('orders').delete().eq('id',manualOrderId).eq('store_id',store));
   if(qaProductId) await clean('test product',db.from('products').delete().eq('id',qaProductId).eq('store_id',store));
