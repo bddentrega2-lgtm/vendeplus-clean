@@ -281,3 +281,34 @@
 - La migracion de estados se aplico en Supabase produccion con transaccion antes de Vercel. Vercel productivo quedo en `dpl_3CPyEhVz17C3oantJbVASS3zBTsr`; rollback anterior `dpl_GY6a7UvDj8unt2LWCcFc6t56jb13`. La matriz QA con rollback paso en produccion y no dejo datos ficticios. Smoke publico y guardias HTTP correctos; sin logs de error inmediatos.
 - Aprendizaje: un fixture con slug global `entrega2` colisiona en produccion; el test transaccional debe reutilizar la agencia existente y nunca actualizarla. No confundir un fallo del fixture con fallo de la migracion. SQL aplicado manualmente no equivale a version marcada en `supabase_migrations`; documentar antes de futuros `db push`.
 - Sin commit por instruccion AGENTS. Conciliacion historica queda fuera. Ver `SESSION_HANDOFF.md` para estado completo.
+
+# 2026-10-22 - A-14 dependencias e imagen social segura en Preview
+
+- Next.js subio de 16.3.8 a 16.4.2, Sharp de 0.35.4 a 0.35.5 y source-map-js de 1.2.1 a 1.2.2. `npm audit --omit=dev --audit-level=high` queda en cero. Las cinco alertas restantes del audit completo pertenecen al tooling ESLint/braces y npm propone un downgrade incompatible a Next 14; no usar `audit fix --force`.
+- La imagen Open Graph del comercio valida firma binaria raster antes de Sharp, bloquea SVG aunque falsee Content-Type y rechaza redirecciones desde hosts permitidos. Pruebas de PNG/JPEG/WebP/GIF, SVG y contenido desconocido: 3/3 PASS; contratos criticos 90/90 y ESLint focal PASS.
+- Preview aislado READY/shared `dpl_gUm2pM6TgQHApiL2qwz4cUGbFRbx`: `https://vendeplus-clean-awc0b2lyp-entrega2-s-projects.vercel.app`. Home, Marketplace, tienda demo, login y Open Graph 200; OG devuelve `image/png`. Produccion permanece en `dpl_4hZyxgGa8g7grLNgtD51VFJPiijQ`.
+- El `npm.cmd run build` local con Turbopack falla antes de compilar por el junction externo de `node_modules`; Webpack local tambien encuentra dos paquetes declarados pero ausentes del junction. El build limpio de Vercel desde lockfile PASS con las versiones nuevas. No confundir esa limitacion local con regresion.
+- Sin migracion, SQL, cambios de datos, commit ni despliegue productivo. Siguiente paso: revision humana breve del Preview y autorizacion separada antes de Produccion.
+
+# 2026-10-23 - A-14 publicado de forma controlada
+
+- Usuario aprobo el Preview y autorizo `procede`. Punto seguro anterior: `dpl_4hZyxgGa8g7grLNgtD51VFJPiijQ`. Se construyo primero el candidato con entorno productivo y `--skip-domain`: `dpl_6mr4mxM26AaGjerUm4KBrohATXf2`, URL `https://vendeplus-clean-lhasaao9s-entrega2-s-projects.vercel.app`.
+- Build remoto limpio PASS con Next 16.4.2, TypeScript y 267 rutas. Antes de promover, smoke autenticado de Vercel: Home, Marketplace, Shibui y login 200; Open Graph Shibui 200 `image/png`; Stats y MFA anonimos 401. Luego se promovio exactamente el mismo ID.
+- `www.somos-ve.com` y `somos-ve.com` quedaron en `dpl_6mr4mxM26AaGjerUm4KBrohATXf2` READY. Smoke posterior: rutas publicas 200, apex redirige 308 a www, OG PNG, APIs privadas 401 y logs de error sin entradas al revisar.
+- Sin migracion, SQL ni cambios de datos. Rollback web inmediato: promover `https://vendeplus-clean-65cbfrxst-entrega2-s-projects.vercel.app` (`dpl_4hZyxgGa8g7grLNgtD51VFJPiijQ`). Sin commit/push; asegurar en Git solo cuando el usuario lo pida.
+
+# Pendientes inmediatos acordados para retomar
+
+1. Implementar limites efectivos de cuerpo/payload con respuestas 413 consistentes, priorizando creacion de pedidos y cargas de comprobantes; validar movil y las cuatro modalidades.
+2. Recuperar una puerta CI reproducible: corregir los errores heredados de lint en harnesses/pruebas sin ocultar codigo de producto y ejecutar lint, TypeScript, pruebas y build en instalacion limpia.
+3. Preparar escala nacional en bloques medidos: optimizar resumen Admin, paginar completamente Marketplace/conexiones y procesar el cron de tasas por lotes reanudables, sin N+1.
+4. Incorporar observabilidad y pruebas de carga con datos ficticios: p50/p95/p99, errores, bytes y consultas para catalogo, checkout, pedidos, productos, Admin, mesas, webhook e impresion.
+5. Tratar la conciliacion historica de pedidos externos entregados pero abiertos como operacion separada, con informe previo, respaldo, dry-run y autorizacion expresa; nunca mezclarla con un release de codigo.
+
+Orden recomendado al retomar: payloads, CI, medicion base, optimizaciones de escala y finalmente conciliacion historica.
+
+# 2026-10-24 - Alerta Zod detectada durante el checkpoint
+
+- Al repetir `npm audit --omit=dev` antes del commit aparecio una alerta high nueva para `zod<4.6.6` por agotamiento de memoria con colecciones restringidas sobredimensionadas. El deployment del 23 de octubre habia pasado la auditoria disponible entonces, pero contiene Zod 4.4.3.
+- Se actualizo de forma acotada el manifiesto y lockfile a Zod 4.6.7; `npm audit --omit=dev` vuelve a cero. Este parche debe compilarse/probarse en Preview y requiere un pase productivo separado; no afirmar que Produccion ya lo tiene.
+- Preview aislado del lockfile final READY: `dpl_8fH6zfBXTABb8MgeJ2LVGMZPVRXY`, `https://vendeplus-clean-g0rsnm9ej-entrega2-s-projects.vercel.app`. Build remoto limpio PASS; Home, Marketplace, tienda demo, login y Open Graph 200, Stats anonimo 401. Produccion permanecio en `dpl_6mr4mxM26AaGjerUm4KBrohATXf2`.

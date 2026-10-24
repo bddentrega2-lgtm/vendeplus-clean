@@ -3,6 +3,7 @@ import sharp from "sharp";
 import { getPublicStoreShellBySlug } from "@/lib/supabase/catalog";
 import { buildPublicUrl } from "@/lib/public-url";
 import { safeBrandColor } from "@/lib/brand-colors";
+import { detectSupportedRasterImage } from "@/lib/server/raster-image";
 
 export const runtime = "nodejs";
 export const alt = "Catálogo Somos";
@@ -31,14 +32,21 @@ async function loadPngDataUrl(value?: string | null) {
   if (!imageUrl) return null;
 
   try {
-    const response = await fetch(imageUrl, { cache: "force-cache" });
+    const response = await fetch(imageUrl, {
+      cache: "force-cache",
+      redirect: "error",
+    });
     if (!response.ok) return null;
+
+    const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
+    if (contentType === "image/svg+xml") return null;
 
     const declaredSize = Number(response.headers.get("content-length") || 0);
     if (declaredSize > 5 * 1024 * 1024) return null;
 
     const source = Buffer.from(await response.arrayBuffer());
     if (!source.length || source.length > 5 * 1024 * 1024) return null;
+    if (!detectSupportedRasterImage(source)) return null;
 
     const png = await sharp(source)
       .resize(330, 330, { fit: "contain", withoutEnlargement: true })

@@ -3595,3 +3595,28 @@ Plan futuro aprobado: modulo opcional de cadenas documentado en `docs/MODULO_CAD
 - Deploy remoto Next PASS y READY: `dpl_AzCQMLMuKqqTcc4jixxDJDJaEq4j`, URL unica `https://vendeplus-clean-22y7wu6b0-entrega2-s-projects.vercel.app`, alias `https://www.somos-ve.com`. Rollback inmediato, de ser necesario: deployment anterior `dpl_3CPyEhVz17C3oantJbVASS3zBTsr`.
 - Smoke productivo sin escritura: Home, Marketplace y login HTTP 200; `/api/panel/orders` sin sesion HTTP 401; logs error Vercel del nuevo deployment: 0 entradas al revisar. No se crearon ni modificaron pedidos. Sin migracion ni SQL nuevo. No commit (AGENTS.md).
 - Pendiente: validacion autenticada del filtro Retiro por un comercio y monitoreo en operacion; la conciliacion de pedidos historicos es trabajo separado.
+
+# 2026-10-22 - Punto 1 A-14 listo en Preview
+
+- Worktree `.catalog-ux-preview-20261015`, rama `feature/catalog-ux-20261015`; base segura previa `14bbde0`. Cambios sin commit: Next/eslint-config-next 16.4.2, Sharp 0.35.5, source-map-js 1.2.2; helper `src/lib/server/raster-image.ts`, guardia en `src/app/[storeSlug]/opengraph-image.tsx` y prueba `scripts/raster-image-security.test.mjs`.
+- `npm audit --omit=dev --audit-level=high`: 0. Audit completo conserva 5 high solo en tooling ESLint/braces, sin arreglo compatible (npm propone downgrade Next 14); no forzar. Prueba raster 3/3, criticos 90/90, ESLint focal y diff-check PASS.
+- Preview aislado `dpl_gUm2pM6TgQHApiL2qwz4cUGbFRbx`, READY/shared: `https://vendeplus-clean-awc0b2lyp-entrega2-s-projects.vercel.app`. Smoke `/`, `/marketplace`, `/tienda-demo`, `/panel/login` 200 y `/tienda-demo/opengraph-image` 200 `image/png`. Produccion sin cambios `dpl_4hZyxgGa8g7grLNgtD51VFJPiijQ`.
+- Build local directo no es valido por junction externo de `node_modules`; fallback Webpack ve paquetes declarados ausentes del junction. El build Vercel limpio desde lockfile PASS. Sin migracion, SQL ni datos. Proximo paso: usuario revisa Preview; solo con autorizacion explicita preparar pase controlado a Produccion y luego Git.
+
+# 2026-10-23 - Punto 1 A-14 en Produccion
+
+- Usuario confirmo Preview y autorizo pase. Anterior productivo/rollback: `dpl_4hZyxgGa8g7grLNgtD51VFJPiijQ`, URL `https://vendeplus-clean-65cbfrxst-entrega2-s-projects.vercel.app`.
+- Candidato construido con entorno Production sin mover dominios: `dpl_6mr4mxM26AaGjerUm4KBrohATXf2`, `https://vendeplus-clean-lhasaao9s-entrega2-s-projects.vercel.app`. Build limpio PASS Next 16.4.2/TypeScript/267 rutas. Smoke previo con `vercel curl`: publicas 200, OG `image/png`, Stats y MFA anonimos 401.
+- Promovido exactamente ese ID. `www.somos-ve.com` y `somos-ve.com` lo confirman READY; Home, Marketplace, Shibui, login y OG correctos, apex 308 a www, APIs privadas 401, logs error sin entradas. Sin SQL, migracion ni datos.
+- Sin commit/push. Proximo paso recomendado: observacion normal y, cuando el usuario diga `aseguremos`, commit acotado de este bloque. Rollback web inmediato: promover el URL anterior; no hay DB que revertir.
+
+# 2026-10-24 - Pendientes guardados antes del checkpoint Git
+
+- Retomar en este orden: (1) limites efectivos de payload y 413 para pedidos/comprobantes; (2) CI reproducible y lint global heredado; (3) baseline p50/p95/p99; (4) resumen Admin, paginacion Marketplace/conexiones y cron de tasas por lotes; (5) conciliacion historica externa como operacion separada con dry-run y autorizacion.
+- Mantener fuera de esos releases cualquier correccion masiva de pedidos historicos. No confundir pruebas de carga con capacidad garantizada nacional. Usar staging ficticio y medir antes de optimizar.
+
+# 2026-10-24 - Zod corregido antes del commit, aun no en Produccion
+
+- La auditoria repetida detecto una alerta high publicada despues del release para Zod 4.4.3. `package.json` y lockfile quedaron en Zod 4.6.7; audit productivo del lockfile vuelve a cero.
+- Produccion `dpl_6mr4mxM26AaGjerUm4KBrohATXf2` todavia contiene Zod 4.4.3. Antes de decir que este ultimo parche esta publicado: build/Preview limpio, smoke y autorizacion de pase separada. El checkpoint Git puede incluirlo como correccion preparada y documentada.
+- Preview final READY `dpl_8fH6zfBXTABb8MgeJ2LVGMZPVRXY`, URL `https://vendeplus-clean-g0rsnm9ej-entrega2-s-projects.vercel.app`; build limpio y smoke publicas/OG/API privada PASS. Produccion confirmada sin cambios durante el deploy.

@@ -80,6 +80,13 @@ declaracion de explotacion o incidente si no se observo tal evento.
 
 ## A-14 - Sharp vulnerable puede recibir SVG en imagen social (P1)
 
+**Estado 2026-10-23:** corregido, validado y publicado en Produccion. La imagen social comprueba la firma raster antes
+de invocar Sharp, rechaza SVG y redirecciones, y conserva PNG/JPEG/WebP/GIF.
+El lockfile fija Next.js 16.4.2, Sharp 0.35.5 y source-map-js 1.2.2. El build
+limpio de Vercel y el smoke de Open Graph pasaron; `npm audit --omit=dev`
+reporta cero vulnerabilidades. Deployment productivo:
+`dpl_6mr4mxM26AaGjerUm4KBrohATXf2`.
+
 - **Clase:** riesgo de dependencia con camino de entrada plausible, sin
   explotacion ni entorno runtime demostrado. `package-lock.json:6729` fija
   `sharp@0.35.4`, afectado por
