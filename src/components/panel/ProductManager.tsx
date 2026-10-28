@@ -44,6 +44,7 @@ type StoreRow = {
   id: string;
   slug: string;
   name: string;
+  inventory_enabled?: boolean;
 };
 
 type CategoryRow = {
@@ -721,11 +722,9 @@ export function ProductManager() {
     [categories, newProduct.store_id]
   );
   useNativeDirtyGuard(isCreateOpen && Boolean(newProduct.name || newProduct.description || newProduct.price_usd || newProduct.image_url || newProduct.variants.length));
-  const isShibuiInventoryPilot = stores.some(
-    (store) =>
-      store.id === "126f8168-f1ca-4a08-8eaf-c3816b9d9195" &&
-      store.slug === "shibui"
-  );
+  const inventoryStore = stores.find(
+    (store) => store.id === selectedStoreId && store.inventory_enabled
+  ) || stores.find((store) => store.inventory_enabled);
 
   const filteredProducts = products;
 
@@ -966,10 +965,11 @@ export function ProductManager() {
 
   return (
     <div className="native-products space-y-5">
-      {isShibuiInventoryPilot ? (
+      {inventoryStore ? (
         isInventoryPreviewOpen ? (
           <PremiumInventoryPreview
             pin={pin}
+            storeId={inventoryStore.id}
             onClose={() => setIsInventoryPreviewOpen(false)}
           />
         ) : (

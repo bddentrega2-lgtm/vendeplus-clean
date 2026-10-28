@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
+  Boxes,
   CheckCircle2,
   Copy,
   Eye,
@@ -32,6 +33,7 @@ type StoreRow = {
   whatsapp: string | null;
   is_active: boolean;
   marketplace_visible: boolean;
+  inventory_enabled: boolean;
   accepts_delivery: boolean;
   accepts_pickup: boolean;
   plan_type?: string | null;
@@ -182,6 +184,7 @@ export function AdminStoresManager() {
   const [cutoffDrafts, setCutoffDrafts] = useState<Record<string, string>>({});
   const [savingCutoffId, setSavingCutoffId] = useState("");
   const [savingMarketplaceId, setSavingMarketplaceId] = useState("");
+  const [savingInventoryId, setSavingInventoryId] = useState("");
 
   const filteredStores = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -275,6 +278,31 @@ export function AdminStoresManager() {
       setError(error.message || "No se pudo actualizar Marketplace.");
     } finally {
       setSavingMarketplaceId("");
+    }
+  }
+
+  async function toggleInventory(store: StoreRow) {
+    setMessage("");
+    setError("");
+    setSavingInventoryId(store.id);
+
+    try {
+      const data = await apiRequest("", `/api/admin/stores/${store.id}/inventory`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: !store.inventory_enabled }),
+      });
+      setStores((current) =>
+        current.map((entry) =>
+          entry.id === store.id
+            ? { ...entry, inventory_enabled: data.store.inventory_enabled }
+            : entry
+        )
+      );
+      setMessage(data.message || "Acceso a Inventario actualizado.");
+    } catch (error: any) {
+      setError(error.message || "No se pudo actualizar Inventario.");
+    } finally {
+      setSavingInventoryId("");
     }
   }
 
@@ -454,7 +482,7 @@ export function AdminStoresManager() {
       </section>
 
       <section className="@container min-w-0 rounded-lg bg-white shadow-xl shadow-[#2E3A79]/[0.06] ring-1 ring-[#25262B]/[0.06]">
-        <div className="hidden grid-cols-[minmax(150px,1fr)_70px_48px_80px_90px_150px_172px] items-center gap-1.5 border-b border-[#25262B]/10 bg-[#F8F3E8] px-2.5 py-2 text-[11px] font-bold text-[#746f69] @[840px]:grid">
+        <div className="hidden grid-cols-[minmax(150px,1fr)_70px_48px_80px_90px_150px_206px] items-center gap-1.5 border-b border-[#25262B]/10 bg-[#F8F3E8] px-2.5 py-2 text-[11px] font-bold text-[#746f69] @[840px]:grid">
           <span>Comercio</span>
           <span>Plan</span>
           <span>Total pedidos</span>
@@ -474,7 +502,7 @@ export function AdminStoresManager() {
           return (
             <article
               key={store.id}
-              className="grid min-w-0 grid-cols-2 items-center gap-2 border-b border-[#25262B]/10 px-2.5 py-2 last:border-b-0 @[840px]:grid-cols-[minmax(150px,1fr)_70px_48px_80px_90px_150px_172px] @[840px]:gap-1.5"
+              className="grid min-w-0 grid-cols-2 items-center gap-2 border-b border-[#25262B]/10 px-2.5 py-2 last:border-b-0 @[840px]:grid-cols-[minmax(150px,1fr)_70px_48px_80px_90px_150px_206px] @[840px]:gap-1.5"
             >
               <div className="col-span-2 min-w-0 @[840px]:col-span-1">
                 <div className="flex flex-wrap items-center gap-2">
@@ -553,6 +581,25 @@ export function AdminStoresManager() {
                 >
                   <Pencil size={14} />
                 </Link>
+                <button
+                  type="button"
+                  onClick={() => toggleInventory(store)}
+                  disabled={savingInventoryId === store.id}
+                  title={store.inventory_enabled ? "Deshabilitar Inventario" : "Habilitar Inventario"}
+                  aria-label={`${store.inventory_enabled ? "Deshabilitar" : "Habilitar"} Inventario de ${store.name}`}
+                  className={[
+                    "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md @[840px]:h-8 @[840px]:w-8 disabled:opacity-60",
+                    store.inventory_enabled
+                      ? "bg-[#2E3A79] text-white"
+                      : "bg-[#F3F5FF] text-[#746f69]",
+                  ].join(" ")}
+                >
+                  {savingInventoryId === store.id ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Boxes size={14} />
+                  )}
+                </button>
                 <button
                   type="button"
                   onClick={() => toggleMarketplace(store)}

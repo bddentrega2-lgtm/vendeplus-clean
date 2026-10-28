@@ -52,18 +52,33 @@ function withCounts(stores: any[], metricsRows: any[]) {
   });
 }
 
+function withInventory(stores: any[], settingsRows: any[]) {
+  const enabled = new Set(
+    settingsRows
+      .filter((row: any) => row.enabled === true)
+      .map((row: any) => String(row.store_id))
+  );
+
+  return stores.map((store) => ({
+    ...store,
+    inventory_enabled: enabled.has(String(store.id)),
+  }));
+}
+
 export async function GET(request: NextRequest) {
   try {
     await requireAdminAuth(request);
     const supabase = createSupabaseAdminClient();
 
-    const [storesResult, metricsResult] =
+    const [storesResult, metricsResult, inventoryResult] =
       await Promise.all([
         supabase.from("stores").select(adminStoreSelect).order("name", { ascending: true }),
         supabase.rpc("admin_store_metrics"),
+        supabase.from("store_inventory_settings").select("store_id, enabled"),
       ]);
 
     if (storesResult.error) throw storesResult.error;
+    if (inventoryResult.error) throw inventoryResult.error;
     if (metricsResult.error && !isMissingAdminMetricsRpc(metricsResult.error)) {
       throw metricsResult.error;
     }
@@ -75,7 +90,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       stores: withSomosBilling(
-        withCounts(storesResult.data || [], metricsRows),
+        withInventory(withCounts(storesResult.data || [], metricsRows), inventoryResult.data || []),
         feeBalances
       ),
     });

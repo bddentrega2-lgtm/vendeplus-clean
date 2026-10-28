@@ -17,8 +17,6 @@ import {
 import { fetchPanelJson } from "@/lib/panel/client-fetch-cache";
 import { getPanelAuthHeaders } from "@/lib/panel/client-auth";
 
-const SHIBUI_STORE_ID = "126f8168-f1ca-4a08-8eaf-c3816b9d9195";
-
 type InventorySku = {
   id: string;
   code: string;
@@ -104,9 +102,11 @@ function productStock(product: InventoryProduct, stock: Record<string, number>) 
 
 export function PremiumInventoryPreview({
   pin,
+  storeId,
   onClose,
 }: {
   pin: string;
+  storeId: string;
   onClose: () => void;
 }) {
   const [products, setProducts] = useState<InventoryProduct[]>([]);
@@ -135,12 +135,12 @@ export function PremiumInventoryPreview({
           headers: await getPanelAuthHeaders(pin),
         })) as CatalogResponse;
         const store = (data.stores || []).find(
-          (item) => item.id === SHIBUI_STORE_ID && item.slug === "shibui" && item.inventory_enabled,
+          (item) => item.id === storeId && item.inventory_enabled,
         );
         if (!store) throw new Error("El inventario Premium no está disponible para este comercio.");
 
         const nextProducts = (data.products || []).filter(
-          (product) => product.store_id === SHIBUI_STORE_ID,
+          (product) => product.store_id === storeId,
         );
         if (!active) return;
         setProducts(nextProducts);
@@ -187,7 +187,7 @@ export function PremiumInventoryPreview({
     return () => {
       active = false;
     };
-  }, [pin]);
+  }, [pin, storeId]);
 
   const activeProduct = products.find((product) => product.id === activeProductId) || null;
   const activeSkus = useMemo(
@@ -352,7 +352,7 @@ export function PremiumInventoryPreview({
           ...(await getPanelAuthHeaders(pin)),
         },
         body: JSON.stringify({
-          store_id: SHIBUI_STORE_ID,
+          store_id: storeId,
           product_id: activeProduct.id,
           skus: activeSkus.map((sku) => ({
             id: sku.id,
@@ -391,7 +391,7 @@ export function PremiumInventoryPreview({
     return (
       <section className="rounded-3xl bg-white p-6 text-center shadow-lg ring-1 ring-[#25262B]/[0.06]">
         <Boxes className="mx-auto h-8 w-8 animate-pulse text-[#2E3A79]" />
-        <p className="mt-3 text-sm font-black">Cargando inventario de SHIBUI...</p>
+        <p className="mt-3 text-sm font-black">Cargando inventario...</p>
       </section>
     );
   }

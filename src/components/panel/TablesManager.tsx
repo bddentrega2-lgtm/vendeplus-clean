@@ -34,6 +34,7 @@ import { useNativeBackLayer } from "@/hooks/use-native-app";
 import { KitchenOrderAction } from "@/components/panel/KitchenOrderAction";
 import { useTableCancellation } from "@/components/panel/orders/use-table-cancellation";
 import { PaymentReviewDialog } from "@/components/panel/orders/PaymentReviewDialog";
+import { QrSignDownloadDialog } from "@/components/panel/QrSignDownloadDialog";
 import { formatOrderAge, getPaymentStatusLabel, type OrderRow } from "@/components/panel/orders/orders-manager-helpers";
 import { OrderStatusTime } from "@/components/panel/orders/OrderStatusTime";
 import { applyConfirmedTableOrder, fetchTableSnapshot, getCachedTableSnapshot, requestTableJson, type TableSnapshot, type TableRow, type WaiterCall, type ActiveTableOrder as ActiveOrder } from "@/lib/panel/table-snapshot-client";
@@ -82,6 +83,7 @@ export function TablesManager() {
   const [fulfillmentMode, setFulfillmentMode] = useState<"table_service" | "counter_pickup">("table_service");
   const [qrToken, setQrToken] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState("");
+  const [isQrDialogOpen, setIsQrDialogOpen] = useState(false);
   const [name, setName] = useState("");
   const [zone, setZone] = useState("");
   const [editingId, setEditingId] = useState("");
@@ -451,14 +453,6 @@ export function TablesManager() {
     </section>;
   }
 
-  function downloadQr() {
-    if (!qrDataUrl) return;
-    const link = document.createElement("a");
-    link.href = qrDataUrl;
-    link.download = `${selectedStore?.slug || "somos"}-pedidos-en-mesa-qr.png`;
-    link.click();
-  }
-
   if (!hasPremiumAccess) {
     return (
       <section className="rounded-[28px] bg-white p-6 text-center shadow-lg ring-1 ring-[#25262B]/10">
@@ -504,6 +498,13 @@ export function TablesManager() {
         onVerify={() => verifyPayment(paymentOrder.id)} /> : null}
       {selectedOrder ? <OrderDetail key={selectedOrder.id} order={selectedOrder} pin="" onClose={() => { detailSequence.current++; setOpeningOrderId(""); setSelectedOrder(null); }}
         onUpdated={() => { void openOrder(selectedOrder.id); void load(true); }} /> : null}
+      {isQrDialogOpen && selectedStore ? <QrSignDownloadDialog
+        qrDataUrl={qrDataUrl}
+        logoUrl={selectedStore.logo_url || ""}
+        storeName={selectedStore.name}
+        storeSlug={selectedStore.slug}
+        onClose={() => setIsQrDialogOpen(false)}
+      /> : null}
       {error ? <p className="rounded-2xl bg-red-50 p-3 text-sm font-black text-red-700">{error}</p> : null}
       {notice ? <p className="rounded-2xl bg-green-50 p-3 text-sm font-black text-green-700">{notice}</p> : null}
 
@@ -607,8 +608,8 @@ export function TablesManager() {
         <div className="rounded-[28px] bg-white p-5 text-center shadow-lg ring-1 ring-[#25262B]/10">
           <h2 className="flex items-center justify-center gap-2 text-lg font-black"><QrCode size={20} /> QR del comercio</h2>
           {qrDataUrl ? <Image src={qrDataUrl} alt={`QR de ${selectedStore?.name || "Mesa / Barra"}`} width={220} height={220} unoptimized className="mx-auto mt-3 h-52 w-52" /> : null}
-          <button type="button" onClick={downloadQr} disabled={!qrDataUrl} className="vp-button-mango mt-3 w-full">
-            <Download size={17} /> Descargar QR
+          <button type="button" onClick={() => setIsQrDialogOpen(true)} disabled={!qrDataUrl} className="vp-button-mango mt-3 w-full">
+            <Download size={17} /> Descargar hablador
           </button>
         </div>
       </section> : null}

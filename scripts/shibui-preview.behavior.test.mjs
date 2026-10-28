@@ -21,8 +21,20 @@ const productManager = await readFile(
   new URL("../src/components/panel/ProductManager.tsx", import.meta.url),
   "utf8",
 );
+const productsApi = await readFile(
+  new URL("../src/app/api/panel/products/route.ts", import.meta.url),
+  "utf8",
+);
 const inventoryApi = await readFile(
   new URL("../src/app/api/panel/inventory/route.ts", import.meta.url),
+  "utf8",
+);
+const adminInventoryApi = await readFile(
+  new URL("../src/app/api/admin/stores/[storeId]/inventory/route.ts", import.meta.url),
+  "utf8",
+);
+const adminStores = await readFile(
+  new URL("../src/components/admin/AdminStoresManager.tsx", import.meta.url),
   "utf8",
 );
 const catalogClient = await readFile(
@@ -86,9 +98,12 @@ test("la ruta desaparece en produccion y no puede indexarse", () => {
   assert.match(page, /index: false, follow: false/);
 });
 
-test("el inventario Premium aparece exclusivamente en el panel habilitado", () => {
-  assert.match(productManager, /126f8168-f1ca-4a08-8eaf-c3816b9d9195/);
-  assert.match(productManager, /store\.slug === "shibui"/);
+test("el inventario Premium aparece en cualquier panel habilitado", () => {
+  assert.match(productManager, /store\.inventory_enabled/);
+  assert.match(productsApi, /store_inventory_settings/);
+  assert.match(productsApi, /inventory_enabled:\s*inventoryEnabledStoreIds\.has/);
+  assert.doesNotMatch(productManager, /126f8168-f1ca-4a08-8eaf-c3816b9d9195/);
+  assert.doesNotMatch(productManager, /store\.slug === "shibui"/);
   assert.doesNotMatch(productManager, /Piloto exclusivo SHIBUI/);
   assert.match(productManager, /Controla las existencias por color, talla u otras combinaciones/);
 });
@@ -98,14 +113,25 @@ test("el administrador Premium guarda mediante una API autenticada y aislada", (
   assert.match(premiumPanel, /fetchPanelJson\("\/api\/panel\/inventory"/);
   assert.match(premiumPanel, /method:\s*"PATCH"/);
   assert.match(inventoryApi, /assertStoreManager/);
-  assert.match(inventoryApi, /SHIBUI_STORE_ID/);
+  assert.match(inventoryApi, /requireInventoryAccess/);
+  assert.doesNotMatch(inventoryApi, /SHIBUI_STORE_ID/);
   assert.match(inventoryApi, /manage_inventory_product/);
   assert.match(premiumPanel, /setStock\(\(current\)/);
 });
 
+test("Admin habilita inventario por comercio sin borrar existencias", () => {
+  assert.match(adminInventoryApi, /await requireAdminAuth\(request\)/);
+  assert.match(adminInventoryApi, /store_inventory_settings/);
+  assert.match(adminInventoryApi, /\.upsert\(/);
+  assert.doesNotMatch(adminInventoryApi, /\.delete\(/);
+  assert.match(adminStores, /toggleInventory/);
+  assert.match(adminStores, /inventory_enabled/);
+  assert.match(adminStores, /Habilitar Inventario/);
+});
+
 test("el administrador separa stock, combinaciones y presentaciones", () => {
-  assert.match(premiumPanel, /Control por combinaciones/);
-  assert.match(premiumPanel, /Configurar combinaciones/);
+  assert.match(premiumPanel, /Con combinaciones/);
+  assert.match(premiumPanel, /Combinaciones disponibles/);
   assert.match(premiumPanel, /Stock total: \{combinationStockTotal\}/);
   assert.doesNotMatch(premiumPanel, /cambio\(s\) pendiente/);
   assert.doesNotMatch(premiumPanel, /simulación hasta completar/);

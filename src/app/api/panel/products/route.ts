@@ -354,6 +354,21 @@ export async function GET(request: NextRequest) {
 
     if (productsError) throw productsError;
 
+    const stores = storesResult.data || [];
+    const storeIds = stores.map((store: any) => String(store.id));
+    const inventorySettingsResult = storeIds.length
+      ? await supabase
+          .from("store_inventory_settings")
+          .select("store_id")
+          .in("store_id", storeIds)
+          .eq("enabled", true)
+      : { data: [], error: null };
+
+    if (inventorySettingsResult.error) throw inventorySettingsResult.error;
+
+    const inventoryEnabledStoreIds = new Set(
+      (inventorySettingsResult.data || []).map((row: any) => String(row.store_id))
+    );
     const queryMs = performance.now() - queryStartedAt;
     products = products.map((product) => ({
       ...product,
@@ -362,7 +377,10 @@ export async function GET(request: NextRequest) {
         .sort((a: any, b: any) => a.sort_order - b.sort_order),
     }));
     const response = NextResponse.json({
-      stores: storesResult.data || [],
+      stores: stores.map((store: any) => ({
+        ...store,
+        inventory_enabled: inventoryEnabledStoreIds.has(String(store.id)),
+      })),
       categories: categoriesResult.data || [],
       products,
       page: {
