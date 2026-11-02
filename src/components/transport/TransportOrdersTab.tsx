@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Eye, Loader2, MessageCircle, ReceiptText, RefreshCcw, Send, X } from "lucide-react";
+import { Eye, Loader2, MapPin, MessageCircle, ReceiptText, RefreshCcw, Send, X } from "lucide-react";
 import { transportStatusLabels } from "@/components/transport/transport-panel-helpers";
+import { useNativeApp } from "@/hooks/use-native-app";
 import { getEntrega2DisplayStatus } from "@/lib/entrega2-contract";
 
 type LoadOrders = (overrides?: Record<string, string>) => Promise<void>;
@@ -105,6 +106,7 @@ export function TransportOrdersTab({
   stores,
   premiumDispatchEnabled,
 }: TransportOrdersTabProps) {
+  const isNativeApp = useNativeApp();
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const activeDrivers = drivers.filter((driver) => driver.is_active !== false);
   const selectedOrder = selectedOrderId
@@ -320,6 +322,106 @@ export function TransportOrdersTab({
       {orders.length === 0 ? (
         <div className="rounded-2xl bg-white p-5 text-center text-sm font-bold text-[#746f69]">
           {isLoading ? "Cargando pedidos..." : "No hay pedidos de empresa delivery con estos filtros."}
+        </div>
+      ) : isNativeApp ? (
+        <div className="grid gap-3" data-native-delivery-orders>
+          {orders.map((entry) => {
+            const isSaving = savingOrderId === entry.id;
+            const isSendingEntrega2 = sendingEntrega2OrderId === entry.id;
+            const isDetailLoading = loadingDetailOrderId === entry.id;
+            const assignedDriver = drivers.find((driver) => driver.id === entry.driver_id);
+            const entrega2 = entrega2Integration(entry);
+            const mapsUrl = buildMapsUrl(entry);
+            const driverCommandUrl =
+              driverWhatsappDispatchEnabled && assignedDriver
+                ? buildDriverCommandUrl(entry, assignedDriver)
+                : "";
+            const statusLabel = entrega2
+              ? entrega2StatusLabel(entrega2.status, entrega2.created_at, entry)
+              : transportStatusLabels[entry.status] || entry.status;
+
+            return (
+              <article key={entry.id} className="native-delivery-order-card">
+                <header>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <strong className="truncate text-sm text-[#162033]">{orderCode(entry)}</strong>
+                      <span className="shrink-0 text-[11px] font-black text-[#8A98AA]">
+                        {formatTime(entry.created_at || entry.orders?.created_at)}
+                      </span>
+                    </div>
+                    <p className="mt-1 truncate text-xs font-black text-[#52647A]">{originLabel(entry)}</p>
+                  </div>
+                  <strong className="shrink-0 text-base text-[#162033]">
+                    {billingSymbol}{Number(entry.delivery_fee_usd || 0).toFixed(2)}
+                  </strong>
+                </header>
+
+                <div className="native-delivery-order-person">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-black text-[#162033]">
+                      {entry.customer_name_snapshot || (particular(entry) ? "Solicitante" : "Cliente")}
+                    </p>
+                    <p className="truncate text-xs font-bold text-[#8A98AA]">
+                      {entry.customer_phone_snapshot || "Sin teléfono"}
+                    </p>
+                  </div>
+                  {particular(entry) ? (
+                    <span className="rounded-full bg-blue-100 px-2 py-1 text-[10px] font-black uppercase text-blue-800">
+                      {particularServiceLabel(entry)}
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-2">
+                  <select
+                    value={entry.status}
+                    disabled={isSaving || ["delivered", "agency_rejected", "cancelled"].includes(entry.status)}
+                    onChange={(event) => onUpdateStatus(entry.id, event.target.value)}
+                    className={["min-w-0 rounded-xl px-2 py-2 text-[10px] font-black uppercase outline-none ring-1 disabled:opacity-65", statusPillClass(entry.status)].join(" ")}
+                    aria-label={`Actualizar estado de ${orderCode(entry)}`}
+                  >
+                    <option value={entry.status}>{isSaving ? "Actualizando..." : statusLabel}</option>
+                    {(statusActionsByCurrent[entry.status] || []).map(([status, label]) => (
+                      <option key={status} value={status}>{label}</option>
+                    ))}
+                  </select>
+                  {renderDriverSelect(entry)}
+                </div>
+
+                <footer>
+                  {canShowEntrega2Button(entry) ? (
+                    <button
+                      type="button"
+                      onClick={() => void onSendParticularToEntrega2(entry.id)}
+                      disabled={isSendingEntrega2 || Boolean(entrega2 && !["error", "failed"].includes(entrega2.status))}
+                      aria-label={entrega2 ? `Entrega2 App: ${entrega2StatusLabel(entrega2.status, entrega2.created_at, entry)}` : "Enviar a Entrega2 App"}
+                    >
+                      {isSendingEntrega2 ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} />}
+                    </button>
+                  ) : null}
+                  {mapsUrl ? (
+                    <a href={mapsUrl} target="_blank" rel="noopener noreferrer" aria-label="Abrir ubicación en mapas">
+                      <MapPin size={17} />
+                    </a>
+                  ) : null}
+                  {driverCommandUrl ? (
+                    <a href={driverCommandUrl} target="_blank" rel="noopener noreferrer" aria-label="Enviar servicio al repartidor por WhatsApp">
+                      <MessageCircle size={17} />
+                    </a>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => void openDetail(entry)}
+                    disabled={isDetailLoading}
+                    aria-label={`Ver detalle de ${orderCode(entry)}`}
+                  >
+                    {isDetailLoading ? <Loader2 size={17} className="animate-spin" /> : <Eye size={17} />}
+                  </button>
+                </footer>
+              </article>
+            );
+          })}
         </div>
       ) : (
         <div className="overflow-hidden rounded-[24px] bg-white shadow-lg shadow-[#25262B]/8 ring-1 ring-[#D8DEEA]">

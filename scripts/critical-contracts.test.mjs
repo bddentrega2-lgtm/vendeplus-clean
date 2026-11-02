@@ -559,8 +559,8 @@ test("panel delivery carga solo los datos necesarios por seccion", () => {
     "utf8",
   );
 
-  assert.match(panel, /includeConfiguration:\s*initialTab !== "pedidos"/);
-  assert.match(panel, /includeBillingDetail:\s*initialTab === "facturacion"/);
+  assert.match(panel, /silent: Boolean\(transportPanelCache\),[\s\S]{0,220}includeBilling: false/);
+  assert.match(panel, /includeBillingDetail: false,[\s\S]{0,120}includeConfiguration: false,[\s\S]{0,120}includeRelations: false/);
   assert.match(panel, /const needsBilling = \(tab === "facturacion" && !hasLoadedBillingDetail\)/);
   assert.match(panel, /\["resumen", "facturacion"\]\.includes\(tab\) && Boolean\(agencyId\) && billing\?\.agencyId !== agencyId/);
   assert.match(panel, /const needsConfiguration = tab !== "pedidos" && !hasLoadedConfiguration/);

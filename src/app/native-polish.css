@@ -79,6 +79,19 @@ html.somos-native-app .market-product-card > div:last-child > p { font-size: 10p
 html.somos-native-app .somos-marketplace a.group:not(.market-product-card) { border-radius: 8px; box-shadow: none; }
 html.somos-native-app .somos-marketplace [role="dialog"] { border-radius: 8px 8px 0 0; }
 html.somos-native-app .native-profile { box-shadow: 0 -8px 32px #183c4024; background: #f7fbf9; padding: 0 16px max(20px, env(safe-area-inset-bottom)); }
+html.somos-native-app .native-profile-select { align-content: start; gap: 0; overflow-y: auto; padding: calc(env(safe-area-inset-top) + 48px) 20px calc(env(safe-area-inset-bottom) + 28px); background: #f5f7f7; }
+html.somos-native-app .native-profile-select > header { display: grid; justify-items: center; width: min(100%, 440px); margin: 0 auto 22px; text-align: center; }
+html.somos-native-app .native-profile-select > header p { color: #143d42; font-size: 20px; font-weight: 850; }
+html.somos-native-app .native-profile-select > section { display: grid; gap: 10px; width: min(100%, 440px); margin: 0 auto; }
+html.somos-native-app .native-profile-select > section > button { display: grid; grid-template-columns: 48px minmax(0, 1fr) 24px; align-items: center; gap: 12px; min-height: 78px; padding: 12px; border: 1px solid #cfe0db; border-radius: 8px; background: white; color: #143d42; text-align: left; box-shadow: 0 4px 14px #143d4210; }
+html.somos-native-app .native-profile-select > section > button > span:first-child { display: grid; width: 48px; height: 48px; place-items: center; border-radius: 8px; background: #e5f1ed; color: #147565; }
+html.somos-native-app .native-profile-select > section > button:nth-child(2) > span:first-child { background: #fff0e8; color: #e95f32; }
+html.somos-native-app .native-profile-select > section > button:nth-child(3) > span:first-child { background: #e9edfb; color: #2e3a79; }
+html.somos-native-app .native-profile-select > section > button > span:nth-child(2) { display: grid; gap: 3px; min-width: 0; }
+html.somos-native-app .native-profile-select strong { font-size: 16px; font-weight: 850; }
+html.somos-native-app .native-profile-select small { color: #667575; font-size: 12px; font-weight: 650; line-height: 1.35; }
+html.somos-native-app .native-profile-select .native-profile-footer { display: grid; justify-items: center; gap: 18px; width: min(100%, 440px); margin: 24px auto 0; color: #667575; text-align: center; }
+html.somos-native-app .native-profile-select .native-profile-footer img { width: 154px; height: auto; }
 html.somos-native-app .native-profile > header { position: sticky; top: 0; z-index: 3; margin-inline: -16px; padding: 14px 16px; background: #143d42; color: white; border-bottom: 3px solid #f27533; }
 html.somos-native-app .native-profile-form { display: grid; gap: 0; }
 html.somos-native-app .native-profile-form fieldset { display: grid; gap: 0; margin: 0; padding: 18px 0; border: 0; border-bottom: 1px solid #cfe0db; }
@@ -103,6 +116,31 @@ html.somos-native-app .native-profile-form .native-profile-location-remove { jus
 html.somos-native-app .native-profile-form .native-profile-save { width: 100%; margin-top: 18px; background: #f27533; color: white; font-weight: 800; }
 html.somos-native-app .native-profile-form .native-profile-clear { width: 100%; margin-top: 8px; border: 0; background: transparent; color: #8f3440; }
 .native-profile-message { padding: 10px 12px; border-radius: 6px; background: #fff1ce; color: #604710; }
+
+html.somos-native-app .native-delivery-order-card { display: grid; gap: 10px; padding: 13px; border: 1px solid #dce4eb; border-left: 4px solid #2e3a79; border-radius: 8px; background: white; box-shadow: 0 4px 14px #1620330d; }
+html.somos-native-app .native-delivery-order-card > header { display: flex; align-items: start; justify-content: space-between; gap: 10px; padding-bottom: 9px; border-bottom: 1px solid #eef1f5; }
+html.somos-native-app .native-delivery-order-person { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
+html.somos-native-app .native-delivery-order-card > footer { display: flex; justify-content: flex-end; gap: 8px; }
+html.somos-native-app .native-delivery-order-card > footer :is(button, a) { display: grid; width: 42px; height: 42px; place-items: center; border: 1px solid #d8deea; border-radius: 8px; background: #f7f9fc; color: #2e3a79; }
+html.somos-native-app .native-delivery-order-card > footer a[aria-label*="WhatsApp"] { border-color: #bce8cb; background: #eaf9ef; color: #087a3e; }
+html.somos-native-app .native-delivery-order-card > footer :is(button, a):active { transform: scale(.96); }
+html.somos-native-app .native-delivery-panel { padding-bottom: calc(82px + env(safe-area-inset-bottom)); }
+html.somos-native-app .native-delivery-header { border-radius: 8px; padding: 16px; box-shadow: none; }
+html.somos-native-app .native-delivery-header h1 { font-size: 22px; }
+html.somos-native-app .native-delivery-header > div > div:last-child { gap: 6px; }
+html.somos-native-app .native-delivery-header > div > div:last-child > :is(a, button, span):not(:first-child) { display: none; }
+.native-delivery-offline { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid #f1c2c6; border-left: 4px solid #b4232f; border-radius: 8px; background: #fff1f2; color: #8f1f29; font-size: 12px; font-weight: 800; }
+.native-delivery-nav { position: fixed; z-index: 45; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 6px 8px max(7px, env(safe-area-inset-bottom)); border-top: 1px solid #dbe2ea; background: #fff; box-shadow: 0 -6px 20px #16203316; }
+.native-delivery-nav button { display: grid; min-width: 0; min-height: 52px; place-items: center; align-content: center; gap: 3px; border-radius: 6px; color: #667489; font-size: 10px; font-weight: 800; }
+.native-delivery-nav button[aria-current="page"] { background: #eef1fb; color: #2e3a79; }
+.native-delivery-more-backdrop { position: fixed; z-index: 60; inset: 0; display: flex; align-items: flex-end; background: #16203370; }
+.native-delivery-more { width: 100%; max-height: 78vh; overflow-y: auto; padding: 16px 16px calc(18px + env(safe-area-inset-bottom)); border-radius: 12px 12px 0 0; background: white; box-shadow: 0 -10px 36px #1620332b; }
+.native-delivery-more > header { display: flex; align-items: center; justify-content: space-between; padding-bottom: 12px; border-bottom: 1px solid #e4e9ef; }
+.native-delivery-more > header strong { color: #162033; font-size: 18px; }
+.native-delivery-more > header button { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 8px; background: #f1f4f8; color: #2e3a79; }
+.native-delivery-more > div { display: grid; }
+.native-delivery-more > div > :is(button, a) { display: flex; align-items: center; justify-content: space-between; min-height: 50px; padding: 8px 4px; border-bottom: 1px solid #eef1f5; color: #2e3a79; font-size: 14px; font-weight: 800; }
+.native-delivery-more > div > :is(button, a)[aria-current="page"] { color: #c64b1d; }
 
 /* Merchant sign-in retains the same auth handlers and form fields. */
 html.somos-native-app .somos-login { padding: 0 24px 32px; background: white !important; }

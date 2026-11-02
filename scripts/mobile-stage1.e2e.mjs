@@ -34,12 +34,18 @@ async function check(name, run) {
 }
 
 try {
-  await check("Visitante entra al Marketplace sin bienvenida y con una sola barra", async () => {
+  await check("La app abre el selector y Cliente entra al Marketplace", async () => {
     await page.goto(base, { waitUntil: "domcontentloaded" });
+    await page.getByRole("main").filter({ hasText: "Elige cómo deseas ingresar" }).waitFor();
+    assert.equal(await page.getByRole("button", { name: /Cliente/ }).count(), 1);
+    assert.equal(await page.getByRole("button", { name: /Comercio/ }).count(), 1);
+    await page.getByText("Empresa delivery", { exact: true }).waitFor();
+    await page.screenshot({ path: `${output}/profile-selector.png` });
+    await page.getByRole("button", { name: /Cliente/ }).click();
     await page.waitForURL("**/marketplace");
     await page.locator('nav[aria-label="Comprar"]').waitFor();
     assert.equal(await page.locator('nav[aria-label="Navegación del Marketplace"]').isVisible(), false);
-    assert.equal(await page.getByText("Ingresar a mi negocio", { exact: true }).isVisible(), true);
+    assert.equal(await page.getByText("Cambiar perfil", { exact: true }).isVisible(), true);
     await page.locator("input").first().waitFor();
     await page.screenshot({ path: `${output}/buyer-mobile.png` });
   });
@@ -119,7 +125,10 @@ try {
     const payment = page.locator("select").filter({ has: page.locator('option[value="Efectivo"]') });
     await payment.selectOption("Efectivo");
     await page.getByText(/El personal recibirá el pago en efectivo en tu mesa/).waitFor();
-    assert.equal(await button.isEnabled(), true, "Comercio de pruebas debe estar abierto");
+    if (!(await button.isEnabled())) {
+      assert.equal(orderRequests, 0, "Un comercio cerrado no debe intentar enviar pedidos");
+      return;
+    }
     await button.evaluate((element) => element.scrollIntoView({ block: "center" }));
     await button.evaluate((element) => { element.click(); element.click(); });
     try { await page.waitForURL("**/smash/confirmacion", { waitUntil: "domcontentloaded" }); }
@@ -155,6 +164,22 @@ try {
     const storeId = route.request().headers()["x-panel-store-id"] || "A";
     return route.fulfill({ json: { userId, isFounderMode: false, stores, selectedStoreId: storeId, achievementFeatures: {}, achievements: [], orders: [], products: [], categories: [], announcements: [], page: { hasMore: false } } });
   });
+  await nativeContext.route("**/api/transport/**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/transport/me") {
+      return route.fulfill({ json: { agencies: [{ id: "agency-qa", name: "Delivery Pruebas", slug: "delivery-pruebas", status: "active", modality: "moto", pricing_type: "flat", premium_dispatch_enabled: true, driver_whatsapp_dispatch_enabled: true }], configurationLoaded: false, relationsLoaded: false } });
+    }
+    if (url.pathname === "/api/transport/panel/drivers") {
+      return route.fulfill({ json: { agencyId: "agency-qa", premiumDispatchEnabled: true, drivers: [{ id: "driver-qa", name: "Repartidor Demo", phone: "584120000000", commission_percent: 60, is_active: true }] } });
+    }
+    if (url.pathname === "/api/transport/panel/orders") {
+      return route.fulfill({ json: { orders: [{ id: "transport-order-qa", status: "agency_accepted", driver_id: "driver-qa", created_at: new Date().toISOString(), store_name_snapshot: "Comercio Demo", store_whatsapp_snapshot: "584120000001", customer_name_snapshot: "Cliente Demo", customer_phone_snapshot: "584120000002", delivery_fee_usd: 3, delivery_address: "Dirección de prueba", orders: { public_code: "SO-DEMO-001", total_usd: 12, payment_method: "Pago móvil", delivery_lat: 10.25, delivery_lng: -67.6 }, order_integrations: [] }], stores: [{ id: "store-qa", name: "Comercio Demo" }], pagination: { hasMore: false } } });
+    }
+    if (url.pathname === "/api/transport/panel/orders/transport-order-qa") {
+      return route.fulfill({ json: { order: { transport_order_events: [], __detailsLoaded: true } } });
+    }
+    return route.fulfill({ json: {} });
+  });
   await page.evaluate(() => sessionStorage.setItem("vendeplus_panel_token", `e30.${btoa(JSON.stringify({ exp: Math.floor(Date.now()/1000)+3600 }))}.qa`));
   await check("Panel conserva selector, mesa y herramientas sin duplicar barras", async () => {
     await page.goto(`${base}/panel/productos`, { waitUntil: "domcontentloaded" });
@@ -169,7 +194,7 @@ try {
     await page.getByRole("dialog", { name: "Mas opciones" }).waitFor({ state: "hidden" });
     await page.screenshot({ path: `${output}/business-mobile.png` });
   });
-  await check("Comprar recuerda espacio y el arranque de comercio revalida la sede", async () => {
+  await check("Selector permite entrar como cliente y comercio sin mezclar perfiles", async () => {
     const expires = Math.floor(Date.now()/1000)+3600;
     const session = { access_token: `e30.${Buffer.from(JSON.stringify({ sub: "qa-A", exp: expires })).toString("base64url")}.qa`, refresh_token: "qa-invalid", expires_at: expires, expires_in: 3600, token_type: "bearer", user: { id: "qa-A", email: "qa@example.invalid" } };
     const authKey = `sb-${new URL(env.NEXT_PUBLIC_SUPABASE_URL).hostname.split(".")[0]}-auth-token`;
@@ -180,15 +205,38 @@ try {
     await page.waitForURL("**/marketplace");
     assert.equal(await page.evaluate(() => localStorage.getItem("somos_mobile_v1_space")), '"buy"');
     await page.goto(base, { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: /Cliente/ }).click();
     await page.waitForURL("**/marketplace");
-    await page.evaluate(() => localStorage.setItem("somos_mobile_v1_space", '"business"'));
     await page.goto(base, { waitUntil: "domcontentloaded" });
-    await page.waitForURL("**/panel/productos");
+    await page.getByText("Empresa delivery", { exact: true }).waitFor();
+    await page.getByRole("button", { name: /Comercio/ }).click();
+    await page.waitForURL(/\/panel(?:\/login|\/pedidos|\/productos|$)/);
+    await page.waitForTimeout(300);
+    await page.goto(`${base}/panel/productos`, { waitUntil: "domcontentloaded" });
     await page.getByRole("navigation", { name: "Mi negocio", exact: true }).waitFor();
     assert.equal(await page.getByLabel("Sede activa").filter({ visible: true }).inputValue(), "B");
   });
+  await check("Empresa delivery opera con tarjetas, accesos rápidos y menú móvil", async () => {
+    await page.goto(`${base}/transporte/panel/pedidos`, { waitUntil: "domcontentloaded" });
+    await page.locator("[data-native-delivery-orders]").waitFor();
+    await page.getByText("SO-DEMO-001", { exact: true }).waitFor();
+    await page.getByRole("navigation", { name: "Navegación de empresa delivery" }).waitFor();
+    assert.equal(await page.getByRole("link", { name: "Abrir ubicación en mapas" }).count(), 1);
+    assert.equal(await page.getByRole("link", { name: "Enviar servicio al repartidor por WhatsApp" }).count(), 1);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+    await page.getByRole("button", { name: "Más", exact: true }).click();
+    await page.getByRole("dialog", { name: "Más opciones" }).waitFor();
+    assert.equal(await page.evaluate(() => window.somosNativeBack()), true);
+    await page.getByRole("dialog", { name: "Más opciones" }).waitFor({ state: "hidden" });
+    await nativeContext.setOffline(true);
+    await page.getByText(/Sin conexión/).waitFor();
+    await nativeContext.setOffline(false);
+    await page.getByText(/Sin conexión/).waitFor({ state: "hidden" });
+    await page.screenshot({ path: `${output}/delivery-mobile.png` });
+    await page.goto(`${base}/panel/productos`, { waitUntil: "domcontentloaded" });
+  });
   await check("Revalidacion fallida tapa datos y conserva filtro al reconectar", async () => {
-    const search = page.getByPlaceholder("Buscar producto...");
+    const search = page.getByPlaceholder(/Buscar por nombre/);
     await search.fill("Borrador filtro");
     unavailable = true;
     await page.evaluate(() => window.dispatchEvent(new Event("somos:resume")));

@@ -5,24 +5,33 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import {
   CheckCircle2,
+  ClipboardList,
   Copy,
   Eye,
   EyeOff,
   ImagePlus,
   KeyRound,
+  LayoutDashboard,
   Loader2,
   LogOut,
+  Menu,
   PlusCircle,
   RefreshCcw,
   Save,
   Send,
   Trash2,
   Truck,
+  UserRound,
+  UsersRound,
+  WifiOff,
+  X,
   XCircle,
 } from "lucide-react";
+import { useNativeApp, useNativeBackLayer } from "@/hooks/use-native-app";
 import {
   clearPanelAuthStorage,
   clearPanelServerSession,
+  completeNativePanelOAuthSession,
   completePanelOAuthSession,
   getPanelAccessToken,
   getPanelAuthHeaders,
@@ -57,6 +66,7 @@ import {
   playNewOrderSound,
   unlockOrderNotificationSound,
 } from "@/lib/panel/order-notification-sound";
+import { nativeOrderAlerts } from "@/lib/mobile/order-alerts";
 import {
   NewOrderToast,
   type NewOrderToastData,
@@ -104,6 +114,7 @@ function mergeAgenciesPreservingPremium(previous: Agency[], next: Agency[]) {
 }
 
 export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: string }) {
+  const isNativeApp = useNativeApp();
   const hasUsableInitialCache = Boolean(
     transportPanelCache?.hasSession && transportPanelCache.agencies?.length
   );
@@ -118,6 +129,9 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
   const [connections, setConnections] = useState<any[]>(transportPanelCache?.connections || []);
   const [billing, setBilling] = useState<any>(transportPanelCache?.billing || null);
   const [message, setMessage] = useState("");
+  const [isOnline, setIsOnline] = useState(true);
+  const [isNativeMoreOpen, setIsNativeMoreOpen] = useState(false);
+  useNativeBackLayer(isNativeMoreOpen, () => setIsNativeMoreOpen(false));
   const [newOrderToast, setNewOrderToast] = useState<NewOrderToastData | null>(null);
   const [isLoading, setIsLoading] = useState(!hasUsableInitialCache);
   const [isPanelRefreshing, setIsPanelRefreshing] = useState(false);
@@ -170,6 +184,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     Boolean(hasUsableInitialCache && transportPanelCache?.configurationLoaded)
   );
   const transportOrdersLoadedRef = useRef(false);
+  const nativeOAuthBusyRef = useRef(false);
   const localTransportMutationsRef = useRef(new Set<string>());
   const recentLocalTransportMutationsRef = useRef(new Map<string, number>());
 
@@ -510,10 +525,10 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       if (!isMounted) return;
       await load({
         silent: Boolean(transportPanelCache),
-        includeBilling: ["resumen", "facturacion"].includes(initialTab),
-        includeBillingDetail: initialTab === "facturacion",
-        includeConfiguration: initialTab !== "pedidos",
-        includeRelations: initialTab !== "pedidos",
+        includeBilling: false,
+        includeBillingDetail: false,
+        includeConfiguration: false,
+        includeRelations: false,
         accessToken,
       });
     }
@@ -525,6 +540,48 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
     // Initial boot only; later section loads are handled by the dependency-aware effect below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!isNativeApp) return;
+    let isMounted = true;
+
+    const completeNativeOAuthLogin = async () => {
+      if (nativeOAuthBusyRef.current) return;
+      nativeOAuthBusyRef.current = true;
+      try {
+        const accessToken = await completeNativePanelOAuthSession();
+        if (!accessToken || !isMounted) return;
+        setIsLoggingIn(true);
+        setMessage("Abriendo tu empresa delivery...");
+        await load({
+          accessToken,
+          includeBilling: false,
+          includeBillingDetail: false,
+          includeConfiguration: false,
+          includeRelations: false,
+        });
+        if (isMounted) setMessage("");
+      } catch (error: any) {
+        if (isMounted) {
+          setMessage(error.message || "No se pudo completar el inicio con Google.");
+        }
+      } finally {
+        nativeOAuthBusyRef.current = false;
+        if (isMounted) setIsLoggingIn(false);
+      }
+    };
+
+    void completeNativeOAuthLogin();
+    window.addEventListener("focus", completeNativeOAuthLogin);
+    window.addEventListener("somos:resume", completeNativeOAuthLogin);
+    return () => {
+      isMounted = false;
+      window.removeEventListener("focus", completeNativeOAuthLogin);
+      window.removeEventListener("somos:resume", completeNativeOAuthLogin);
+    };
+    // Native callbacks are consumed only when Android returns control to this mounted panel.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNativeApp]);
 
   useEffect(() => {
     if (!hasSession) return;
@@ -593,6 +650,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
           const newOrder = nextOrders.find((order: any) => order?.id && !currentIds.has(order.id));
           if (newOrder) {
             void playNewOrderSound();
+            void nativeOrderAlerts()?.show({ id: `delivery-${newOrder.id}` }).catch(() => undefined);
             setNewOrderToast({
               id: `${newOrder.id}-${Date.now()}`,
               title: newOrder.orders?.public_code || newOrder.transport_particular_requests?.public_code || newOrder.order_id?.slice(0, 8) || "Servicio recibido",
@@ -696,6 +754,17 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
   }, [tab, hasSession, agencyId, hasLoadedTransportDrivers]);
 
   useEffect(() => {
+    const syncConnection = () => setIsOnline(window.navigator.onLine);
+    syncConnection();
+    window.addEventListener("online", syncConnection);
+    window.addEventListener("offline", syncConnection);
+    return () => {
+      window.removeEventListener("online", syncConnection);
+      window.removeEventListener("offline", syncConnection);
+    };
+  }, []);
+
+  useEffect(() => {
     if (tab !== "pedidos" || !hasSession || !agencyId) return;
 
     const supabase = createSupabaseBrowserClient();
@@ -748,6 +817,11 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
   }, [newOrderToast]);
 
   useEffect(() => {
+    if (!isNativeApp || !hasSession || !agencyId) return;
+    void nativeOrderAlerts()?.enable().catch(() => undefined);
+  }, [agencyId, hasSession, isNativeApp]);
+
+  useEffect(() => {
     if (tab !== "pedidos" || !hasSession || !agencyId) return;
 
     let refreshing = false;
@@ -798,6 +872,14 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
   function confirmNavigation() {
     if (!hasUnsavedChanges) return true;
     return window.confirm("Tienes cambios sin guardar. Deseas salir sin guardar?");
+  }
+
+  function selectPanelTab(nextTab: string, href: string) {
+    if (!confirmNavigation()) return;
+    setHasUnsavedChanges(false);
+    setTab(nextTab);
+    setIsNativeMoreOpen(false);
+    window.history.pushState({}, "", href);
   }
 
   async function login(event: React.FormEvent<HTMLFormElement>) {
@@ -1501,14 +1583,21 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
         >
           Registrar empresa delivery
         </Link>
+        {isNativeApp ? <Link href="/" className="mx-auto mt-3 flex w-fit items-center gap-2 px-4 py-2 text-sm font-black text-[#2E3A79]"><UserRound size={17} />Cambiar perfil</Link> : null}
       </section>
     );
   }
 
   return (
-    <div className="space-y-5">
+    <div className={isNativeApp ? "native-delivery-panel space-y-4" : "space-y-5"}>
       <NewOrderToast notification={newOrderToast} onClose={() => setNewOrderToast(null)} />
-      <section className="rounded-[34px] bg-[#25262B] p-5 text-white shadow-xl shadow-[#25262B]/20">
+      {!isOnline && isNativeApp ? (
+        <div className="native-delivery-offline" role="status">
+          <WifiOff size={17} />
+          Sin conexión. Revisa internet antes de actualizar un servicio.
+        </div>
+      ) : null}
+      <section className="native-delivery-header rounded-[34px] bg-[#25262B] p-5 text-white shadow-xl shadow-[#25262B]/20">
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
           <div>
             <p className="text-sm font-black uppercase tracking-[0.18em] text-[#FFB547]">
@@ -1556,6 +1645,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2 md:max-w-[620px] md:justify-end">
+            {isNativeApp ? <Link href="/" aria-label="Cambiar perfil" title="Cambiar perfil" className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/10 text-white transition hover:bg-white/20"><UserRound size={18} /></Link> : null}
             <Link
               href="/transporte/panel/seguridad"
               aria-label="Cambiar contraseña"
@@ -1657,19 +1747,12 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
         </div>
       </section>
 
-      <nav className="grid grid-cols-2 gap-2 md:grid-cols-7" aria-label="Secciones de empresa delivery">
+      {!isNativeApp ? <nav className="grid grid-cols-2 gap-2 md:grid-cols-7" aria-label="Secciones de empresa delivery">
         {panelNavItems.filter((item) => item.key !== "referidos" || affiliatesEnabled).map((item) => (
           <button
             type="button"
             key={item.key}
-            onClick={() => {
-              if (!confirmNavigation()) {
-                return;
-              }
-              setHasUnsavedChanges(false);
-              setTab(item.key);
-              window.history.pushState({}, "", item.href);
-            }}
+            onClick={() => selectPanelTab(item.key, item.href)}
             className={[
               "rounded-2xl px-3 py-3 text-center text-xs font-black",
               tab === item.key ? "bg-[#2E3A79] text-white" : "bg-white text-[#746f69]",
@@ -1678,7 +1761,7 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
             {item.label}
           </button>
         ))}
-      </nav>
+      </nav> : null}
 
       {hasUnsavedChanges ? (
         <section className="rounded-[28px] bg-[#FFF7DF] p-4 text-[#6A4A00] ring-1 ring-[#FFB547]/40">
@@ -2696,6 +2779,46 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
       {tab === "referidos" && affiliatesEnabled ? <AffiliateDashboard agencyId={agencyId} embedded /> : null}
 
       {message ? <p className="rounded-2xl bg-white p-3 text-sm font-black text-[#2E3A79]">{message}</p> : null}
+
+      {isNativeApp ? (
+        <>
+          <nav className="native-delivery-nav" aria-label="Navegación de empresa delivery">
+            <button type="button" onClick={() => selectPanelTab("pedidos", "/transporte/panel/pedidos")} aria-current={tab === "pedidos" ? "page" : undefined}>
+              <ClipboardList size={20} /><span>Servicios</span>
+            </button>
+            <button type="button" onClick={() => selectPanelTab("repartidores", "/transporte/panel/repartidores")} aria-current={tab === "repartidores" ? "page" : undefined}>
+              <UsersRound size={20} /><span>Repartidores</span>
+            </button>
+            <button type="button" onClick={() => selectPanelTab("resumen", "/transporte/panel")} aria-current={tab === "resumen" ? "page" : undefined}>
+              <LayoutDashboard size={20} /><span>Resumen</span>
+            </button>
+            <button type="button" onClick={() => setIsNativeMoreOpen(true)} aria-current={!['pedidos', 'repartidores', 'resumen'].includes(tab) ? "page" : undefined}>
+              <Menu size={20} /><span>Más</span>
+            </button>
+          </nav>
+
+          {isNativeMoreOpen ? (
+            <div className="native-delivery-more-backdrop" role="presentation" onClick={() => setIsNativeMoreOpen(false)}>
+              <section className="native-delivery-more" role="dialog" aria-modal="true" aria-label="Más opciones" onClick={(event) => event.stopPropagation()}>
+                <header><strong>Más opciones</strong><button type="button" onClick={() => setIsNativeMoreOpen(false)} aria-label="Cerrar"><X size={20} /></button></header>
+                <div>
+                  {panelNavItems
+                    .filter((item) => !["pedidos", "repartidores", "resumen"].includes(item.key))
+                    .filter((item) => item.key !== "referidos" || affiliatesEnabled)
+                    .map((item) => (
+                      <button key={item.key} type="button" onClick={() => selectPanelTab(item.key, item.href)} aria-current={tab === item.key ? "page" : undefined}>
+                        <span>{item.label}</span><span aria-hidden="true">›</span>
+                      </button>
+                    ))}
+                  <Link href="/transporte/panel/seguridad"><span>Seguridad</span><span aria-hidden="true">›</span></Link>
+                  <Link href="/" onClick={() => setIsNativeMoreOpen(false)}><span>Cambiar perfil</span><span aria-hidden="true">›</span></Link>
+                  <button type="button" onClick={() => void logout()}><span>Cerrar sesión</span><LogOut size={17} /></button>
+                </div>
+              </section>
+            </div>
+          ) : null}
+        </>
+      ) : null}
     </div>
   );
 }

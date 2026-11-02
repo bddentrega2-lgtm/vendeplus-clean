@@ -1,7 +1,52 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { safeMobileRoute, safeCheckoutDraft, mobileBackTarget, readMobile, writeMobile, bindMobileAccount, clearMobilePrivateState } from "../src/lib/mobile/state.ts";
 import { fetchPanelJson, clearPanelReadCache } from "../src/lib/panel/client-fetch-cache.ts";
+
+test("Android ofrece acceso visible a cliente, comercio y empresa delivery", () => {
+  const nativeExperience = readFileSync(new URL("../src/components/mobile/NativeExperience.tsx", import.meta.url), "utf8");
+  const panelShell = readFileSync(new URL("../src/components/panel/PanelShell.tsx", import.meta.url), "utf8");
+  const transportPanel = readFileSync(new URL("../src/components/transport/TransportAgencyPanel.tsx", import.meta.url), "utf8");
+
+  assert.match(nativeExperience, /title: "Cliente"[\s\S]*?href: "\/marketplace"/);
+  assert.match(nativeExperience, /title: "Comercio"[\s\S]*?href: "\/panel\/login"/);
+  assert.match(nativeExperience, /title: "Empresa delivery"[\s\S]*?href: "\/transporte\/panel"/);
+  assert.match(nativeExperience, /Elige cómo deseas ingresar/);
+  assert.match(panelShell, /href="\/" title="Cambiar perfil"/);
+  assert.match(transportPanel, /isNativeApp \? <Link href="\/"[\s\S]*?Cambiar perfil/);
+});
+
+test("empresa delivery usa navegación y servicios optimizados para Android", () => {
+  const transportPanel = readFileSync(new URL("../src/components/transport/TransportAgencyPanel.tsx", import.meta.url), "utf8");
+  const transportOrders = readFileSync(new URL("../src/components/transport/TransportOrdersTab.tsx", import.meta.url), "utf8");
+
+  assert.match(transportPanel, /className="native-delivery-nav"/);
+  assert.match(transportPanel, />Servicios</);
+  assert.match(transportPanel, />Repartidores</);
+  assert.match(transportPanel, />Resumen</);
+  assert.match(transportPanel, />Más</);
+  assert.match(transportPanel, /native-delivery-offline/);
+  assert.match(transportPanel, /nativeOrderAlerts\(\)\?\.enable\(\)/);
+  assert.match(transportPanel, /nativeOrderAlerts\(\)\?\.show\(\{ id: `delivery-\$\{newOrder\.id\}` \}\)/);
+  assert.match(transportOrders, /data-native-delivery-orders/);
+  assert.match(transportOrders, /Abrir ubicación en mapas/);
+  assert.match(transportOrders, /Enviar servicio al repartidor por WhatsApp/);
+});
+
+test("delivery completa Google nativo y abre primero una carga compacta", () => {
+  const transportPanel = readFileSync(
+    new URL("../src/components/transport/TransportAgencyPanel.tsx", import.meta.url),
+    "utf8"
+  );
+  assert.match(transportPanel, /completeNativePanelOAuthSession/);
+  assert.match(transportPanel, /window\.addEventListener\("somos:resume", completeNativeOAuthLogin\)/);
+  assert.match(transportPanel, /window\.addEventListener\("focus", completeNativeOAuthLogin\)/);
+  assert.match(
+    transportPanel,
+    /includeBilling: false,[\s\S]*includeConfiguration: false,[\s\S]*includeRelations: false/
+  );
+});
 
 test("restore accepts canonical internal paths only", () => {
   for (const route of ["/marketplace", "/smash-test", "/smash-test/carrito", "/smash-test/checkout", "/panel/pedidos"]) assert.equal(safeMobileRoute(route), route);

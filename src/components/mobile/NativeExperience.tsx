@@ -4,17 +4,14 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ArrowLeft, Home, Search, UserRound, Store, ShoppingBag, X, WifiOff, RefreshCw, Percent, MapPin, LogIn, ShieldCheck, Trash2, CircleCheck, ChevronRight } from "lucide-react";
+import { ArrowLeft, Home, Search, UserRound, Store, ShoppingBag, X, WifiOff, RefreshCw, Percent, MapPin, LogIn, ShieldCheck, Trash2, CircleCheck, ChevronRight, Truck } from "lucide-react";
 import { BuyerAuthResume } from "@/components/buyer/BuyerAuthResume";
 import { confirmNativeLeave, useNativeApp, useNativeBackLayer } from "@/hooks/use-native-app";
-import { requestTimeoutSignal } from "@/lib/client/request-timeout";
-import { mobileBackTarget, readMobile, safeMobileRoute, writeMobile } from "@/lib/mobile/state";
+import { mobileBackTarget, safeMobileRoute, writeMobile } from "@/lib/mobile/state";
 import { getCart, getCartCount } from "@/lib/cart";
 import { clearCustomerBrowserProfile, getCustomerBrowserProfile, getCustomerIdParts, saveCustomerBrowserProfile } from "@/lib/customer-browser-profile";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { getBuyerClient, signInBuyerWithGoogle } from "@/lib/buyer/client";
 import { clearFrequentLocation, normalizeFrequentLocation, readFrequentLocation, saveFrequentLocation } from "@/lib/mobile/frequent-location";
-import { syncPanelServerSession } from "@/lib/panel/client-auth";
 import { BrandLogo } from "@/components/public/BrandLogo";
 import type { DeliveryLocation } from "@/types";
 
@@ -25,7 +22,6 @@ export function NativeExperience() {
   const pathname = usePathname();
   const router = useRouter();
   const [offline, setOffline] = useState(false);
-  const [bootError, setBootError] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -101,40 +97,10 @@ export function NativeExperience() {
   }, [native]);
 
   useEffect(() => {
-    if (!native || pathname !== "/") return;
-    let cancelled = false;
-    async function enter() {
-      const space = readMobile<string>("space", "");
-      if (space !== "buy") {
-        try {
-          const { data } = await createSupabaseBrowserClient()?.auth.getSession() || { data: null };
-          if (data?.session) {
-            await syncPanelServerSession(data.session.access_token);
-            const response = await fetch("/api/panel/context", { cache: "no-store", signal: requestTimeoutSignal(10_000) });
-            if (!response.ok && response.status !== 401 && response.status !== 403) throw new Error("context");
-            const context = response.ok ? await response.json() : null;
-            if (context?.stores?.length && !context.isFounderMode) {
-              // Restore a private route only for the account validated by the backend.
-              const saved = readMobile("account", "") === context.userId ? safeMobileRoute(readMobile("private_route", "")) : null;
-              if (!cancelled) router.replace(saved?.startsWith("/panel") ? saved : "/panel/pedidos");
-              return;
-            }
-          }
-        } catch { if (!cancelled) setBootError(true); return; }
-      }
-      const saved = safeMobileRoute(readMobile("buyer_route", ""));
-      if (!cancelled) router.replace(saved && !saved.startsWith("/panel") ? saved : "/marketplace");
-    }
-    void enter();
-    return () => { cancelled = true; };
-  }, [native, pathname, router]);
-
-  useEffect(() => {
     if (!native) return;
     document.documentElement.classList.toggle("somos-buyer-space", buyer);
-    if (excluded) return;
     const safe = safeMobileRoute(pathname);
-    if (safe && !pathname.startsWith("/panel")) writeMobile("buyer_route", safe);
+    if (!excluded && safe && !pathname.startsWith("/panel")) writeMobile("buyer_route", safe);
     const back = () => {
       const layer = new Event("somos:back-layer", { cancelable: true });
       window.dispatchEvent(layer);
@@ -172,7 +138,33 @@ export function NativeExperience() {
   }, [native, pathname]);
 
   if (!native || excluded) return null;
-  if (pathname === "/") return <div className="native-start" role="status"><BrandLogo size="lg" priority />{!bootError ? <span className="native-loading-bar" aria-hidden="true" /> : null}<p>{bootError ? "No pudimos recuperar tu acceso." : "Abriendo Somos..."}</p>{bootError ? <><button onClick={() => window.location.reload()}>Reintentar</button><Link href="/marketplace" onClick={() => writeMobile("space", "buy")}>Ir a comprar</Link></> : null}</div>;
+  if (pathname === "/") {
+    const profiles = [
+      { key: "buy", title: "Cliente", detail: "Explora comercios y realiza pedidos", href: "/marketplace", icon: ShoppingBag },
+      { key: "business", title: "Comercio", detail: "Gestiona productos, pedidos e impresion", href: "/panel/login", icon: Store },
+      { key: "transport", title: "Empresa delivery", detail: "Administra servicios, comercios y repartidores", href: "/transporte/panel", icon: Truck },
+    ] as const;
+
+    return <main className="native-start native-profile-select">
+      <header>
+        <p>Elige cómo deseas ingresar</p>
+      </header>
+      <section aria-label="Perfiles de acceso">
+        {profiles.map((profile) => {
+          const Icon = profile.icon;
+          return <button key={profile.key} type="button" onClick={() => { writeMobile("space", profile.key); router.replace(profile.href); }}>
+            <span><Icon size={24} /></span>
+            <span><strong>{profile.title}</strong><small>{profile.detail}</small></span>
+            <ChevronRight size={21} />
+          </button>;
+        })}
+      </section>
+      <footer className="native-profile-footer">
+        <small>Puedes cambiar de perfil cuando lo necesites.</small>
+        <BrandLogo size="lg" priority />
+      </footer>
+    </main>;
+  }
 
   function openProfile() {
     const profile = getCustomerBrowserProfile();
@@ -199,7 +191,7 @@ export function NativeExperience() {
     <BuyerAuthResume />
     {offline ? <div className="native-connection" role="status"><WifiOff size={17} /><span>Sin conexion. No se enviaran pedidos.</span><button aria-label="Reintentar conexion" onClick={() => { setOffline(!navigator.onLine); router.refresh(); }}><RefreshCw size={19} /></button></div> : null}
     {buyer ? <>
-      <header className="native-buyer-header">{pathname !== "/marketplace" ? <Link href="/marketplace" aria-label="Ir al inicio" title="Ir al inicio"><ArrowLeft size={21} /></Link> : null}<Link href="/marketplace" aria-label="Somos, inicio" className="native-brand"><BrandLogo variant="white" size="sm" priority /></Link><Link href="/panel/login" className="native-business-entry" onClick={() => writeMobile("space", "business")}><Store size={17} /><span>Ingresar a mi negocio</span></Link></header>
+      <header className="native-buyer-header">{pathname !== "/marketplace" ? <Link href="/marketplace" aria-label="Ir al inicio" title="Ir al inicio"><ArrowLeft size={21} /></Link> : null}<Link href="/marketplace" aria-label="Somos, inicio" className="native-brand"><BrandLogo variant="white" size="sm" priority /></Link><Link href="/" className="native-business-entry"><UserRound size={17} /><span>Cambiar perfil</span></Link></header>
       {pathname === "/marketplace" && carts.length ? <div className="native-carts">{carts.map((cart) => <Link key={cart.slug} href={`/${cart.slug}/carrito`}><ShoppingBag size={17} />{cart.slug.replaceAll("-", " ")}<span>{cart.count}</span></Link>)}</div> : null}
       <nav className="native-buyer-nav" aria-label="Comprar"><button onClick={() => marketplaceView("inicio")} aria-current={pathname === "/marketplace" && marketView === "home" ? "page" : undefined}><Home size={21} />Inicio</button><button onClick={search}><Search size={21} />Buscar</button><button onClick={() => marketplaceView("promociones")} aria-current={pathname === "/marketplace" && marketView === "offers" ? "page" : undefined}><Percent size={21} />Promos</button><button onClick={openProfile}><UserRound size={21} />Mis datos</button></nav>
     </> : null}

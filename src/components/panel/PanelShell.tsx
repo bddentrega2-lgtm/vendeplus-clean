@@ -30,6 +30,7 @@ import {
   Trash2,
   Truck,
   UtensilsCrossed,
+  UserRound,
   X,
 } from "lucide-react";
 
@@ -194,7 +195,7 @@ export function PanelShell({
               </div>
             </div>
           </header>
-          {isNativeApp ? <div className="native-business-context"><div>{stores.length > 1 ? <PanelStoreSelector /> : <span>{selectedStore?.name || "Mi negocio"}</span>}</div><Link href="/marketplace" onClick={() => writeMobile("space", "buy")}>Comprar</Link>{selectedStore?.table_orders_access_enabled ? <Link href="/panel/mesas" title="Mesa / Barra" aria-label="Mesa / Barra"><UtensilsCrossed size={18} /></Link> : null}</div> : null}
+          {isNativeApp ? <div className="native-business-context"><div>{stores.length > 1 ? <PanelStoreSelector /> : <span>{selectedStore?.name || "Mi negocio"}</span>}</div><Link href="/marketplace" onClick={() => writeMobile("space", "buy")}>Comprar</Link>{selectedStore?.table_orders_access_enabled ? <Link href="/panel/mesas" title="Mesa / Barra" aria-label="Mesa / Barra"><UtensilsCrossed size={18} /></Link> : null}<Link href="/" title="Cambiar perfil" aria-label="Cambiar perfil"><UserRound size={18} /></Link></div> : null}
 
           <div className={`mt-5 grid grid-cols-2 gap-3 lg:hidden ${isNativeApp ? "hidden" : ""}`}>
             {visibleNavItems.map((item) => {
