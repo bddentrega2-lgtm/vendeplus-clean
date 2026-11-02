@@ -32,6 +32,9 @@ test("release has an origin guard and print queue endpoints remain official", ()
   const read = (path) => readFileSync(new URL(`../mobile/somos-android/${path}`, import.meta.url), "utf8");
   const gradle = read("android/app/build.gradle");
   assert.match(gradle, /preReleaseBuild[\s\S]*dependsOn\('verifyReleaseOrigin'\)/);
+  assert.match(gradle, /realDataTest = System\.getenv\('SOMOS_ANDROID_REAL_DATA_TEST'\) == '1'/);
+  assert.match(gradle, /buyerStaging && !realDataTest \? '"xpqmmdmixpyqruykkbkf\.supabase\.co"' : '"rvmtjtuztewcrmodrodb\.supabase\.co"'/);
+  assert.match(gradle, /realDataTest && !buyerStaging/);
   assert.match(gradle, /config\.server\?\.url != 'https:\/\/www\.somos-ve\.com'/);
   const plugin = read("android/app/src/main/java/com/somosve/app/SomosPrinterPlugin.java");
   const printerConfig = read("android/app/src/main/java/com/somosve/app/PrinterServerConfig.java");

@@ -1,6 +1,7 @@
 apply plugin: 'com.android.application'
 
 def buyerStaging = System.getenv('SOMOS_ANDROID_BUYER_STAGING') == '1'
+def realDataTest = System.getenv('SOMOS_ANDROID_REAL_DATA_TEST') == '1'
 def releaseKeystorePath = System.getenv('SOMOS_ANDROID_KEYSTORE_PATH')
 def releaseKeyAlias = System.getenv('SOMOS_ANDROID_KEY_ALIAS')
 def releaseStorePassword = System.getenv('SOMOS_ANDROID_STORE_PASSWORD')
@@ -19,7 +20,7 @@ android {
         versionCode buyerStaging ? 14 : productionVersionCode
         versionName buyerStaging ? "1.4.0-buyer-beta.3" : productionVersionName
         manifestPlaceholders = [somosAppLabel: buyerStaging ? 'Somos Pruebas' : 'Somos']
-        buildConfigField 'String', 'BUYER_AUTH_HOST', buyerStaging ? '"xpqmmdmixpyqruykkbkf.supabase.co"' : '"rvmtjtuztewcrmodrodb.supabase.co"'
+        buildConfigField 'String', 'BUYER_AUTH_HOST', buyerStaging && !realDataTest ? '"xpqmmdmixpyqruykkbkf.supabase.co"' : '"rvmtjtuztewcrmodrodb.supabase.co"'
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -106,6 +107,9 @@ tasks.register('verifyAppIdentity') {
             !(config.server?.url ==~ /https:\/\/vendeplus-clean-[a-z0-9]{9}-entrega2-s-projects\.vercel\.app/) ||
             config.server?.allowNavigation != [new URI(config.server.url).host])) {
             throw new GradleException('Buyer staging requires a single HTTPS preview origin.')
+        }
+        if (realDataTest && !buyerStaging) {
+            throw new GradleException('Real-data testing is allowed only in the separate staging package.')
         }
     }
 }
