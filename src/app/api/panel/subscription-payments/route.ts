@@ -11,6 +11,7 @@ import {
   requirePanelAuth,
 } from "@/lib/panel/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { canSelfActivatePerServicePlan } from "@/lib/subscription-plan-choice";
 
 const PROOF_BUCKET = "subscription-receipts";
 const MAX_PROOF_BYTES = 5 * 1024 * 1024;
@@ -130,6 +131,10 @@ export async function POST(request: NextRequest) {
     if (storeError) throw storeError;
 
     if (action === "choose_plan" && selectedPlanId === "per_service") {
+      if (!canSelfActivatePerServicePlan(store)) {
+        return badRequest("Tu plan actual es administrado por Somos. Contactanos si necesitas cambiarlo.");
+      }
+
       const serviceFeePayer =
         value("serviceFeePayer") === "customer" ? "customer" : value("serviceFeePayer") === "merchant" ? "merchant" : "";
 

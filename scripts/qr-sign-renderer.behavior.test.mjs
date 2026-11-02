@@ -35,3 +35,14 @@ test("el diseño de Barra no imprime el rótulo y conserva el sitio oficial", as
   assert.match(source, /canvas\.width = WIDTH/);
   assert.match(source, /canvas\.height = HEIGHT/);
 });
+
+test("el logo del comercio se dibuja dentro de una mascara circular", async () => {
+  const source = await readFile(new URL("../src/lib/qr-sign-renderer.ts", import.meta.url), "utf8");
+  assert.match(source, /function drawCircularLogo/);
+  assert.match(source, /context\.arc\(/);
+  assert.match(source, /context\.clip\(\)/);
+  assert.match(source, /function drawCoverImage/);
+  assert.match(source, /Math\.max\(width \/ image\.naturalWidth, height \/ image\.naturalHeight\)/);
+  assert.match(source, /drawCoverImage\(context, image, box\)/);
+  assert.match(source, /drawCircularLogo\(context, logo\)/);
+});

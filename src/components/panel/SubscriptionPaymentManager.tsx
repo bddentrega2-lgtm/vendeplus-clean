@@ -14,6 +14,7 @@ import {
 import { formatBs, formatUsd } from "@/lib/currency";
 import { plans, getPlan, PER_SERVICE_FEE_USD } from "@/lib/plans";
 import { isDateBeforeToday, isSubscriptionPastDue } from "@/lib/subscription-status";
+import { canSelfActivatePerServicePlan } from "@/lib/subscription-plan-choice";
 
 const publicPlan = plans.find((plan) => plan.id === "per_service")!;
 const selectedPlanId = "per_service" as const;
@@ -104,7 +105,7 @@ export function SubscriptionPaymentManager() {
   const [notes, setNotes] = useState("");
   const [proof, setProof] = useState<File | null>(null);
   const [proofInputKey, setProofInputKey] = useState(0);
-  const [serviceFeePayer, setServiceFeePayer] = useState<"merchant" | "customer">("merchant");
+  const [serviceFeePayer, setServiceFeePayer] = useState<"merchant" | "customer">("customer");
   const [isCheckingAccess, setIsCheckingAccess] = useState(() => shouldShowPanelInitialAccessGate());
   const [isLoading, setIsLoading] = useState(() => hasSavedPanelAuth());
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -130,7 +131,11 @@ export function SubscriptionPaymentManager() {
     isTrial && dueAt && currentTimeMs !== null && isDateBeforeToday(dueAt, new Date(currentTimeMs))
   );
   const isPerService = selectedStore?.plan_type === "per_service";
-  const needsPlanChoice = Boolean(selectedStore && !isPerService && (isTrialExpired || isPastDueStatus || isPastDueByDate));
+  const needsPlanChoice = Boolean(
+    selectedStore &&
+    canSelfActivatePerServicePlan(selectedStore) &&
+    (isTrialExpired || isPastDueStatus || isPastDueByDate)
+  );
   const amountUsd = useMemo(() => {
     if (needsPlanChoice && selectedPlanId === "per_service") return 0;
     if (isPerService) return serviceUsage.amountUsd;
@@ -248,8 +253,14 @@ export function SubscriptionPaymentManager() {
   }, []);
 
   useEffect(() => {
-    setServiceFeePayer(selectedStore?.service_fee_payer === "customer" ? "customer" : "merchant");
-  }, [selectedStore?.id, selectedStore?.service_fee_payer]);
+    setServiceFeePayer(
+      needsPlanChoice
+        ? "customer"
+        : selectedStore?.service_fee_payer === "customer"
+          ? "customer"
+          : "merchant"
+    );
+  }, [needsPlanChoice, selectedStore?.id, selectedStore?.service_fee_payer]);
 
   if (isCheckingAccess) return <PanelAccessGate />;
   if (isLoading && !isUnlocked) return <PanelModuleSkeleton label="Cargando suscripción..." />;
@@ -289,9 +300,13 @@ export function SubscriptionPaymentManager() {
             <CreditCard size={22} />
           </div>
           <div>
-            <h2 className="text-2xl font-black">Plan por servicio</h2>
+            <h2 className="text-2xl font-black">
+              {selectedStore?.plan_type === "monthly" ? "Suscripción mensual" : "Plan por servicio"}
+            </h2>
             <p className="mt-1 text-sm font-bold text-[#746f69]">
-              La prueba gratis dura 15 días. Al vencer, continúa con el fee por pedido.
+              {selectedStore?.plan_type === "monthly"
+                ? "Plan privado de monto fijo, administrado por Somos."
+                : "La prueba gratis dura 15 días. Al vencer, continúa con el fee por pedido."}
             </p>
           </div>
         </div>
@@ -307,7 +322,9 @@ export function SubscriptionPaymentManager() {
           </label>
           <div className="rounded-2xl bg-[#F8F3E8] px-4 py-3">
             <p className="text-xs font-black uppercase tracking-[0.14em] text-[#746f69]">Corte</p>
-            <p className="mt-1 text-sm font-black text-[#25262B]">Mensual sobre pedidos recibidos</p>
+            <p className="mt-1 text-sm font-black text-[#25262B]">
+              {selectedStore?.plan_type === "monthly" ? "Mensual fijo" : "Mensual sobre pedidos recibidos"}
+            </p>
           </div>
         </div>
 

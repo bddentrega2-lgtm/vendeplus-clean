@@ -113,11 +113,48 @@ function drawContainedImage(
   context.restore();
 }
 
-function getLogoBox(logo: HTMLImageElement): [number, number, number, number] {
-  const ratio = logo.naturalWidth / logo.naturalHeight;
-  if (ratio >= 2.2) return [20, 16, 60, 30];
-  if (ratio <= 0.85) return [34, 14, 32, 34];
-  return [27, 13, 46, 38];
+function drawCoverImage(
+  context: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  box: [number, number, number, number],
+) {
+  const [x, y, width, height] = box.map(mm) as [number, number, number, number];
+  const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
+  const renderedWidth = image.naturalWidth * scale;
+  const renderedHeight = image.naturalHeight * scale;
+
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(
+    image,
+    x + (width - renderedWidth) / 2,
+    y + (height - renderedHeight) / 2,
+    renderedWidth,
+    renderedHeight,
+  );
+}
+
+function drawCircularLogo(context: CanvasRenderingContext2D, image: HTMLImageElement) {
+  const box: [number, number, number, number] = [33, 14, 34, 34];
+  const [x, y, width, height] = box.map(mm) as [number, number, number, number];
+  const radius = Math.min(width, height) / 2;
+
+  context.save();
+  context.beginPath();
+  context.arc(x + width / 2, y + height / 2, radius, 0, Math.PI * 2);
+  context.fillStyle = COLORS.white;
+  context.fill();
+  context.clip();
+  drawCoverImage(context, image, box);
+  context.restore();
+
+  context.save();
+  context.beginPath();
+  context.arc(x + width / 2, y + height / 2, radius, 0, Math.PI * 2);
+  context.strokeStyle = COLORS.green;
+  context.lineWidth = mm(0.45);
+  context.stroke();
+  context.restore();
 }
 
 export async function renderQrSign(canvas: HTMLCanvasElement, options: QrSignRenderOptions) {
@@ -140,7 +177,7 @@ export async function renderQrSign(canvas: HTMLCanvasElement, options: QrSignRen
   drawRect(context, 0, 0, 100, 150, COLORS.cream);
   drawRect(context, 0, 0, 100, 12, COLORS.orange);
   drawText(context, "Pide sin hacer colas", [0, 0, 100, 12], 19, 700, COLORS.white);
-  drawContainedImage(context, logo, getLogoBox(logo));
+  drawCircularLogo(context, logo);
 
   if (options.place.type === "mesa") {
     const label = formatQrSignTableNumber(options.place.tableNumber);

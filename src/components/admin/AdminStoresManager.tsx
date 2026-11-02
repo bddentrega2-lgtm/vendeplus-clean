@@ -544,6 +544,8 @@ export function AdminStoresManager() {
                 <p className="text-xs font-bold text-[#25262B]">{getSomosBillingLabel(store)}</p>
                 {store.plan_type === "per_service" ? (
                   <p className="text-[11px] font-bold text-[#746f69]">Corte actual</p>
+                ) : store.plan_type === "monthly" ? (
+                  <p className="text-[11px] font-bold text-[#746f69]">Mensual fijo</p>
                 ) : null}
               </div>
 
