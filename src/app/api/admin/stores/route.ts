@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
     stage = "store insert";
     const { data, error } = await supabase
       .from("stores")
-      .insert(payload)
+      .insert({ ...payload, catalog_layout: "visual" })
       .select(adminStoreSelect)
       .single();
 

@@ -22,13 +22,25 @@ public class SomosFirebaseMessagingService extends FirebaseMessagingService {
 
     @Override
     public void onMessageReceived(RemoteMessage message) {
-        if (!"print_jobs".equals(message.getData().get("type"))) return;
-        PrinterSecureStore store = new PrinterSecureStore(getApplicationContext());
-        String messageStoreId = message.getData().get("storeId");
-        if (messageStoreId == null || !messageStoreId.equals(store.activeStoreId()) || !store.hasToken()) return;
-        SomosOrderAlertsPlugin.showRemote(this, message.getData().get("orderId"));
-        if (store.autoPrintEnabled() && store.hasToken() && !store.printerAddress().isEmpty()) {
-            PrintForegroundService.start(this);
+        String type = message.getData().get("type");
+        if ("print_jobs".equals(type)) {
+            PrinterSecureStore store = new PrinterSecureStore(getApplicationContext());
+            String messageStoreId = message.getData().get("storeId");
+            if (messageStoreId == null || !messageStoreId.equals(store.activeStoreId()) || !store.hasToken()) return;
+            SomosOrderAlertsPlugin.showRemote(this, message.getData().get("orderId"));
+            if (store.autoPrintEnabled() && !store.printerAddress().isEmpty()) PrintForegroundService.start(this);
+            return;
+        }
+        String id = message.getData().get("id");
+        String path = message.getData().get("path");
+        if ("commerce_order".equals(type)) {
+            SomosOrderAlertsPlugin.showRemote(this, id, "Nuevo pedido en Somos", "Abre Pedidos para revisarlo.", path);
+        } else if ("transport_order".equals(type)) {
+            SomosOrderAlertsPlugin.showRemote(this, id, "Nuevo servicio de delivery", "Abre el panel para revisar el servicio.", path);
+        } else if ("table_assistance".equals(type)) {
+            String tableName = message.getData().get("tableName");
+            SomosOrderAlertsPlugin.showRemote(this, message.getData().get("tableId") + ":" + message.getData().get("requestedAt"),
+                "Solicitud de asistencia", (tableName == null || tableName.isEmpty() ? "Una mesa solicita asistencia." : tableName + " solicita asistencia."), "/panel/mesas");
         }
     }
 

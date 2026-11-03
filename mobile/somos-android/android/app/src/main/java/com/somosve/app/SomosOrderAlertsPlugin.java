@@ -20,6 +20,7 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
+import com.google.firebase.messaging.FirebaseMessaging;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
@@ -65,6 +66,26 @@ public class SomosOrderAlertsPlugin extends Plugin {
     }
 
     @PermissionCallback private void permissionResult(PluginCall call) { status(call); }
+
+    @PluginMethod public void pushToken(PluginCall call) {
+        FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
+            if (!task.isSuccessful() || task.getResult() == null || task.getResult().isEmpty()) {
+                call.reject("No pudimos activar los avisos en este telefono.");
+                return;
+            }
+            JSObject result = new JSObject();
+            result.put("token", task.getResult());
+            call.resolve(result);
+        });
+    }
+
+    @PluginMethod public void appInfo(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("version", BuildConfig.VERSION_NAME);
+        result.put("versionCode", BuildConfig.VERSION_CODE);
+        result.put("packageName", BuildConfig.APPLICATION_ID);
+        call.resolve(result);
+    }
 
     @PluginMethod public void settings(PluginCall call) {
         createChannel();
@@ -115,6 +136,10 @@ public class SomosOrderAlertsPlugin extends Plugin {
     }
 
     static synchronized void showRemote(Context context, String id) {
+        showRemote(context, id, "Nuevo pedido en Somos", "Abre el panel para revisar el pedido.", "/panel/pedidos");
+    }
+
+    static synchronized void showRemote(Context context, String id, String title, String text, String path) {
         if (id == null || id.isEmpty() || id.length() > 300) return;
         createChannel(context);
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return;
@@ -122,12 +147,15 @@ public class SomosOrderAlertsPlugin extends Plugin {
         Set<String> stored = preferences.getStringSet("delivered", java.util.Collections.emptySet());
         LinkedHashSet<String> ids = new LinkedHashSet<>(stored);
         if (ids.contains(id)) return;
-        Intent intent = new Intent(context, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        PendingIntent content = PendingIntent.getActivity(context, 32, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        Intent intent = new Intent(context, MainActivity.class)
+            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .putExtra("somos_path", path == null ? "" : path);
+        int requestCode = 1000 + Math.abs(id.hashCode() % 20_000);
+        PendingIntent content = PendingIntent.getActivity(context, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         NotificationCompat.Builder notification = new NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("Nuevo pedido en Somos")
-            .setContentText("Abre el panel para revisar el pedido.")
+            .setContentTitle(title)
+            .setContentText(text)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(NotificationCompat.DEFAULT_SOUND | NotificationCompat.DEFAULT_VIBRATE)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)

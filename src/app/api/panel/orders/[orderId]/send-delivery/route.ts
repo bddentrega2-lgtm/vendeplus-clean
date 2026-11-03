@@ -15,6 +15,7 @@ import {
   requirePanelAuth,
 } from "@/lib/panel/access";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { safeSendTransportOrderPush } from "@/lib/printing/firebase-push";
 import {
   attachApiResponseHeaders,
   createApiRequestContext,
@@ -399,6 +400,11 @@ async function upsertTransportOrderFromOrder(params: {
       actorType: "commerce",
       actorUserId,
       actorName: order.stores?.name || "Comercio",
+    });
+    await safeSendTransportOrderPush({
+      supabase,
+      agencyId: agency.id,
+      transportOrderId: transportOrder.id,
     });
   }
 

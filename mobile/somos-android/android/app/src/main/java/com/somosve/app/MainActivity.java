@@ -5,6 +5,7 @@ import com.getcapacitor.BridgeWebViewClient;
 import android.graphics.Color;
 import android.graphics.Bitmap;
 import android.net.Uri;
+import android.content.Intent;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
@@ -68,6 +69,7 @@ public class MainActivity extends BridgeActivity {
         });
         showRecovery(false);
         pageHandler.postDelayed(pageTimeout, 20000);
+        handleNotificationIntent(getIntent());
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override public void handleOnBackPressed() {
                 WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(bridge.getWebView());
@@ -85,6 +87,23 @@ public class MainActivity extends BridgeActivity {
                 });
             }
         });
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleNotificationIntent(intent);
+    }
+
+    private void handleNotificationIntent(Intent intent) {
+        if (intent == null || bridge == null || startUrl == null) return;
+        String path = intent.getStringExtra("somos_path");
+        intent.removeExtra("somos_path");
+        if (path == null || !(path.startsWith("/panel") || path.startsWith("/transporte/panel"))) return;
+        Uri start = Uri.parse(startUrl);
+        Uri target = start.buildUpon().encodedPath(path).clearQuery().fragment(null).build();
+        bridge.getWebView().post(() -> bridge.getWebView().loadUrl(target.toString()));
     }
 
     private boolean isAppOrigin(String url) {

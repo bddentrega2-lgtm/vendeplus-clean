@@ -27,7 +27,8 @@ test("empresa delivery usa navegación y servicios optimizados para Android", ()
   assert.match(transportPanel, />Resumen</);
   assert.match(transportPanel, />Más</);
   assert.match(transportPanel, /native-delivery-offline/);
-  assert.match(transportPanel, /nativeOrderAlerts\(\)\?\.enable\(\)/);
+  assert.match(transportPanel, /const alerts = nativeOrderAlerts\(\)/);
+  assert.match(transportPanel, /\/api\/transport\/panel\/push-devices/);
   assert.match(transportPanel, /nativeOrderAlerts\(\)\?\.show\(\{ id: `delivery-\$\{newOrder\.id\}` \}\)/);
   assert.match(transportOrders, /data-native-delivery-orders/);
   assert.match(transportOrders, /Abrir ubicación en mapas/);

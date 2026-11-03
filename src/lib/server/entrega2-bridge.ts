@@ -79,7 +79,6 @@ export async function quoteEntrega2ThroughSomos(
       longitud_entrega: params.deliveryLng,
       tipo_vehiculo: getEntrega2DefaultVehicleType(),
     });
-    const routeDistance = await routeDistancePromise;
     const payload = (response.payload || {}) as Record<string, unknown>;
     const cost = parseEntrega2QuoteCost(payload.costo_total);
 
@@ -89,10 +88,14 @@ export async function quoteEntrega2ThroughSomos(
 
     const roundedCost = Number(cost.toFixed(2));
     const apiDistance = Number(payload.distancia_km);
+    const routeDistance =
+      Number.isFinite(apiDistance) && apiDistance > 0
+        ? null
+        : await routeDistancePromise;
     const quotedDistance =
       Number.isFinite(apiDistance) && apiDistance > 0
         ? Number(apiDistance.toFixed(2))
-        : Number(routeDistance.distanceKm.toFixed(2));
+        : Number(routeDistance?.distanceKm.toFixed(2));
     const duration = String(payload.duracion_estimada || "").trim();
     const detail = [
       `${quotedDistance.toFixed(2)} km`,
@@ -138,10 +141,8 @@ export async function quoteEntrega2ThroughSomos(
         message:
           fallbackQuote.available === false
             ? fallbackQuote.message
-            : "Entrega2 App no respondio a tiempo. Tarifa calculada con la configuracion de respaldo de Entrega2 Somos.",
-        ruleSummary: `Respaldo Entrega2 Somos · ${
-          fallbackQuote.ruleSummary || "Tarifa configurada por la empresa"
-        }`,
+            : "Costo estimado de delivery para tu ubicación.",
+        ruleSummary: null,
         ...agencyMetadata,
       },
       fallbackError: error,

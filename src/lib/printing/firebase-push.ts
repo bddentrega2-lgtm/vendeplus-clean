@@ -5,6 +5,7 @@ type SupabaseAdminClient = ReturnType<typeof import("@/lib/supabase/admin").crea
 type PushDevice = { id: string; fcm_token: string | null };
 type ServiceAccount = { type: string; project_id: string; client_email: string; private_key: string };
 type PrintWakeEvent = "received" | "paid" | "manual";
+type PushResult = { configured: boolean; attempted: number; sent: number };
 
 const FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
 const INVALID_TOKEN_CODES = new Set(["UNREGISTERED", "INVALID_ARGUMENT", "SENDER_ID_MISMATCH"]);
@@ -163,4 +164,82 @@ export async function safeSendTableAssistancePush(input: {
 }) {
   try { return await sendTableAssistancePush(input); }
   catch { return { configured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON), attempted: 0, sent: 0 }; }
+}
+
+async function sendAuthenticatedPush({
+  supabase, table, scopeColumn, scopeId, memberTable, memberScopeColumn, type, id, path,
+  fetchImpl = fetch, credentials = readCredentials(),
+}: {
+  supabase: SupabaseAdminClient;
+  table: "panel_push_devices" | "transport_push_devices";
+  scopeColumn: "store_id" | "agency_id";
+  scopeId: string;
+  memberTable: "store_users" | "transport_agency_users";
+  memberScopeColumn: "store_id" | "agency_id";
+  type: "commerce_order" | "transport_order";
+  id: string;
+  path: string;
+  fetchImpl?: typeof fetch;
+  credentials?: ReturnType<typeof readCredentials>;
+}): Promise<PushResult> {
+  if (!credentials) return { configured: false, attempted: 0, sent: 0 };
+  const cutoff = new Date(Date.now() - 45 * 24 * 60 * 60_000).toISOString();
+  const { data: devices, error: deviceError } = await supabase.from(table)
+    .select("fcm_token,user_id").eq(scopeColumn, scopeId).gte("updated_at", cutoff).limit(100);
+  if (deviceError) throw deviceError;
+  if (!devices?.length) return { configured: true, attempted: 0, sent: 0 };
+
+  const userIds = [...new Set(devices.map((device) => device.user_id))];
+  const { data: members, error: memberError } = await supabase.from(memberTable)
+    .select("user_id").eq(memberScopeColumn, scopeId).in("user_id", userIds);
+  if (memberError) throw memberError;
+  const authorized = new Set((members || []).map((member) => member.user_id));
+  const targets = devices.filter((device) => authorized.has(device.user_id));
+  if (!targets.length) return { configured: true, attempted: 0, sent: 0 };
+
+  const accessToken = await credentials.auth.getAccessToken();
+  if (!accessToken) throw new Error("Firebase access token was unavailable.");
+  const results = await Promise.all(targets.map(async (device) => {
+    try {
+      const response = await fetchImpl(`https://fcm.googleapis.com/v1/projects/${encodeURIComponent(credentials.account.project_id)}/messages:send`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ message: {
+          token: device.fcm_token,
+          data: { type, id, path },
+          android: { priority: "high" },
+        } }),
+        signal: AbortSignal.timeout(8_000),
+      });
+      if (response.ok) return { sent: true, invalid: false, token: device.fcm_token };
+      const payload = await response.json().catch(() => ({}));
+      return { sent: false, invalid: INVALID_TOKEN_CODES.has(firebaseErrorCode(payload)), token: device.fcm_token };
+    } catch { return { sent: false, invalid: false, token: device.fcm_token }; }
+  }));
+  const invalidTokens = results.filter((result) => result.invalid).map((result) => result.token);
+  if (invalidTokens.length) {
+    const { error } = await supabase.from(table).delete().eq(scopeColumn, scopeId).in("fcm_token", invalidTokens);
+    if (error) throw error;
+  }
+  return { configured: true, attempted: targets.length, sent: results.filter((result) => result.sent).length };
+}
+
+export async function safeSendCommerceOrderPush(input: { supabase: SupabaseAdminClient; storeId: string; orderId: string }) {
+  try {
+    return await sendAuthenticatedPush({
+      supabase: input.supabase, table: "panel_push_devices", scopeColumn: "store_id", scopeId: input.storeId,
+      memberTable: "store_users", memberScopeColumn: "store_id", type: "commerce_order", id: input.orderId,
+      path: "/panel/pedidos",
+    });
+  } catch { return { configured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON), attempted: 0, sent: 0 }; }
+}
+
+export async function safeSendTransportOrderPush(input: { supabase: SupabaseAdminClient; agencyId: string; transportOrderId: string }) {
+  try {
+    return await sendAuthenticatedPush({
+      supabase: input.supabase, table: "transport_push_devices", scopeColumn: "agency_id", scopeId: input.agencyId,
+      memberTable: "transport_agency_users", memberScopeColumn: "agency_id", type: "transport_order", id: input.transportOrderId,
+      path: "/transporte/panel/pedidos",
+    });
+  } catch { return { configured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON), attempted: 0, sent: 0 }; }
 }

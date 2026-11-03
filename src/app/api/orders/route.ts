@@ -37,7 +37,7 @@ import {
 import { isValidTableOrderTokenForStore } from "@/lib/server/table-order-tokens";
 import { createOrderAtomic } from "@/lib/server/create-order-atomic";
 import { getVerifiedBuyer } from "@/lib/buyer/auth-server";
-import { safeSendPrintWakePush } from "@/lib/printing/firebase-push";
+import { safeSendCommerceOrderPush, safeSendPrintWakePush } from "@/lib/printing/firebase-push";
 
 const MAX_ORDER_BODY_BYTES = 180_000;
 const ORDER_IP_LIMIT = 60;
@@ -743,6 +743,7 @@ export async function POST(request: NextRequest) {
         created_at: persistedOrder.created_at || new Date().toISOString(),
       });
       await safeSendPrintWakePush({ supabase, storeId, orderId: persistedOrder.id });
+      await safeSendCommerceOrderPush({ supabase, storeId, orderId: persistedOrder.id });
     }
     const savedOrder: SavedOrder = {
       ...order,

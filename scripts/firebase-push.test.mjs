@@ -156,7 +156,7 @@ test("order replay cannot send another push and Android deduplicates remote orde
   assert.match(route, /if \(!atomicResult\.idempotentReplay\) \{[\s\S]*safeSendPrintWakePush/);
   assert.match(android, /getSharedPreferences\("somos_remote_orders"/);
   assert.match(android, /if \(ids\.contains\(id\)\) return/);
-  assert.match(service, /"print_jobs"\.equals\(message\.getData\(\)\.get\("type"\)\)/);
+  assert.match(service, /"print_jobs"\.equals\(type\)/);
   assert.match(service, /messageStoreId\.equals\(store\.activeStoreId\(\)\)/);
 });
 

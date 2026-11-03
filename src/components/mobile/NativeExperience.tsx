@@ -7,11 +7,12 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, Home, Search, UserRound, Store, ShoppingBag, X, WifiOff, RefreshCw, Percent, MapPin, LogIn, ShieldCheck, Trash2, CircleCheck, ChevronRight, Truck } from "lucide-react";
 import { BuyerAuthResume } from "@/components/buyer/BuyerAuthResume";
 import { confirmNativeLeave, useNativeApp, useNativeBackLayer } from "@/hooks/use-native-app";
-import { mobileBackTarget, safeMobileRoute, writeMobile } from "@/lib/mobile/state";
+import { mobileBackTarget, readMobile, safeMobileRoute, writeMobile } from "@/lib/mobile/state";
 import { getCart, getCartCount } from "@/lib/cart";
 import { clearCustomerBrowserProfile, getCustomerBrowserProfile, getCustomerIdParts, saveCustomerBrowserProfile } from "@/lib/customer-browser-profile";
 import { getBuyerClient, signInBuyerWithGoogle } from "@/lib/buyer/client";
 import { clearFrequentLocation, normalizeFrequentLocation, readFrequentLocation, saveFrequentLocation } from "@/lib/mobile/frequent-location";
+import { nativeOrderAlerts } from "@/lib/mobile/order-alerts";
 import { BrandLogo } from "@/components/public/BrandLogo";
 import type { DeliveryLocation } from "@/types";
 
@@ -35,6 +36,9 @@ export function NativeExperience() {
   const [frequentLocation, setFrequentLocation] = useState<DeliveryLocation | null>(null);
   const [marketView, setMarketView] = useState("home");
   const [carts, setCarts] = useState<{ slug: string; count: number }[]>([]);
+  const [lastSpace] = useState(() => readMobile("space", ""));
+  const [appVersion, setAppVersion] = useState("");
+  const [updateUrl, setUpdateUrl] = useState("");
   const excluded = pathname.startsWith("/admin") || pathname.startsWith("/transporte") || pathname.startsWith("/auth");
   const buyer = !excluded && !pathname.startsWith("/panel") && pathname !== "/";
   useNativeBackLayer(profileOpen, () => setProfileOpen(false));
@@ -82,6 +86,19 @@ export function NativeExperience() {
       window.visualViewport?.removeEventListener("resize", keyboard);
       window.removeEventListener("resize", keyboard);
     };
+  }, [native]);
+
+  useEffect(() => {
+    if (!native) return;
+    const alerts = nativeOrderAlerts();
+    if (!alerts?.appInfo) return;
+    void alerts.appInfo().then(async (info) => {
+      setAppVersion(info.version);
+      const response = await fetch("/api/mobile/release", { cache: "no-store" });
+      if (!response.ok) return;
+      const release = await response.json();
+      if (Number(info.versionCode) < Number(release.latestVersionCode || 0) && typeof release.updateUrl === "string") setUpdateUrl(release.updateUrl);
+    }).catch(() => undefined);
   }, [native]);
 
   useEffect(() => {
@@ -154,7 +171,7 @@ export function NativeExperience() {
           const Icon = profile.icon;
           return <button key={profile.key} type="button" onClick={() => { writeMobile("space", profile.key); router.replace(profile.href); }}>
             <span><Icon size={24} /></span>
-            <span><strong>{profile.title}</strong><small>{profile.detail}</small></span>
+            <span><strong>{profile.title}{lastSpace === profile.key ? <em>Ultimo acceso</em> : null}</strong><small>{profile.detail}</small></span>
             <ChevronRight size={21} />
           </button>;
         })}
@@ -162,6 +179,7 @@ export function NativeExperience() {
       <footer className="native-profile-footer">
         <small>Puedes cambiar de perfil cuando lo necesites.</small>
         <BrandLogo size="lg" priority />
+        {appVersion ? <small>Version {appVersion}</small> : null}
       </footer>
     </main>;
   }
@@ -189,6 +207,7 @@ export function NativeExperience() {
 
   return <>
     <BuyerAuthResume />
+    {updateUrl ? <a className="native-update" href={updateUrl} target="_blank" rel="noreferrer">Hay una actualizacion disponible</a> : null}
     {offline ? <div className="native-connection" role="status"><WifiOff size={17} /><span>Sin conexion. No se enviaran pedidos.</span><button aria-label="Reintentar conexion" onClick={() => { setOffline(!navigator.onLine); router.refresh(); }}><RefreshCw size={19} /></button></div> : null}
     {buyer ? <>
       <header className="native-buyer-header">{pathname !== "/marketplace" ? <Link href="/marketplace" aria-label="Ir al inicio" title="Ir al inicio"><ArrowLeft size={21} /></Link> : null}<Link href="/marketplace" aria-label="Somos, inicio" className="native-brand"><BrandLogo variant="white" size="sm" priority /></Link><Link href="/" className="native-business-entry"><UserRound size={17} /><span>Cambiar perfil</span></Link></header>

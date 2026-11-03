@@ -818,7 +818,18 @@ export function TransportAgencyPanel({ initialTab = "resumen" }: { initialTab?: 
 
   useEffect(() => {
     if (!isNativeApp || !hasSession || !agencyId) return;
-    void nativeOrderAlerts()?.enable().catch(() => undefined);
+    const alerts = nativeOrderAlerts();
+    void (async () => {
+      await alerts?.enable();
+      if (!alerts?.pushToken) return;
+      const { token } = await alerts.pushToken();
+      const response = await fetch("/api/transport/panel/push-devices", {
+        method: "POST",
+        headers: { ...await getPanelAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ agencyId, token }),
+      });
+      if (!response.ok) throw new Error("No se pudieron activar los avisos.");
+    })().catch(() => undefined);
   }, [agencyId, hasSession, isNativeApp]);
 
   useEffect(() => {

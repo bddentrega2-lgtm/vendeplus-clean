@@ -348,11 +348,12 @@ export async function PATCH(request: NextRequest) {
       subscription_status: "trial",
       monthly_price_usd: 0,
       product_limit: 50,
+      catalog_layout: "visual",
     });
 
     const { data: store, error: storeError } = await supabase
       .from("stores")
-      .insert(storePayload)
+      .insert({ ...storePayload, catalog_layout: "visual" })
       .select("id, slug, name")
       .single();
     if (storeError) throw storeError;

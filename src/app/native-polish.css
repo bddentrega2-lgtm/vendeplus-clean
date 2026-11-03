@@ -89,9 +89,11 @@ html.somos-native-app .native-profile-select > section > button:nth-child(2) > s
 html.somos-native-app .native-profile-select > section > button:nth-child(3) > span:first-child { background: #e9edfb; color: #2e3a79; }
 html.somos-native-app .native-profile-select > section > button > span:nth-child(2) { display: grid; gap: 3px; min-width: 0; }
 html.somos-native-app .native-profile-select strong { font-size: 16px; font-weight: 850; }
+html.somos-native-app .native-profile-select strong em { display: inline-block; margin-left: 8px; padding: 2px 6px; border-radius: 4px; background: #eaf7f2; color: #147565; font-size: 9px; font-style: normal; text-transform: uppercase; vertical-align: middle; }
 html.somos-native-app .native-profile-select small { color: #667575; font-size: 12px; font-weight: 650; line-height: 1.35; }
 html.somos-native-app .native-profile-select .native-profile-footer { display: grid; justify-items: center; gap: 18px; width: min(100%, 440px); margin: 24px auto 0; color: #667575; text-align: center; }
 html.somos-native-app .native-profile-select .native-profile-footer img { width: 154px; height: auto; }
+.native-update { position: fixed; z-index: 80; top: calc(env(safe-area-inset-top) + 8px); right: 12px; left: 12px; min-height: 42px; padding: 11px 14px; border-radius: 6px; background: #fff1ce; color: #604710; box-shadow: 0 4px 16px #143d4220; text-align: center; font-size: 12px; font-weight: 850; }
 html.somos-native-app .native-profile > header { position: sticky; top: 0; z-index: 3; margin-inline: -16px; padding: 14px 16px; background: #143d42; color: white; border-bottom: 3px solid #f27533; }
 html.somos-native-app .native-profile-form { display: grid; gap: 0; }
 html.somos-native-app .native-profile-form fieldset { display: grid; gap: 0; margin: 0; padding: 18px 0; border: 0; border-bottom: 1px solid #cfe0db; }

@@ -475,6 +475,10 @@ export function CheckoutForm({ store }: { store: Store }) {
   const mapsUrl = location ? buildMapsUrl(location.latitude, location.longitude) : null;
   const quoteLabel = localizeQuoteText(quote.label, baseCurrency);
   const quoteMessage = localizeQuoteText(quote.message, baseCurrency);
+  const publicQuoteText =
+    isEntrega2Delivery && quote.source === "fallback"
+      ? "Costo estimado de delivery para tu ubicación."
+      : quoteMessage || quoteLabel;
   const routeUrl = location
     ? buildRouteUrl({
         originLat: store.latitude,
@@ -875,7 +879,7 @@ export function CheckoutForm({ store }: { store: Store }) {
                 </label>
                 {quote.available === false ? (
                   <p className="mt-3 rounded-2xl bg-red-50 p-3 text-sm font-black text-red-700">
-                    {quoteMessage || quoteLabel}
+                    {publicQuoteText}
                   </p>
                 ) : null}
               </section>
@@ -1111,7 +1115,7 @@ export function CheckoutForm({ store }: { store: Store }) {
                   {serviceFeeUsd > 0 ? <div className="flex justify-between"><span className="font-bold text-[#746f69]">Fee</span><span className="font-black">{formatBaseCurrency(serviceFeeUsd, baseCurrency)}</span></div> : null}
                   {form.deliveryType === "delivery" ? (
                     <p className="rounded-2xl bg-[#FFF8F0] p-3 text-xs font-black text-[#746f69]">
-                      {quoteMessage || quoteLabel} {quote.source === "fallback" ? "· estimado aproximado" : ""}
+                      {publicQuoteText}
                     </p>
                   ) : null}
                 </div>

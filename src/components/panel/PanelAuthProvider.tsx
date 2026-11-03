@@ -139,7 +139,7 @@ export function PanelAuthProvider({ children }: { children: React.ReactNode }) {
     setContextError("");
     const activeStore = availableStores.find((store: PanelStoreOption) => store.id === nextStoreId);
     const alerts = nativeOrderAlerts();
-    if (!data.isFounderMode && activeStore?.table_orders_access_enabled && activeStore.table_orders_enabled && alerts?.pushToken) {
+    if (!data.isFounderMode && activeStore && alerts?.pushToken) {
       void (async () => {
         const { token } = await alerts.pushToken!();
         if (version !== requestVersion.current) return;

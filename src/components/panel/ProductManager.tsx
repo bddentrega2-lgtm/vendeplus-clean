@@ -907,14 +907,14 @@ export function ProductManager() {
   }, []);
 
   useEffect(() => {
-    const savedView = localStorage.getItem("vendeplus_panel_products_view");
+    const savedView = localStorage.getItem("vendeplus_panel_products_view_v2");
     if (savedView === "comfortable" || savedView === "compact") {
       setProductView(savedView);
     }
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("vendeplus_panel_products_view", productView);
+    localStorage.setItem("vendeplus_panel_products_view_v2", productView);
   }, [productView]);
 
   useEffect(() => {

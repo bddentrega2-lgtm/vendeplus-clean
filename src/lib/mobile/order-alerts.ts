@@ -2,6 +2,7 @@ type AlertPlugin = {
   status(): Promise<{ granted: boolean }>;
   enable(): Promise<{ granted: boolean }>;
   pushToken?(): Promise<{ token: string }>;
+  appInfo?(): Promise<{ version: string; versionCode: number; packageName: string }>;
   show(value: { id: string; test?: boolean; kind?: "assistance"; tableName?: string }): Promise<void>;
   clear(): Promise<void>;
   settings(): Promise<void>;

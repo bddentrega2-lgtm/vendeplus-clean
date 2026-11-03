@@ -181,7 +181,6 @@ test("cotizacion de delivery limita abuso por IP y comercio", () => {
     new URL("../src/lib/server/entrega2-bridge.ts", import.meta.url),
     "utf8",
   );
-
   assert.match(route, /key:\s*`delivery-quote:ip:\$\{clientIp\}`/);
   assert.match(route, /key:\s*`delivery-quote:store:\$\{storeId\}:ip:\$\{clientIp\}`/);
   assert.match(route, /status:\s*429/);
@@ -688,6 +687,10 @@ test("Entrega2 corta esperas largas y activa contingencia temporal", () => {
     new URL("../src/lib/server/entrega2-bridge.ts", import.meta.url),
     "utf8",
   );
+  const checkout = readFileSync(
+    new URL("../src/components/public/CheckoutForm.tsx", import.meta.url),
+    "utf8",
+  );
 
   assert.match(integration, /ENTREGA2_QUOTE_TIMEOUT_MS = 4_500/);
   assert.match(integration, /ENTREGA2_ORDER_TIMEOUT_MS = 8_000/);
@@ -697,6 +700,9 @@ test("Entrega2 corta esperas largas y activa contingencia temporal", () => {
   assert.match(integration, /assertEntrega2QuoteCircuitAvailable/);
   assert.match(quoteRoute, /entrega2_quote_fallback_used/);
   assert.match(bridge, /calculateEntrega2FallbackQuote/);
+  assert.match(bridge, /Costo estimado de delivery para tu ubicaci.n/);
+  assert.doesNotMatch(bridge, /no respondio a tiempo/);
+  assert.match(checkout, /isEntrega2Delivery && quote\.source === "fallback"/);
 });
 
 test("Home y Marketplace hidratan delivery en tres consultas por lote", () => {
@@ -978,8 +984,11 @@ test("Marketplace web usa ubicacion voluntaria; deteccion inicial queda limitada
   assert.match(marketplace, /const cityRequired = cities.length > 0 && \(!preferencesReady \|\| !cityConfirmed\)/);
   assert.match(marketplace, /if \(cityRequired\) return/);
   assert.match(marketplace, /distanceKm\(coordinates, store\)/);
-  assert.match(marketplace, /Ofertas que valen la pena/);
-  assert.match(marketplace, /Los favoritos de la semana/);
+  assert.match(marketplace, /Los mas vendidos/);
+  assert.match(marketplace, /Ofertas para aprovechar/);
+  assert.match(marketplace, /Recien llegados/);
+  assert.ok(marketplace.indexOf('title="Los mas vendidos"') < marketplace.indexOf('title="Ofertas para aprovechar"'));
+  assert.ok(marketplace.indexOf('title="Ofertas para aprovechar"') < marketplace.indexOf('title="Recien llegados"'));
   assert.match(marketplace, /Las mejores opciones en un solo lugar/);
   assert.doesNotMatch(marketplace, /Un ganador por tienda|Comercios locales, productos reales|pedidos directos por WhatsApp/);
   assert.doesNotMatch(marketplace, /Tiendas recomendadas/);
@@ -991,6 +1000,7 @@ test("Marketplace web usa ubicacion voluntaria; deteccion inicial queda limitada
   assert.match(marketplace, /No autorizaste la ubicacion/);
   assert.match(marketplace, /products=\{curatedSections\.offers\.slice\(0, 6\)\}/);
   assert.match(marketplace, /products=\{curatedSections\.bestSellers\.slice\(0, 6\)\}/);
+  assert.match(marketplace, /products=\{curatedSections\.newProducts\.slice\(0, 6\)\}/);
   assert.match(marketplace, /<StoreRail stores=\{curatedSections\.newStores\}/);
   assert.match(marketplace, /Number\(storeAppearances\.get\(item\.storeId\) \|\| 0\) >= 2/);
   assert.doesNotMatch(marketplace, /vendidos esta semana/);
@@ -2045,4 +2055,18 @@ test("catalogo usa etiqueta general y recomienda trasladar el fee al cliente", (
   assert.doesNotMatch(catalog, />Menú<\/h2>/);
   assert.match(subscription, /Lo paga el cliente[\s\S]*Recomendado/);
   assert.match(settings, /Lo paga el cliente \(Recomendado\)/);
+});
+
+test("productos abre compacto y los comercios nuevos nacen con catalogo visual", () => {
+  const products = read("src/components/panel/ProductManager.tsx");
+  const adminStores = read("src/app/api/admin/stores/route.ts");
+  const registration = read("src/app/api/admin/registration-requests/route.ts");
+  const migration = read("supabase/migrations/20261102170000_new_stores_visual_catalog_default.sql");
+
+  assert.match(products, /useState<"comfortable" \| "compact">\(\s*"compact"\s*\)/);
+  assert.match(products, /vendeplus_panel_products_view_v2/);
+  assert.match(adminStores, /\.insert\(\{ \.\.\.payload, catalog_layout: "visual" \}\)/);
+  assert.match(registration, /\.insert\(\{ \.\.\.storePayload, catalog_layout: "visual" \}\)/);
+  assert.match(migration, /alter column catalog_layout set default 'visual'/);
+  assert.doesNotMatch(migration, /update\s+public\.stores/i);
 });

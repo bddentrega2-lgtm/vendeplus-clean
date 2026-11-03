@@ -45,8 +45,9 @@ test("Firebase pilot is production-package-only and keeps the official origin", 
   assert.match(script, /com\.somosve\.app/);
   assert.match(script, /Remove-Item Env:SOMOS_ANDROID_BUYER_STAGING/);
   assert.match(script, /origin = 'https:\/\/www\.somos-ve\.com'/);
-  assert.match(script, /versionCode = 15/);
-  assert.match(script, /versionName = '1\.5\.1'/);
+  assert.match(script, /versionCode = 18/);
+  assert.match(script, /versionName = '1\.5\.4'/);
+  assert.match(script, /apkSha256 = \(Get-FileHash/);
   assert.match(script, /lintDebug assembleDebug testDebugUnitTest/);
 });
 
@@ -64,9 +65,12 @@ test("Play candidate is one-shot, private by default and compatible with the sup
   assert.match(service, /Build\.VERSION\.SDK_INT < Build\.VERSION_CODES\.O/);
   assert.match(service, /START_NOT_STICKY/);
   assert.doesNotMatch(service, /scheduleWithFixedDelay|START_STICKY/);
-  assert.match(firebase, /if \(!"print_jobs"\.equals/);
-  assert.match(gradle, /productionVersionCode = 15/);
-  assert.match(gradle, /productionVersionName = "1\.5\.1"/);
+  assert.match(firebase, /"print_jobs"\.equals\(type\)/);
+  assert.match(firebase, /"commerce_order"\.equals\(type\)/);
+  assert.match(firebase, /"transport_order"\.equals\(type\)/);
+  assert.match(firebase, /"table_assistance"\.equals\(type\)/);
+  assert.match(gradle, /productionVersionCode = 18/);
+  assert.match(gradle, /productionVersionName = "1\.5\.4"/);
   assert.match(gradle, /finalizedBy\('writeReleaseMetadata'\)/);
 });
 

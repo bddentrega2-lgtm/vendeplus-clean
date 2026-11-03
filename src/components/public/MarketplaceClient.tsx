@@ -89,12 +89,13 @@ function ProductCard({ product, badge, openState }: { product: MarketplaceProduc
   </Link>;
 }
 
-function ProductRail({ title, eyebrow, products, badge, storeOpenStates }: { title: string; eyebrow?: string; products: MarketplaceProduct[]; badge: string; storeOpenStates: Map<string, Store["openState"]> }) {
+function ProductRail({ title, eyebrow, products, badge, storeOpenStates, tone = "plain" }: { title: string; eyebrow?: string; products: MarketplaceProduct[]; badge: string; storeOpenStates: Map<string, Store["openState"]>; tone?: "plain" | "popular" | "offers" | "new" }) {
   const [expanded, setExpanded] = useState(false);
   if (!products.length) return null;
   const visible = expanded ? products : products.slice(0, INITIAL_SECTION_ITEMS);
   const eyebrowTone = badge === "Oferta" ? "text-[#C44D1B]" : badge === "Mas vendido" ? "text-[#946300]" : "text-[#0F6B63]";
-  return <section className="bg-white py-6"><div className="vp-container"><div className="flex items-end justify-between gap-4"><div>{eyebrow ? <p className={`text-[10px] font-black uppercase tracking-[0.15em] ${eyebrowTone}`}>{eyebrow}</p> : null}<div className="mt-1 flex items-center gap-3"><span className="h-8 w-1.5 rounded-full bg-[#FF7133]" aria-hidden="true" /><h2 className="text-xl font-black leading-tight text-[#143D42] sm:text-2xl">{title}</h2></div></div>{products.length > INITIAL_SECTION_ITEMS ? <button type="button" onClick={() => setExpanded((value) => !value)} className="shrink-0 rounded-full bg-[#E8F6F1] px-4 py-2 text-xs font-black text-[#0F6B63] ring-1 ring-[#0F6B63]/10">{expanded ? "Ver menos" : "Ver todos"}</button> : null}</div><div className="vp-scrollbar-none mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">{visible.map((product) => <ProductCard key={`${badge}-${product.productId}`} product={product} badge={badge} openState={storeOpenStates.get(product.storeId)} />)}</div></div></section>;
+  const sectionTone = tone === "popular" ? "bg-[#FFF8DF]" : tone === "offers" ? "bg-[#FFF1EA]" : tone === "new" ? "bg-[#EAF7F2]" : "bg-white";
+  return <section className={`${sectionTone} border-y border-[#143D42]/[0.05] py-6`}><div className="vp-container"><div className="flex items-end justify-between gap-4"><div>{eyebrow ? <p className={`text-[10px] font-black uppercase tracking-[0.15em] ${eyebrowTone}`}>{eyebrow}</p> : null}<div className="mt-1 flex items-center gap-3"><span className="h-8 w-1.5 rounded-full bg-[#FF7133]" aria-hidden="true" /><h2 className="text-xl font-black leading-tight text-[#143D42] sm:text-2xl">{title}</h2></div></div>{products.length > INITIAL_SECTION_ITEMS ? <button type="button" onClick={() => setExpanded((value) => !value)} className="shrink-0 rounded-full bg-white px-4 py-2 text-xs font-black text-[#0F6B63] shadow-sm ring-1 ring-[#0F6B63]/10">{expanded ? "Ver menos" : "Ver todos"}</button> : null}</div><div className="vp-scrollbar-none mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">{visible.map((product) => <ProductCard key={`${badge}-${product.productId}`} product={product} badge={badge} openState={storeOpenStates.get(product.storeId)} />)}</div></div></section>;
 }
 
 function StoreCard({ store, distance, badge }: { store: Store; distance?: number | null; badge?: string }) {
@@ -275,13 +276,15 @@ export function MarketplaceClient({ stores, featuredProducts = [], discovery = {
   }, [filteredStoreIds, query]);
   const filteredOffers = useMemo(() => filterProducts(discovery.offers).filter(product => product.discountPercent > 0), [discovery.offers, filterProducts]);
   const filteredBestSellers = useMemo(() => activeFilter === "Ofertas" ? [] : filterProducts(discovery.bestSellers), [activeFilter, discovery.bestSellers, filterProducts]);
+  const filteredNewProducts = useMemo(() => activeFilter === "Ofertas" ? [] : filterProducts(discovery.newProducts), [activeFilter, discovery.newProducts, filterProducts]);
   const filteredFeaturedProducts = useMemo(() => { const needle = normalizeSearch(query); return activeFilter === "Ofertas" ? [] : featuredProducts.filter((product) => filteredStoreIds.has(product.storeId) && (!needle || normalizeSearch(`${product.productName} ${product.description} ${product.storeName}`).includes(needle))); }, [activeFilter, featuredProducts, filteredStoreIds, query]);
   const curatedSections = useMemo(() => {
     const usedProducts = new Set<string>();
     const storeAppearances = new Map<string, number>();
-    const featured = takeFairProducts(filteredFeaturedProducts, usedProducts, storeAppearances, 1);
-    const offers = takeFairProducts(filteredOffers, usedProducts, storeAppearances, 2);
     const bestSellers = takeFairProducts(filteredBestSellers, usedProducts, storeAppearances, 1);
+    const offers = takeFairProducts(filteredOffers, usedProducts, storeAppearances, 2);
+    const newProducts = takeFairProducts(filteredNewProducts, usedProducts, storeAppearances, 1);
+    const featured = takeFairProducts(filteredFeaturedProducts, usedProducts, storeAppearances, 1);
     const storesById = new Map(filteredStores.map((entry) => [entry.store.id, entry]));
     const newStores = activeFilter === "Ofertas" ? [] : discovery.newStoreIds.flatMap((storeId) => {
       const entry = storesById.get(storeId);
@@ -289,8 +292,8 @@ export function MarketplaceClient({ stores, featuredProducts = [], discovery = {
       storeAppearances.set(storeId, Number(storeAppearances.get(storeId) || 0) + 1);
       return [entry];
     });
-    return { featured, offers, bestSellers, newStores };
-  }, [activeFilter, discovery.newStoreIds, filteredBestSellers, filteredFeaturedProducts, filteredOffers, filteredStores]);
+    return { featured, offers, bestSellers, newProducts, newStores };
+  }, [activeFilter, discovery.newStoreIds, filteredBestSellers, filteredFeaturedProducts, filteredNewProducts, filteredOffers, filteredStores]);
   const nearbyStores = useMemo(() => filteredStores.filter((entry) => entry.distance !== null).sort((a, b) => Number(a.distance) - Number(b.distance)), [filteredStores]);
   function persistPreferences(city: string, view: MarketplaceView, confirmed = cityConfirmed) { try { localStorage.setItem(PREFERENCES_CACHE_KEY, JSON.stringify({ city, view, cityConfirmed: confirmed })); } catch {} }
   const locate = useCallback(() => {
@@ -348,7 +351,7 @@ export function MarketplaceClient({ stores, featuredProducts = [], discovery = {
 
   if (cities.length > 0 && !preferencesReady) return <main className="market-city-loading" role="status"><BrandLogo size="sm" priority /><span>Cargando Marketplace...</span></main>;
   if (cityRequired) return <main className="market-city-entry">{cityPicker}</main>;
-  return <main id="inicio" style={marketplaceTheme} className={`${!partnerName ? "somos-marketplace" : ""} min-h-screen scroll-smooth bg-white pb-20 text-[#143D42] sm:pb-0`}>
+  return <main id="inicio" style={marketplaceTheme} className={`${!partnerName ? "somos-marketplace" : ""} min-h-screen scroll-smooth bg-[#F4F8F6] pb-20 text-[#143D42] sm:pb-0`}>
     {!partnerName ? <div className="hidden sm:block"><PublicHeader primaryHref="/registro" primaryLabel="Registrar comercio" /></div> : null}
     <div className={`fixed inset-x-0 top-0 z-[60] border-b border-white/10 bg-[var(--marketplace-primary)] text-white shadow-lg transition duration-300 sm:hidden ${compactHeaderVisible ? "visible translate-y-0 opacity-100" : "invisible pointer-events-none -translate-y-full opacity-0"}`} aria-hidden={!compactHeaderVisible}>
       <div className="vp-container flex h-14 items-center gap-2">
@@ -381,9 +384,10 @@ export function MarketplaceClient({ stores, featuredProducts = [], discovery = {
       <MarketplaceMap stores={mapStores} />
     </section> : null}
     {activeView === "home" ? <>
+      <ProductRail title="Los mas vendidos" eyebrow="Lo que todos estan pidiendo" products={curatedSections.bestSellers.slice(0, 6)} badge="Mas vendido" tone="popular" storeOpenStates={storeOpenStates} />
+      <ProductRail title="Ofertas para aprovechar" eyebrow="Precios especiales" products={curatedSections.offers.slice(0, 6)} badge="Oferta" tone="offers" storeOpenStates={storeOpenStates} />
+      <ProductRail title="Recien llegados" eyebrow="Nuevos productos" products={curatedSections.newProducts.slice(0, 6)} badge="Nuevo" tone="new" storeOpenStates={storeOpenStates} />
       {curatedSections.featured.length ? <section className="bg-white py-6"><div className="vp-container"><div className="flex items-center gap-3"><span className="h-8 w-1.5 rounded-full bg-[#FF7133]" aria-hidden="true" /><Sparkles className="text-[#0F6B63]" /><h2 className="text-xl font-black sm:text-2xl">Destacados Somos</h2></div><div className="vp-scrollbar-none mt-4 flex snap-x gap-3 overflow-x-auto pb-2">{curatedSections.featured.slice(0, 6).map((product) => <ProductCard key={product.rewardId} badge="Destacado" openState={storeOpenStates.get(product.storeId)} product={{ productId: product.productId, storeId: product.storeId, storeName: product.storeName, storeSlug: product.storeSlug, productName: product.productName, description: product.description, imageUrl: product.imageUrl, priceUsd: product.priceUsd, discountPercent: product.discountPercent, createdAt: "" }} />)}</div></div></section> : null}
-      <ProductRail title="Ofertas que valen la pena" eyebrow="Precios especiales" products={curatedSections.offers.slice(0, 6)} badge="Oferta" storeOpenStates={storeOpenStates} />
-      <ProductRail title="Los favoritos de la semana" products={curatedSections.bestSellers.slice(0, 6)} badge="Mas vendido" storeOpenStates={storeOpenStates} />
       <StoreRail stores={curatedSections.newStores} />
       <section className="vp-container py-6"><div className="flex items-end justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#0F6B63]">{storesEyebrow}</p><div className="mt-1 flex items-center gap-3"><span className="h-8 w-1.5 rounded-full bg-[#FF7133]" aria-hidden="true" /><h2 className="text-xl font-black sm:text-2xl">Todos los comercios</h2></div></div><p className="rounded-full bg-[#E8F6F1] px-2.5 py-1 text-xs font-black text-[#0F6B63]">{filteredStores.length}</p></div><StoreGrid stores={filteredStores} emptyTitle={emptyTitle} emptyText={emptyText} onReset={() => { setQuery(""); setActiveFilter("Todos"); }} /></section>
     </> : null}
